@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
+// A variável mágica que aponta para o Render na Vercel (ou localhost no seu PC)
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ==========================================
@@ -49,7 +50,6 @@ export default function LoginPage() {
       setAuthLoading(true);
       setAuthError(null);
 
-      // Agora enviamos o access_token em vez do credential
       const res = await fetch(`${API_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,6 +70,9 @@ export default function LoginPage() {
     }
   };
 
+  // ==========================================
+  // HANDLER: LOGIN/REGISTO COM E-MAIL
+  // ==========================================
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthLoading(true); 
@@ -82,7 +85,8 @@ export default function LoginPage() {
       if (authMode === 'login') delete payload.name; 
       else { payload.plan = "free"; payload.tier = 1; }
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      // Usando o API_URL e as aspas invertidas (template literals)
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload),
