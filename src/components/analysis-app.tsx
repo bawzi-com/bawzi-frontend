@@ -132,21 +132,65 @@ export default function AnalysisApp() {
     }
   }, []);
 
-  // ==========================================
-  // ÍMAN DO LOADING: Foca a câmara no Robô
-  // ==========================================
+  // =========================================================
+  // 1. EFEITO DE SCROLL (Dispara quando isAnalyzing muda)
+  // =========================================================
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     if (isAnalyzing) {
-      // Damos 100ms para o React desenhar o robô na tela antes de rolar
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         const loadingEl = document.getElementById('area-loading');
         if (loadingEl) {
-          // O block: 'center' garante que o robô fica exatamente no meio do ecrã
           loadingEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }, 100);
     }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [isAnalyzing]);
+
+
+  // =========================================================
+  // 2. EFEITO DE LOG DE ACESSO (Dispara apenas 1x ao carregar a página)
+  // =========================================================
+  useEffect(() => {
+    const fetchAndLogUser = async () => {
+      try {
+        const token = localStorage.getItem('bawzi_token'); 
+        if (!token) return;
+
+        const headers = { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+
+        const [userRes, wsRes] = await Promise.all([
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, { headers }),
+          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/workspace/details`, { headers })
+        ]);
+
+        if (userRes.ok && wsRes.ok) {
+          const userData = await userRes.json();
+          const wsData = await wsRes.json();
+
+          console.group('%c🚀 [Bawzi] Acesso Validado', 'color: #8b5cf6; font-size: 14px; font-weight: bold;');
+          console.log(`👤 Nome: %c${userData.name || userData.email}`, 'font-weight: bold; color: #334155');
+          console.log(`⭐ Tier: %c${wsData.tier} (${wsData.tier === 4 ? 'Elite' : wsData.tier === 3 ? 'Pro' : 'Essencial'})`, 'font-weight: bold; color: #f59e0b');
+          console.log(`🛡️ Perfil: %c${wsData.is_admin ? 'Administrador' : 'Membro'}`, 'font-weight: bold; color: #10b981');
+          console.log(`🏢 Workspace: %c${wsData.company?.name || wsData.company?.fantasy_name || 'Sem empresa vinculada'}`, 'font-weight: bold; color: #3b82f6');
+          console.log(`👥 Vagas Usadas: ${wsData.workspace_users_count} de ${wsData.vagas_totais}`);
+          console.groupEnd();
+        }
+      } catch (error) {
+        console.error("Erro ao gerar log de acesso:", error);
+      }
+    };
+
+    fetchAndLogUser();
+  }, []); 
 
 const handleAnalyze = async () => {
     // 1. Validações Iniciais

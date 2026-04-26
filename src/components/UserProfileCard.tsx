@@ -7,24 +7,25 @@ const WORKSPACE_LIMITS: Record<number, number> = {
   1: 1, 2: 2, 3: 5, 4: 10
 };
 
-export default function UserProfileCard({ user, variant = 'full' }: { user: any, variant?: 'full' | 'compact' }) {
+// 🟢 CORREÇÃO: Agora aceitamos o objeto "workspace" nas props
+export default function UserProfileCard({ user, workspace, variant = 'full' }: { user: any, workspace?: any, variant?: 'full' | 'compact' }) {
   const router = useRouter();
-  const isCompact = variant === 'compact';
   
   const userName = user?.name || "Marcelo Mendes";
   const userEmail = user?.email || "...";
-  const tier = user?.tier || 1;
-  const companyName = user?.company?.razao_social || "Empresa não identificada";
   
-  const usersCount = user?.workspace_users_count || 1;
-  const maxUsers = WORKSPACE_LIMITS[tier] || 1;
+  // 🟢 CORREÇÃO: Lemos os dados corretos a partir do workspace
+  const tier = workspace?.tier || 1;
+  const companyName = workspace?.company?.name || workspace?.company?.fantasy_name || workspace?.company?.razao_social || "Empresa não identificada";
+  
+  const usersCount = workspace?.workspace_users_count || 1;
+  const maxUsers = workspace?.vagas_totais || WORKSPACE_LIMITS[tier] || 1;
+  const vagasPercent = Math.min((usersCount / maxUsers) * 100, 100);
 
-  // 🟢 ESTADOS DO AVATAR
   const [isUploading, setIsUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatar_url || null);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  // 🟢 FUNÇÃO DE UPLOAD
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -43,10 +44,9 @@ export default function UserProfileCard({ user, variant = 'full' }: { user: any,
 
       if (res.ok) {
         const data = await res.json();
-        const freshUrl = `${data.avatar_url}?t=${new Date().getTime()}`;
-        setAvatarUrl(freshUrl);
+        setAvatarUrl(`${data.avatar_url}?t=${new Date().getTime()}`);
       } else {
-        alert("Falha ao atualizar a fotografia. Verifique o tamanho do ficheiro.");
+        alert("Falha ao atualizar a fotografia.");
       }
     } catch (err) {
       console.error("Erro no upload do avatar:", err);
@@ -56,89 +56,60 @@ export default function UserProfileCard({ user, variant = 'full' }: { user: any,
   };
 
   return (
-    <div className="w-full flex flex-col gap-4">
+    <div className="w-full bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
       
-      {/* 1. PERFIL: Avatar Interativo + Identidade */}
-      <div className="flex items-start gap-3 min-w-0">
-        
-        {/* 🟢 AVATAR INTERATIVO */}
-        <div className="relative group shrink-0">
-          <label className={`cursor-pointer block ${isUploading ? 'pointer-events-none' : ''}`}>
-            {/* Input escondido que abre a janela de ficheiros */}
-            <input 
-              type="file" 
-              accept="image/*" 
-              className="hidden" 
-              onChange={handleAvatarUpload} 
-              disabled={isUploading} 
-            />
-
-            <div 
-              aria-hidden="true"
-              className={`select-none ${isCompact ? 'w-10 h-10 text-lg' : 'w-12 h-12 md:w-14 md:h-14 text-xl'} rounded-xl flex items-center justify-center font-black shadow-md relative overflow-hidden transition-all group-hover:ring-2 group-hover:ring-violet-400 group-hover:ring-offset-2
-                ${!avatarUrl ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white' : 'bg-slate-100'}
-              `}
-            >
-              {/* Se tiver URL, mostra a imagem. Se não, mostra a Letra */}
-              {avatarUrl ? (
-                <img src={avatarUrl.startsWith('http') ? avatarUrl : `${API_URL}${avatarUrl}`} alt={userName} className="w-full h-full object-cover" key={avatarUrl}/>
-              ) : (
-                userName.charAt(0).toUpperCase()
-              )}
-
-              {/* Camada escura que aparece ao passar o rato */}
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[1px]">
-                {isUploading ? (
-                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                ) : (
-                   <span className="text-white text-sm">📸</span>
-                )}
-              </div>
+      {/* 1. CABEÇALHO: Avatar e Identidade */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-5 mb-6">
+        <label className={`relative cursor-pointer shrink-0 block w-fit ${isUploading ? 'pointer-events-none' : ''}`}>
+          <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} disabled={isUploading} />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 text-white flex items-center justify-center text-2xl font-black shadow-inner overflow-hidden group">
+            {avatarUrl ? (
+              <img src={avatarUrl.startsWith('http') ? avatarUrl : `${API_URL}${avatarUrl}`} alt={userName} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"/>
+            ) : (
+              userName.charAt(0).toUpperCase()
+            )}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              {isUploading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <span className="text-lg">📸</span>}
             </div>
-          </label>
-        </div>
-        
-        <div className="flex flex-col min-w-0 flex-1">
-          <h2 className="text-sm md:text-base font-black text-slate-900 leading-tight truncate">
-            {userName}
-          </h2>
-          <p className="text-[9px] md:text-[10px] text-slate-400 font-medium truncate mt-0.5">
-            {userEmail}
-          </p>
-          <div className="mt-1.5 inline-flex items-center gap-1 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded text-[8px] font-black text-amber-900 uppercase w-fit">
-            <span>⭐</span> Nível {tier}
           </div>
+        </label>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 mb-1">
+            <h2 className="text-xl font-black text-slate-900 truncate">{userName}</h2>
+            {/* CRACHÁ DE NÍVEL ISOLADO E ELEGANTE */}
+            <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black rounded-lg uppercase tracking-wider shrink-0 flex items-center gap-1">
+              ⭐ Nível {tier}
+            </span>
+          </div>
+          <p className="text-sm text-slate-500 font-medium truncate">{userEmail}</p>
         </div>
       </div>
 
-      {/* 2. GESTÃO: Mudar Plano e Vagas */}
-      <div className="flex items-center justify-between bg-slate-50/50 border border-slate-100 rounded-lg p-2 gap-2">
-        {tier < 4 && (
-          <button 
-            onClick={() => router.push('/plans')}
-            className="text-[8px] font-black text-violet-700 bg-violet-100 hover:bg-violet-200 px-2 py-1.5 rounded uppercase tracking-wider transition-all active:scale-95 shadow-sm truncate"
-          >
-            ⚡ Mudar Plano
-          </button>
-        )}
-
-        <div className={`text-[8px] font-black px-1.5 py-1 rounded border shrink-0 ml-auto ${
-            usersCount >= maxUsers 
-            ? 'text-red-700 bg-red-50 border-red-100' 
-            : 'text-slate-600 bg-white border-slate-200'
-        }`}>
-           {usersCount}/{maxUsers} Vagas
+      {/* 2. BARRA DE VAGAS (Fácil de ler) */}
+      <div className="bg-slate-50 rounded-2xl p-4 mb-4 border border-slate-100">
+        <div className="flex justify-between items-end mb-2">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Utilização da Equipa</span>
+          <span className="text-xs font-bold text-slate-700">
+            <strong className={usersCount >= maxUsers ? 'text-red-600' : 'text-slate-900'}>{usersCount}</strong> de {maxUsers} Vagas
+          </span>
+        </div>
+        <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+          <div 
+            className={`h-full rounded-full transition-all duration-1000 ${usersCount >= maxUsers ? 'bg-red-500' : 'bg-emerald-500'}`}
+            style={{ width: `${vagasPercent}%` }}
+          ></div>
         </div>
       </div>
 
       {/* 3. EMPRESA VINCULADA */}
-      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex items-center gap-2.5">
-        <div className="w-8 h-8 text-sm rounded-full bg-white flex items-center justify-center shadow-sm shrink-0">🏢</div>
-        <div className="flex flex-col min-w-0">
-          <span className="text-[7px] md:text-[8px] font-black text-slate-400 uppercase tracking-widest">Empresa Vinculada</span>
-          <span className="text-[9px] md:text-[11px] font-bold text-slate-700 truncate" title={companyName}>
+      <div className="flex items-center gap-3 p-4 rounded-2xl border border-slate-100 bg-white">
+        <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-lg shrink-0 shadow-sm border border-slate-100">🏢</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Empresa Vinculada</p>
+          <p className="text-sm font-bold text-slate-700 truncate" title={companyName}>
             {companyName}
-          </span>
+          </p>
         </div>
       </div>
 

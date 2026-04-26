@@ -16,9 +16,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className="scroll-smooth">
-      {/* Adicionámos flexbox para o footer descer sempre para o fim do ecrã */}
-      <body className="min-h-screen flex flex-col bg-slate-50 font-sans text-slate-900">
+    <html lang="pt-BR" className="scroll-smooth" suppressHydrationWarning>
+      <body className="min-h-screen flex flex-col bg-slate-50 font-sans text-slate-900" suppressHydrationWarning>
         
         {/* CABEÇALHO GLOBAL */}
         <Header />
