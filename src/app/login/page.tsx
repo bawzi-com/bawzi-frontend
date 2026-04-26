@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 // ==========================================
 // COMPONENTE: BOTÃO GOOGLE CUSTOMIZADO
 // ==========================================
@@ -48,7 +50,7 @@ export default function LoginPage() {
       setAuthError(null);
 
       // Agora enviamos o access_token em vez do credential
-      const res = await fetch('http://localhost:8000/api/auth/google', {
+      const res = await fetch(`${API_URL}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tokenResponse.access_token }),
