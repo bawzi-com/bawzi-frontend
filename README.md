@@ -1,4 +1,4 @@
-# Edital.AI Frontend — versão visual v2
+# bawzi.com Frontend — versão visual v2
 
 Frontend em Next.js com layout mais moderno e mais próximo de um produto SaaS.
 
