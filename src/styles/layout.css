@@ -1,0 +1,273 @@
+/* --- ESTRUTURA FLUIDA DE SITE (LANDING PAGE) --- */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+  background: var(--color-bg);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-y: visible;
+}
+
+/* Container de Conteúdo Centralizado */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* Seções com Respiro Visual */
+.section {
+  width: 100%;
+  padding: 80px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.section--alt {
+  background: var(--color-bg-soft);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.section-tag {
+  color: var(--bawzi-purple);
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+/* --- HERO CONTAINER (Duas Colunas) --- */
+.hero-wrapper {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 48px;
+  align-items: center;
+  width: 100%;
+}
+
+.hero-content {
+  text-align: left;
+}
+
+.hero-content h1 {
+  font-size: 3.5rem;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  margin: 0 0 16px;
+  background: linear-gradient(135deg, #0f172a, #475569);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.1;
+}
+
+.hero-content p {
+  font-size: 1.2rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+/* --- ILUSTRAÇÃO DA IA (Visual de Confiança) --- */
+.hero-visual {
+  position: relative;
+  width: 100%;
+  height: 340px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-visual::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--color-primary), var(--bawzi-magenta));
+}
+
+/* --- BARRA DE CONFIANÇA (Trust Bar) --- */
+.trust-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.trust-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-soft);
+  background: var(--color-bg-soft);
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+
+/* --- ÁREA DA FERRAMENTA --- */
+.workspace {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.workspace.is-analyzed {
+  max-width: var(--content-max-width);
+  display: grid;
+  grid-template-columns: 1.25fr 0.95fr;
+  align-items: start;
+}
+
+/* --- GRID DE FUNCIONALIDADES --- */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 32px;
+  margin-top: 48px;
+  width: 100%;
+}
+
+.feature-card {
+  background: var(--color-panel);
+  padding: 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+  transition: transform 0.3s ease, border-color 0.3s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-8px);
+  border-color: var(--bawzi-purple);
+}
+
+.feature-card h4 {
+  margin: 16px 0 8px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+/* Responsividade */
+@media (max-width: 1024px) {
+  .hero-wrapper {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .hero-content {
+    text-align: center;
+  }
+  .trust-bar {
+    justify-content: center;
+  }
+  .workspace.is-analyzed {
+    grid-template-columns: 1fr;
+  }
+  .hero-content h1 {
+    font-size: 2.8rem;
+  }
+}
+
+/* Animações Premium para o SVG do Hero */
+@keyframes scan-document {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(190px); opacity: 0; }
+}
+
+@keyframes float-badge {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.scanner-line {
+  animation: scan-document 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.floating-badge {
+  animation: float-badge 4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* --- GRIDS DE WORKSPACE ADAPTÁVEIS --- */
+.workspace {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+}
+
+/* Estado de Input (Degustação): Centralizado no mobile, 2 colunas no desktop */
+.workspace.is-input {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  align-items: start;
+  max-width: 1100px; /* Um pouco mais contido para foco */
+}
+
+/* Estado de Resultado (Dashboard): Mantém a sua proporção 1.25/0.95 */
+.workspace.is-analyzed {
+  display: grid;
+  grid-template-columns: 1.25fr 0.95fr;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .workspace.is-input {
+    grid-template-columns: 1.1fr 0.9fr; /* Texto maior na esquerda */
+  }
+}
+
+@media (max-width: 1180px) {
+  .workspace.is-analyzed {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- ILUSTRAÇÃO DA PROMESSA (Simulador) --- */
+.input-visual-promise {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-soft);
+  border-radius: var(--radius-lg);
+  border: 2px stroke var(--color-border);
+  box-shadow: inset 0 4px 12px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+}
+
+.input-visual-promise::before {
+  content: '';
+  position: absolute;
+  top: 10px; left: 10px; right: 10px; bottom: 10px;
+  border-radius: calc(var(--radius-lg) - 10px);
+  border: 2px dashed var(--color-border);
+}
