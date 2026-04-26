@@ -43,6 +43,34 @@ export default function HistoryTab({ token }: { token: string }) {
     });
   };
 
+  const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Evita abrir os detalhes do cartão
+
+    if (!confirm("Tem a certeza que deseja eliminar esta análise? Esta ação não pode ser desfeita.")) return;
+
+    try {
+      // Usando a variável de ambiente para funcionar na nuvem (ou localhost)
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      
+      const res = await fetch(`${API_URL}/api/analyses/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${tokenLocal}` }
+      });
+
+      if (res.ok) {
+        // Remove do ecrã instantaneamente
+        setAnalyses(prev => prev.filter((item: any) => item.id !== id));
+      } else {
+        const error = await res.json();
+        alert(error.detail || "Erro ao eliminar a análise.");
+      }
+    } catch (err) {
+      console.error("Falha ao eliminar:", err);
+      alert("Erro de ligação. Tente novamente.");
+    }
+  };
+
   const filteredAnalyses = useMemo(() => {
     return analyses.filter(item => {
       const score = item.score || 0;
@@ -139,50 +167,9 @@ export default function HistoryTab({ token }: { token: string }) {
           </div>
         </div>
 
-        {/* INTELIGÊNCIA DE PREÇOS (Opcional se existir no banco) */}
-        {res.pricing_intelligence && (
-          <div className="bg-emerald-950 rounded-[3rem] p-8 md:p-12 shadow-2xl text-white relative overflow-hidden">
-            <div className="absolute -right-20 -top-20 w-80 h-80 bg-emerald-500/10 blur-[80px] rounded-full pointer-events-none"></div>
-            <h3 className="text-2xl font-black mb-8 flex items-center gap-4 relative z-10">
-              <span className="bg-emerald-800/50 p-3 rounded-2xl border border-emerald-700/50 text-3xl">📈</span> 
-              Inteligência de Mercado PNCP
-            </h3>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
-              <div className="bg-emerald-900/40 p-6 rounded-3xl border border-emerald-800/50">
-                <span className="text-emerald-400/80 text-[10px] font-black uppercase tracking-widest block mb-3">Veredicto Financeiro</span>
-                <strong className="text-2xl font-black text-emerald-300">{res.pricing_intelligence.financial_verdict}</strong>
-              </div>
-              <div className="bg-emerald-900/40 p-6 rounded-3xl border border-emerald-800/50">
-                <span className="text-emerald-400/80 text-[10px] font-black uppercase tracking-widest block mb-3">Deságio Esperado</span>
-                <strong className="text-2xl font-black text-white">{res.pricing_intelligence.estimated_discount}</strong>
-              </div>
-              <div className="bg-emerald-900/40 p-6 rounded-3xl border border-emerald-800/50">
-                <span className="text-emerald-400/80 text-[10px] font-black uppercase tracking-widest block mb-3">Análise Competitiva</span>
-                <p className="text-sm text-emerald-50 font-medium leading-relaxed">{res.pricing_intelligence.market_analysis}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* PARECER DO JUIZ (VISUAL PREMIUM DARK) */}
-        {res.rationale && (
-          <div className="bg-slate-950 rounded-[3rem] p-10 md:p-16 shadow-2xl text-white relative overflow-hidden">
-            <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-violet-600/20 blur-[100px] rounded-full"></div>
-            <h3 className="text-2xl font-black mb-8 flex items-center gap-4 text-violet-300 relative z-10">
-              <span className="bg-white/5 p-3 rounded-2xl border border-white/10 text-3xl">🧠</span> 
-              Parecer Estratégico Final
-            </h3>
-            <p className="text-slate-300 leading-relaxed text-xl whitespace-pre-wrap relative z-10 font-medium italic pr-4">
-              "{res.rationale}"
-            </p>
-          </div>
-        )}
-
         {/* RECOMENDAÇÃO E GRID DE DETALHES */}
         <div className="grid md:grid-cols-2 gap-8">
           
-          {/* BOX: RECOMENDAÇÃO */}
           <div className="bg-white rounded-[3rem] p-10 shadow-lg border border-slate-100 flex flex-col">
             <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-4">
               <span className="text-3xl">💡</span> Recomendação de Ação
@@ -192,7 +179,6 @@ export default function HistoryTab({ token }: { token: string }) {
             </div>
           </div>
 
-          {/* BOX: RISCOS */}
           <div className="bg-white rounded-[3rem] p-10 shadow-lg border border-slate-100">
             <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-4">
               <span className="text-3xl text-red-500">🛡️</span> Matriz de Riscos Fatais
@@ -214,26 +200,6 @@ export default function HistoryTab({ token }: { token: string }) {
                 );
               }) : <p className="text-emerald-600 font-bold bg-emerald-50 p-6 rounded-2xl border border-emerald-100">✓ Nenhum risco fatal identificado pela IA.</p>}
             </div>
-          </div>
-        </div>
-
-        {/* CHECKLIST OPERACIONAL (FULL WIDTH) */}
-        <div className="bg-white rounded-[3rem] p-10 md:p-12 shadow-lg border border-slate-100">
-          <h3 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-4">
-            <span className="text-3xl text-emerald-500">📋</span> Checklist de Documentação e Prazos
-          </h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {res.checklist?.length > 0 ? res.checklist.map((item: any, i: number) => {
-              const text = typeof item === 'string' ? item : (item.title || item.text || item.description);
-              return (
-                <div key={i} className="flex items-center gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-emerald-300 transition-all">
-                  <div className="w-6 h-6 rounded-lg bg-white border-2 border-slate-200 group-hover:border-emerald-500 group-hover:bg-emerald-500 transition-all flex items-center justify-center">
-                    <span className="text-white text-[10px] hidden group-hover:block">✓</span>
-                  </div>
-                  <span className="text-slate-700 text-sm font-bold">{text}</span>
-                </div>
-              );
-            }) : <p className="text-slate-400 italic">Nenhuma instrução adicional de checklist.</p>}
           </div>
         </div>
 
@@ -288,9 +254,10 @@ export default function HistoryTab({ token }: { token: string }) {
               <div 
                 key={item.id} 
                 onClick={() => setSelectedAnalysis(item)}
-                className="bg-white p-6 rounded-[2rem] border border-slate-200 hover:border-violet-400 hover:shadow-xl transition-all group flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer relative overflow-hidden"
+                className="bg-white p-6 rounded-[2rem] border border-slate-200 hover:border-violet-400 hover:shadow-xl transition-all group flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer overflow-hidden"
               >
-                <div className="flex items-center gap-6 relative z-10">
+                {/* LADO ESQUERDO: SCORE E TÍTULO */}
+                <div className="flex items-center gap-6">
                   <div className={`h-16 w-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border-2 ${
                     score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
                     score >= 45 ? 'bg-amber-50 text-amber-500 border-amber-100' : 'bg-red-50 text-red-600 border-red-100'
@@ -299,7 +266,7 @@ export default function HistoryTab({ token }: { token: string }) {
                     <span className="text-[8px] font-black uppercase opacity-60">Score</span>
                   </div>
                   <div>
-                    <h3 className="font-black text-slate-900 leading-tight group-hover:text-violet-700 transition-colors text-lg">
+                    <h3 className="font-black text-slate-900 leading-tight group-hover:text-violet-700 transition-colors text-lg line-clamp-1">
                       {item.title || "Sem Título"}
                     </h3>
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
@@ -310,17 +277,33 @@ export default function HistoryTab({ token }: { token: string }) {
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-3 shrink-0 relative z-10">
+                {/* LADO DIREITO: BOTÕES ALINHADOS (Eliminar, Favorito, Detalhes) */}
+                <div className="flex items-center gap-2 md:gap-3 shrink-0 self-end md:self-auto mt-4 md:mt-0">
+                  
+                  {/* Botão Eliminar */}
+                  <button 
+                    onClick={(e) => handleDeleteAnalysis(item.id, e)}
+                    className="p-3 md:p-4 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    title="Eliminar Análise"
+                  >
+                    🗑️
+                  </button>
+
+                  {/* Botão Favorito */}
                   <button 
                     onClick={(e) => toggleFavorite(e, item.id)}
-                    className={`p-4 rounded-2xl transition-all ${isFav ? 'bg-amber-100 text-amber-500 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100'}`}
+                    className={`p-3 md:p-4 rounded-2xl transition-all ${isFav ? 'bg-amber-100 text-amber-500 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100'}`}
+                    title={isFav ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
                   >
                     {isFav ? '★' : '☆'}
                   </button>
-                  <div className="px-6 py-4 bg-slate-900 text-white font-black rounded-2xl group-hover:bg-violet-600 transition-all text-xs uppercase tracking-widest shadow-lg group-hover:shadow-violet-500/30">
+
+                  {/* Botão Ver Detalhes */}
+                  <div className="px-5 py-3 md:px-6 md:py-4 bg-slate-900 text-white font-black rounded-2xl group-hover:bg-violet-600 transition-all text-[10px] md:text-xs uppercase tracking-widest shadow-lg group-hover:shadow-violet-500/30">
                     Ver Detalhes
                   </div>
                 </div>
+
               </div>
             );
           })}

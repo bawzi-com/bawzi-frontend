@@ -35,6 +35,38 @@ export default function ProfilePage() {
     }
   };
 
+const [isRedirecting, setIsRedirecting] = useState(false);
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+const handleViewInvoices = async () => {
+  setIsRedirecting(true);
+  try {
+    const token = localStorage.getItem('bawzi_token');
+    
+    const res = await fetch(`${API_URL}/api/billing/customer-portal`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.url) {
+      // Redireciona para o ambiente seguro do Stripe
+      window.location.href = data.url;
+    } else {
+      alert(data.detail || "Não foi possível carregar o portal de faturas. Verifique se você já possui uma assinatura ativa.");
+      setIsRedirecting(false);
+    }
+  } catch (err) {
+    console.error("Erro ao abrir portal de faturas:", err);
+    alert("Erro de conexão. Tente novamente em instantes.");
+    setIsRedirecting(false);
+  }
+};
+
   useEffect(() => { loadData(); }, []);
 
   if (isLoading) {
@@ -161,8 +193,25 @@ export default function ProfilePage() {
                     </div>
 
                     <div className="flex gap-3 w-full md:w-auto">
-                    <button className="flex-1 md:flex-none px-6 py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors shadow-sm">
-                      Ver Faturas
+                    <button 
+                      onClick={handleViewInvoices}
+                      disabled={isRedirecting}
+                      className="w-full flex items-center justify-center gap-3 p-4 bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all group disabled:opacity-50"
+                    >
+                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-lg group-hover:bg-white transition-colors">
+                        {isRedirecting ? '⏳' : '🧾'}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                          {isRedirecting ? 'A carregar portal...' : 'Ver Faturas'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                          {isRedirecting ? 'Aguarde um momento' : 'Histórico de pagamentos e notas'}
+                        </p>
+                      </div>
+                      <svg className="w-5 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" />
+                      </svg>
                     </button>
 
                     {/* 🟢 BOTÃO DE UPGRADE: aparece para Tiers 1, 2 e 3 */}

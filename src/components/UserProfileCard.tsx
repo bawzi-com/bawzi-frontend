@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 const WORKSPACE_LIMITS: Record<number, number> = {
@@ -9,8 +9,6 @@ const WORKSPACE_LIMITS: Record<number, number> = {
 
 export default function UserProfileCard({ user, variant = 'full' }: { user: any, variant?: 'full' | 'compact' }) {
   const router = useRouter();
-  
-  // 🟢 Aqui está a variável que faltava e que o TypeScript estava a pedir:
   const isCompact = variant === 'compact';
   
   const userName = user?.name || "Marcelo Mendes";
@@ -21,22 +19,86 @@ export default function UserProfileCard({ user, variant = 'full' }: { user: any,
   const usersCount = user?.workspace_users_count || 1;
   const maxUsers = WORKSPACE_LIMITS[tier] || 1;
 
+  // 🟢 ESTADOS DO AVATAR
+  const [isUploading, setIsUploading] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatar_url || null);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // 🟢 FUNÇÃO DE UPLOAD
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const res = await fetch(`${API_URL}/api/users/avatar`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const freshUrl = `${data.avatar_url}?t=${new Date().getTime()}`;
+        setAvatarUrl(freshUrl);
+      } else {
+        alert("Falha ao atualizar a fotografia. Verifique o tamanho do ficheiro.");
+      }
+    } catch (err) {
+      console.error("Erro no upload do avatar:", err);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="w-full flex flex-col gap-4">
       
-      {/* 1. PERFIL: Avatar + Identidade */}
+      {/* 1. PERFIL: Avatar Interativo + Identidade */}
       <div className="flex items-start gap-3 min-w-0">
         
-        {/* AVATAR: Degradê amigável atualizado */}
-        <div 
-          aria-hidden="true"
-          className={`select-none ${isCompact ? 'w-10 h-10 text-lg' : 'w-12 h-12 md:w-14 md:h-14 text-xl'} rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center text-white font-black shadow-md shrink-0`}
-        >
-          {userName.charAt(0).toUpperCase()}
+        {/* 🟢 AVATAR INTERATIVO */}
+        <div className="relative group shrink-0">
+          <label className={`cursor-pointer block ${isUploading ? 'pointer-events-none' : ''}`}>
+            {/* Input escondido que abre a janela de ficheiros */}
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleAvatarUpload} 
+              disabled={isUploading} 
+            />
+
+            <div 
+              aria-hidden="true"
+              className={`select-none ${isCompact ? 'w-10 h-10 text-lg' : 'w-12 h-12 md:w-14 md:h-14 text-xl'} rounded-xl flex items-center justify-center font-black shadow-md relative overflow-hidden transition-all group-hover:ring-2 group-hover:ring-violet-400 group-hover:ring-offset-2
+                ${!avatarUrl ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white' : 'bg-slate-100'}
+              `}
+            >
+              {/* Se tiver URL, mostra a imagem. Se não, mostra a Letra */}
+              {avatarUrl ? (
+                <img src={avatarUrl.startsWith('http') ? avatarUrl : `${API_URL}${avatarUrl}`} alt={userName} className="w-full h-full object-cover" key={avatarUrl}/>
+              ) : (
+                userName.charAt(0).toUpperCase()
+              )}
+
+              {/* Camada escura que aparece ao passar o rato */}
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[1px]">
+                {isUploading ? (
+                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                ) : (
+                   <span className="text-white text-sm">📸</span>
+                )}
+              </div>
+            </div>
+          </label>
         </div>
         
         <div className="flex flex-col min-w-0 flex-1">
-          {/* Nome truncado caso seja gigante */}
           <h2 className="text-sm md:text-base font-black text-slate-900 leading-tight truncate">
             {userName}
           </h2>
@@ -49,7 +111,7 @@ export default function UserProfileCard({ user, variant = 'full' }: { user: any,
         </div>
       </div>
 
-      {/* 2. GESTÃO: Mudar Plano e Vagas (Empilhados na barra lateral) */}
+      {/* 2. GESTÃO: Mudar Plano e Vagas */}
       <div className="flex items-center justify-between bg-slate-50/50 border border-slate-100 rounded-lg p-2 gap-2">
         {tier < 4 && (
           <button 

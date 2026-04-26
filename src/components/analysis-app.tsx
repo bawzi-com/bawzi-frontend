@@ -168,7 +168,7 @@ const handleAnalyze = async () => {
       }
     }, 50);
 
-    try {
+try {
       const formData = new FormData();
       if (text.trim()) formData.append('raw_text', text.trim());
       files.forEach(f => formData.append('files', f));
@@ -176,10 +176,31 @@ const handleAnalyze = async () => {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const response = await fetch('http://localhost:8000/api/analyze', {
-        method: 'POST', headers: headers, body: formData,
+      // Usando a variável de ambiente (mantendo o localhost como fallback)
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+      const response = await fetch(`${API_URL}/api/analyze`, {
+        method: 'POST', 
+        headers: headers, 
+        body: formData,
       });
 
+      // ==========================================
+      // 🟢 O PONTO DE INTERCEÇÃO (PAYWALL PLG)
+      // ==========================================
+      if (response.status === 402) {
+        setShowUpgradeModal(true); // Abre o popup
+        setIsAnalyzing(false);     // Para o loading
+        return;                    // Aborta a execução para não dar erro no ecrã
+      }
+
+      // Se houver outro erro (ex: 500, 400), disparamos para cair no catch
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || "Falha ao analisar o edital.");
+      }
+
+      // Se passou por tudo, é porque foi SUCESSO (Status 200)
       const data = await response.json();
 
       // --- VERIFICAÇÃO DE ERROS E PAYWALL ---
@@ -863,8 +884,7 @@ const handleAnalyze = async () => {
         </div>
       )}
     {/* 🟢 O MODAL DE UPGRADE VAI AQUI 🟢 */}
-      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} />}
+    {showUpgradeModal && <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />}
     </div> 
   );
 }
-
