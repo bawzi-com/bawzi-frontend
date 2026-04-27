@@ -79,6 +79,7 @@ export default function LoginPage() {
     setAuthError(null);
     
     try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'https://api.bawzi.com').replace(/\/$/, '');
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const payload: any = { ...authForm };
       
@@ -86,7 +87,7 @@ export default function LoginPage() {
       else { payload.plan = "free"; payload.tier = 1; }
 
       // Usando o API_URL e as aspas invertidas (template literals)
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const response = await fetch(`${baseUrl}${endpoint}`, {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload),
