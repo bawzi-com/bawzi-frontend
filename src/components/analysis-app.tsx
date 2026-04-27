@@ -169,8 +169,8 @@ export default function AnalysisApp() {
         };
 
         const [userRes, wsRes] = await Promise.all([
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, { headers }),
-          fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/workspace/details`, { headers })
+          fetch(`${API_URL}/api/users/me`, { headers }),
+          fetch(`${API_URL}/api/workspace/details`, { headers })
         ]);
 
         if (userRes.ok && wsRes.ok) {

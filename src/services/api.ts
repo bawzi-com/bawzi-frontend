@@ -3,7 +3,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function fetchUserProfile(token: string) {
-  const response = await fetch(`${API_URL}/users/me`, {
+  const response = await fetch(`${API_URL}api/users/me`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
   
@@ -12,7 +12,7 @@ export async function fetchUserProfile(token: string) {
 }
 
 export async function updateUserProfile(token: string, companyData: any) {
-  const response = await fetch(`${API_URL}/users/me`, {
+  const response = await fetch(`${API_URL}/api/users/me`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
