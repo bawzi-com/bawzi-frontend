@@ -47,29 +47,45 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    const confirm = window.confirm("Tem a certeza absoluta? Esta ação não pode ser desfeita e todo o seu histórico será perdido.");
-    if (!confirm) return;
+const handleDeleteAccount = async () => {
+  // 1. Mensagem de aviso robusta (Compliance LGPD + Alerta de Dados)
+  const msgAviso = "Tem a certeza absoluta? Esta ação não pode ser desfeita.\n\n" + 
+                   "Atenção: Se for o único membro, o seu Workspace e todo o histórico de análises " +
+                   "serão eliminados permanentemente. Deseja continuar?";
 
-    setIsDeleting(true);
-    try {
-      const res = await fetch(`${API_URL}/api/users/me`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (res.ok) {
-        localStorage.removeItem('bawzi_token');
-        localStorage.removeItem('bawzi_tier');
-        router.push('/');
-      } else {
-        throw new Error('Erro ao eliminar conta');
+  const confirmDelete = window.confirm(msgAviso);
+  if (!confirmDelete) return;
+
+  setIsDeleting(true);
+
+  try {
+    const res = await fetch(`${API_URL}/api/users/me`, {
+      method: 'DELETE',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
-    } catch (error) {
-      alert("Ocorreu um erro ao eliminar a conta.");
-      setIsDeleting(false);
+    });
+    
+    if (res.ok) {
+      // 2. Limpeza profunda de resíduos locais
+      localStorage.removeItem('bawzi_token');
+      localStorage.removeItem('bawzi_tier');
+      localStorage.clear(); 
+      
+      // 3. Força o redirecionamento com reload total do navegador
+      // Isso mata qualquer estado "fantasma" do React na memória
+      window.location.href = '/?account_deleted=true'; 
+    } else {
+      const errorData = await res.json();
+      throw new Error(errorData.detail || 'Erro ao eliminar conta');
     }
-  };
+  } catch (error) {
+    console.error("Erro na exclusão:", error);
+    alert(error instanceof Error ? error.message : "Ocorreu um erro ao eliminar a conta.");
+    setIsDeleting(false);
+  }
+};
 
   return (
     <div className="flex flex-col gap-6">
