@@ -20,6 +20,14 @@ interface PricingIntelligence {
 }
 
 interface HighlightItem { title: string; quote: string; }
+
+// 🟢 1. Nova interface adicionada para o risco do órgão
+interface OrgaoRisk {
+  risco: string;
+  score_pagamento: number | string; 
+  status: string;
+}
+
 interface AnalysisResult {
   title: string; summary: string; score: number; classification: string;
   effort: string; estimated_value: string; recommendation: string;
@@ -27,6 +35,8 @@ interface AnalysisResult {
   risks: any[]; 
   checklist: any[]; 
   pricing_intelligence?: PricingIntelligence;
+  // 🟢 2. Propriedade adicionada como opcional (?) pois editais antigos não a terão
+  orgao_risk?: OrgaoRisk; 
 }
 
   // --- Utilitários ---
@@ -219,7 +229,8 @@ try {
       files.forEach(f => formData.append('files', f));
 
       const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const currentToken = localStorage.getItem('bawzi_token');
+      if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
 
       // Usando a variável de ambiente (mantendo o localhost como fallback)
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -254,7 +265,7 @@ try {
           // Gatilho do Modal de Upgrade
           setShowUpgradeModal(true);
           setIsAnalyzing(false);
-          return; // Para aqui
+          return; 
         }
         throw new Error(data?.detail || 'Erro no servidor.');
       }
@@ -276,6 +287,11 @@ try {
       if (!token) {
         localStorage.setItem('bawzi_free_trial_used', 'true');
         setHasUsedFreeTrial(true);
+
+        // No handleAnalyze, após receber a resposta:
+        const data = await response.json();
+        console.log("🔍 Dados recebidos do Backend:", data); // Verifique se orgao_risk aparece aqui
+        setResult(data.analysis);
       }
 
     } catch (err: any) {
@@ -404,34 +420,34 @@ try {
 
       <main>
         {/* ========================================== */}
-        {/* 1. HERO SECTION (APENAS MARKETING E MOCKUP)*/}
+        {/* 1. HERO SECTION (MARKETING E MOCKUP CONTRATOS)*/}
         {/* ========================================== */}
-        <div className="relative pt-20 pb-16 lg:pt-28 lg:pb-20 overflow-hidden bg-slate-50">
-          <div className="absolute top-0 right-0 -translate-y-12 translate-x-1/3 w-[800px] h-[800px] bg-gradient-to-br from-violet-200/50 to-indigo-100/50 blur-[120px] rounded-full pointer-events-none"></div>
+        <div className="relative pt-12 pb-12 lg:pt-28 lg:pb-20 overflow-hidden bg-slate-50">
+          {/* Efeito de gradiente corrigido para não causar scroll lateral */}
+          <div className="absolute top-0 right-0 -translate-y-12 translate-x-1/4 w-[600px] h-[600px] bg-gradient-to-br from-violet-200/40 to-transparent blur-[100px] rounded-full pointer-events-none"></div>
 
           <div className="container mx-auto px-4 relative z-10 max-w-[1400px]">
-            <div className="grid lg:grid-cols-2 gap-16 items-center">
-              
-              {/* Textos de Marketing */}
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
               <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-100 text-violet-800 text-xs font-black uppercase tracking-widest mb-8 border border-violet-200 shadow-sm animate-in fade-in slide-in-from-bottom-4">
-                  <span className="relative flex h-2.5 w-2.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-black uppercase tracking-widest mb-6 border border-violet-200">
+                  <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-violet-500"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
                   </span>
                   Multi-LLM Routing Ativado
                 </div>
 
-                <h1 className="text-5xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.05] mb-6 animate-in fade-in slide-in-from-bottom-5 delay-150">
-                  Pare de perder tempo com <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">editais sem futuro.</span>
+                {/* Título responsivo: text-4xl no mobile, 7xl no desktop */}
+                <h1 className="text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.1] mb-6">
+                  Pare de assumir riscos cegos em <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">contratos e editais.</span>
                 </h1>
 
-                <p className="text-xl text-slate-600 font-medium leading-relaxed animate-in fade-in slide-in-from-bottom-6 delay-300 max-w-lg">
-                  O motor da Bawzi analisa contratos em segundos, identificando riscos ocultos e sugerindo a estratégia certa para a sua empresa.
+                <p className="text-lg md:text-xl text-slate-600 font-medium leading-relaxed max-w-lg">
+                  O motor da Bawzi analisa dezenas de páginas em segundos, blindando a sua equipa contra cláusulas abusivas.
                 </p>
               </div>
 
-              {/* Mockup Flutuante da IA */}
+              {/* Mockup Flutuante da IA (Foco em Contratos) */}
               <div className="hidden lg:block relative perspective-1000">
                 <div className="relative w-full max-w-lg mx-auto transform rotate-[-2deg] hover:rotate-0 transition-transform duration-700 ease-out">
                   <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-indigo-500 transform translate-x-4 translate-y-6 rounded-[3rem] blur-2xl opacity-30"></div>
@@ -441,34 +457,33 @@ try {
                       <div className="flex items-center gap-4">
                         <div className="h-12 w-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl font-black">98</div>
                         <div>
-                          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1">Score de Viabilidade</h3>
-                          <p className="text-lg font-bold text-emerald-600">Avançar com Força</p>
+                          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1">Score de Segurança Jurídica</h3>
+                          <p className="text-lg font-bold text-emerald-600">Pronto para Assinatura</p>
                         </div>
                       </div>
-                      <div className="px-3 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg border border-slate-200">Llama 4 Scout</div>
+                      <div className="px-3 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg border border-slate-200">Claude 3.5 Sonnet</div>
                     </div>
 
                     <div className="space-y-4">
                       <div className="flex gap-4">
                         <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shrink-0 font-bold">💡</div>
                         <div>
-                          <h4 className="font-bold text-slate-900 mb-1">Estratégia Vencedora</h4>
-                          <div className="h-2 w-full bg-slate-100 rounded-full mb-2"></div>
-                          <div className="h-2 w-3/4 bg-slate-100 rounded-full"></div>
+                          <h4 className="font-bold text-slate-900 mb-1">Oportunidade de Negociação</h4>
+                          <p className="text-sm text-slate-600 font-medium">A cláusula de reajuste pode ser indexada ao IPCA para proteger a margem a longo prazo.</p>
                         </div>
                       </div>
                       <div className="flex gap-4 mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-100/50">
                         <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-500 flex items-center justify-center shrink-0 font-bold">!</div>
                         <div>
-                          <h4 className="font-bold text-amber-900 mb-1">Risco Logístico Identificado</h4>
-                          <p className="text-sm text-amber-700/80 font-medium">Custo de frete não considerado na margem base do edital.</p>
+                          <h4 className="font-bold text-amber-900 mb-1">Risco Financeiro Identificado</h4>
+                          <p className="text-sm text-amber-700/80 font-medium">Multa rescisória unilateral de 30% (cláusula 7.4). Sugestão automática de revisão gerada.</p>
                         </div>
                       </div>
                     </div>
                     
                     <div className="absolute -right-8 -bottom-8 bg-slate-950 text-white p-5 rounded-3xl shadow-xl border border-slate-800 transform rotate-[5deg]">
-                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">Previsão PNCP</span>
-                      <span className="text-2xl font-black">R$ 14.350</span>
+                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">Valor Protegido</span>
+                      <span className="text-2xl font-black">R$ 145.000</span>
                     </div>
                   </div>
                 </div>
@@ -481,15 +496,15 @@ try {
         {/* ========================================== */}
         {/* 2. SECÇÃO PRINCIPAL DO DASHBOARD           */}
         {/* ========================================== */}
-        <section className="max-w-[1400px] mx-auto px-6 py-8 relative z-10">
-          <div className="grid md:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start">
+        <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10">
+          <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start">
             
             {/* COLUNA ESQUERDA: ÁREA DINÂMICA (WORKSPACE OU HISTÓRICO) */}
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-8 w-full overflow-hidden">
               
               {/* 🟢 ABA 1: WORKSPACE */}
               {activeTab === 'workspace' && (
-                <div className="animate-in fade-in duration-500 flex flex-col gap-8">
+                <div className="animate-in fade-in duration-500 flex flex-col gap-8 w-full">
                   
                   {!isAnalyzing && !result ? (
                     <>
@@ -498,7 +513,7 @@ try {
                         
                         {/* TOAST INFORMATIVO: O QUE É O PNCP */}
                         <div className="mb-4 p-4 bg-indigo-50/80 border border-indigo-100 rounded-2xl flex items-start sm:items-center gap-4 text-indigo-900 shadow-sm transition-all hover:bg-indigo-50">
-                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center shrink-0 text-lg shadow-inner border border-indigo-200/50">
+                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center shrink-0 text-lg shadow-inner border border-indigo-200/50 hidden sm:flex">
                             ℹ️
                           </div>
                           <div>
@@ -520,8 +535,8 @@ try {
                       </div>
 
                       {/* --- BLOCO 2: FORMULÁRIO DE SUBMISSÃO --- */}
-                      <div id="area-submissao" className="bg-white rounded-[2rem] shadow-xl border border-slate-100 p-6 md:p-8 relative z-20 border-t-4 border-t-violet-500">
-                        <h2 className="text-xl font-black text-slate-900 mb-6 border-b border-slate-100 pb-4 flex items-center gap-3">
+                      <div id="area-submissao" className="bg-white rounded-3xl md:rounded-[2rem] shadow-xl border border-slate-100 p-5 md:p-8 relative z-20 border-t-4 border-t-violet-500 w-full">
+                        <h2 className="text-lg md:text-xl font-black text-slate-900 mb-6 border-b border-slate-100 pb-4 flex items-center gap-3">
                           <span className="text-2xl">📄</span> Nova Submissão Direta
                         </h2>
 
@@ -529,13 +544,13 @@ try {
                         {!token && (
                           <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center text-xl shrink-0">🕵️</div>
+                              <div className="w-10 h-10 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center text-xl shrink-0 hidden sm:flex">🕵️</div>
                               <div>
                                 <h4 className="text-sm font-black text-slate-900">Modo Anónimo Ativo</h4>
                                 <p className="text-xs text-slate-500 font-medium mt-0.5">Inicie sessão para guardar histórico e ativar o Matchmaker de CNAE.</p>
                               </div>
                             </div>
-                            <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); }} className="px-4 py-2 bg-white text-slate-900 text-sm font-bold rounded-xl border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
+                            <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); }} className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-white text-slate-900 text-sm font-bold rounded-xl border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors shrink-0">
                               Entrar na Conta
                             </button>
                           </div>
@@ -549,39 +564,39 @@ try {
                           </div>
                         )}
 
-                        <form onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }} className="space-y-5">
+                        <form onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }} className="space-y-5 w-full">
                           {/* Textarea */}
-                          <div className="relative group">
-                            <div className="absolute top-4 left-4 text-slate-400 group-focus-within:text-violet-500 transition-colors">
+                          <div className="relative group w-full">
+                            <div className="absolute top-4 left-4 text-slate-400 group-focus-within:text-violet-500 transition-colors hidden sm:block">
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                             </div>
                             <textarea 
                               value={text} 
                               onChange={handleTextChange}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-12 pr-4 pt-4 pb-12 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 transition-all resize-none min-h-[160px] text-slate-700 font-medium placeholder:text-slate-400 outline-none" 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-4 sm:pl-12 pr-4 pt-4 pb-12 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 transition-all resize-none min-h-[160px] text-slate-700 font-medium placeholder:text-slate-400 outline-none" 
                               placeholder="Cole o texto do edital aqui para uma análise profunda..."
                             ></textarea>
-                            <div className="absolute bottom-4 right-4 text-xs font-bold text-slate-400 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md">
-                              <span className={text.length >= currentCharLimit ? 'text-red-500' : ''}>{text.length.toLocaleString()}</span> <span className="opacity-50">/ {currentCharLimit.toLocaleString()}</span>
+                            <div className="absolute bottom-4 right-4 text-[10px] sm:text-xs font-bold text-slate-400 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-md">
+                              <span className={text.length >= currentCharLimit ? 'text-red-500' : ''}>{text.length}</span> <span className="opacity-50">/ {currentCharLimit.toLocaleString('pt-BR')}</span>
                             </div>
                           </div>
 
                           {/* Drag & Drop Arquivos */}
-                          <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:border-violet-400 hover:bg-violet-50/50 transition-all group flex flex-col items-center justify-center gap-2 overflow-hidden">
+                          <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:border-violet-400 hover:bg-violet-50/50 transition-all group flex flex-col items-center justify-center gap-2 overflow-hidden w-full">
                             <input type="file" multiple accept=".pdf,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                            <div className="w-12 h-12 bg-slate-100 group-hover:bg-violet-100 group-hover:text-violet-600 text-slate-400 rounded-full flex items-center justify-center text-xl transition-colors">📂</div>
+                            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-100 group-hover:bg-violet-100 group-hover:text-violet-600 text-slate-400 rounded-full flex items-center justify-center text-xl transition-colors">📂</div>
                             <h4 className="text-sm font-bold text-slate-700 group-hover:text-violet-700">Arraste documentos ou clique aqui</h4>
-                            <p className="text-xs text-slate-400 font-medium">Suporta PDF ou TXT até {currentFileLimitMB}MB.</p>
+                            <p className="text-[10px] sm:text-xs text-slate-400 font-medium">Suporta PDF ou TXT até {currentFileLimitMB}MB.</p>
                           </div>
 
                           {/* Lista de Arquivos */}
                           {files.length > 0 && (
-                            <div className="space-y-2">
+                            <div className="space-y-2 w-full">
                               {files.map((file, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-3 bg-violet-50 text-violet-900 text-sm font-bold border border-violet-100 rounded-xl">
-                                  <span className="truncate flex-1">📄 {file.name}</span>
-                                  <div className="flex items-center gap-4 shrink-0">
-                                    <span className="opacity-60 text-xs">{formatMB(file.size)} MB</span>
+                                <div key={idx} className="flex items-center justify-between p-3 bg-violet-50 text-violet-900 text-xs sm:text-sm font-bold border border-violet-100 rounded-xl w-full break-all">
+                                  <span className="truncate flex-1 pr-2">📄 {file.name}</span>
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    <span className="opacity-60 text-[10px] sm:text-xs whitespace-nowrap">{formatMB(file.size)} MB</span>
                                     <button type="button" onClick={() => removeFile(idx)} className="text-violet-400 hover:text-red-500 text-lg transition-colors">&times;</button>
                                   </div>
                                 </div>
@@ -590,11 +605,11 @@ try {
                           )}
 
                           {/* Botão Analisar */}
-                          <button type="submit" disabled={isAnalyzing || isOverLimit} className="w-full bg-slate-950 text-white font-black text-lg py-4 rounded-xl shadow-xl shadow-slate-950/20 hover:bg-violet-600 hover:shadow-violet-600/30 hover:-translate-y-0.5 transition-all duration-300 disabled:opacity-70 disabled:hover:translate-y-0 relative overflow-hidden group">
+                          <button type="submit" disabled={isAnalyzing || isOverLimit} className="w-full bg-slate-950 text-white font-black text-base sm:text-lg py-4 rounded-2xl shadow-xl shadow-slate-950/20 hover:bg-violet-600 hover:shadow-violet-600/30 transition-all duration-300 disabled:opacity-70 relative overflow-hidden group">
                             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
                             <span className="relative flex items-center justify-center gap-2">
                               {isAnalyzing ? "A Extrair Inteligência..." : "Iniciar Análise Estratégica"}
-                              {!isAnalyzing && <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>}
+                              {!isAnalyzing && <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>}
                             </span>
                           </button>
                         </form>
@@ -606,179 +621,226 @@ try {
                     // ==========================================
                     <div 
                       id="area-loading" 
-                      className="bg-white rounded-[2.5rem] p-16 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 animate-in fade-in flex flex-col items-center justify-center min-h-[500px] relative overflow-hidden"
+                      className="bg-white rounded-3xl md:rounded-[2.5rem] p-8 md:p-16 shadow-xl border border-slate-100 animate-in fade-in flex flex-col items-center justify-center min-h-[400px] md:min-h-[500px] relative overflow-hidden w-full text-center"
                     >
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-[scan_2s_ease-in-out_infinite]"></div>
-                      <div className="relative w-24 h-24 mb-10">
+                      <div className="relative w-20 h-20 md:w-24 md:h-24 mb-8 md:mb-10">
                         <div className="absolute inset-0 border-4 border-violet-100 rounded-full"></div>
                         <div className="absolute inset-0 border-4 border-violet-500 rounded-full border-t-transparent animate-spin"></div>
                         <div className="absolute inset-2 bg-violet-50 rounded-full flex items-center justify-center shadow-inner">
-                          <span className="text-4xl animate-bounce">🤖</span>
+                          <span className="text-3xl md:text-4xl animate-bounce">🤖</span>
                         </div>
                       </div>
-                      <h3 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Extraindo Inteligência...</h3>
-                      <p className="text-slate-500 font-medium text-center max-w-md text-lg">
+                      <h3 className="text-2xl md:text-3xl font-black text-slate-900 mb-4 tracking-tight">Extraindo Inteligência...</h3>
+                      <p className="text-slate-500 font-medium text-sm md:text-lg max-w-md">
                         Os nossos modelos estão a ler as entrelinhas e a cruzar dados jurídicos. Isto leva apenas alguns segundos.
                       </p>
                       
-                      {/* Barras de escaner falsas para dar aspeto de "A trabalhar" */}
-                      <div className="w-full max-w-md mt-12 space-y-4 opacity-40">
-                        <div className="h-3 bg-slate-200 rounded-full animate-pulse"></div>
-                        <div className="h-3 bg-slate-200 rounded-full animate-pulse w-5/6 delay-75"></div>
-                        <div className="h-3 bg-slate-200 rounded-full animate-pulse w-4/6 delay-150"></div>
+                      <div className="w-full max-w-[200px] md:max-w-md mt-10 md:mt-12 space-y-3 md:space-y-4 opacity-40">
+                        <div className="h-2 md:h-3 bg-slate-200 rounded-full animate-pulse"></div>
+                        <div className="h-2 md:h-3 bg-slate-200 rounded-full animate-pulse w-5/6 delay-75"></div>
+                        <div className="h-2 md:h-3 bg-slate-200 rounded-full animate-pulse w-4/6 delay-150"></div>
                       </div>
                     </div>
-                  ) : result ? (
+                  ) : (
+                    // ==========================================
                     // ESTADO DE RESULTADO (APÓS ANÁLISE)
-                  <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500" id="area-resultados">
-                    
-                    {/* CARD PRINCIPAL */}
-                    <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-xl border border-slate-100 flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start relative overflow-hidden break-words">
-                      <div className={`absolute top-0 left-0 w-full h-1.5 ${(result?.score || 0) >= 70 ? 'bg-emerald-500' : (result?.score || 0) >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                    // ==========================================
+                    <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500 w-full overflow-hidden" id="area-resultados">
                       
-                      <div className="flex-1 w-full">
-                        <div className="flex flex-wrap items-center gap-2 mb-4">
-                          <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-slate-200">Motor da IA: {modelSource || "Bawzi"}</span>
-                          {result?.effort && (
-                            <span className="text-[10px] font-black text-violet-700 bg-violet-50 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-violet-100">Esforço: {result.effort}</span>
+                      {/* CARD PRINCIPAL */}
+                      <div className="bg-white rounded-3xl p-5 md:p-10 shadow-xl border border-slate-100 flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start relative overflow-hidden w-full">
+                        <div className={`absolute top-0 left-0 w-full h-1.5 ${(result?.score || 0) >= 70 ? 'bg-emerald-500' : (result?.score || 0) >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                        
+                        <div className="flex-1 w-full text-left">
+                          <div className="flex flex-wrap items-center gap-2 mb-4">
+                            <span className="text-[9px] md:text-[10px] font-black text-slate-500 bg-slate-100 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg uppercase tracking-widest border border-slate-200">Motor: {modelSource || "IA"}</span>
+                            {result?.effort && (
+                              <span className="text-[9px] md:text-[10px] font-black text-violet-700 bg-violet-50 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg uppercase tracking-widest border border-violet-100">Esforço: {result.effort}</span>
+                            )}
+                          </div>
+
+                          {isCachedResult && (
+                            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-4 shadow-sm w-full">
+                              <div className="w-8 h-8 md:w-10 md:h-10 bg-emerald-100 rounded-full flex items-center justify-center text-lg md:text-xl shrink-0">⚡</div>
+                              <div className="w-full break-words">
+                                <strong className="block text-xs md:text-sm font-black">Recuperação Instantânea</strong>
+                                <p className="text-xs md:text-sm font-medium text-emerald-700/90 leading-relaxed">Este edital já foi processado. Parecer carregado do histórico.</p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          <h2 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 md:mb-4 leading-tight break-words w-full">
+                            {result?.title || result?.classification || "Análise Concluída"}
+                          </h2>
+                          
+                          <div className="flex flex-wrap items-center gap-2 mb-5 md:mb-6">
+                            <span className={`px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-wider ${result?.classification?.includes('Força') ? 'bg-green-100 text-green-700' : result?.classification?.includes('Atenção') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                              {result?.classification}
+                            </span>
+                          </div>
+
+                          <p className="text-slate-600 text-sm md:text-lg leading-relaxed mb-6 break-words w-full">
+                            {result?.summary}
+                          </p>
+                          
+                          {result?.estimated_value && (
+                            <div className="inline-flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 text-slate-600 font-bold text-sm bg-slate-50 p-4 md:px-6 md:py-4 rounded-2xl md:rounded-3xl border border-slate-200 shadow-sm w-full lg:w-auto overflow-hidden">
+                              <span className="text-xl md:text-2xl hidden sm:block">💰</span>
+                              <div className="flex flex-col w-full min-w-0 break-words">
+                                <span className="text-[9px] md:text-[10px] text-slate-400 uppercase tracking-widest mb-0.5">Valor Estimado</span>
+                                <span className="text-slate-900 text-sm md:text-base truncate w-full">{result.estimated_value}</span>
+                              </div>
+                            </div>
                           )}
                         </div>
 
-                        {isCachedResult && (
-                          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-4 shadow-sm">
-                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-xl shrink-0">⚡</div>
-                            <div>
-                              <strong className="block text-sm font-black">Recuperação Instantânea</strong>
-                              <p className="text-sm font-medium text-emerald-700/90">Este edital já foi processado. Parecer carregado do histórico.</p>
+                        {/* BOLA DO SCORE */}
+                        <div className={`shrink-0 w-28 h-28 md:w-36 md:h-36 lg:w-40 lg:h-40 rounded-full md:rounded-[2rem] border-4 md:border-[6px] flex flex-col items-center justify-center shadow-lg transition-transform hover:scale-105 duration-500 mx-auto lg:mx-0 ${(result?.score || 0) >= 70 ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : (result?.score || 0) >= 45 ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
+                          <span className="text-4xl md:text-6xl lg:text-7xl font-black leading-none tracking-tighter">{result?.score || 0}</span>
+                          <span className="text-[8px] md:text-[10px] lg:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score</span>
+                        </div>
+                      </div>
+
+                      {/* INTELIGÊNCIA DE PREÇOS */}
+                      {result?.pricing_intelligence && (
+                        <div className="bg-emerald-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden break-words w-full">
+                          <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/20 blur-[60px] rounded-full pointer-events-none hidden md:block"></div>
+                          <h3 className="text-lg md:text-xl font-black mb-6 flex flex-wrap items-center gap-3 relative z-10 w-full">
+                            <span className="bg-emerald-800/50 p-2 md:p-2.5 rounded-xl border border-emerald-700/50 text-xl shadow-inner">📈</span> Inteligência de Preço
+                            <span className="ml-auto text-[8px] md:text-[10px] font-black uppercase tracking-widest bg-emerald-800 text-emerald-300 px-2.5 md:px-3 py-1 rounded-full">Beta</span>
+                          </h3>
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6 relative z-10 w-full">
+                            <div className="bg-emerald-900/50 p-4 md:p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center w-full break-words">
+                              <span className="text-emerald-400/80 text-[10px] md:text-xs font-black uppercase tracking-widest block mb-2">Veredicto Financeiro</span>
+                              <strong className={`text-lg md:text-2xl font-black ${result.pricing_intelligence.financial_verdict?.includes('Alta') ? 'text-emerald-300' : result.pricing_intelligence.financial_verdict?.includes('Apertada') ? 'text-amber-300' : 'text-red-400'}`}>
+                                {result.pricing_intelligence.financial_verdict}
+                              </strong>
+                            </div>
+                            <div className="bg-emerald-900/50 p-4 md:p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center w-full break-words">
+                              <span className="text-emerald-400/80 text-[10px] md:text-xs font-black uppercase tracking-widest block mb-2">Deságio de Mercado</span>
+                              <strong className="text-lg md:text-2xl font-black text-white">{result.pricing_intelligence.estimated_discount}</strong>
+                            </div>
+                            <div className="bg-emerald-900/50 p-4 md:p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center w-full break-words">
+                              <span className="text-emerald-400/80 text-[10px] md:text-xs font-black uppercase tracking-widest block mb-2">Análise de Margem</span>
+                              <p className="text-xs md:text-sm text-emerald-50 leading-relaxed font-medium">{result.pricing_intelligence.market_analysis}</p>
                             </div>
                           </div>
-                        )}
-                        
-                        <h2 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 leading-tight">{result?.title || result?.classification}</h2>
-                        
-                        <div className="flex flex-wrap items-center gap-2 mb-6">
-                          <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${result?.classification?.includes('Força') ? 'bg-green-100 text-green-700' : result?.classification?.includes('Atenção') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                            {result?.classification}
-                          </span>
                         </div>
+                      )}
 
-                        <p className="text-slate-600 text-base md:text-lg leading-relaxed">{result?.summary}</p>
-                        
-                        {result?.estimated_value && (
-                          <div className="mt-6 inline-flex flex-col sm:flex-row items-start sm:items-center gap-3 text-slate-600 font-bold text-sm bg-slate-50 px-5 py-3 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto">
-                            <span className="text-xl hidden sm:block">💰</span>
-                            <span className="break-words w-full">Valor Estimado: <span className="text-slate-900 break-all">{result.estimated_value}</span></span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* BOLA DE SCORE (Ajustada no mobile) */}
-                      <div className={`shrink-0 w-32 h-32 md:min-w-[150px] md:h-[150px] rounded-[2rem] border-4 flex flex-col items-center justify-center shadow-lg ${(result?.score || 0) >= 70 ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : (result?.score || 0) >= 45 ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
-                        <span className="text-5xl md:text-6xl font-black leading-none tracking-tighter">{result?.score || 0}</span>
-                        <span className="text-[10px] md:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score</span>
-                      </div>
-                    </div>
-
-                    {/* INTELIGÊNCIA DE PREÇOS */}
-                    {result?.pricing_intelligence && (
-                      <div className="bg-emerald-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden break-words">
-                        <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/20 blur-[60px] rounded-full pointer-events-none"></div>
-                        <h3 className="text-lg md:text-xl font-black mb-6 flex items-center gap-3 relative z-10 flex-wrap">
-                          <span className="bg-emerald-800/50 p-2.5 rounded-xl border border-emerald-700/50 text-xl md:text-2xl shadow-inner">📈</span> Inteligência de Preço
-                          <span className="ml-auto text-[10px] font-black uppercase tracking-widest bg-emerald-800 text-emerald-300 px-3 py-1 rounded-full">Beta</span>
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 relative z-10">
-                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Veredicto Financeiro</span>
-                            <strong className={`text-xl md:text-2xl font-black ${result.pricing_intelligence.financial_verdict?.includes('Alta') ? 'text-emerald-300' : result.pricing_intelligence.financial_verdict?.includes('Apertada') ? 'text-amber-300' : 'text-red-400'}`}>
-                              {result.pricing_intelligence.financial_verdict}
-                            </strong>
-                          </div>
-                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Deságio de Mercado</span>
-                            <strong className="text-xl md:text-2xl font-black text-white">{result.pricing_intelligence.estimated_discount}</strong>
-                          </div>
-                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Análise de Margem</span>
-                            <p className="text-sm text-emerald-50 leading-relaxed font-medium">{result.pricing_intelligence.market_analysis}</p>
+                      {/* SCORE DE RISCO DO ÓRGÃO (Via Portal da Transparência) */}
+                      {result?.orgao_risk && (
+                        <div className="bg-slate-900 rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-xl text-white relative overflow-hidden group break-words w-full">
+                          <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-blue-500/20 blur-[60px] rounded-full hidden md:block"></div>
+                          
+                          <h3 className="text-lg md:text-xl font-bold mb-5 flex flex-wrap items-center gap-3 relative z-10 w-full">
+                            <span className="bg-white/10 p-2 md:p-2.5 rounded-xl border border-white/10 text-lg md:text-xl">🏛️</span> 
+                            Risco do Órgão
+                            <span className="ml-auto text-[8px] md:text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-200 px-2.5 md:px-3 py-1 rounded-full border border-blue-400/30 text-center">
+                              Transparência
+                            </span>
+                          </h3>
+                          
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 md:gap-6 relative z-10 bg-black/30 p-4 md:p-5 rounded-2xl border border-white/5 w-full">
+                            {/* BOLA DO SCORE COM NOVOS ESTADOS */}
+                            <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 shrink-0
+                              ${result.orgao_risk.risco === 'Alto' ? 'border-red-500 text-red-400 bg-red-950' : 
+                                result.orgao_risk.risco === 'Médio' ? 'border-amber-500 text-amber-400 bg-amber-950' : 
+                                result.orgao_risk.risco === 'Baixo' ? 'border-emerald-500 text-emerald-400 bg-emerald-950' :
+                                'border-slate-600 text-slate-400 bg-slate-800/50'}`}>
+                              {result.orgao_risk.score_pagamento}
+                            </div>
+                            <div className="w-full break-words">
+                              <strong className="block text-base md:text-lg font-bold mb-1">
+                                Risco {result.orgao_risk.risco} de Atraso
+                              </strong>
+                              <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed">
+                                {result.orgao_risk.status}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* PARECER ESTRATÉGICO */}
-                    {result?.rationale && (
-                      <div className="bg-slate-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden group break-words">
-                        <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full"></div>
-                        <h3 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-3 text-violet-200 relative z-10">
-                          <span className="bg-white/10 p-2.5 rounded-xl border border-white/10">🧠</span> Parecer do Juiz Final
-                        </h3>
-                        <p className="text-slate-300 leading-relaxed text-base md:text-lg whitespace-pre-wrap relative z-10 font-medium break-words">{result.rationale}</p>
-                      </div>
-                    )}
+                      {/* PARECER ESTRATÉGICO */}
+                      {result?.rationale && (
+                        <div className="bg-slate-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden group break-words w-full">
+                          <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full hidden md:block"></div>
+                          <h3 className="text-lg md:text-xl font-bold mb-5 md:mb-6 flex items-center gap-3 text-violet-200 relative z-10">
+                            <span className="bg-white/10 p-2 md:p-2.5 rounded-xl border border-white/10 text-lg md:text-xl">🧠</span> Parecer do Juiz Final
+                          </h3>
+                          <p className="text-slate-300 leading-relaxed text-sm md:text-lg whitespace-pre-wrap relative z-10 font-medium break-words w-full">{result.rationale}</p>
+                        </div>
+                      )}
 
-                    {/* RECOMENDAÇÃO */}
-                    <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-md border border-slate-100 break-words">
-                      <h3 className="text-lg md:text-xl font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-3"><span className="text-2xl">💡</span> Recomendação Estratégica</h3>
-                      <p className="text-slate-700 font-medium text-base md:text-lg leading-relaxed bg-amber-50/50 p-5 md:p-6 rounded-2xl border border-amber-100/50">{result?.recommendation}</p>
-                    </div>
+                      {/* RECOMENDAÇÃO E GRID DE DETALHES */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 w-full">
+                        
+                        <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 flex flex-col w-full break-words">
+                          <h3 className="text-lg font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3"><span className="text-xl md:text-2xl">💡</span> Recomendação</h3>
+                          <p className="text-slate-700 font-medium text-sm md:text-base leading-relaxed bg-amber-50/50 p-5 md:p-6 rounded-2xl border border-amber-100/50 w-full">{result?.recommendation}</p>
+                        </div>
 
-                    {/* GRID: RISCOS E CHECKLIST */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 break-words">
-                        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">🛡️</span> Matriz de Riscos</h3>
-                        <div className="space-y-4">
-                          {result?.risks && result.risks.length > 0 ? result.risks.map((risk: any, i: number) => {
-                              const title = typeof risk === 'string' ? risk : (risk.title || 'Risco Identificado');
-                              const desc = typeof risk === 'string' ? null : (risk.quote || risk.description || risk.text);
-                              return (
-                                <div key={i} className="flex flex-col sm:flex-row items-start gap-4 p-5 bg-red-50/50 rounded-2xl border border-red-100/50 hover:bg-red-50 transition-colors w-full">
-                                  <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 font-bold hidden sm:flex">!</div>
-                                  <div className="flex-1 w-full">
-                                    <span className="text-red-900 text-sm font-bold leading-relaxed block break-words">{title}</span>
-                                    {desc && <span className="text-red-800/80 text-xs italic mt-1.5 block leading-relaxed break-words">"{desc}"</span>}
+                        <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 w-full break-words">
+                          <h3 className="text-lg font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3"><span className="text-xl md:text-2xl">🛡️</span> Riscos Fatais</h3>
+                          <div className="space-y-3 md:space-y-4 w-full">
+                            {result?.risks && result.risks.length > 0 ? result.risks.map((risk: any, i: number) => {
+                                const title = typeof risk === 'string' ? risk : (risk.title || 'Risco Identificado');
+                                const desc = typeof risk === 'string' ? null : (risk.quote || risk.description || risk.text);
+                                return (
+                                  <div key={i} className="flex flex-col sm:flex-row items-start gap-3 md:gap-4 p-4 md:p-5 bg-red-50/50 rounded-2xl border border-red-100/50 w-full">
+                                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 font-bold text-sm md:text-base hidden sm:flex">!</div>
+                                    <div className="w-full break-words">
+                                      <span className="text-red-900 text-xs md:text-sm font-bold leading-relaxed block break-words w-full">{title}</span>
+                                      {desc && <span className="text-red-800/80 text-[10px] md:text-xs italic mt-1 md:mt-1.5 block leading-relaxed break-words w-full">"{desc}"</span>}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            }) : (
-                            <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 p-5 rounded-2xl font-bold border border-emerald-100">
-                              <span className="text-xl">✓</span> Nenhum risco fatal detetado.
-                            </div>
-                          )}
+                                );
+                              }) : (
+                              <div className="flex items-center gap-2 md:gap-3 bg-emerald-50 text-emerald-700 p-4 md:p-5 rounded-2xl font-bold border border-emerald-100 text-xs md:text-sm w-full">
+                                <span className="text-lg md:text-xl">✓</span> Nenhum risco fatal detetado.
+                              </div>
+                            )}
+                          </div>
                         </div>
+
                       </div>
 
-                      <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 break-words">
-                        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">📋</span> Checklist Operacional</h3>
-                        <div className="space-y-4">
-                          {result?.checklist && result.checklist.length > 0 ? result.checklist.map((item: any, i: number) => {
-                              const text = typeof item === 'string' ? item : (item.title || item.text || item.description);
-                              return (
-                                <div key={i} className="flex items-start gap-4 p-5 bg-emerald-50/30 rounded-2xl border border-emerald-100/30 hover:bg-emerald-50/80 transition-colors w-full">
-                                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 font-bold hidden sm:flex">✓</div>
-                                  <span className="text-emerald-900 text-sm font-medium leading-relaxed sm:mt-1 break-words w-full">{text}</span>
-                                </div>
-                              );
-                            }) : <p className="text-slate-500 bg-slate-50 p-5 rounded-2xl text-sm italic font-medium">Nenhuma instrução adicional.</p>}
+                      {/* CHECKLIST (Largura total abaixo) */}
+                      {result?.checklist && result.checklist.length > 0 && (
+                        <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 w-full break-words">
+                          <h3 className="text-lg font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3"><span className="text-xl md:text-2xl">📋</span> Checklist Operacional</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 w-full">
+                            {result.checklist.map((item: any, i: number) => {
+                                const text = typeof item === 'string' ? item : (item.title || item.text || item.description);
+                                return (
+                                  <div key={i} className="flex items-start gap-3 md:gap-4 p-4 bg-emerald-50/30 rounded-2xl border border-emerald-100/30 w-full">
+                                    <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 font-bold text-xs md:text-sm mt-0.5">✓</div>
+                                    <span className="text-emerald-900 text-xs md:text-sm font-medium leading-relaxed break-words w-full">{text}</span>
+                                  </div>
+                                );
+                              })}
+                          </div>
                         </div>
-                      </div>
+                      )}
+
+                      {/* BOTÃO FINAL - NOVA ANÁLISE */}
+                      <button 
+                        onClick={handleResetAnalysis} 
+                        className="relative w-full mt-4 md:mt-8 py-4 md:py-5 bg-slate-900 text-white font-black text-sm md:text-base lg:text-lg rounded-2xl md:rounded-3xl shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
+                        <span className="relative z-10 flex items-center justify-center gap-2 md:gap-3 uppercase tracking-widest md:tracking-normal md:uppercase-none">
+                          <svg className="w-4 h-4 md:w-5 md:h-5 lg:w-6 lg:h-6 group-hover:-rotate-180 transition-transform duration-700 ease-in-out" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                          </svg>
+                          Analisar Novo Documento
+                        </span>
+                      </button>
+
                     </div>
-
-                    {/* BOTÃO FINAL - NOVA ANÁLISE */}
-                    <button 
-                      onClick={handleResetAnalysis} 
-                      className="relative w-full mt-6 md:mt-10 py-5 bg-slate-900 text-white font-black text-base md:text-lg rounded-3xl md:rounded-[2rem] shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
-                      <span className="relative z-10 flex items-center justify-center gap-3">
-                        <svg className="w-5 h-5 md:w-6 md:h-6 group-hover:-rotate-180 transition-transform duration-700 ease-in-out" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                        </svg>
-                        Analisar Outro Edital
-                      </span>
-                    </button>
-                  </div>
-                  ) : null}
+                  )}
                 </div>
               )}
 
