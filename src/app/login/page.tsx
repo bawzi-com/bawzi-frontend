@@ -191,8 +191,8 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center mt-8 text-sm text-slate-500 font-medium">
-          {authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'} 
+        <div className="text-center mt-8 text-sm text-slate-500 font-medium">
+          <span>{authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'}</span> 
           <button 
             onClick={() => {
               setAuthMode(authMode === 'register' ? 'login' : 'register');
@@ -202,7 +202,7 @@ export default function LoginPage() {
           >
             {authMode === 'register' ? 'Fazer Login' : 'Criar Conta Grátis'}
           </button>
-        </p>
+        </div>
       </div>
     </div>
   );
