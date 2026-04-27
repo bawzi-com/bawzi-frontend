@@ -17,7 +17,7 @@ useEffect(() => {
           try {
             const token = localStorage.getItem('bawzi_token');
             const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://bawzi-api.onrender.com';
-            const apiUrl = `${baseUrl.replace(/\/$/, '')}/api/auth/me`;
+            const apiUrl = `${baseUrl.replace(/\/$/, '')}/api/users/me`;
 
             const response = await fetch(apiUrl, {
               headers: { 'Authorization': `Bearer ${token}` }
