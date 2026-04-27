@@ -1,6 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Lock } from 'lucide-react';
 
 interface PricingSectionProps {
   onRegister?: () => void;
@@ -8,30 +10,33 @@ interface PricingSectionProps {
 }
 
 export default function PricingSection({ onRegister, onUpgrade }: PricingSectionProps) {
+  // 🟢 Estado de carregamento ativado
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const router = useRouter();
 
-  // Função inteligente para o botão de Registar
   const handleRegisterClick = () => {
     if (onRegister) {
-      onRegister(); // Se estiver no Dashboard, abre o modal
+      onRegister(); 
     } else {
-      router.push('/login'); // Se estiver noutra página, manda para o login
+      router.push('/login'); 
     }
   };
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.bawzi.com';
 
-  // Função inteligente para o botão de Assinar
   const handleUpgradeClick = async (tier: number) => {
     if (onUpgrade) {
-      onUpgrade(tier); // Se estiver no Dashboard, usa a sua função já existente
+      onUpgrade(tier);
     } else {
-      // Lógica de fallback (ex: se estiver na página /plans)
       const token = typeof window !== 'undefined' ? localStorage.getItem('bawzi_token') : null;
       if (!token) {
         handleRegisterClick();
         return;
       }
+      
+      // 🟢 O utilizador clicou, ligamos o overlay instantaneamente
+      setIsCheckoutLoading(true);
+
       try {
         const response = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
           method: 'POST',
@@ -39,14 +44,22 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
           body: JSON.stringify({ tier }),
         });
         const data = await response.json();
-        if (data.url) window.location.href = data.url;
+        
+        if (data.url) {
+           window.location.href = data.url;
+           // Nota: Não damos "false" aqui porque ele vai sair da página, 
+           // queremos que o overlay continue a rodar até a tela mudar.
+        } else {
+           setIsCheckoutLoading(false); // Desliga se der erro sem URL
+           alert("Erro ao iniciar processo de pagamento.");
+        }
       } catch (err) {
-        alert("Erro ao iniciar processo de pagamento.");
+        setIsCheckoutLoading(false); // Desliga se o servidor der erro
+        alert("Erro de conexão ao iniciar pagamento.");
       }
     }
   };
 
-  // Os planos são definidos AQUI, o HTML vai ler automaticamente desta lista
   const tiers = [
     {
       name: "Explorador",
@@ -86,7 +99,7 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
       features: ["Até 150.000 caracteres", "Arquivos até 20MB", "Checklist Documental IA"],
       buttonText: "Assinar Pro",
       tierLevel: 3,
-      popular: true // Este é o nosso plano em Destaque
+      popular: true
     },
     {
       name: "Dominador",
@@ -102,7 +115,6 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
 
   return (
     <>
-      {/* GRID DE PREÇOS GERADO DINAMICAMENTE */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch mb-16">
         {tiers.map((tier, index) => (
           <div 
@@ -113,8 +125,6 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
                 : "bg-white border border-slate-200 shadow-xl shadow-slate-100 hover:border-violet-200"
             } ${tier.tierLevel === -1 ? "bg-slate-50" : ""}`}
           >
-            
-            {/* Tag de destaque para o plano mais popular */}
             {tier.popular && (
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-violet-600 to-pink-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap shadow-lg">
                 Melhor Escolha
@@ -180,7 +190,6 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
         ))}
       </div>
 
-      {/* BANNER ENTERPRISE */}
       <div className="bg-slate-900 rounded-[2.5rem] p-10 lg:p-16 flex flex-col lg:flex-row justify-between items-center gap-10 text-white shadow-2xl relative overflow-hidden group">
         <div className="absolute -right-20 -bottom-20 w-96 h-96 bg-violet-600/30 blur-[100px] rounded-full group-hover:bg-violet-500/40 transition-colors duration-700"></div>
         <div className="relative z-10 flex-1 max-w-2xl">
@@ -194,6 +203,28 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
           Falar com Especialistas
         </button>
       </div>
+
+      {/* 🟢 OVERLAY DE CHECKOUT (Agora inserido corretamente no DOM) */}
+      {isCheckoutLoading && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm transition-all duration-300">
+          <div className="bg-white p-8 md:p-10 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-[90%] mx-auto text-center transform scale-100 animate-in fade-in zoom-in duration-200">
+            
+            <div className="relative w-20 h-20 mb-6">
+              <div className="absolute inset-0 border-4 border-violet-100 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-violet-600 rounded-full border-t-transparent animate-spin"></div>
+              <Lock className="absolute inset-0 m-auto text-violet-600" size={24} />
+            </div>
+            
+            <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">
+              Ambiente Seguro
+            </h3>
+            
+            <p className="text-slate-500 font-medium leading-relaxed">
+              Estamos a preparar o seu ambiente de pagamento 100% encriptado no <span className="font-bold text-slate-700">Stripe</span>. Aguarde um momento...
+            </p>
+          </div>
+        </div>
+      )}
     </>
   );
 }
