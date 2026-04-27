@@ -1,8 +1,22 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 export default function Footer() {
+  // 1. Estado que controla se o link secreto aparece
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  useEffect(() => {
+    // 2. Lógica para decidir quem vê o link. 
+    // Pode mudar o '4' para o e-mail do admin, se preferir.
+    const userTier = localStorage.getItem('bawzi_tier');
+    
+    if (userTier === '4') {
+      setIsAuthorized(true);
+    }
+  }, []);
+
   return (
     <footer className="bg-white text-slate-500 relative overflow-hidden border-t border-slate-200/60">
       
@@ -49,6 +63,22 @@ export default function Footer() {
                 <span className="bg-violet-100 text-violet-700 text-[9px] font-bold px-2 py-0.5 rounded-full group-hover:bg-violet-600 group-hover:text-white transition-colors">Novo</span>
               </Link>
             </li>
+            
+            {/* 3. BLOCO CONDICIONAL DA DOCUMENTAÇÃO API */}
+            {isAuthorized && (
+              <li>
+                <Link 
+                  href={`${process.env.NEXT_PUBLIC_API_URL || 'https://api.bawzi.com'}/docs`} 
+                  target="_blank"
+                  className="group flex items-center gap-2 hover:text-violet-600 transition-colors"
+                >
+                  Documentação API 
+                  <span className="bg-violet-100 text-violet-700 text-[9px] font-bold px-2 py-0.5 rounded-full group-hover:bg-violet-600 group-hover:text-white transition-colors">
+                    Restrito
+                  </span>
+                </Link>
+              </li>
+            )}
           </ul>
         </div>
 
