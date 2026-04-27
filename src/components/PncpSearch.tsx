@@ -26,6 +26,8 @@ export default function PncpSearch({ onAnalyzeOportunity }: PncpSearchProps) {
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   // Garante que o componente só renderize dados localizados após montar no cliente
   useEffect(() => {
     setMounted(true);
@@ -50,7 +52,7 @@ export default function PncpSearch({ onAnalyzeOportunity }: PncpSearchProps) {
     setError('');
     
     try {
-      const res = await fetch(`http://localhost:8000/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}`);
+      const res = await fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Falha na busca.');
       setResults(data.data || []);
@@ -67,8 +69,8 @@ export default function PncpSearch({ onAnalyzeOportunity }: PncpSearchProps) {
     try {
       // 🚀 Promessas Paralelas: Máxima velocidade para buscar o edital e a inteligência de preços
       const [resTexto, resMedia] = await Promise.all([
-        fetch(`http://localhost:8000/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`),
-        fetch(`http://localhost:8000/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}`)
+        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`),
+        fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}`)
       ]);
 
       const dataTexto = await resTexto.json();

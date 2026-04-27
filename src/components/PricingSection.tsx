@@ -19,6 +19,8 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
     }
   };
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   // Função inteligente para o botão de Assinar
   const handleUpgradeClick = async (tier: number) => {
     if (onUpgrade) {
@@ -31,7 +33,7 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
         return;
       }
       try {
-        const response = await fetch('http://localhost:8000/api/billing/create-checkout-session', {
+        const response = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ tier }),

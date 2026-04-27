@@ -81,6 +81,7 @@ export default function AnalysisApp() {
   const isOverLimit = isOverTextLimit || isOverFileLimit;
   const [isCachedResult, setIsCachedResult] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // ==========================================
   // HANDLERS
@@ -313,7 +314,7 @@ try {
          payload.tier = 1; 
       }
 
-      const response = await fetch(`http://localhost:8000${endpoint}`, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify(payload),
@@ -349,7 +350,7 @@ try {
   const handleUpgrade = async (tier: number) => {
     if (!token) { setAuthMode('register'); setShowAuthModal(true); return; }
     try {
-      const response = await fetch('http://localhost:8000/api/billing/create-checkout-session', {
+      const response = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ tier }),

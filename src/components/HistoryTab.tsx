@@ -12,10 +12,17 @@ export default function HistoryTab({ token }: { token: string }) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // ESTADO DE HIDRATAÇÃO SEGURA
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
+    setIsMounted(true);
+    
     const loadData = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/analyses/history', {
+        const res = await fetch(`${API_URL}/api/analyses/history`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -44,12 +51,11 @@ export default function HistoryTab({ token }: { token: string }) {
   };
 
   const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Evita abrir os detalhes do cartão
+    e.stopPropagation();
 
     if (!confirm("Tem a certeza que deseja eliminar esta análise? Esta ação não pode ser desfeita.")) return;
 
     try {
-      // Usando a variável de ambiente para funcionar na nuvem (ou localhost)
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const tokenLocal = localStorage.getItem('bawzi_token') || token;
       
@@ -59,7 +65,6 @@ export default function HistoryTab({ token }: { token: string }) {
       });
 
       if (res.ok) {
-        // Remove do ecrã instantaneamente
         setAnalyses(prev => prev.filter((item: any) => item.id !== id));
       } else {
         const error = await res.json();
@@ -87,6 +92,9 @@ export default function HistoryTab({ token }: { token: string }) {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredAnalyses.slice(start, start + itemsPerPage);
   }, [filteredAnalyses, currentPage]);
+
+  // Previne renderização completa antes do cliente estar montado (Evita Erro 418 Global)
+  if (!isMounted) return null;
 
   if (isLoading) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">A carregar o cofre estratégico...</div>;
 
@@ -125,7 +133,8 @@ export default function HistoryTab({ token }: { token: string }) {
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-3 mb-6">
               <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-4 py-2 rounded-xl uppercase tracking-widest border border-slate-200">
-                📅 {new Date(res.created_at || Date.now()).toLocaleDateString()}
+                {/* 🟢 CORRIGIDO: Usando 'res' em vez de 'item' e garantindo hidratação */}
+                <span>📅 {isMounted && res.created_at ? new Date(res.created_at).toLocaleDateString() : 'A processar...'}</span>
               </span>
               <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-4 py-2 rounded-xl uppercase tracking-widest border border-violet-100">
                 🤖 {res.model_source || "Motor Bawzi"}
@@ -270,17 +279,16 @@ export default function HistoryTab({ token }: { token: string }) {
                       {item.title || "Sem Título"}
                     </h3>
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                      <span>📅 {new Date(item.created_at).toLocaleDateString()}</span>
+                      {/* 🟢 CORRIGIDO: Data dinâmica com hidratação segura */}
+                      <span>📅 {isMounted && item.created_at ? new Date(item.created_at).toLocaleDateString() : '...'}</span>
                       <span className="h-1 w-1 bg-slate-300 rounded-full"></span>
                       <span className={score >= 70 ? 'text-emerald-500' : 'text-amber-500'}>{item.classification}</span>
                     </div>
                   </div>
                 </div>
                 
-                {/* LADO DIREITO: BOTÕES ALINHADOS (Eliminar, Favorito, Detalhes) */}
+                {/* LADO DIREITO: BOTÕES ALINHADOS */}
                 <div className="flex items-center gap-2 md:gap-3 shrink-0 self-end md:self-auto mt-4 md:mt-0">
-                  
-                  {/* Botão Eliminar */}
                   <button 
                     onClick={(e) => handleDeleteAnalysis(item.id, e)}
                     className="p-3 md:p-4 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
@@ -288,8 +296,6 @@ export default function HistoryTab({ token }: { token: string }) {
                   >
                     🗑️
                   </button>
-
-                  {/* Botão Favorito */}
                   <button 
                     onClick={(e) => toggleFavorite(e, item.id)}
                     className={`p-3 md:p-4 rounded-2xl transition-all ${isFav ? 'bg-amber-100 text-amber-500 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100'}`}
@@ -297,8 +303,6 @@ export default function HistoryTab({ token }: { token: string }) {
                   >
                     {isFav ? '★' : '☆'}
                   </button>
-
-                  {/* Botão Ver Detalhes */}
                   <div className="px-5 py-3 md:px-6 md:py-4 bg-slate-900 text-white font-black rounded-2xl group-hover:bg-violet-600 transition-all text-[10px] md:text-xs uppercase tracking-widest shadow-lg group-hover:shadow-violet-500/30">
                     Ver Detalhes
                   </div>
@@ -330,7 +334,6 @@ export default function HistoryTab({ token }: { token: string }) {
           </button>
         </div>
       )}
-
     </div>
   );
 }

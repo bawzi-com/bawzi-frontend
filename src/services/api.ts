@@ -1,6 +1,6 @@
 // src/services/api.ts
 
-const API_URL = 'http://localhost:8000/api';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function fetchUserProfile(token: string) {
   const response = await fetch(`${API_URL}/users/me`, {

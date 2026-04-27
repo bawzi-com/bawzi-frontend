@@ -14,13 +14,15 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
     email: userData?.email || '',
   });
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setMessage(null);
 
     try {
-      const res = await fetch('http://localhost:8000/api/users/me', {
+      const res = await fetch(`${API_URL}/api/users/me`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
@@ -51,7 +53,7 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
 
     setIsDeleting(true);
     try {
-      const res = await fetch('http://localhost:8000/api/users/me', {
+      const res = await fetch(`${API_URL}/api/users/me`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });

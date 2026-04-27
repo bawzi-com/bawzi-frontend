@@ -25,6 +25,8 @@ export default function CompanyProfileForm({ userToken, initialData, is_admin, o
   // 2. Estados de Carregamento e Feedback
   const [isSaving, setIsSaving] = useState(false);
   const [isFetching, setIsFetching] = useState(false);
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   
   // 🟢 O Cérebro do Feedback (Aceita info, success e error)
   const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error', msg: string } | null>(null);
@@ -94,7 +96,7 @@ export default function CompanyProfileForm({ userToken, initialData, is_admin, o
         }
       };
 
-      const response = await fetch('http://localhost:8000/api/users/me', {
+      const response = await fetch(`${API_URL}/api/users/me`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
