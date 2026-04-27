@@ -24,18 +24,29 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.bawzi.com';
 
+// Função inteligente para o botão de Assinar
   const handleUpgradeClick = async (tier: number) => {
+    // 🟢 LIGA O LOADING IMEDIATAMENTE (Para ambos os casos)
+    setIsCheckoutLoading(true);
+
     if (onUpgrade) {
-      onUpgrade(tier);
+      // Se estiver no Dashboard, executa a função que veio por prop
+      try {
+        await onUpgrade(tier);
+        // Nota: Se o onUpgrade mudar de página, o loading fica até sumir.
+        // Se houver erro, precisamos desligar:
+      } catch (err) {
+        setIsCheckoutLoading(false);
+      }
     } else {
+      // Lógica de fallback (Página de planos pública)
       const token = typeof window !== 'undefined' ? localStorage.getItem('bawzi_token') : null;
+      
       if (!token) {
+        setIsCheckoutLoading(false);
         handleRegisterClick();
         return;
       }
-      
-      // 🟢 O utilizador clicou, ligamos o overlay instantaneamente
-      setIsCheckoutLoading(true);
 
       try {
         const response = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
@@ -44,18 +55,15 @@ export default function PricingSection({ onRegister, onUpgrade }: PricingSection
           body: JSON.stringify({ tier }),
         });
         const data = await response.json();
-        
         if (data.url) {
-           window.location.href = data.url;
-           // Nota: Não damos "false" aqui porque ele vai sair da página, 
-           // queremos que o overlay continue a rodar até a tela mudar.
+          window.location.href = data.url;
         } else {
-           setIsCheckoutLoading(false); // Desliga se der erro sem URL
-           alert("Erro ao iniciar processo de pagamento.");
+          setIsCheckoutLoading(false);
+          alert("Erro ao iniciar processo de pagamento.");
         }
       } catch (err) {
-        setIsCheckoutLoading(false); // Desliga se o servidor der erro
-        alert("Erro de conexão ao iniciar pagamento.");
+        setIsCheckoutLoading(false);
+        alert("Erro ao iniciar processo de pagamento.");
       }
     }
   };
