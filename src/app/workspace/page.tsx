@@ -26,9 +26,13 @@ useEffect(() => {
             if (response.ok) {
               const freshData = await response.json();
               
-              localStorage.setItem('bawzi_tier', freshData.tier.toString());
-              console.log("✅ Tier sincronizado após pagamento:", freshData.tier);
+              // Procura por .tier ou .tier_level ou assume 1 se não vier nada
+              const detectedTier = freshData.tier ?? freshData.tier_level ?? 1;
+
+              localStorage.setItem('bawzi_tier', detectedTier.toString());
+              console.log("✅ Tier sincronizado:", detectedTier);
               
+              // Limpa a URL e recarrega
               window.history.replaceState({}, document.title, window.location.pathname);
               window.location.reload(); 
             }
