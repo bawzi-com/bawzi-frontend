@@ -630,153 +630,154 @@ try {
                     </div>
                   ) : result ? (
                     // ESTADO DE RESULTADO (APÓS ANÁLISE)
-                    <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500" id="area-resultados">
-                      <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-xl border border-slate-100 flex flex-col md:flex-row gap-8 items-start relative overflow-hidden">
-                        <div className={`absolute top-0 left-0 w-full h-1.5 ${(result?.score || 0) >= 70 ? 'bg-emerald-500' : (result?.score || 0) >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
-                        <div className="flex-1">
-                          <div className="flex flex-wrap items-center gap-2 mb-4">
-                            <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-slate-200">Motor da IA: {modelSource || "Bawzi"}</span>
-                            {result?.effort && (
-                              <span className="text-[10px] font-black text-violet-700 bg-violet-50 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-violet-100">Esforço: {result.effort}</span>
-                            )}
-                          </div>
-
-                          {isCachedResult && (
-                            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-4 shadow-sm">
-                              <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-xl shrink-0">⚡</div>
-                              <div>
-                                <strong className="block text-sm font-black">Recuperação Instantânea</strong>
-                                <p className="text-sm font-medium text-emerald-700/90">Este edital já foi processado. O parecer foi carregado do histórico.</p>
-                              </div>
-                            </div>
-                          )}
-                          
-                          <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-3 leading-tight">{result?.title || result?.classification}</h2>
-                          
-                          <div className="flex items-center gap-2 mb-6">
-                            <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${result?.classification?.includes('Força') ? 'bg-green-100 text-green-700' : result?.classification?.includes('Atenção') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                              {result?.classification}
-                            </span>
-                          </div>
-
-                          <p className="text-slate-600 text-lg leading-relaxed">{result?.summary}</p>
-                          
-                          {result?.estimated_value && (
-                            <div className="mt-6 inline-flex items-center gap-3 text-slate-600 font-bold text-sm bg-slate-50 px-5 py-3 rounded-xl border border-slate-200 shadow-sm">
-                              <span className="text-xl">💰</span>
-                              <span>Valor Estimado: <span className="text-slate-900">{result.estimated_value}</span></span>
-                            </div>
+                  <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500" id="area-resultados">
+                    
+                    {/* CARD PRINCIPAL */}
+                    <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-xl border border-slate-100 flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start relative overflow-hidden break-words">
+                      <div className={`absolute top-0 left-0 w-full h-1.5 ${(result?.score || 0) >= 70 ? 'bg-emerald-500' : (result?.score || 0) >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
+                      
+                      <div className="flex-1 w-full">
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                          <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-slate-200">Motor da IA: {modelSource || "Bawzi"}</span>
+                          {result?.effort && (
+                            <span className="text-[10px] font-black text-violet-700 bg-violet-50 px-3 py-1.5 rounded-lg uppercase tracking-widest border border-violet-100">Esforço: {result.effort}</span>
                           )}
                         </div>
 
-                        <div className={`shrink-0 self-center md:self-start min-w-[150px] h-[150px] rounded-[2rem] border-4 flex flex-col items-center justify-center shadow-lg ${(result?.score || 0) >= 70 ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : (result?.score || 0) >= 45 ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
-                          <span className="text-6xl font-black leading-none tracking-tighter">{result?.score || 0}</span>
-                          <span className="text-xs font-black uppercase mt-2 tracking-widest opacity-60">Score</span>
-                        </div>
-                      </div>
-
-                      {/* INTELIGÊNCIA DE PREÇOS */}
-                      {result?.pricing_intelligence && (
-                        <div className="bg-emerald-950 rounded-[2rem] p-8 md:p-10 shadow-2xl text-white relative overflow-hidden">
-                          <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/20 blur-[60px] rounded-full pointer-events-none"></div>
-                          <h3 className="text-xl font-black mb-6 flex items-center gap-3 relative z-10">
-                            <span className="bg-emerald-800/50 p-2.5 rounded-xl border border-emerald-700/50 text-2xl shadow-inner">📈</span> Inteligência de Preço
-                            <span className="ml-auto text-[10px] font-black uppercase tracking-widest bg-emerald-800 text-emerald-300 px-3 py-1 rounded-full">Beta</span>
-                          </h3>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-                            <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                              <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Veredicto Financeiro</span>
-                              <strong className={`text-2xl font-black ${result.pricing_intelligence.financial_verdict?.includes('Alta') ? 'text-emerald-300' : result.pricing_intelligence.financial_verdict?.includes('Apertada') ? 'text-amber-300' : 'text-red-400'}`}>
-                                {result.pricing_intelligence.financial_verdict}
-                              </strong>
-                            </div>
-                            <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                              <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Deságio de Mercado</span>
-                              <strong className="text-2xl font-black text-white">{result.pricing_intelligence.estimated_discount}</strong>
-                            </div>
-                            <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
-                              <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Análise de Margem</span>
-                              <p className="text-sm text-emerald-50 leading-relaxed font-medium">{result.pricing_intelligence.market_analysis}</p>
+                        {isCachedResult && (
+                          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-3 text-emerald-800 animate-in fade-in slide-in-from-top-4 shadow-sm">
+                            <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-xl shrink-0">⚡</div>
+                            <div>
+                              <strong className="block text-sm font-black">Recuperação Instantânea</strong>
+                              <p className="text-sm font-medium text-emerald-700/90">Este edital já foi processado. Parecer carregado do histórico.</p>
                             </div>
                           </div>
-                        </div>
-                      )}
-
-                      {/* PARECER ESTRATÉGICO */}
-                      {result?.rationale && (
-                        <div className="bg-slate-950 rounded-[2rem] p-8 md:p-10 shadow-2xl text-white relative overflow-hidden group">
-                          <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full"></div>
-                          <h3 className="text-xl font-bold mb-6 flex items-center gap-3 text-violet-200 relative z-10">
-                            <span className="bg-white/10 p-2.5 rounded-xl border border-white/10">🧠</span> Parecer do Juiz Final
-                          </h3>
-                          <p className="text-slate-300 leading-relaxed text-lg whitespace-pre-wrap relative z-10 font-medium">{result.rationale}</p>
-                        </div>
-                      )}
-
-                      {/* RECOMENDAÇÃO */}
-                      <div className="bg-white rounded-[2rem] p-8 md:p-10 shadow-md border border-slate-100">
-                        <h3 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-2xl">💡</span> Recomendação Estratégica</h3>
-                        <p className="text-slate-700 font-medium text-lg leading-relaxed bg-amber-50/50 p-6 rounded-2xl border border-amber-100/50">{result?.recommendation}</p>
-                      </div>
-
-                      {/* GRID: RISCOS E CHECKLIST */}
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div className="bg-white rounded-[2rem] p-8 shadow-md border border-slate-100">
-                          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">🛡️</span> Matriz de Riscos</h3>
-                          <div className="space-y-4">
-                            {result?.risks && result.risks.length > 0 ? result.risks.map((risk: any, i: number) => {
-                                const title = typeof risk === 'string' ? risk : (risk.title || 'Risco Identificado');
-                                const desc = typeof risk === 'string' ? null : (risk.quote || risk.description || risk.text);
-                                return (
-                                  <div key={i} className="flex items-start gap-4 p-5 bg-red-50/50 rounded-2xl border border-red-100/50 hover:bg-red-50 transition-colors">
-                                    <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 font-bold">!</div>
-                                    <div>
-                                      <span className="text-red-900 text-sm font-bold leading-relaxed block">{title}</span>
-                                      {desc && <span className="text-red-800/80 text-xs italic mt-1.5 block leading-relaxed">"{desc}"</span>}
-                                    </div>
-                                  </div>
-                                );
-                              }) : (
-                              <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 p-5 rounded-2xl font-bold border border-emerald-100">
-                                <span className="text-xl">✓</span> Nenhum risco fatal detetado.
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="bg-white rounded-[2rem] p-8 shadow-md border border-slate-100">
-                          <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">📋</span> Checklist Operacional</h3>
-                          <div className="space-y-4">
-                            {result?.checklist && result.checklist.length > 0 ? result.checklist.map((item: any, i: number) => {
-                                const text = typeof item === 'string' ? item : (item.title || item.text || item.description);
-                                return (
-                                  <div key={i} className="flex items-start gap-4 p-5 bg-emerald-50/30 rounded-2xl border border-emerald-100/30 hover:bg-emerald-50/80 transition-colors">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 font-bold">✓</div>
-                                    <span className="text-emerald-900 text-sm font-medium leading-relaxed mt-1">{text}</span>
-                                  </div>
-                                );
-                              }) : <p className="text-slate-500 bg-slate-50 p-5 rounded-2xl text-sm italic font-medium">Nenhuma instrução adicional.</p>}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* ========================================== */}
-                      {/* BOTÃO FINAL - NOVA ANÁLISE                 */}
-                      {/* ========================================== */}
-                      <button 
-                        onClick={handleResetAnalysis} 
-                        className="relative w-full mt-10 py-5 bg-slate-900 text-white font-black text-lg rounded-[2rem] shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800"
-                      >
-                        <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
+                        )}
                         
-                        <span className="relative z-10 flex items-center justify-center gap-3">
-                          <svg className="w-6 h-6 group-hover:-rotate-180 transition-transform duration-700 ease-in-out" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                          </svg>
-                          Analisar Outro Edital
-                        </span>
-                      </button>
+                        <h2 className="text-2xl md:text-4xl font-black text-slate-900 mb-3 leading-tight">{result?.title || result?.classification}</h2>
+                        
+                        <div className="flex flex-wrap items-center gap-2 mb-6">
+                          <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${result?.classification?.includes('Força') ? 'bg-green-100 text-green-700' : result?.classification?.includes('Atenção') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                            {result?.classification}
+                          </span>
+                        </div>
+
+                        <p className="text-slate-600 text-base md:text-lg leading-relaxed">{result?.summary}</p>
+                        
+                        {result?.estimated_value && (
+                          <div className="mt-6 inline-flex flex-col sm:flex-row items-start sm:items-center gap-3 text-slate-600 font-bold text-sm bg-slate-50 px-5 py-3 rounded-xl border border-slate-200 shadow-sm w-full sm:w-auto">
+                            <span className="text-xl hidden sm:block">💰</span>
+                            <span className="break-words w-full">Valor Estimado: <span className="text-slate-900 break-all">{result.estimated_value}</span></span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* BOLA DE SCORE (Ajustada no mobile) */}
+                      <div className={`shrink-0 w-32 h-32 md:min-w-[150px] md:h-[150px] rounded-[2rem] border-4 flex flex-col items-center justify-center shadow-lg ${(result?.score || 0) >= 70 ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : (result?.score || 0) >= 45 ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
+                        <span className="text-5xl md:text-6xl font-black leading-none tracking-tighter">{result?.score || 0}</span>
+                        <span className="text-[10px] md:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score</span>
+                      </div>
                     </div>
+
+                    {/* INTELIGÊNCIA DE PREÇOS */}
+                    {result?.pricing_intelligence && (
+                      <div className="bg-emerald-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden break-words">
+                        <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/20 blur-[60px] rounded-full pointer-events-none"></div>
+                        <h3 className="text-lg md:text-xl font-black mb-6 flex items-center gap-3 relative z-10 flex-wrap">
+                          <span className="bg-emerald-800/50 p-2.5 rounded-xl border border-emerald-700/50 text-xl md:text-2xl shadow-inner">📈</span> Inteligência de Preço
+                          <span className="ml-auto text-[10px] font-black uppercase tracking-widest bg-emerald-800 text-emerald-300 px-3 py-1 rounded-full">Beta</span>
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 relative z-10">
+                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
+                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Veredicto Financeiro</span>
+                            <strong className={`text-xl md:text-2xl font-black ${result.pricing_intelligence.financial_verdict?.includes('Alta') ? 'text-emerald-300' : result.pricing_intelligence.financial_verdict?.includes('Apertada') ? 'text-amber-300' : 'text-red-400'}`}>
+                              {result.pricing_intelligence.financial_verdict}
+                            </strong>
+                          </div>
+                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
+                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Deságio de Mercado</span>
+                            <strong className="text-xl md:text-2xl font-black text-white">{result.pricing_intelligence.estimated_discount}</strong>
+                          </div>
+                          <div className="bg-emerald-900/50 p-5 rounded-2xl border border-emerald-800/50 flex flex-col justify-center">
+                            <span className="text-emerald-400/80 text-xs font-black uppercase tracking-widest block mb-2">Análise de Margem</span>
+                            <p className="text-sm text-emerald-50 leading-relaxed font-medium">{result.pricing_intelligence.market_analysis}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PARECER ESTRATÉGICO */}
+                    {result?.rationale && (
+                      <div className="bg-slate-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden group break-words">
+                        <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full"></div>
+                        <h3 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-3 text-violet-200 relative z-10">
+                          <span className="bg-white/10 p-2.5 rounded-xl border border-white/10">🧠</span> Parecer do Juiz Final
+                        </h3>
+                        <p className="text-slate-300 leading-relaxed text-base md:text-lg whitespace-pre-wrap relative z-10 font-medium break-words">{result.rationale}</p>
+                      </div>
+                    )}
+
+                    {/* RECOMENDAÇÃO */}
+                    <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-md border border-slate-100 break-words">
+                      <h3 className="text-lg md:text-xl font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-3"><span className="text-2xl">💡</span> Recomendação Estratégica</h3>
+                      <p className="text-slate-700 font-medium text-base md:text-lg leading-relaxed bg-amber-50/50 p-5 md:p-6 rounded-2xl border border-amber-100/50">{result?.recommendation}</p>
+                    </div>
+
+                    {/* GRID: RISCOS E CHECKLIST */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 break-words">
+                        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">🛡️</span> Matriz de Riscos</h3>
+                        <div className="space-y-4">
+                          {result?.risks && result.risks.length > 0 ? result.risks.map((risk: any, i: number) => {
+                              const title = typeof risk === 'string' ? risk : (risk.title || 'Risco Identificado');
+                              const desc = typeof risk === 'string' ? null : (risk.quote || risk.description || risk.text);
+                              return (
+                                <div key={i} className="flex flex-col sm:flex-row items-start gap-4 p-5 bg-red-50/50 rounded-2xl border border-red-100/50 hover:bg-red-50 transition-colors w-full">
+                                  <div className="w-8 h-8 rounded-full bg-red-100 text-red-500 flex items-center justify-center shrink-0 font-bold hidden sm:flex">!</div>
+                                  <div className="flex-1 w-full">
+                                    <span className="text-red-900 text-sm font-bold leading-relaxed block break-words">{title}</span>
+                                    {desc && <span className="text-red-800/80 text-xs italic mt-1.5 block leading-relaxed break-words">"{desc}"</span>}
+                                  </div>
+                                </div>
+                              );
+                            }) : (
+                            <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 p-5 rounded-2xl font-bold border border-emerald-100">
+                              <span className="text-xl">✓</span> Nenhum risco fatal detetado.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 break-words">
+                        <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-3"><span className="text-xl">📋</span> Checklist Operacional</h3>
+                        <div className="space-y-4">
+                          {result?.checklist && result.checklist.length > 0 ? result.checklist.map((item: any, i: number) => {
+                              const text = typeof item === 'string' ? item : (item.title || item.text || item.description);
+                              return (
+                                <div key={i} className="flex items-start gap-4 p-5 bg-emerald-50/30 rounded-2xl border border-emerald-100/30 hover:bg-emerald-50/80 transition-colors w-full">
+                                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 font-bold hidden sm:flex">✓</div>
+                                  <span className="text-emerald-900 text-sm font-medium leading-relaxed sm:mt-1 break-words w-full">{text}</span>
+                                </div>
+                              );
+                            }) : <p className="text-slate-500 bg-slate-50 p-5 rounded-2xl text-sm italic font-medium">Nenhuma instrução adicional.</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BOTÃO FINAL - NOVA ANÁLISE */}
+                    <button 
+                      onClick={handleResetAnalysis} 
+                      className="relative w-full mt-6 md:mt-10 py-5 bg-slate-900 text-white font-black text-base md:text-lg rounded-3xl md:rounded-[2rem] shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
+                      <span className="relative z-10 flex items-center justify-center gap-3">
+                        <svg className="w-5 h-5 md:w-6 md:h-6 group-hover:-rotate-180 transition-transform duration-700 ease-in-out" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Analisar Outro Edital
+                      </span>
+                    </button>
+                  </div>
                   ) : null}
                 </div>
               )}
