@@ -21,7 +21,7 @@ interface PricingIntelligence {
 
 interface HighlightItem { title: string; quote: string; }
 
-// 🟢 1. Nova interface adicionada para o risco do órgão
+// 🟢 Nova interface adicionada para o risco do órgão
 interface OrgaoRisk {
   risco: string;
   score_pagamento: number | string; 
@@ -35,14 +35,13 @@ interface AnalysisResult {
   risks: any[]; 
   checklist: any[]; 
   pricing_intelligence?: PricingIntelligence;
-  // 🟢 2. Propriedade adicionada como opcional (?) pois editais antigos não a terão
   orgao_risk?: OrgaoRisk; 
 }
 
-  // --- Utilitários ---
-  const getScoreColor = (score: number) => score >= 70 ? 'text-emerald-600 border-emerald-500' : score >= 45 ? 'text-amber-500 border-amber-400' : 'text-red-600 border-red-500';
-  const getScoreBg = (score: number) => score >= 70 ? 'bg-emerald-50' : score >= 45 ? 'bg-amber-50' : 'bg-red-50';
-  const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
+// --- Utilitários ---
+const getScoreColor = (score: number) => score >= 70 ? 'text-emerald-600 border-emerald-500' : score >= 45 ? 'text-amber-500 border-amber-400' : 'text-red-600 border-red-500';
+const getScoreBg = (score: number) => score >= 70 ? 'bg-emerald-50' : score >= 45 ? 'bg-amber-50' : 'bg-red-50';
+const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
 
 export default function AnalysisApp() {
   const [activeTab, setActiveTab] = useState('workspace');
@@ -70,11 +69,9 @@ export default function AnalysisApp() {
   const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
   const router = useRouter();
 
-// ==========================================
+  // ==========================================
   // REGRAS ALINHADAS COM O MARKETING
   // ==========================================
-  // Tier -1 = Nível 0 do Marketing (Anónimo/Sem conta)
-  // Tier 1  = Nível 1 do Marketing (Conta Grátis Criada)
   const TIER_LIMITS: Record<number, number> = { [-1]: 10000, 1: 20000, 2: 60000, 3: 150000, 4: 300000 };
   const TIER_FILE_LIMITS_MB: Record<number, number> = { [-1]: 3, 1: 5, 2: 10, 3: 20, 4: 50 };
 
@@ -92,6 +89,12 @@ export default function AnalysisApp() {
   const [isCachedResult, setIsCachedResult] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // ==========================================
+  // ESTADOS DE PARTILHA DE ANÁLISE
+  // ==========================================
+  const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   // ==========================================
   // HANDLERS
@@ -143,9 +146,6 @@ export default function AnalysisApp() {
     }
   }, []);
 
-  // =========================================================
-  // 1. EFEITO DE SCROLL (Dispara quando isAnalyzing muda)
-  // =========================================================
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
@@ -163,10 +163,6 @@ export default function AnalysisApp() {
     };
   }, [isAnalyzing]);
 
-
-  // =========================================================
-  // 2. EFEITO DE LOG DE ACESSO (Dispara apenas 1x ao carregar a página)
-  // =========================================================
   useEffect(() => {
     const fetchAndLogUser = async () => {
       try {
@@ -203,8 +199,41 @@ export default function AnalysisApp() {
     fetchAndLogUser();
   }, []); 
 
-const handleAnalyze = async () => {
-    // 1. Validações Iniciais
+  // Função para partilhar a análise via E-mail
+  const handleShare = async () => {
+    if (!analysisId) return;
+
+    const targetEmail = prompt("Para qual e-mail deseja enviar esta análise?");
+    if (!targetEmail || !targetEmail.includes('@')) {
+      if (targetEmail) alert("E-mail inválido.");
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      const res = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyses/${analysisId}/share`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ target_email: targetEmail })
+      });
+
+      if (res.ok) {
+        alert("✅ Análise partilhada com sucesso!");
+      } else {
+        const errorData = await res.json();
+        alert(`Erro: ${errorData.detail || 'Falha ao partilhar.'}`);
+      }
+    } catch (error) {
+      alert("❌ Erro de comunicação com o servidor.");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
     if (!text.trim() && files.length === 0) { setError("Cole o texto ou adicione documentos."); return; }
     if (isOverLimit) { window.location.href = '#planos'; return; }
@@ -212,9 +241,9 @@ const handleAnalyze = async () => {
     setIsAnalyzing(true); 
     setError(null); 
     setResult(null); 
+    // 🟢 REMOVIDO: A linha errada estava aqui.
     setIsCachedResult(false);
     
-    // Foca no Loading
     setTimeout(() => {
       const areaLoading = document.getElementById('area-loading');
       if (areaLoading) {
@@ -223,7 +252,7 @@ const handleAnalyze = async () => {
       }
     }, 50);
 
-try {
+    try {
       const formData = new FormData();
       if (text.trim()) formData.append('raw_text', text.trim());
       files.forEach(f => formData.append('files', f));
@@ -232,50 +261,30 @@ try {
       const currentToken = localStorage.getItem('bawzi_token');
       if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
 
-      // Usando a variável de ambiente (mantendo o localhost como fallback)
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-      const response = await fetch(`${API_URL}/api/analyze`, {
+      const response = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyze`, {
         method: 'POST', 
         headers: headers, 
         body: formData,
       });
 
-      // ==========================================
-      // 🟢 O PONTO DE INTERCEÇÃO (PAYWALL PLG)
-      // ==========================================
       if (response.status === 402) {
-        setShowUpgradeModal(true); // Abre o popup
-        setIsAnalyzing(false);     // Para o loading
-        return;                    // Aborta a execução para não dar erro no ecrã
+        setShowUpgradeModal(true);
+        setIsAnalyzing(false);     
+        return;                    
       }
 
-      // Se houver outro erro (ex: 500, 400), disparamos para cair no catch
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || "Falha ao analisar o edital.");
-      }
-
-      // Se passou por tudo, é porque foi SUCESSO (Status 200)
       const data = await response.json();
 
-      // --- VERIFICAÇÃO DE ERROS E PAYWALL ---
       if (!response.ok) {
-        if (response.status === 402) {
-          // Gatilho do Modal de Upgrade
-          setShowUpgradeModal(true);
-          setIsAnalyzing(false);
-          return; 
-        }
         throw new Error(data?.detail || 'Erro no servidor.');
       }
 
-      // --- SUCESSO: ATRIBUIÇÃO DOS RESULTADOS ---
+      // 🟢 SUCESSO! AQUI ATRIBUÍMOS O ID E OS DADOS DA ANÁLISE
       setResult(data.analysis);
+      setAnalysisId(data.id); 
       setModelSource(data.model_source);
       setIsCachedResult(data.is_cached);
 
-      // Desliza para os resultados
       setTimeout(() => {
         const areaResultados = document.getElementById('area-resultados');
         if (areaResultados) {
@@ -287,16 +296,10 @@ try {
       if (!token) {
         localStorage.setItem('bawzi_free_trial_used', 'true');
         setHasUsedFreeTrial(true);
-
-        // No handleAnalyze, após receber a resposta:
-        const data = await response.json();
-        console.log("🔍 Dados recebidos do Backend:", data); // Verifique se orgao_risk aparece aqui
-        setResult(data.analysis);
       }
 
     } catch (err: any) {
       console.error("Erro na análise:", err);
-
       let mensagemParaExibir = "Ocorreu um erro inesperado. Por favor, tente novamente.";
 
       if (err.message.includes("NoneType") || err.message.includes("401")) {
@@ -352,7 +355,6 @@ try {
       
       localStorage.setItem('bawzi_token', data.access_token);
       localStorage.setItem('bawzi_tier', userTierToSave.toString());
-
       localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
       router.push('/workspace');
@@ -376,26 +378,17 @@ try {
     } catch (err) { alert("Erro ao iniciar processo de pagamento."); }
   };
 
-// Função para limpar dados e voltar ao início da submissão
   const handleResetAnalysis = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
-
-    // 1. Puxa a câmara instantaneamente para o topo ANTES da página encolher
     window.scrollTo({ top: 0, behavior: 'instant' });
-
-    // 2. Limpa os estados (a página vai encolher agora, mas nós já estamos no topo seguro)
     setResult(null);
     setText('');
     setFiles([]);
     setActiveTab('workspace');
 
-    // 3. Rola suavemente para focar o Radar / Área de Submissão com elegância
     setTimeout(() => {
-      // Tenta encontrar o Radar, se não encontrar, foca na caixa de texto
       const target = document.getElementById('radar-pncp-section') || document.getElementById('area-submissao');
-      
       if (target) {
-        // Calcula a posição com um respiro de 80px do topo para ficar perfeito na vista
         const y = target.getBoundingClientRect().top + window.scrollY - 80;
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
@@ -407,23 +400,17 @@ try {
     window.location.reload();
   };
 
-// ==========================================
+  // ==========================================
   // RENDERIZAÇÃO VISUAL
   // ==========================================
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
-
-      {/* BACKGROUND EFFECTS */}
       <div className="absolute top-0 left-0 w-full h-[600px] overflow-hidden -z-10 pointer-events-none">
         <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-violet-200/50 to-transparent rounded-full blur-[100px]"></div>
       </div>
 
       <main>
-        {/* ========================================== */}
-        {/* 1. HERO SECTION (MARKETING E MOCKUP CONTRATOS)*/}
-        {/* ========================================== */}
         <div className="relative pt-12 pb-12 lg:pt-28 lg:pb-20 overflow-hidden bg-slate-50">
-          {/* Efeito de gradiente corrigido para não causar scroll lateral */}
           <div className="absolute top-0 right-0 -translate-y-12 translate-x-1/4 w-[600px] h-[600px] bg-gradient-to-br from-violet-200/40 to-transparent blur-[100px] rounded-full pointer-events-none"></div>
 
           <div className="container mx-auto px-4 relative z-10 max-w-[1400px]">
@@ -436,18 +423,14 @@ try {
                   </span>
                   Multi-LLM Routing Ativado
                 </div>
-
-                {/* Título responsivo: text-4xl no mobile, 7xl no desktop */}
                 <h1 className="text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.1] mb-6">
                   Pare de assumir riscos cegos em <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">contratos e editais.</span>
                 </h1>
-
                 <p className="text-lg md:text-xl text-slate-600 font-medium leading-relaxed max-w-lg">
                   O motor da Bawzi analisa dezenas de páginas em segundos, blindando a sua equipa contra cláusulas abusivas.
                 </p>
               </div>
 
-              {/* Mockup Flutuante da IA (Foco em Contratos) */}
               <div className="hidden lg:block relative perspective-1000">
                 <div className="relative w-full max-w-lg mx-auto transform rotate-[-2deg] hover:rotate-0 transition-transform duration-700 ease-out">
                   <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-indigo-500 transform translate-x-4 translate-y-6 rounded-[3rem] blur-2xl opacity-30"></div>
@@ -488,34 +471,20 @@ try {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
 
-        {/* ========================================== */}
-        {/* 2. SECÇÃO PRINCIPAL DO DASHBOARD           */}
-        {/* ========================================== */}
         <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10">
           <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start">
-            
-            {/* COLUNA ESQUERDA: ÁREA DINÂMICA (WORKSPACE OU HISTÓRICO) */}
             <div className="flex flex-col gap-8 w-full overflow-hidden">
-              
-              {/* 🟢 ABA 1: WORKSPACE */}
               {activeTab === 'workspace' && (
                 <div className="animate-in fade-in duration-500 flex flex-col gap-8 w-full">
-                  
                   {!isAnalyzing && !result ? (
                     <>
-                      {/* --- BLOCO 1: RADAR PNCP --- */}
                       <div id="radar-pncp-section" className="mb-8 animate-in fade-in slide-in-from-bottom-4">
-                        
-                        {/* TOAST INFORMATIVO: O QUE É O PNCP */}
                         <div className="mb-4 p-4 bg-indigo-50/80 border border-indigo-100 rounded-2xl flex items-start sm:items-center gap-4 text-indigo-900 shadow-sm transition-all hover:bg-indigo-50">
-                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center shrink-0 text-lg shadow-inner border border-indigo-200/50 hidden sm:flex">
-                            ℹ️
-                          </div>
+                          <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center shrink-0 text-lg shadow-inner border border-indigo-200/50 hidden sm:flex">ℹ️</div>
                           <div>
                             <h4 className="text-sm font-black mb-0.5">O que é o Radar PNCP?</h4>
                             <p className="text-xs font-medium text-indigo-700/90 leading-relaxed">
@@ -524,7 +493,6 @@ try {
                           </div>
                         </div>
 
-                        {/* COMPONENTE DE BUSCA */}
                         <PncpSearch 
                           onAnalyzeOportunity={(textoSimulado: string) => {
                             setText(textoSimulado);
@@ -534,13 +502,11 @@ try {
                         />
                       </div>
 
-                      {/* --- BLOCO 2: FORMULÁRIO DE SUBMISSÃO --- */}
                       <div id="area-submissao" className="bg-white rounded-3xl md:rounded-[2rem] shadow-xl border border-slate-100 p-5 md:p-8 relative z-20 border-t-4 border-t-violet-500 w-full">
                         <h2 className="text-lg md:text-xl font-black text-slate-900 mb-6 border-b border-slate-100 pb-4 flex items-center gap-3">
                           <span className="text-2xl">📄</span> Nova Submissão Direta
                         </h2>
 
-                        {/* Aviso Modo Anónimo */}
                         {!token && (
                           <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
@@ -556,7 +522,6 @@ try {
                           </div>
                         )}
 
-                        {/* Erros de Limite/Envio */}
                         {error && (
                           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
                             <span className="text-xl leading-none">⚠️</span>
@@ -565,7 +530,6 @@ try {
                         )}
 
                         <form onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }} className="space-y-5 w-full">
-                          {/* Textarea */}
                           <div className="relative group w-full">
                             <div className="absolute top-4 left-4 text-slate-400 group-focus-within:text-violet-500 transition-colors hidden sm:block">
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
@@ -581,7 +545,6 @@ try {
                             </div>
                           </div>
 
-                          {/* Drag & Drop Arquivos */}
                           <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center hover:border-violet-400 hover:bg-violet-50/50 transition-all group flex flex-col items-center justify-center gap-2 overflow-hidden w-full">
                             <input type="file" multiple accept=".pdf,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-100 group-hover:bg-violet-100 group-hover:text-violet-600 text-slate-400 rounded-full flex items-center justify-center text-xl transition-colors">📂</div>
@@ -589,7 +552,6 @@ try {
                             <p className="text-[10px] sm:text-xs text-slate-400 font-medium">Suporta PDF ou TXT até {currentFileLimitMB}MB.</p>
                           </div>
 
-                          {/* Lista de Arquivos */}
                           {files.length > 0 && (
                             <div className="space-y-2 w-full">
                               {files.map((file, idx) => (
@@ -604,7 +566,6 @@ try {
                             </div>
                           )}
 
-                          {/* Botão Analisar */}
                           <button type="submit" disabled={isAnalyzing || isOverLimit} className="w-full bg-slate-950 text-white font-black text-base sm:text-lg py-4 rounded-2xl shadow-xl shadow-slate-950/20 hover:bg-violet-600 hover:shadow-violet-600/30 transition-all duration-300 disabled:opacity-70 relative overflow-hidden group">
                             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
                             <span className="relative flex items-center justify-center gap-2">
@@ -616,13 +577,7 @@ try {
                       </div>
                     </>
                   ) : isAnalyzing ? (
-                    // ==========================================
-                    // ESTADO DE LOADING (DURANTE A ANÁLISE)
-                    // ==========================================
-                    <div 
-                      id="area-loading" 
-                      className="bg-white rounded-3xl md:rounded-[2.5rem] p-8 md:p-16 shadow-xl border border-slate-100 animate-in fade-in flex flex-col items-center justify-center min-h-[400px] md:min-h-[500px] relative overflow-hidden w-full text-center"
-                    >
+                    <div id="area-loading" className="bg-white rounded-3xl md:rounded-[2.5rem] p-8 md:p-16 shadow-xl border border-slate-100 animate-in fade-in flex flex-col items-center justify-center min-h-[400px] md:min-h-[500px] relative overflow-hidden w-full text-center">
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-violet-500 to-transparent animate-[scan_2s_ease-in-out_infinite]"></div>
                       <div className="relative w-20 h-20 md:w-24 md:h-24 mb-8 md:mb-10">
                         <div className="absolute inset-0 border-4 border-violet-100 rounded-full"></div>
@@ -635,7 +590,6 @@ try {
                       <p className="text-slate-500 font-medium text-sm md:text-lg max-w-md">
                         Os nossos modelos estão a ler as entrelinhas e a cruzar dados jurídicos. Isto leva apenas alguns segundos.
                       </p>
-                      
                       <div className="w-full max-w-[200px] md:max-w-md mt-10 md:mt-12 space-y-3 md:space-y-4 opacity-40">
                         <div className="h-2 md:h-3 bg-slate-200 rounded-full animate-pulse"></div>
                         <div className="h-2 md:h-3 bg-slate-200 rounded-full animate-pulse w-5/6 delay-75"></div>
@@ -643,12 +597,7 @@ try {
                       </div>
                     </div>
                   ) : (
-                    // ==========================================
-                    // ESTADO DE RESULTADO (APÓS ANÁLISE)
-                    // ==========================================
                     <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500 w-full overflow-hidden" id="area-resultados">
-                      
-                      {/* CARD PRINCIPAL */}
                       <div className="bg-white rounded-3xl p-5 md:p-10 shadow-xl border border-slate-100 flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start relative overflow-hidden w-full">
                         <div className={`absolute top-0 left-0 w-full h-1.5 ${(result?.score || 0) >= 70 ? 'bg-emerald-500' : (result?.score || 0) >= 45 ? 'bg-amber-500' : 'bg-red-500'}`}></div>
                         
@@ -657,6 +606,11 @@ try {
                             <span className="text-[9px] md:text-[10px] font-black text-slate-500 bg-slate-100 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg uppercase tracking-widest border border-slate-200">Motor: {modelSource || "IA"}</span>
                             {result?.effort && (
                               <span className="text-[9px] md:text-[10px] font-black text-violet-700 bg-violet-50 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg uppercase tracking-widest border border-violet-100">Esforço: {result.effort}</span>
+                            )}
+                            {token && analysisId && (
+                              <button onClick={handleShare} disabled={isSharing} className="text-[9px] md:text-[10px] font-black text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 md:px-3 py-1 md:py-1.5 rounded-lg uppercase tracking-widest border border-emerald-100 transition-colors flex items-center gap-1">
+                                {isSharing ? '...' : '🔗 Partilhar'}
+                              </button>
                             )}
                           </div>
 
@@ -695,14 +649,12 @@ try {
                           )}
                         </div>
 
-                        {/* BOLA DO SCORE */}
                         <div className={`shrink-0 w-28 h-28 md:w-36 md:h-36 lg:w-40 lg:h-40 rounded-full md:rounded-[2rem] border-4 md:border-[6px] flex flex-col items-center justify-center shadow-lg transition-transform hover:scale-105 duration-500 mx-auto lg:mx-0 ${(result?.score || 0) >= 70 ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : (result?.score || 0) >= 45 ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
                           <span className="text-4xl md:text-6xl lg:text-7xl font-black leading-none tracking-tighter">{result?.score || 0}</span>
                           <span className="text-[8px] md:text-[10px] lg:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score</span>
                         </div>
                       </div>
 
-                      {/* INTELIGÊNCIA DE PREÇOS */}
                       {result?.pricing_intelligence && (
                         <div className="bg-emerald-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden break-words w-full">
                           <div className="absolute -right-20 -top-20 w-64 h-64 bg-emerald-500/20 blur-[60px] rounded-full pointer-events-none hidden md:block"></div>
@@ -729,21 +681,16 @@ try {
                         </div>
                       )}
 
-                      {/* SCORE DE RISCO DO ÓRGÃO (Via Portal da Transparência) */}
                       {result?.orgao_risk && (
                         <div className="bg-slate-900 rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-xl text-white relative overflow-hidden group break-words w-full">
                           <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-blue-500/20 blur-[60px] rounded-full hidden md:block"></div>
                           
                           <h3 className="text-lg md:text-xl font-bold mb-5 flex flex-wrap items-center gap-3 relative z-10 w-full">
-                            <span className="bg-white/10 p-2 md:p-2.5 rounded-xl border border-white/10 text-lg md:text-xl">🏛️</span> 
-                            Risco do Órgão
-                            <span className="ml-auto text-[8px] md:text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-200 px-2.5 md:px-3 py-1 rounded-full border border-blue-400/30 text-center">
-                              Transparência
-                            </span>
+                            <span className="bg-white/10 p-2 md:p-2.5 rounded-xl border border-white/10 text-lg md:text-xl">🏛️</span> Risco do Órgão
+                            <span className="ml-auto text-[8px] md:text-[10px] font-black uppercase tracking-widest bg-blue-500/30 text-blue-200 px-2.5 md:px-3 py-1 rounded-full border border-blue-400/30 text-center">Transparência</span>
                           </h3>
                           
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 md:gap-6 relative z-10 bg-black/30 p-4 md:p-5 rounded-2xl border border-white/5 w-full">
-                            {/* BOLA DO SCORE COM NOVOS ESTADOS */}
                             <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full flex items-center justify-center text-xl md:text-2xl font-black border-4 shrink-0
                               ${result.orgao_risk.risco === 'Alto' ? 'border-red-500 text-red-400 bg-red-950' : 
                                 result.orgao_risk.risco === 'Médio' ? 'border-amber-500 text-amber-400 bg-amber-950' : 
@@ -752,18 +699,13 @@ try {
                               {result.orgao_risk.score_pagamento}
                             </div>
                             <div className="w-full break-words">
-                              <strong className="block text-base md:text-lg font-bold mb-1">
-                                Risco {result.orgao_risk.risco} de Atraso
-                              </strong>
-                              <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed">
-                                {result.orgao_risk.status}
-                              </p>
+                              <strong className="block text-base md:text-lg font-bold mb-1">Risco {result.orgao_risk.risco} de Atraso</strong>
+                              <p className="text-xs md:text-sm text-slate-300 font-medium leading-relaxed">{result.orgao_risk.status}</p>
                             </div>
                           </div>
                         </div>
                       )}
 
-                      {/* PARECER ESTRATÉGICO */}
                       {result?.rationale && (
                         <div className="bg-slate-950 rounded-3xl md:rounded-[2rem] p-6 md:p-10 shadow-2xl text-white relative overflow-hidden group break-words w-full">
                           <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full hidden md:block"></div>
@@ -774,9 +716,7 @@ try {
                         </div>
                       )}
 
-                      {/* RECOMENDAÇÃO E GRID DE DETALHES */}
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 w-full">
-                        
                         <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 flex flex-col w-full break-words">
                           <h3 className="text-lg font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3"><span className="text-xl md:text-2xl">💡</span> Recomendação</h3>
                           <p className="text-slate-700 font-medium text-sm md:text-base leading-relaxed bg-amber-50/50 p-5 md:p-6 rounded-2xl border border-amber-100/50 w-full">{result?.recommendation}</p>
@@ -804,10 +744,8 @@ try {
                             )}
                           </div>
                         </div>
-
                       </div>
 
-                      {/* CHECKLIST (Largura total abaixo) */}
                       {result?.checklist && result.checklist.length > 0 && (
                         <div className="bg-white rounded-3xl md:rounded-[2rem] p-6 md:p-8 shadow-md border border-slate-100 w-full break-words">
                           <h3 className="text-lg font-bold text-slate-900 mb-4 md:mb-6 flex items-center gap-2 md:gap-3"><span className="text-xl md:text-2xl">📋</span> Checklist Operacional</h3>
@@ -825,11 +763,7 @@ try {
                         </div>
                       )}
 
-                      {/* BOTÃO FINAL - NOVA ANÁLISE */}
-                      <button 
-                        onClick={handleResetAnalysis} 
-                        className="relative w-full mt-4 md:mt-8 py-4 md:py-5 bg-slate-900 text-white font-black text-sm md:text-base lg:text-lg rounded-2xl md:rounded-3xl shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800"
-                      >
+                      <button onClick={handleResetAnalysis} className="relative w-full mt-4 md:mt-8 py-4 md:py-5 bg-slate-900 text-white font-black text-sm md:text-base lg:text-lg rounded-2xl md:rounded-3xl shadow-xl hover:shadow-violet-500/40 hover:-translate-y-1 transition-all duration-500 overflow-hidden group border border-slate-800">
                         <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-600 to-violet-600 translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
                         <span className="relative z-10 flex items-center justify-center gap-2 md:gap-3 uppercase tracking-widest md:tracking-normal md:uppercase-none">
                           <svg className="w-4 h-4 md:w-5 md:h-5 lg:w-6 lg:h-6 group-hover:-rotate-180 transition-transform duration-700 ease-in-out" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -844,7 +778,6 @@ try {
                 </div>
               )}
 
-              {/* 🔵 ABA 2: HISTÓRICO */}
               {activeTab === 'history' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="mb-6 px-4">
@@ -860,10 +793,7 @@ try {
               )}
             </div>
 
-            {/* COLUNA DIREITA: NAVEGAÇÃO E IDENTIDADE ESTRATÉGICA (Sempre visível) */}
             <div className="flex flex-col gap-6 sticky top-28">
-              
-              {/* Botões de Navegação */}
               <div className="flex flex-col gap-2 mb-2">
                 <button onClick={() => setActiveTab('workspace')} className={`py-4 px-5 rounded-2xl font-black transition-all text-left flex items-center gap-3 ${activeTab === 'workspace' ? 'bg-violet-600 text-white shadow-xl shadow-violet-600/20' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 shadow-sm'}`}>
                   <span className="text-xl">⚡</span> Nova Análise
@@ -873,7 +803,6 @@ try {
                 </button>
               </div>
 
-              {/* Identidade Estratégica (Perfil do Utilizador ou Login) */}
               {token && userData ? (
                 <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -893,7 +822,6 @@ try {
                 </div>
               )}
               
-              {/* Box de Info Premium */}
               <div className="bg-slate-950 rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute -right-12 -top-12 w-40 h-40 bg-violet-600/30 blur-[40px] rounded-full"></div>
                 <h4 className="text-base font-black mb-6 relative z-10 flex items-center gap-2">
@@ -920,9 +848,6 @@ try {
           </div>
         </section>
 
-        {/* ========================================== */}
-        {/* SEÇÃO DE PLANOS (INJETADA COM COMPONENTE)  */}
-        {/* ========================================== */}
         <section id="planos" className="bg-white py-24 px-6 border-t border-slate-100">
           <div className="max-w-[1400px] mx-auto">
             <div className="text-center mb-16">
@@ -938,7 +863,6 @@ try {
         </section>
       </main>
 
-      {/* MODAL DE AUTH (Login / Registo) */}
       {showAuthModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
@@ -991,7 +915,6 @@ try {
           </div>
         </div>
       )}
-    {/* 🟢 O MODAL DE UPGRADE VAI AQUI 🟢 */}
     {showUpgradeModal && <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />}
     </div> 
   );
