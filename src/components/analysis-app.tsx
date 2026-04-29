@@ -11,6 +11,12 @@ import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import UpgradeModal from './UpgradeModal';
 
+
+  const logout = () => {
+    localStorage.clear();
+    window.location.reload();
+  };
+
 // --- Interfaces ---
 
 interface PricingIntelligence {
@@ -176,11 +182,17 @@ export default function AnalysisApp() {
           fetch(`${API_URL}/api/workspace/details`, { headers })
         ]);
 
+        // Se a API disser 401 (Expirou), derruba a página na hora
+        if (userRes.status === 401 || wsRes.status === 401) {
+          logout();
+          return;
+        }
+
         if (userRes.ok && wsRes.ok) {
           const userDataInfo = await userRes.json();
           const wsData = await wsRes.json();
 
-          // 🟢 A CORREÇÃO ESTÁ AQUI: Guarda os dados do Workspace no estado
+          // Guarda os dados do Workspace no estado
           setUserData((prev: any) => ({
             ...prev,
             ...userDataInfo,
@@ -255,6 +267,12 @@ export default function AnalysisApp() {
         body: JSON.stringify({ target_email: targetEmail })
       });
 
+      if (res.status === 401) {
+        alert("Sua sessão expirou por segurança. Faça login novamente.");
+        logout();
+        return;
+      }
+
       if (res.ok) {
         alert("✅ Análise partilhada com sucesso!");
       } else {
@@ -300,6 +318,12 @@ export default function AnalysisApp() {
         headers: headers, 
         body: formData,
       });
+
+      if (response.status === 401) {
+        alert("Sua sessão expirou por segurança (8 horas). Faça login novamente.");
+        logout();
+        return;
+      }
 
       if (response.status === 402) {
         setShowUpgradeModal(true);
@@ -426,11 +450,6 @@ export default function AnalysisApp() {
         window.scrollTo({ top: y, behavior: 'smooth' });
       }
     }, 50);
-  };
-
-  const logout = () => {
-    localStorage.clear();
-    window.location.reload();
   };
 
   // ==========================================

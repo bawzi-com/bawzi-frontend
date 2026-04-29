@@ -25,6 +25,14 @@ export default function HistoryTab({ token }: { token: string }) {
         const res = await fetch(`${API_URL}/api/analyses/history`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        // 🟢 TRAVA DE SEGURANÇA: Sessão Expirada
+        if (res.status === 401) {
+          localStorage.clear();
+          window.location.reload();
+          return;
+        }
+
         const data = await res.json();
         const historicoReal = data.history || (Array.isArray(data) ? data : []);
         if (Array.isArray(historicoReal)) setAnalyses(historicoReal);
@@ -39,7 +47,7 @@ export default function HistoryTab({ token }: { token: string }) {
     };
     if (token) loadData();
     else setIsLoading(false);
-  }, [token]);
+  }, [token, API_URL]);
 
   const toggleFavorite = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -53,10 +61,10 @@ export default function HistoryTab({ token }: { token: string }) {
   const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    if (!confirm("Tem a certeza que deseja eliminar esta análise? Esta ação não pode ser desfeita.")) return;
+    // 🟢 Ajuste para PT-BR
+    if (!confirm("Tem certeza que deseja excluir esta análise? Esta ação não pode ser desfeita.")) return;
 
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
       const tokenLocal = localStorage.getItem('bawzi_token') || token;
       
       const res = await fetch(`${API_URL}/api/analyses/${id}`, {
@@ -64,15 +72,23 @@ export default function HistoryTab({ token }: { token: string }) {
         headers: { 'Authorization': `Bearer ${tokenLocal}` }
       });
 
+      // 🟢 TRAVA DE SEGURANÇA: Sessão Expirada ao tentar excluir
+      if (res.status === 401) {
+        alert("Sua sessão expirou por segurança. Faça login novamente.");
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+
       if (res.ok) {
         setAnalyses(prev => prev.filter((item: any) => item.id !== id));
       } else {
         const error = await res.json();
-        alert(error.detail || "Erro ao eliminar a análise.");
+        alert(error.detail || "Erro ao excluir a análise."); // 🟢 PT-BR
       }
     } catch (err) {
-      console.error("Falha ao eliminar:", err);
-      alert("Erro de ligação. Tente novamente.");
+      console.error("Falha ao excluir:", err);
+      alert("Erro de conexão. Tente novamente."); // 🟢 PT-BR (ligação -> conexão)
     }
   };
 
@@ -93,12 +109,12 @@ export default function HistoryTab({ token }: { token: string }) {
     return filteredAnalyses.slice(start, start + itemsPerPage);
   }, [filteredAnalyses, currentPage]);
 
-  // Previne renderização completa antes do cliente estar montado (Evita Erro 418 Global)
   if (!isMounted) return null;
 
-  if (isLoading) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">A carregar o cofre estratégico...</div>;
+  // 🟢 Ajuste para PT-BR: "A carregar" -> "Carregando"
+  if (isLoading) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">Carregando o cofre estratégico...</div>;
 
-// ============================================================================
+  // ============================================================================
   // MODO DETALHADO COMPLETÍSSIMO (COM RESPONSIVIDADE MOBILE)
   // ============================================================================
   if (selectedAnalysis) {
@@ -133,7 +149,8 @@ export default function HistoryTab({ token }: { token: string }) {
           <div className="flex-1 w-full">
             <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-6">
               <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-slate-200">
-                <span>📅 {isMounted && res.created_at ? new Date(res.created_at).toLocaleDateString() : 'A processar...'}</span>
+                {/* 🟢 Ajuste para PT-BR: "A processar" -> "Processando" */}
+                <span>📅 {isMounted && res.created_at ? new Date(res.created_at).toLocaleDateString('pt-BR') : 'Processando...'}</span>
               </span>
               <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-violet-100">
                 🤖 {res.model_source || "Motor Bawzi"}
@@ -252,7 +269,8 @@ export default function HistoryTab({ token }: { token: string }) {
       {paginatedAnalyses.length === 0 ? (
         <div className="bg-white p-20 rounded-[3rem] border border-slate-100 text-center shadow-inner">
            <span className="text-5xl block mb-4 grayscale opacity-30">📂</span>
-           <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Nenhum registo encontrado para este filtro.</p>
+           {/* 🟢 Ajuste para PT-BR: "registo" -> "registro" */}
+           <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Nenhum registro encontrado para este filtro.</p>
         </div>
       ) : (
         <div className="grid gap-4">
@@ -279,8 +297,7 @@ export default function HistoryTab({ token }: { token: string }) {
                       {item.title || "Sem Título"}
                     </h3>
                     <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                      {/* 🟢 CORRIGIDO: Data dinâmica com hidratação segura */}
-                      <span>📅 {isMounted && item.created_at ? new Date(item.created_at).toLocaleDateString() : '...'}</span>
+                      <span>📅 {isMounted && item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '...'}</span>
                       <span className="h-1 w-1 bg-slate-300 rounded-full"></span>
                       <span className={score >= 70 ? 'text-emerald-500' : 'text-amber-500'}>{item.classification}</span>
                     </div>
@@ -292,7 +309,7 @@ export default function HistoryTab({ token }: { token: string }) {
                   <button 
                     onClick={(e) => handleDeleteAnalysis(item.id, e)}
                     className="p-3 md:p-4 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                    title="Eliminar Análise"
+                    title="Excluir Análise" /* 🟢 PT-BR: "Eliminar" -> "Excluir" */
                   >
                     🗑️
                   </button>
@@ -330,7 +347,8 @@ export default function HistoryTab({ token }: { token: string }) {
             disabled={currentPage === totalPages}
             className="px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 rounded-xl hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            Seguinte
+            {/* 🟢 PT-BR: "Seguinte" -> "Próxima" */}
+            Próxima
           </button>
         </div>
       )}
