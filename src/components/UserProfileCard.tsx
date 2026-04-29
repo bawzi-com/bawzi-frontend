@@ -12,7 +12,6 @@ interface UserProfileCardProps {
       fantasy_name?: string;
     } | null;
   };
-  // 🟢 Adicionado: Recebe o nível real do componente pai
   currentTier?: number; 
 }
 
