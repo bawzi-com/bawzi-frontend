@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 
 export const metadata: Metadata = {
-  title: 'Bawzi — Inteligência em Editais',
+  title: 'Bawzi — Inteligência em Editais e Contratos',
   description: 'Análise estratégica e gestão de oportunidades comerciais.',
   icons: {
     icon: '/icon.png',

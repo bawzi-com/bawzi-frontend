@@ -1,16 +1,19 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import UserProfileCard from '../../components/UserProfileCard'; 
 import CompanyProfileForm from '../../components/CompanyProfileForm'; 
 import PricingSection from '../../components/PricingSection';
 
-export default function ProfilePage() {
+// Criamos um subcomponente para a lógica que usa o useSearchParams
+function ProfileContent() {
   const router = useRouter();
-  
+  const searchParams = useSearchParams();
+  const stripeSuccess = searchParams.get('success');
+
   // ==========================================
-  // ESTADOS DO COMPONENTE (Sempre no topo)
+  // ESTADOS DO COMPONENTE
   // ==========================================
   const [userData, setUserData] = useState<any>(null);
   const [userTier, setUserTier] = useState<number>(1);
@@ -22,14 +25,14 @@ export default function ProfilePage() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Estados Financeiros (Faturas e Assinatura)
+  // Estados Financeiros
   const [invoices, setInvoices] = useState<any[]>([]);
   const [subDetails, setSubDetails] = useState<any>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // ==========================================
-  // CARREGAMENTO DE DADOS
+  // CARREGAMENTO DE DADOS (Agora com no-cache nativo)
   // ==========================================
   const fetchData = async () => {
     const token = localStorage.getItem('bawzi_token');
@@ -39,14 +42,23 @@ export default function ProfilePage() {
     }
 
     try {
-      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+      // 🟢 O SEGREDO 1: Cabeçalhos que matam o cache na hora
+      const headers = { 
+        'Authorization': `Bearer ${token}`, 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      };
+      
+      // 🟢 O SEGREDO 2: O parâmetro 'cache: no-store'
+      const fetchConfig: RequestInit = { headers, cache: 'no-store' };
 
       const [userRes, wsRes, membersRes, invRes, subRes] = await Promise.all([
-        fetch(`${API_URL}/api/users/me`, { headers }),
-        fetch(`${API_URL}/api/workspace/details`, { headers }),
-        fetch(`${API_URL}/api/workspace/members`, { headers }),
-        fetch(`${API_URL}/api/billing/invoices`, { headers }),
-        fetch(`${API_URL}/api/billing/subscription-details`, { headers })
+        fetch(`${API_URL}/api/users/me`, fetchConfig),
+        fetch(`${API_URL}/api/workspace/details`, fetchConfig),
+        fetch(`${API_URL}/api/workspace/members`, fetchConfig),
+        fetch(`${API_URL}/api/billing/invoices`, fetchConfig),
+        fetch(`${API_URL}/api/billing/subscription-details`, fetchConfig)
       ]);
 
       if (userRes.status === 401 || wsRes.status === 401) {
@@ -91,9 +103,35 @@ export default function ProfilePage() {
     }
   };
 
+  // ==========================================
+  // EFEITOS E GATILHOS (Aqui mora a mágica)
+  // ==========================================
   useEffect(() => {
+    // Carregamento normal ao abrir a tela
     fetchData();
-  }, [API_URL, router]);
+
+    // 🟢 O GATILHO DA VOLTA DO STRIPE: Se tiver success na URL
+    if (stripeSuccess) {
+      console.log("Volta do Stripe detectada! Atualizando...");
+      // Espera 2 segundos pro backend terminar de gravar no Mongo e busca de novo
+      setTimeout(() => {
+        fetchData(); 
+      }, 2000);
+      
+      // Limpa a URL (Tira o ?success=true para não ficar estranho)
+      window.history.replaceState(null, '', '/profile');
+    }
+  }, [stripeSuccess, API_URL, router]); 
+
+  // 🟢 BÔNUS: O GATILHO DE MUDANÇA DE ABA
+  // Atualiza automaticamente quando o usuário volta para esta aba no navegador
+  useEffect(() => {
+    const onFocus = () => {
+      fetchData();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // ==========================================
   // HANDLERS (Ações do Usuário)
@@ -172,6 +210,7 @@ export default function ProfilePage() {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-black text-slate-400 uppercase text-xs animate-pulse">Carregando Bawzi...</div>;
   }
 
+  // A partir daqui vem o return com a sua UI (HTML) normal do perfil
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -273,44 +312,55 @@ export default function ProfilePage() {
 
             {/* 3. PLANO E FATURAMENTO */}
             <div id="planos" className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-              <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+              <div className="mb-8">
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
                   <span className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-lg">💎</span> 
                   Plano e Faturamento
                 </h2>
-                
-                {/* Só mostra o botão se o usuário tiver um ID de cliente no Stripe e for Tier > 1 */}
-                {userData?.stripe_customer_id && userTier > 1 && (
-                  <button 
-                    onClick={handleManageSubscription}
-                    className="text-xs font-black text-violet-600 hover:text-violet-700 bg-violet-50 px-4 py-2 rounded-xl border border-violet-100 transition-all"
-                  >
-                    Gerenciar Plano e Faturamento ↗
-                  </button>
-                )}
               </div>
 
               {/* EXIBIÇÃO DE DADOS INTERNOS (Se for pagante) */}
               {userTier > 1 && subDetails?.status === 'active' ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
-                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Status da Assinatura</p>
-                    <span className="text-sm font-bold text-emerald-600 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span> Ativa e Protegida
-                    </span>
+                <div className="mb-10 space-y-4">
+                  {/* Banner Principal de Gestão */}
+                  <div className="bg-slate-50 border border-slate-100 p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="space-y-3">
+                      <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-lg">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        Assinatura Ativa
+                      </span>
+                      <h3 className="text-lg font-black text-slate-900">
+                        Seu plano atual é o Nível {userTier}
+                      </h3>
+                      <p className="text-sm font-medium text-slate-500 max-w-xl leading-relaxed">
+                        Você tem acesso total aos recursos premium do seu plano. Para visualizar o seu histórico de faturas, alterar o método de pagamento ou cancelar a renovação automática, acesse o painel seguro.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={handleManageSubscription}
+                      className="shrink-0 bg-slate-900 text-white hover:bg-violet-600 px-6 py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-sm w-full md:w-auto text-center"
+                    >
+                      Gerenciar Assinatura ↗
+                    </button>
                   </div>
-                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Próxima Cobrança</p>
-                    <span className="text-sm font-bold text-slate-700">{subDetails.current_period_end}</span>
-                  </div>
-                  <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Valor do Plano</p>
-                    <span className="text-sm font-bold text-slate-700">{subDetails.amount}<span className="text-[10px] text-slate-400 font-medium"> /mês</span></span>
+
+                  {/* Informações Resumidas de Cobrança */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-400 uppercase">Próxima Cobrança</p>
+                      <span className="text-sm font-bold text-slate-700">{subDetails.current_period_end}</span>
+                    </div>
+                    <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
+                      <p className="text-[10px] font-black text-slate-400 uppercase">Valor do Plano</p>
+                      <span className="text-sm font-bold text-slate-700">{subDetails.amount}<span className="text-[10px] text-slate-400 font-medium"> /mês</span></span>
+                    </div>
                   </div>
                   
+                  {/* Alerta de Cancelamento (Só aparece se o usuário tiver pedido para cancelar) */}
                   {subDetails.cancel_at_period_end && (
-                    <div className="md:col-span-3 p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-bold">
-                      ⚠️ Sua assinatura foi cancelada e expirará em {subDetails.current_period_end}.
+                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-bold flex items-center gap-3">
+                      <span className="text-lg">⚠️</span>
+                      Sua assinatura foi cancelada e expirará em {subDetails.current_period_end}.
                     </div>
                   )}
                 </div>
@@ -353,14 +403,14 @@ export default function ProfilePage() {
                               </td>
                               <td className="px-6 py-4 text-right">
                                 {inv.pdf_url && (
-                                  <a 
-                                    href={inv.pdf_url} 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="inline-block px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-violet-600 transition-colors font-black text-[10px] uppercase tracking-widest shadow-sm hover:shadow-md"
-                                  >
-                                    Recibo PDF
-                                  </a>
+                                <a 
+                                  href={inv.pdf_url} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="inline-flex items-center justify-center px-4 py-2 bg-slate-100 text-slate-500 hover:bg-violet-50 hover:text-violet-700 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all duration-200"
+                                >
+                                  Comprovante
+                                </a>
                                 )}
                               </td>
                             </tr>
@@ -376,5 +426,14 @@ export default function ProfilePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 🟢 ENVOLVEDOR OBRIGATÓRIO PARA O NEXT.JS 13+ QUANDO SE USA useSearchParams
+export default function ProfilePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center font-black text-slate-400 uppercase text-xs animate-pulse">Verificando Conta...</div>}>
+      <ProfileContent />
+    </Suspense>
   );
 }
