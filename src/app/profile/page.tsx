@@ -319,9 +319,9 @@ function ProfileContent() {
                 </h2>
               </div>
 
-              {/* EXIBIÇÃO DE DADOS INTERNOS (Se for pagante) */}
-              {userTier > 1 && subDetails?.status === 'active' ? (
-                <div className="mb-10 space-y-4">
+              {/* 1º PARTE: STATUS DA ASSINATURA (Aparece apenas se for pagante) */}
+              {userTier > 1 && subDetails?.status === 'active' && (
+                <div className="mb-10 space-y-4 animate-in fade-in duration-500">
                   {/* Banner Principal de Gestão */}
                   <div className="bg-slate-50 border border-slate-100 p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="space-y-3">
@@ -356,19 +356,33 @@ function ProfileContent() {
                     </div>
                   </div>
                   
-                  {/* Alerta de Cancelamento (Só aparece se o usuário tiver pedido para cancelar) */}
+                  {/* Alerta de Cancelamento */}
                   {subDetails.cancel_at_period_end && (
                     <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-bold flex items-center gap-3">
                       <span className="text-lg">⚠️</span>
                       Sua assinatura foi cancelada e expirará em {subDetails.current_period_end}.
                     </div>
                   )}
-                </div>
-              ) : (
-                <div className="mb-10">
-                  <PricingSection currentTier={userTier} />
+
+                  {/* Divisória elegante antes das opções de upgrade */}
+                  <div className="pt-6 pb-2">
+                    <hr className="border-slate-100" />
+                  </div>
                 </div>
               )}
+
+              {/* 2º PARTE: TABELA DE PREÇOS (Aparece para todos: Free compra, Pago faz Upgrade) */}
+              <div className="mb-12">
+                {/* Mostra um título secundário se o usuário já tiver um plano pago */}
+                {userTier > 1 && subDetails?.status === 'active' && (
+                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 px-1">
+                    Evoluir Plano (Upgrade)
+                  </h3>
+                )}
+                
+                {/* O componente PricingSection já recebe o userTier e saberá qual botão desabilitar */}
+                <PricingSection currentTier={userTier} />
+              </div>
 
               {/* HISTÓRICO DE PAGAMENTOS */}
               {invoices.length > 0 && (
