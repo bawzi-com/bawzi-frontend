@@ -279,7 +279,8 @@ export default function ProfilePage() {
                   Plano e Faturamento
                 </h2>
                 
-                {userTier > 1 && (
+                {/* Só mostra o botão se o usuário tiver um ID de cliente no Stripe e for Tier > 1 */}
+                {userData?.stripe_customer_id && userTier > 1 && (
                   <button 
                     onClick={handleManageSubscription}
                     className="text-xs font-black text-violet-600 hover:text-violet-700 bg-violet-50 px-4 py-2 rounded-xl border border-violet-100 transition-all"
