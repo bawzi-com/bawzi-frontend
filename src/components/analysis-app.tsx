@@ -7,18 +7,17 @@ import Image from 'next/image';
 import UserProfileCard from './UserProfileCard';
 import HistoryTab from './HistoryTab';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import UpgradeModal from './UpgradeModal';
 
-
-  const logout = () => {
-    localStorage.clear();
-    window.location.reload();
-  };
+const logout = () => {
+  localStorage.clear();
+  window.location.reload();
+};
 
 // --- Interfaces ---
-
 interface PricingIntelligence {
   estimated_discount: string;
   market_analysis: string;
@@ -27,7 +26,6 @@ interface PricingIntelligence {
 
 interface HighlightItem { title: string; quote: string; }
 
-// 🟢 Nova interface adicionada para o risco do órgão
 interface OrgaoRisk {
   risco: string;
   score_pagamento: number | string; 
@@ -38,10 +36,23 @@ interface AnalysisResult {
   title: string; summary: string; score: number; classification: string;
   effort: string; estimated_value: string; recommendation: string;
   rationale: string; 
-  risks: any[]; 
-  checklist: any[]; 
+  risks?: any[]; // 🟢 Marcado como opcional para satisfazer o Typescript
+  checklist?: any[]; // 🟢 Marcado como opcional
   pricing_intelligence?: PricingIntelligence;
   orgao_risk?: OrgaoRisk; 
+}
+
+interface CndDetail {
+  orgao: string;
+  status: string;
+  vencimento: string;
+}
+
+interface CndData {
+  cnpj: string;
+  risco_geral: string;
+  certidoes_pendentes: number;
+  detalhes: CndDetail[];
 }
 
 // --- Utilitários ---
@@ -53,7 +64,6 @@ export default function AnalysisApp() {
   const [activeTab, setActiveTab] = useState('workspace');
   const router = useRouter();
   
-  // URL base movida para o topo para ser acessível pelos Hooks
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // ==========================================
@@ -87,7 +97,7 @@ export default function AnalysisApp() {
   const [isSharing, setIsSharing] = useState(false);
 
   // ==========================================
-  // REGRAS DINÂMICAS (Sincronizadas com o Backend)
+  // REGRAS DINÂMICAS
   // ==========================================
   const [tierLimits, setTierLimits] = useState<Record<number, number>>({ [-1]: 10000, 1: 20000, 2: 60000, 3: 150000, 4: 300000 });
   const [tierFileLimits, setTierFileLimits] = useState<Record<number, number>>({ [-1]: 3, 1: 5, 2: 10, 3: 20, 4: 50 });
@@ -103,10 +113,14 @@ export default function AnalysisApp() {
   const requiresAuth = (!token) && (hasUsedFreeTrial);
 
   // ==========================================
-  // EFEITOS (Sincronização e Validação)
+  // ESTADOS DO RADAR FISCAL (CND)
   // ==========================================
+  // Simulando a resposta do backend para um utilizador Tier 1
+  const [cndRiskCount, setCndRiskCount] = useState(3);
 
-  // 1. Vai buscar as configurações exatas dos limites ao Backend (SSOT)
+// ==========================================
+  // EFEITOS
+  // ==========================================
   useEffect(() => {
     fetch(`${API_URL.replace(/\/$/, '')}/api/config/tiers`)
       .then(res => res.json())
@@ -124,33 +138,80 @@ export default function AnalysisApp() {
             setTierFileLimits(newFileLimits);
          }
       })
-      .catch(err => console.error("⚠️ Usando limites locais. Erro ao buscar tiers:", err));
+      .catch(err => console.error("⚠️ Usando limites locais.", err));
   }, [API_URL]);
 
-  // 2. Valida Token e Dados do Utilizador
+  // 🟢 1. ÚNICO EFEITO DE INICIALIZAÇÃO (Sem conflitos)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    const initializeData = async () => {
       const savedToken = localStorage.getItem('bawzi_token');
-      
-      if (savedToken) {
-        setToken(savedToken);
+      if (!savedToken) return;
 
-        fetchUserProfile(savedToken).then(user => {
-          setUserData(user);
+      setToken(savedToken);
 
-          if (user.tier !== undefined) {
-            setUserTier(user.tier); 
-            localStorage.setItem('bawzi_tier', user.tier.toString());
-          }
-        }).catch(() => logout());
+      try {
+        const headers = { 
+          'Authorization': `Bearer ${savedToken}`,
+          'Content-Type': 'application/json'
+        };
+
+        const [userRes, wsRes, companyRes] = await Promise.all([
+          fetch(`${API_URL}/api/users/me`, { headers }),
+          fetch(`${API_URL}/api/workspace/details`, { headers }),
+          fetch(`${API_URL}/api/workspace/company`, { headers }) 
+        ]);
+
+        if (userRes.status === 401 || wsRes.status === 401) {
+          logout();
+          return;
+        }
+
+        if (userRes.ok && wsRes.ok && companyRes.ok) {
+          const userDataInfo = await userRes.json();
+          const wsData = await wsRes.json();
+          const companyData = await companyRes.json(); 
+
+          const currentTier = userDataInfo.tier !== undefined ? userDataInfo.tier : 1;
+          setUserTier(currentTier);
+          localStorage.setItem('bawzi_tier', currentTier.toString());
+
+          // O CNPJ é gravado com sucesso aqui
+          setUserData({
+            ...userDataInfo,
+            workspace_users_count: wsData.workspace_users_count,
+            vagas_totais: wsData.vagas_totais,
+            company: companyData.cnpj ? companyData : userDataInfo.company
+          });
+        }
+      } catch (error) {
+        console.error("Erro crítico ao sincronizar dados:", error);
       }
-    }
-  }, []);
+    };
 
-  // 3. Efeito Visual de Loading
+    initializeData();
+  }, [API_URL]);
+
+  // 🟢 2. EFEITO DO RADAR FISCAL (Só dispara quando o CNPJ for encontrado)
+  useEffect(() => {
+    const cnpj = userData?.company?.cnpj;
+    if (token && cnpj) {
+      setIsLoadingCnd(true);
+      const cleanCnpj = cnpj.replace(/\D/g, '');
+      
+      fetch(`${API_URL.replace(/\/$/, '')}/api/company/cnd/${cleanCnpj}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.detail) setCndData(data);
+      })
+      .catch(err => console.error("Erro ao buscar CNDs:", err))
+      .finally(() => setIsLoadingCnd(false));
+    }
+  }, [userData?.company?.cnpj, token, API_URL]);
+
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
-
     if (isAnalyzing) {
       timeoutId = setTimeout(() => {
         const loadingEl = document.getElementById('area-loading');
@@ -159,66 +220,14 @@ export default function AnalysisApp() {
         }
       }, 100);
     }
-
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [isAnalyzing]);
 
-  // 4. Log de Acesso e Sincronização do Workspace
-  useEffect(() => {
-    const fetchAndLogUser = async () => {
-      try {
-        const token = localStorage.getItem('bawzi_token'); 
-        if (!token) return;
-
-        const headers = { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        };
-
-        const [userRes, wsRes] = await Promise.all([
-          fetch(`${API_URL}/api/users/me`, { headers }),
-          fetch(`${API_URL}/api/workspace/details`, { headers })
-        ]);
-
-        // Se a API disser 401 (Expirou), derruba a página na hora
-        if (userRes.status === 401 || wsRes.status === 401) {
-          logout();
-          return;
-        }
-
-        if (userRes.ok && wsRes.ok) {
-          const userDataInfo = await userRes.json();
-          const wsData = await wsRes.json();
-
-          // Guarda os dados do Workspace no estado
-          setUserData((prev: any) => ({
-            ...prev,
-            ...userDataInfo,
-            workspace_users_count: wsData.workspace_users_count,
-            vagas_totais: wsData.vagas_totais,
-            company: wsData.company || prev?.company
-          }));
-
-          console.group('%c🚀 [Bawzi] Acesso Validado', 'color: #8b5cf6; font-size: 14px; font-weight: bold;');
-          console.log(`👤 Nome: %c${userDataInfo.name || userDataInfo.email}`, 'font-weight: bold; color: #334155');
-          console.log(`⭐ Tier: %c${wsData.tier}`, 'font-weight: bold; color: #f59e0b');
-          console.log(`👥 Vagas Usadas: ${wsData.workspace_users_count} de ${wsData.vagas_totais}`);
-          console.groupEnd();
-        }
-      } catch (error) {
-        console.error("Erro ao sincronizar dados:", error);
-      }
-    };
-
-    fetchAndLogUser();
-  }, [API_URL]);
-
   // ==========================================
   // HANDLERS
   // ==========================================
-  
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     if (newText.length <= currentCharLimit) {
@@ -247,44 +256,47 @@ export default function AnalysisApp() {
     setFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const handleShare = async () => {
-    if (!analysisId) return;
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareEmail, setShareEmail] = useState('');
+  
+// 1. Apenas abre o modal
+const handleShare = () => {
+  if (!analysisId) return;
+  setShareEmail('');
+  setShowShareModal(true);
+};
 
-    const targetEmail = prompt("Para qual e-mail deseja enviar esta análise?");
-    if (!targetEmail || !targetEmail.includes('@')) {
-      if (targetEmail) alert("E-mail inválido.");
-      return;
+// 2. Faz o envio real (chame esta função no botão do novo modal)
+const confirmShare = async () => {
+  if (!shareEmail || !shareEmail.includes('@')) {
+    alert("Por favor, insira um e-mail válido.");
+    return;
+  }
+
+  setIsSharing(true);
+  try {
+    const res = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyses/${analysisId}/share`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ target_email: shareEmail })
+    });
+
+    if (res.ok) {
+      alert("✅ Análise partilhada com sucesso!");
+      setShowShareModal(false);
+    } else {
+      const errorData = await res.json();
+      alert(`Erro: ${errorData.detail || 'Falha ao partilhar.'}`);
     }
-
-    setIsSharing(true);
-    try {
-      const res = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyses/${analysisId}/share`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ target_email: targetEmail })
-      });
-
-      if (res.status === 401) {
-        alert("Sua sessão expirou por segurança. Faça login novamente.");
-        logout();
-        return;
-      }
-
-      if (res.ok) {
-        alert("✅ Análise partilhada com sucesso!");
-      } else {
-        const errorData = await res.json();
-        alert(`Erro: ${errorData.detail || 'Falha ao partilhar.'}`);
-      }
-    } catch (error) {
-      alert("❌ Erro de comunicação com o servidor.");
-    } finally {
-      setIsSharing(false);
-    }
-  };
+  } catch (error) {
+    alert("❌ Erro de comunicação.");
+  } finally {
+    setIsSharing(false);
+  }
+};
 
   const handleAnalyze = async () => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
@@ -415,7 +427,6 @@ export default function AnalysisApp() {
       localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
       router.push('/workspace');
-      
       setShowAuthModal(false);
       window.location.reload(); 
     } catch (err: any) { setAuthError(err.message); } 
@@ -451,6 +462,12 @@ export default function AnalysisApp() {
       }
     }, 50);
   };
+
+  // ==========================================
+  // ESTADOS DO RADAR FISCAL (CND)
+  // ==========================================
+  const [cndData, setCndData] = useState<CndData | null>(null);
+  const [isLoadingCnd, setIsLoadingCnd] = useState(false);
 
   // ==========================================
   // RENDERIZAÇÃO VISUAL
@@ -542,9 +559,7 @@ export default function AnalysisApp() {
                       {/* --- CARD: RADAR PNCP --- */}
                       <div id="radar-pncp-section" className="animate-in fade-in slide-in-from-bottom-4">
                         <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/80 to-white border border-indigo-100 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center gap-5 shadow-sm transition-all hover:shadow-md">
-                          <div className="w-14 h-14 bg-white text-indigo-600 rounded-2xl flex items-center justify-center shrink-0 text-2xl shadow-sm border border-indigo-50">
-                            📡
-                          </div>
+                          <div className="w-14 h-14 bg-white text-indigo-600 rounded-2xl flex items-center justify-center shrink-0 text-2xl shadow-sm border border-indigo-50">📡</div>
                           <div>
                             <div className="flex items-center gap-3 mb-1">
                               <h4 className="text-base font-black text-slate-900 tracking-tight">O que é o Radar PNCP?</h4>
@@ -558,7 +573,6 @@ export default function AnalysisApp() {
                           </div>
                         </div>
 
-                        {/* O Seu Componente PncpSearch continua a renderizar aqui dentro */}
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch 
                             onAnalyzeOportunity={(textoSimulado: string) => {
@@ -573,9 +587,7 @@ export default function AnalysisApp() {
                       {/* --- CARD: SUBMISSÃO DIRETA --- */}
                       <div id="area-submissao" className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-6 md:p-10 relative z-20 w-full">
                         <div className="flex items-center gap-4 mb-8">
-                          <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-violet-100">
-                            📄
-                          </div>
+                          <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-violet-100">📄</div>
                           <div>
                             <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Nova Submissão Direta</h2>
                             <p className="text-sm font-medium text-slate-400">Cole o texto do edital ou faça upload dos documentos</p>
@@ -605,8 +617,6 @@ export default function AnalysisApp() {
                         )}
 
                         <form onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }} className="space-y-6 w-full">
-                          
-                          {/* Caixa de Texto */}
                           <div className="relative group w-full">
                             <textarea 
                               value={text} 
@@ -622,7 +632,6 @@ export default function AnalysisApp() {
                             </div>
                           </div>
 
-                          {/* Área de Upload (Drag & Drop) */}
                           <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-violet-400 hover:bg-violet-50/50 transition-all group flex flex-col items-center justify-center gap-3 overflow-hidden w-full bg-slate-50/50">
                             <input type="file" multiple accept=".pdf,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                             <div className="w-14 h-14 bg-white shadow-sm border border-slate-100 group-hover:border-violet-200 group-hover:bg-violet-100 group-hover:text-violet-600 text-slate-400 rounded-full flex items-center justify-center text-2xl transition-colors">📂</div>
@@ -632,7 +641,6 @@ export default function AnalysisApp() {
                             </div>
                           </div>
 
-                          {/* Ficheiros Anexados */}
                           {files.length > 0 && (
                             <div className="space-y-2 w-full bg-slate-50 p-4 rounded-2xl border border-slate-100">
                               <h5 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Documentos Anexos</h5>
@@ -650,24 +658,511 @@ export default function AnalysisApp() {
                             </div>
                           )}
 
-                          {/* Botão de Submissão */}
-                          <button type="submit" disabled={isAnalyzing || isOverLimit} className="w-full bg-slate-900 text-white font-black text-base md:text-lg py-5 rounded-2xl shadow-xl hover:bg-violet-600 hover:shadow-violet-600/30 transition-all duration-300 disabled:opacity-50 disabled:hover:bg-slate-900 disabled:cursor-not-allowed relative overflow-hidden group">
+                          <button 
+                            type="submit" 
+                            disabled={isAnalyzing || isOverLimit} 
+                            className="w-full bg-slate-900 text-white font-black text-base md:text-lg py-5 rounded-2xl shadow-xl hover:bg-violet-600 hover:shadow-violet-600/30 transition-all duration-300 disabled:opacity-50 disabled:hover:bg-slate-900 disabled:cursor-not-allowed relative overflow-hidden group"
+                          >
                             <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
                             <span className="relative flex items-center justify-center gap-3">
-                              {isAnalyzing ? "A Extrair Inteligência..." : "Iniciar Análise Estratégica"}
-                              {!isAnalyzing && <span className="group-hover:translate-x-1 transition-transform">🚀</span>}
+                              {isAnalyzing ? (
+                                <>
+                                  <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                  A Orquestrar Inteligência...
+                                </>
+                              ) : (
+                                <>
+                                  {isOverLimit ? 'Limite de caracteres excedido' : 'Iniciar Análise Estratégica'}
+                                  <span className="group-hover:translate-x-1 transition-transform">🚀</span>
+                                </>
+                              )}
                             </span>
                           </button>
                         </form>
                       </div>
                     </>
-                  ) : isAnalyzing ? (
-                    // --- LOADING ESTADO (Mantido igual) ---
-                    <div id="area-loading" className="...">...</div>
-                  ) : (
-                    // --- RESULTADO ESTADO (Mantido igual) ---
-                    <div className="..." id="area-resultados">...</div>
-                  )}
+
+                    ) : isAnalyzing ? (
+                    // 🟢 TELA DE CARREGAMENTO ESTRATÉGICA (DENTRO DO CONTEXTO DE ANÁLISE)
+                    <div id="area-loading" className="flex flex-col items-center justify-center min-h-[500px] bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-12 animate-in fade-in duration-700 relative overflow-hidden">
+                      
+                      {/* Efeito de brilho sutil ao fundo do card */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-violet-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+                      
+                      <div className="relative flex flex-col items-center z-10 text-center space-y-8">
+                        {/* Logo da Bawzi Pulsante */}
+                        <div className="animate-pulse transform hover:scale-105 transition-transform duration-500">
+                          <Image 
+                            src="/logo-bawzi.png" 
+                            alt="Bawzi Logo" 
+                            width={140} 
+                            height={40} 
+                            className="object-contain opacity-80"
+                            priority
+                          />
+                        </div>
+
+                        {/* Spinner Progressivo */}
+                        <div className="relative w-16 h-16">
+                          <div className="absolute inset-0 border-4 border-violet-50 rounded-full"></div>
+                          <div className="absolute inset-0 border-4 border-t-violet-600 rounded-full animate-spin shadow-sm"></div>
+                        </div>
+
+                        {/* Texto de Status C-Level */}
+                        <div className="space-y-3 max-w-sm">
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight">
+                            Extraindo Inteligência...
+                          </h3>
+                          <p className="text-sm font-medium text-slate-400 leading-relaxed">
+                            O motor Multi-LLM está a processar cada cláusula para blindar a sua decisão.
+                          </p>
+                        </div>
+
+                        {/* Tag de Motor Ativo */}
+                        <div className="pt-4">
+                          <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                            Neural Routing Ativado
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                  ) : result ? (
+                  // 🟢 RESULTADO DA ANÁLISE COM TYPESCRIPT BLINDADO AQUI
+                    <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden relative animate-in fade-in duration-500" id="area-resultados">
+                      <div className={`h-4 ${getScoreBg(result.score)}`}></div>
+                      <div className="p-8 md:p-12">
+                        
+                        {/* 🟢 CABEÇALHO SÓ PARA IMPRESSÃO */}
+                        <div className="hidden print:flex items-center justify-between border-b-2 border-slate-900 pb-6 mb-8 w-full">
+                          <div className="flex flex-col">
+                            <h1 className="text-2xl font-black text-slate-900">BAWZI | Inteligência em Editais</h1>
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Relatório Estratégico de Viabilidade</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] font-black text-slate-400 uppercase">Data da Análise</p>
+                            <p className="text-sm font-bold text-slate-900">{new Date().toLocaleDateString('pt-BR')}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10 pb-10 border-b border-slate-100">
+                          {/* SCORE DINÂMICO COM GRÁFICO CIRCULAR */}
+                            <div className="flex items-center gap-5">
+                              {/* Gráfico SVG */}
+                              <div className="relative w-20 h-20 shrink-0">
+                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                  {/* Círculo de Fundo (Trilha) */}
+                                  <circle 
+                                    cx="50" cy="50" r="42" 
+                                    className="stroke-slate-100" 
+                                    strokeWidth="8" 
+                                    fill="none" 
+                                  />
+                                  {/* Círculo de Progresso Colorido */}
+                                  <circle 
+                                    cx="50" cy="50" r="42" 
+                                    className={`transition-all duration-1000 ease-out ${
+                                      result.score >= 70 ? 'stroke-emerald-500' : 
+                                      result.score >= 45 ? 'stroke-amber-500' : 
+                                      'stroke-red-500'
+                                    }`} 
+                                    strokeWidth="8" 
+                                    fill="none" 
+                                    strokeLinecap="round"
+                                    style={{ 
+                                      strokeDasharray: 264, // Perímetro do círculo (2 * pi * r)
+                                      strokeDashoffset: 264 - (264 * result.score) / 100 
+                                    }} 
+                                  />
+                                </svg>
+                                {/* Ícone Centralizado */}
+                                <div className="absolute inset-0 flex items-center justify-center text-2xl drop-shadow-sm">
+                                  {result.score >= 70 ? '🎯' : result.score >= 45 ? '⚠️' : '🚨'}
+                                </div>
+                              </div>
+
+                              {/* Textos e Valores */}
+                              <div>
+                                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md mb-1 inline-block border shadow-sm ${getScoreBg(result.score)} ${getScoreColor(result.score)}`}>
+                                  Veredito da IA
+                                </span>
+                                <div className="flex flex-col mt-0.5">
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter leading-none">
+                                      {result.score}
+                                    </span>
+                                    <span className="text-sm font-bold text-slate-400">/100</span>
+                                  </div>
+                                  <p className={`text-[11px] font-black mt-1.5 uppercase tracking-widest ${
+                                      result.score >= 70 ? 'text-emerald-600' : 
+                                      result.score >= 45 ? 'text-amber-600' : 
+                                      'text-red-600'
+                                    }`}>
+                                    {result.score >= 70 ? 'Alta Viabilidade (Go)' : 
+                                     result.score >= 45 ? 'Avançar com Cautela' : 
+                                     'Risco Crítico (No-Go)'}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          
+                          {/* 🟢 BOTÕES ESCONDIDOS NA IMPRESSÃO */}
+                          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto mt-4 md:mt-0 border-t md:border-t-0 pt-6 md:pt-0 border-slate-100 print:hidden"> 
+                            <button 
+                              onClick={() => window.print()} 
+                              className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold rounded-xl border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2"
+                            >
+                              🖨️ <span className="hidden sm:inline">Imprimir Relatório</span>
+                            </button>
+                            {token && analysisId && (
+                                <button onClick={handleShare} disabled={isSharing} className="px-4 py-2 bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold rounded-xl border border-violet-200 transition-colors text-sm flex items-center justify-center gap-2">
+                                  {isSharing ? 'A Enviar...' : '📧 Partilhar (C-Level)'}
+                                </button>
+                            )}
+                            <button onClick={handleResetAnalysis} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-md transition-colors text-sm flex items-center justify-center gap-2">
+                              Nova Análise
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* ========================================== */}
+                        {/* MONITORIZAÇÃO DE RISCO FISCAL (CND)        */}
+                        {/* ========================================== */}
+                        <div className="mb-10">
+                          
+                          {/* 1. SE O UTILIZADOR AINDA NÃO COLOCOU O CNPJ NO PERFIL */}
+                          {!userData?.company?.cnpj && (
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 animate-in fade-in">
+                              <div className="flex items-center gap-5">
+                                <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center text-3xl border border-slate-100 shrink-0">
+                                  🕵️
+                                </div>
+                                <div className="space-y-1">
+                                  <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Radar Fiscal (Inativo)</h3>
+                                  <p className="text-slate-900 font-black text-xl md:text-2xl tracking-tight">Monitorização Desligada</p>
+                                  <p className="text-slate-500 text-sm font-medium">Cadastre o CNPJ da sua empresa no seu painel para a IA rastrear certidões automaticamente.</p>
+                                </div>
+                              </div>
+                              <button onClick={() => { document.getElementById('perfil-tab')?.click(); window.scrollTo(0,0); }} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 transition-colors whitespace-nowrap shadow-md">
+                                Configurar CNPJ
+                              </button>
+                            </div>
+                          )}
+
+                          {/* 2. ESTADO DE CARREGAMENTO (A BUSCAR NA API) */}
+                          {userData?.company?.cnpj && isLoadingCnd && (
+                            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-8 flex items-center gap-5 opacity-70 animate-in fade-in">
+                              <div className="w-16 h-16 rounded-2xl bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
+                                <div className="w-6 h-6 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                              </div>
+                              <div>
+                                <h3 className="text-[11px] font-black text-violet-600 uppercase tracking-widest">Radar Fiscal Automático</h3>
+                                <p className="text-slate-900 font-black text-xl tracking-tight">A consultar bases governamentais...</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 3. TEM CNPJ, MAS A API FALHOU (Ex: Backend desligado ou erro) */}
+                          {userData?.company?.cnpj && !cndData && !isLoadingCnd && (
+                            <div className="bg-white rounded-3xl border border-amber-200 shadow-sm p-6 md:p-8 flex items-center gap-5 animate-in fade-in">
+                              <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl border border-amber-100 shrink-0">⚠️</div>
+                              <div>
+                                <h3 className="text-[11px] font-black text-amber-600 uppercase tracking-widest">Radar Fiscal Interrompido</h3>
+                                <p className="text-slate-900 font-black text-xl tracking-tight">Falha de Comunicação</p>
+                                <p className="text-slate-500 text-sm mt-1">
+                                  O seu CNPJ ({userData.company.cnpj}) está configurado, mas os nossos servidores não conseguiram validar os dados agora. Tente novamente mais tarde.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 4. DADOS RECEBIDOS DA API COM SUCESSO */}
+                          {cndData && !isLoadingCnd && (
+                            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+                              
+                              {/* CENÁRIO POSITIVO: 100% REGULAR */}
+                              {cndData.certidoes_pendentes === 0 && (
+                                <div className="bg-white rounded-3xl border border-emerald-200 shadow-sm overflow-hidden relative">
+                                  <div className="absolute inset-0 bg-emerald-50/40 pointer-events-none"></div>
+                                  <div className="p-6 md:p-8 relative z-10 flex flex-col md:flex-row items-center gap-6 justify-between">
+                                    <div className="flex items-center gap-5">
+                                      <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center text-3xl border border-emerald-200 shrink-0">
+                                        🛡️
+                                      </div>
+                                      <div className="space-y-1.5">
+                                        <h3 className="text-[11px] font-black text-emerald-600 uppercase tracking-[0.2em]">Radar Fiscal Automático</h3>
+                                        <p className="text-slate-900 font-black text-xl md:text-2xl tracking-tight leading-none">
+                                          Organização <span className="text-emerald-700 bg-emerald-100/80 px-2 rounded-md">100% Regular</span>
+                                        </p>
+                                        <p className="text-slate-500 text-sm font-medium">Nenhuma pendência detetada. Apta para assinatura de contrato.</p>
+                                      </div>
+                                    </div>
+                                    <div className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-white border border-emerald-100 rounded-xl shadow-sm text-emerald-700 font-bold text-xs uppercase tracking-widest">
+                                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                      Monitorização Ativa
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* CENÁRIO DE RISCO: CERTIDÕES VENCIDAS/IRREGULARES */}
+                              {cndData.certidoes_pendentes > 0 && (
+                                <>
+                                  {/* TIER 1 (GRÁTIS): MOSTRA O BLOQUEIO E O NÚMERO EXATO DE CERTIDÕES */}
+                                  {userTier <= 1 ? (
+                                    <div className="bg-white rounded-3xl border border-red-200 shadow-sm overflow-hidden relative group">
+                                      <div className="absolute inset-0 bg-red-50/40 pointer-events-none"></div>
+                                      <div className="p-6 md:p-8 relative z-10 flex flex-col md:flex-row items-center gap-6 justify-between">
+                                        <div className="flex items-center gap-5">
+                                          <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center text-3xl shrink-0 border border-red-200 relative">
+                                            <span className="relative z-10">🚨</span>
+                                            <span className="absolute inset-0 rounded-2xl border-2 border-red-500 animate-ping opacity-20"></span>
+                                          </div>
+                                          <div className="space-y-1.5">
+                                            <h3 className="text-[11px] font-black text-red-600 uppercase tracking-[0.2em]">Monitorização de Risco Fiscal</h3>
+                                            <p className="text-slate-900 font-black text-xl md:text-2xl tracking-tight leading-none">
+                                              Atenção: Você tem <span className="text-red-600 bg-red-100 px-2 rounded-md">{cndData.certidoes_pendentes} certidão(ões)</span> em risco.
+                                            </p>
+                                            <p className="text-slate-500 text-sm font-medium">Detectámos inconformidades reais. Risco iminente de inabilitação no PNCP.</p>
+                                          </div>
+                                        </div>
+                                        <div className="flex flex-col w-full md:w-auto gap-2.5 shrink-0 mt-4 md:mt-0">
+                                          <button onClick={() => setShowUpgradeModal(true)} className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3.5 rounded-xl text-sm font-black transition-all shadow-lg flex items-center justify-center gap-2.5">
+                                            <span className="text-lg">🔒</span> Revelar Certidões
+                                          </button>
+                                          <div className="text-center">
+                                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Desbloqueie com o Plano Basic</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    /* TIER 2+ (PAGO): MOSTRA OS DETALHES REAIS DAS CERTIDÕES */
+                                    <div className="bg-white rounded-3xl border border-red-200 shadow-sm overflow-hidden relative">
+                                      <div className="p-6 md:p-8">
+                                        <div className="flex items-center gap-4 mb-6">
+                                          <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-2xl border border-red-200 shrink-0">🚨</div>
+                                          <div>
+                                            <h3 className="text-[11px] font-black text-red-600 uppercase tracking-[0.2em]">Monitorização Fiscal Automática</h3>
+                                            <p className="text-slate-900 font-black text-xl tracking-tight">{cndData.certidoes_pendentes} Certidão(ões) com Pendência</p>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                          {cndData.detalhes.map((cert, idx) => (
+                                            <div key={idx} className={`p-4 border rounded-xl flex flex-col gap-2 ${cert.status === 'REGULAR' ? 'bg-slate-50 border-slate-100' : 'bg-red-50/50 border-red-100'}`}>
+                                              <span className="text-xs font-bold text-slate-700">{cert.orgao}</span>
+                                              <div className="flex items-center justify-between">
+                                                <span className={`text-[10px] px-2.5 py-1 rounded-md font-black uppercase tracking-widest ${cert.status === 'REGULAR' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                  {cert.status}
+                                                </span>
+                                                <span className="text-xs font-medium text-slate-500">Venc: {cert.vencimento}</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* EXIBIÇÃO DO RISCO DO ÓRGÃO (Módulo PNCP) */}
+                        {result.orgao_risk && (
+                          (() => {
+                            // 🟢 Deteta se houve falha na comunicação com o PNCP
+                            const isOffline = result.orgao_risk.score_pagamento === '-' || String(result.orgao_risk.status).includes('Falha');
+                            const risco = result.orgao_risk.risco;
+                            
+                            // Define as cores e ícones baseados no estado
+                            let bgColor = 'bg-emerald-50 border-emerald-100';
+                            let iconColor = 'text-emerald-500 border-emerald-100';
+                            let textColor = 'text-emerald-700';
+                            let icon = '✅';
+
+                            if (isOffline) {
+                              bgColor = 'bg-slate-50 border-slate-200';
+                              iconColor = 'text-slate-500 border-slate-200';
+                              textColor = 'text-slate-700';
+                              icon = '📡'; 
+                            } else if (risco === 'Alto Risco') {
+                              bgColor = 'bg-red-50 border-red-100';
+                              iconColor = 'text-red-500 border-red-100';
+                              textColor = 'text-red-700';
+                              icon = '🚨';
+                            } else if (risco === 'Atenção') {
+                              bgColor = 'bg-amber-50 border-amber-100';
+                              iconColor = 'text-amber-500 border-amber-100';
+                              textColor = 'text-amber-700';
+                              icon = '⚠️';
+                            }
+
+                            return (
+                              <div className={`mb-10 p-6 rounded-2xl border flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-4 ${bgColor}`}>
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border bg-white ${iconColor}`}>
+                                  <span className="text-xl">{icon}</span>
+                                </div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-3 mb-1">
+                                    <h3 className={`text-sm font-black uppercase tracking-widest ${textColor}`}>
+                                      Radar de Pagamento (Órgão Público)
+                                    </h3>
+                                    {isOffline && (
+                                       <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-[10px] font-black rounded uppercase tracking-widest">
+                                         SISTEMA DO GOVERNO OFFLINE
+                                       </span>
+                                    )}
+                                  </div>
+                                  {isOffline ? (
+                                    <p className="text-slate-600 text-sm font-medium leading-relaxed">
+                                      Não foi possível analisar o histórico de calotes deste órgão agora. Os servidores federais (Portal Nacional de Contratações Públicas) não estão a responder.
+                                    </p>
+                                  ) : (
+                                    <p className="text-slate-700 text-sm font-medium leading-relaxed">
+                                      Status histórico: <strong className="font-black">{result.orgao_risk.status}</strong>. 
+                                      Pontuação de confiabilidade: <span className="bg-white/60 px-2 py-0.5 rounded border border-slate-200/50 font-mono">{result.orgao_risk.score_pagamento}/100</span>.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()
+                        )}
+
+                        {/* RESUMO EXECUTIVO E VANTAGEM COMPETITIVA */}
+                        <div className="grid lg:grid-cols-2 gap-8 mb-10">
+                          <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 h-full">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                              <span className="text-lg">🎯</span> Resumo Executivo
+                            </h3>
+                            <p className="text-slate-700 leading-relaxed font-medium text-sm lg:text-base">{result.summary}</p>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-8 rounded-[2rem] text-white shadow-xl h-full relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-[50px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-white/20 transition-colors"></div>
+                            <h3 className="text-[10px] font-black text-violet-200 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
+                              <span className="text-lg">👑</span> Inteligência Competitiva
+                            </h3>
+                            <p className="text-white/90 leading-relaxed font-medium text-sm lg:text-base mb-6 relative z-10">
+                              {result.recommendation}
+                            </p>
+                            {result.pricing_intelligence && (
+                              <div className="mt-auto bg-black/20 p-5 rounded-2xl border border-white/10 relative z-10">
+                                <h4 className="text-[10px] uppercase tracking-widest font-black text-violet-300 mb-2">Veredito Financeiro</h4>
+                                <p className="text-sm font-bold text-emerald-300">{result.pricing_intelligence.financial_verdict}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* MATRIZ DE RISCO */}
+                        {(result.risks?.length ?? 0) > 0 && (
+                          <div className="mb-12 animate-in fade-in slide-in-from-top-4">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
+                              <span className="text-lg">🛡️</span> Matriz de Riscos Críticos
+                            </h3>
+                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {result.risks?.map((risk: any, i: number) => {
+                                // 🟢 MAPEADOR UNIVERSAL PARA RISCOS
+                                const tituloRisk = typeof risk === 'string' ? risk : (risk.title || risk.risk || risk.perigo || risk.nome);
+                                const trechoRisk = risk.quote || risk.snippet || risk.texto || risk.trecho;
+                                const impactoRisk = risk.impact || risk.consequence || risk.impacto || risk.consequencia;
+
+                                return (
+                                  <div key={i} className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-red-200 hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
+                                    {/* Barra lateral de perigo */}
+                                    <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
+                                    
+                                    <div className="flex items-start justify-between mb-4">
+                                      <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg border border-red-100">
+                                        Alto Risco
+                                      </span>
+                                    </div>
+
+                                    <h4 className="font-black text-slate-900 mb-3 leading-snug text-sm">
+                                      {tituloRisk || "Risco Identificado"}
+                                    </h4>
+
+                                    {trechoRisk && (
+                                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
+                                        <p className="text-[11px] text-slate-600 font-medium italic leading-relaxed">
+                                          "{trechoRisk}"
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {impactoRisk && (
+                                      <p className="text-xs text-slate-500 font-medium mt-auto pt-2 border-t border-slate-50">
+                                        <strong className="text-red-700">Impacto:</strong> {impactoRisk}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* CHECKLIST DE AÇÃO */}
+                        {(result.checklist?.length ?? 0) > 0 && (
+                          <div className="animate-in fade-in slide-in-from-top-4">
+                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
+                              <span className="text-lg">📋</span> Plano de Ação (Checklist)
+                            </h3>
+                            <div className="space-y-3">
+                              {result.checklist?.map((item: any, i: number) => {
+                                // 🟢 MAPEADOR UNIVERSAL: Tenta todas as combinações possíveis de nomes de campos
+                                const titulo = typeof item === 'string' 
+                                  ? item 
+                                  : (item.title || item.task || item.item || item.tarefa || item.acao || item.nome);
+                                
+                                const descricao = typeof item === 'object' 
+                                  ? (item.quote || item.description || item.descrição || item.detalhe || item.contexto || item.obs) 
+                                  : null;
+
+                                return (
+                                  <div key={i} className="flex gap-4 p-5 bg-slate-50 hover:bg-white border border-slate-100 hover:border-slate-300 rounded-2xl transition-all shadow-sm group">
+                                    <div className="w-6 h-6 rounded-full border-2 border-slate-300 group-hover:border-violet-500 flex items-center justify-center shrink-0 mt-0.5 transition-colors">
+                                      <span className="text-[10px] font-black text-slate-400 group-hover:text-violet-500">{i + 1}</span>
+                                    </div>
+                                    <div>
+                                      <h4 className="font-bold text-slate-900 text-sm mb-1">
+                                        {titulo || "Ação Recomendada"}
+                                      </h4>
+                                      {/* Só exibe a descrição se ela realmente existir e não for igual ao título */}
+                                      {descricao && descricao !== titulo && (
+                                        <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                                          {descricao}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* RODAPÉ DO RESULTADO COM METADADOS */}
+                        <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>Gerado por:</span>
+                            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-bold uppercase tracking-widest">{modelSource || 'Motor Bawzi IA'}</span>
+                          </div>
+                          {isCachedResult && (
+                            <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+                              <span className="text-sm">⚡</span>
+                              <span className="font-bold uppercase tracking-widest text-[10px]">Recuperado do Cache (Ultrarrápido)</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -695,8 +1190,6 @@ export default function AnalysisApp() {
             {/* LADO DIREITO: BARRA LATERAL (SIDEBAR)      */}
             {/* ========================================== */}
             <div className="flex flex-col gap-6 sticky top-28">
-              
-              {/* Botões de Navegação */}
               <div className="flex flex-col gap-3 mb-2 p-2 bg-slate-100/50 rounded-[2rem] border border-slate-200/50">
                 <button onClick={() => setActiveTab('workspace')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'workspace' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
                   <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">⚡</span> Nova Análise</span>
@@ -708,19 +1201,14 @@ export default function AnalysisApp() {
                 </button>
               </div>
 
-              {/* Card de Identidade Estratégica */}
               {token && userData ? (
                 <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span> 
                     Identidade Estratégica
                   </h3>
-                  
-                  {/* Container do Perfil */}
                   <div className="space-y-4">
                      <UserProfileCard user={userData} currentTier={userTier} />
-                     {/* Nota: Pode precisar de ajustar o UserProfileCard internamente se ele já tiver muitas bordas, 
-                         mas o container exterior agora é muito mais limpo */}
                   </div>
                 </div>
               ) : (
@@ -735,40 +1223,71 @@ export default function AnalysisApp() {
                 </div>
               )}
               
-              {/* Box: Como a IA Avalia */}
-              <div className="bg-slate-950 rounded-[2.5rem] p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden">
-                <div className="absolute -right-12 -top-12 w-48 h-48 bg-violet-600/20 blur-[50px] rounded-full pointer-events-none"></div>
-                <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-emerald-600/10 blur-[50px] rounded-full pointer-events-none"></div>
+              {/* Box: Inteligência de Avaliação Neural */}
+              <div className="bg-slate-950 rounded-[2.5rem] p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden group">
+                {/* Efeitos de Fundo (Glow Estático) */}
+                <div className="absolute -right-12 -top-12 w-48 h-48 bg-violet-600/20 blur-[50px] rounded-full pointer-events-none group-hover:bg-violet-600/30 transition-colors duration-700"></div>
+                <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-emerald-600/10 blur-[50px] rounded-full pointer-events-none group-hover:bg-emerald-600/20 transition-colors duration-700"></div>
                 
-                <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 relative z-10 flex items-center gap-2">
-                  <span className="text-violet-400 text-lg">⚡</span> Como a IA avalia
+                <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 relative z-10 flex items-center gap-3">
+                  <span className="flex h-3 w-3 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-violet-500"></span>
+                  </span>
+                  Metodologia Neural Bawzi
                 </h4>
                 
-                <ul className="space-y-6 relative z-10">
-                  <li className="flex items-start gap-4 group">
-                    <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-xs font-black text-slate-300 group-hover:bg-violet-900/50 group-hover:border-violet-500/50 group-hover:text-violet-300 transition-colors">1</div>
-                    <span className="leading-relaxed font-medium mt-0.5">
-                      <strong className="text-white block text-sm mb-0.5">Veredito Go/No-Go</strong> 
-                      <span className="text-slate-400 text-xs">Viabilidade real de ganho.</span>
-                    </span>
+                <ul className="space-y-8 relative z-10">
+                  <li className="flex items-start gap-5 group/item">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-violet-400 group-hover/item:border-violet-500 group-hover/item:bg-violet-500/10 transition-all duration-300">
+                      01
+                    </div>
+                    <div className="space-y-1">
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-violet-300 transition-colors">
+                        Veredito Go/No-Go
+                      </strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
+                        Cálculo probabilístico de lucro e viabilidade real para evitar "barcas furadas".
+                      </p>
+                    </div>
                   </li>
-                  <li className="flex items-start gap-4 group">
-                    <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-xs font-black text-slate-300 group-hover:bg-amber-900/50 group-hover:border-amber-500/50 group-hover:text-amber-300 transition-colors">2</div>
-                    <span className="leading-relaxed font-medium mt-0.5">
-                      <strong className="text-white block text-sm mb-0.5">Riscos Ocultos</strong> 
-                      <span className="text-slate-400 text-xs">Multas abusivas e prazos irreais.</span>
-                    </span>
+
+                  <li className="flex items-start gap-5 group/item">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-amber-400 group-hover/item:border-amber-500 group-hover/item:bg-amber-500/10 transition-all duration-300">
+                      02
+                    </div>
+                    <div className="space-y-1">
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-amber-300 transition-colors">
+                        Blindagem Jurídico-Financeira
+                      </strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
+                        Identificação imediata de multas abusivas, prazos irreais e armadilhas contratuais.
+                      </p>
+                    </div>
                   </li>
-                  <li className="flex items-start gap-4 group">
-                    <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0 text-xs font-black text-slate-300 group-hover:bg-emerald-900/50 group-hover:border-emerald-500/50 group-hover:text-emerald-300 transition-colors">3</div>
-                    <span className="leading-relaxed font-medium mt-0.5">
-                      <strong className="text-white block text-sm mb-0.5">Matchmaker</strong> 
-                      <span className="text-slate-400 text-xs">Cruzamento com o seu CNAE.</span>
-                    </span>
+
+                  <li className="flex items-start gap-5 group/item">
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-emerald-400 group-hover/item:border-emerald-500 group-hover/item:bg-emerald-500/10 transition-all duration-300">
+                      03
+                    </div>
+                    <div className="space-y-1">
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-emerald-300 transition-colors">
+                        Neural Matchmaker
+                      </strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
+                        Cruzamento semântico entre o objeto do edital e o seu CNAE/Capacidade Técnica.
+                      </p>
+                    </div>
                   </li>
                 </ul>
-              </div>
 
+                {/* Footer do Card */}
+                <div className="mt-10 pt-6 border-t border-slate-800/50">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter italic">
+                    * Análise processada via Multi-LLM Routing (GPT-4o / Claude 3.5)
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -788,11 +1307,11 @@ export default function AnalysisApp() {
         </section>
       </main>
 
+      {/* --- MODAL DE AUTENTICAÇÃO --- */}
       {showAuthModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
-            
             <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center">&times;</button>
             
             <div className="flex flex-col items-center text-center mb-8">
@@ -802,17 +1321,10 @@ export default function AnalysisApp() {
               <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {authMode === 'register' ? 'Criar Conta' : 'Boas-vindas'}
               </h2>
-              <p className="text-slate-500 text-sm mt-2 px-4 font-medium">
+              <p className="text-slate-500 text-sm mt-2 px-4 font-medium font-medium">
                 {authMode === 'register' ? 'Começa a analisar editais em segundos com o poder da IA.' : 'Acesse ao teu painel estratégico e histórico de análises.'}
               </p>
             </div>
-            
-            {authError && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
-                <span className="text-xl leading-none">⚠️</span>
-                <p className="text-sm font-medium leading-relaxed">{authError}</p>
-              </div>
-            )}
 
             <form onSubmit={handleAuthSubmit} className="space-y-4">
               {authMode === 'register' && (
@@ -820,17 +1332,11 @@ export default function AnalysisApp() {
               )}
               <input type="email" required placeholder="E-mail profissional" value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium" />
               <input type="password" required placeholder="Palavra-passe" value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium" />
-              
               <button type="submit" disabled={authLoading} className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50">
-                {authLoading ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                    A processar...
-                  </div>
-                ) : authMode === 'register' ? 'Começar Gratuitamente' : 'Entrar na Conta'}
+                {authLoading ? 'A processar...' : authMode === 'register' ? 'Começar Gratuitamente' : 'Entrar na Conta'}
               </button>
             </form>
-
+            
             <p className="text-center mt-8 text-sm text-slate-500 font-medium">
               {authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'} 
               <button onClick={() => setAuthMode(authMode === 'register' ? 'login' : 'register')} className="ml-2 text-violet-600 font-bold hover:underline underline-offset-4">
@@ -840,7 +1346,53 @@ export default function AnalysisApp() {
           </div>
         </div>
       )}
-    {showUpgradeModal && <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />}
+
+      {/* O modal de partilha agora está FORA do AuthModal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600"></div>
+            
+            <button 
+              onClick={() => setShowShareModal(false)} 
+              className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center"
+            >
+              &times;
+            </button>
+            
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-3xl mb-6 border border-violet-100">
+                📧
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tighter">
+                Enviar para C-Level
+              </h2>
+              <p className="text-slate-500 text-sm mt-2 px-4 font-medium leading-relaxed">
+                Partilhe esta análise estratégica diretamente com os tomadores de decisão da sua empresa.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <input 
+                type="email" 
+                placeholder="E-mail do destinatário..." 
+                value={shareEmail}
+                onChange={(e) => setShareEmail(e.target.value)}
+                className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none bg-slate-50 transition-all font-bold text-slate-700"
+              />
+              <button 
+                onClick={confirmShare}
+                disabled={isSharing}
+                className="w-full py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-violet-600 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSharing ? 'A enviar...' : 'Enviar Relatório Estratégico 🚀'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpgradeModal && <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />}
     </div> 
   );
 }

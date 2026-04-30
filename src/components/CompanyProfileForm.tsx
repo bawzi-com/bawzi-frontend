@@ -1,217 +1,210 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 
-export default function CompanyProfileForm({ userToken, initialData, is_admin, onSuccess }: any) {
-  // 1. Estados dos Campos
-  const [cnpj, setCnpj] = useState(initialData?.cnpj || '');
-  const [razaoSocial, setRazaoSocial] = useState(initialData?.razao_social || '');
-  const [enquadramento, setEnquadramento] = useState(initialData?.natureza_juridica || '');
-  const [capitalSocial, setCapitalSocial] = useState(initialData?.capital_social || '');
-  const [cnae, setCnae] = useState(initialData?.cnae_principal || '');
-  const [website, setWebsite] = useState(initialData?.website || '');
+// 🟢 1. Adicionamos a prop "onUpgrade" para comunicar com o Modal da tela principal
+interface CompanyProfileFormProps {
+  token: string;
+  userTier?: number;
+  onUpgrade?: () => void; 
+}
 
-  useEffect(() => {
-    if (cnpj.trim() === '') {
-      setRazaoSocial('');
-      setEnquadramento('');
-      setCapitalSocial('');
-      setCnae('');
-      setWebsite('');
-      Opcional: setStatus(null);
-    }
-  }, [cnpj]);
-  
-  // 2. Estados de Carregamento e Feedback
-  const [isSaving, setIsSaving] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
-
+export default function CompanyProfileForm({ token, userTier = 1, onUpgrade }: CompanyProfileFormProps) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-  
-  // 🟢 O Cérebro do Feedback (Aceita info, success e error)
-  const [status, setStatus] = useState<{ type: 'info' | 'success' | 'error', msg: string } | null>(null);
 
   // ==========================================
-  // FUNÇÃO 1: PUXAR DADOS (RECEITA FEDERAL)
+  // ESTADOS DO FORMULÁRIO
   // ==========================================
-  const handleFetchCNPJ = async () => {
-    const cleanCnpj = cnpj.replace(/\D/g, '');
+  const [cnpj, setCnpj] = useState('');
+  const [razaoSocial, setRazaoSocial] = useState('');
+  const [enquadramento, setEnquadramento] = useState('');
+  const [capitalSocial, setCapitalSocial] = useState('');
+
+  const [isLoadingCnpj, setIsLoadingCnpj] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // ==========================================
+  // 1. CARREGAR DADOS SALVOS NO BANCO
+  // ==========================================
+  useEffect(() => {
+    const fetchExistingData = async () => {
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_URL}/api/workspace/company`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data) {
+            setCnpj(data.cnpj || '');
+            setRazaoSocial(data.razao_social || '');
+            setEnquadramento(data.enquadramento || '');
+            setCapitalSocial(data.capital_social || '');
+          }
+        }
+      } catch (error) {
+        console.error("Erro ao carregar dados da empresa:", error);
+      }
+    };
     
+    fetchExistingData();
+  }, [token, API_URL]);
+
+  // ==========================================
+  // 2. BUSCAR DADOS DO CNPJ (API EXTERNA/INTERNA)
+  // ==========================================
+  const handleFetchCnpj = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    const cleanCnpj = cnpj.replace(/\D/g, ''); 
+
     if (cleanCnpj.length !== 14) {
-      setStatus({ type: 'error', msg: '⚠️ Digite um CNPJ válido com 14 números.' });
+      alert("Por favor, digite um CNPJ válido com 14 números.");
       return;
     }
 
-    setIsFetching(true);
-    setStatus({ type: 'info', msg: '🔍 A consultar a Receita Federal...' });
-
+    setIsLoadingCnpj(true);
     try {
-      // Usamos a BrasilAPI (gratuita e sem bloqueio de CORS)
-      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
-      
-      if (!res.ok) throw new Error('CNPJ não encontrado');
-      
-      const data = await res.json();
+      const res = await fetch(`${API_URL}/api/company/search/${cleanCnpj}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-      // Preenche os campos automaticamente
-      setRazaoSocial(data.razao_social);
-      setEnquadramento(data.porte);
-      setCnae(data.cnae_fiscal_descricao || data.cnae_fiscal);
-      setCapitalSocial(data.capital_social);
-
-      // Feedback de Sucesso
-      setStatus({ type: 'success', msg: '✅ Empresa encontrada! Dados preenchidos.' });
-      setTimeout(() => setStatus(null), 4000);
-
-    } catch (err) {
-      setStatus({ type: 'error', msg: '❌ CNPJ não encontrado ou Receita indisponível.' });
+      if (res.ok) {
+        const data = await res.json();
+        setRazaoSocial(data.razao_social || data.nome || '');
+        setEnquadramento(data.porte || data.enquadramento || '');
+        setCapitalSocial(data.capital_social ? `R$ ${data.capital_social}` : '');
+      } else {
+        alert("CNPJ não encontrado ou erro no servidor.");
+      }
+    } catch (error) {
+      console.error("Erro na busca de CNPJ:", error);
+      alert("Falha de conexão ao buscar CNPJ.");
     } finally {
-      setIsFetching(false);
+      setIsLoadingCnpj(false);
     }
   };
 
-// ==========================================
-  // FUNÇÃO 2: GUARDAR NO SEU BANCO DE DADOS
   // ==========================================
-  const handleSaveProfile = async (e: React.FormEvent) => {
+  // 3. SALVAR DADOS NO BANCO
+  // ==========================================
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    setStatus({ type: 'info', msg: '💾 A guardar o perfil estratégico...' });
-
     try {
-      const token = userToken || localStorage.getItem('bawzi_token');
-      
-      const capitalFormatado = capitalSocial 
-        ? parseInt(String(capitalSocial).replace(/\D/g, ''), 10) 
-        : null;
-
-      const payload = {
-        company: {
-          cnpj: cnpj.replace(/\D/g, ''),
-          razao_social: razaoSocial,
-          natureza_juridica: enquadramento,
-          capital_social: capitalFormatado,
-          cnae_principal: cnae,
-          website: website
-        }
-      };
-
-      const response = await fetch(`${API_URL}/api/users/me`, {
-        method: 'PATCH',
+      const res = await fetch(`${API_URL}/api/workspace/company`, {
+        method: 'PUT', 
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          cnpj: cnpj.replace(/\D/g, ''),
+          razao_social: razaoSocial,
+          enquadramento,
+          capital_social: capitalSocial.replace(/\D/g, '') 
+        })
       });
 
-      // 🟢 O SEGREDO: Ler o JSON mesmo quando a resposta falha
-      const data = await response.json();
-
-      if (response.ok) {
-        setStatus({ type: 'success', msg: '🚀 Perfil estratégico salvo com sucesso!' });
-        if (onSuccess) onSuccess(); 
-        setTimeout(() => setStatus(null), 4000);
+      if (res.ok) {
+        alert("DNA Empresarial atualizado com sucesso!");
       } else {
-        // Se o backend enviar um "detail" (como a mensagem do 403), usamos ela!
-        setStatus({ type: 'error', msg: data.detail || '❌ Ocorreu um erro ao salvar. Tente novamente.' });
+        alert("Erro ao salvar os dados da empresa.");
       }
-    } catch (err) {
-      setStatus({ type: 'error', msg: '❌ Erro de ligação ao servidor.' });
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
+      alert("Falha de conexão ao salvar.");
     } finally {
       setIsSaving(false);
     }
   };
 
+  // ==========================================
+  // RENDERIZAÇÃO
+  // ==========================================
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200">
-      <h2 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-2">
-        ⚡ DNA Empresarial
-      </h2>
-
-      {/* 🟢 BANNER DE FEEDBACK DINÂMICO */}
-      {status && (
-        <div className={`mb-6 p-4 rounded-xl font-bold text-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-300 ${
-          status.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 
-          status.type === 'error' ? 'bg-red-50 text-red-600 border border-red-100' :
-          'bg-blue-50 text-blue-700 border border-blue-100' // Info (Loading)
-        }`}>
-          {status.type === 'info' && <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>}
-          {status.msg}
-        </div>
-      )}
-
-      <form onSubmit={handleSaveProfile} className="space-y-6">
+    <form onSubmit={handleSave} className="relative">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         
-        {/* LINHA 1: CNPJ e Botão Puxar */}
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">CNPJ</label>
-          <div className="flex flex-col sm:flex-row gap-3">
+        {/* CNPJ */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ</label>
+          <div className="flex gap-2">
             <input 
               type="text" 
+              value={cnpj}
+              onChange={(e) => setCnpj(e.target.value)}
               placeholder="00.000.000/0000-00"
-              className="flex-1 p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none font-bold text-slate-700"
-              value={cnpj} 
-              onChange={e => setCnpj(e.target.value)} 
-              disabled={!is_admin}
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all placeholder:text-slate-300"
             />
             <button 
-              type="button" 
-              onClick={handleFetchCNPJ}
-              disabled={isFetching || !cnpj}
-              className="px-6 py-4 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50 whitespace-nowrap"
+              onClick={handleFetchCnpj}
+              disabled={isLoadingCnpj || !cnpj}
+              className="bg-slate-900 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed min-w-[90px]"
             >
-              {isFetching ? 'A procurar...' : 'Carregar'}
+              {isLoadingCnpj ? '...' : 'Carregar'}
             </button>
           </div>
         </div>
 
-        {/* LINHA 2: Razão Social */}
-        <div>
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Razão Social</label>
+        {/* RAZÃO SOCIAL */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razão Social</label>
           <input 
             type="text" 
-            className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none font-bold text-slate-700"
-            value={razaoSocial} 
-            onChange={e => setRazaoSocial(e.target.value)} 
+            value={razaoSocial}
+            onChange={(e) => setRazaoSocial(e.target.value)}
+            placeholder="Razão Social da Empresa"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all placeholder:text-slate-300"
           />
         </div>
 
-        {/* LINHA 3: Enquadramento e Capital Social */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Enquadramento</label>
-            <input 
-              type="text" 
-              placeholder="Ex: ME, EPP"
-              className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 outline-none font-bold text-slate-700"
-              value={enquadramento} 
-              onChange={e => setEnquadramento(e.target.value)} 
-            />
-          </div>
-          <div>
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Capital Social (R$)</label>
-            <input 
-              type="text" 
-              placeholder="Ex: 150000"
-              className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 outline-none font-bold text-slate-700"
-              value={capitalSocial} 
-              onChange={e => setCapitalSocial(e.target.value)} 
-            />
+        {/* ========================================== */}
+        {/* CARD DE UPSELL (PAYWALL NÍVEL 3)             */}
+        {/* ========================================== */}
+        <div className="relative group overflow-hidden rounded-xl bg-slate-900 p-[1px] shadow-md transition-all hover:shadow-violet-900/30 mt-2">
+          
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-violet-600 opacity-40 group-hover:opacity-100 transition-opacity duration-700 bg-[length:200%_auto] animate-[shimmer_2s_linear_infinite]"></div>
+          
+          <div className="relative bg-slate-950 rounded-[11px] p-5 flex flex-col items-center text-center gap-4 h-full z-10">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-slate-800/80 flex items-center justify-center text-lg border border-slate-700/50 shadow-inner group-hover:scale-110 group-hover:border-violet-500/50 transition-all duration-300">
+                <span className="drop-shadow-md">💎</span>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-violet-300 transition-colors">
+                  Inteligência Competitiva
+                </h4>
+                <p className="text-sm font-bold text-white mt-1">
+                  Exclusivo Nível Especialista
+                </p>
+              </div>
+            </div>
+
+            <button 
+              type="button" 
+              onClick={() => onUpgrade ? onUpgrade() : window.location.href = '#planos'} 
+              className="w-full py-2.5 bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-violet-50 hover:text-violet-700 transition-all shadow-sm flex items-center justify-center gap-2 active:scale-95 group/btn"
+            >
+              Desbloquear Acesso
+              <span className="group-hover/btn:translate-x-1 transition-transform">🚀</span>
+            </button>
           </div>
         </div>
 
-        {/* BOTÃO SALVAR */}
+      </div> {/* 🟢 2. Faltava este fechamento do GRID aqui! */}
+
+      {/* BOTÃO SALVAR GLOBAL */}
+      <div className="mt-8 flex justify-end">
         <button 
-          type="submit" 
-          disabled={isSaving || !cnpj || !is_admin} // 👈 Adicionado o bloqueio de admin
-          className={`w-full py-4 mt-4 text-white font-black text-lg rounded-xl transition-all shadow-lg active:scale-[0.98] flex justify-center items-center gap-2 ${
-            !is_admin ? 'bg-slate-300 cursor-not-allowed' : 'bg-gradient-to-r from-violet-600 to-pink-600 hover:opacity-90'
-          }`}
+          type="submit"
+          disabled={isSaving}
+          className="bg-violet-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-violet-500 transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
         >
-          {isSaving ? 'A guardar dados...' : !is_admin ? 'Acesso Restrito' : 'Guardar Perfil Estratégico'}
+          {isSaving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : '💾'} 
+          Salvar
         </button>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 }

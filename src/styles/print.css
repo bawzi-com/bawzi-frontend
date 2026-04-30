@@ -1,0 +1,38 @@
+/* ==========================================
+   CONFIGURAÇÕES DE IMPRESSÃO DO RELATÓRIO
+   ========================================== */
+@media print {
+  /* 1. Esconde a página inteira por padrão */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 2. Deixa visível APENAS a área de resultados e os seus filhos */
+  #area-resultados, #area-resultados * {
+    visibility: visible;
+  }
+
+  /* 3. Puxa a área de resultados para o topo da folha A4, limpando margens */
+  #area-resultados {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* 4. Força a impressão das cores de fundo (crucial para o Score e alertas) */
+* {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 5. Impede que os cards de Risco cortem no meio da quebra de página */
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

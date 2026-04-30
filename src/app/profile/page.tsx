@@ -1,12 +1,15 @@
 'use client';
-
+import Image from 'next/image';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+// Importação de todos os seus componentes modulares
 import UserProfileCard from '../../components/UserProfileCard'; 
 import CompanyProfileForm from '../../components/CompanyProfileForm'; 
-import PricingSection from '../../components/PricingSection';
+import PersonalDataForm from '../../components/PersonalDataForm';
+import TeamManager from '../../components/TeamManager';
 
-// Criamos um subcomponente para a lógica que usa o useSearchParams
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,14 +18,13 @@ function ProfileContent() {
   // ==========================================
   // ESTADOS DO COMPONENTE
   // ==========================================
+  const [authToken, setAuthToken] = useState<string>('');
   const [userData, setUserData] = useState<any>(null);
   const [userTier, setUserTier] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Estados para Gestão de Equipe
+  // Estados para Gestão de Equipe (reduzidos, pois o TeamManager cuida do resto)
   const [members, setMembers] = useState<any[]>([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteLoading, setInviteLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   // Estados Financeiros
@@ -32,7 +34,7 @@ function ProfileContent() {
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // ==========================================
-  // CARREGAMENTO DE DADOS (Agora com no-cache nativo)
+  // CARREGAMENTO DE DADOS 
   // ==========================================
   const fetchData = async () => {
     const token = localStorage.getItem('bawzi_token');
@@ -40,9 +42,9 @@ function ProfileContent() {
       router.push('/');
       return;
     }
+    setAuthToken(token); // Guarda o token no estado para passar aos componentes
 
     try {
-      // 🟢 O SEGREDO 1: Cabeçalhos que matam o cache na hora
       const headers = { 
         'Authorization': `Bearer ${token}`, 
         'Content-Type': 'application/json',
@@ -50,7 +52,6 @@ function ProfileContent() {
         'Pragma': 'no-cache'
       };
       
-      // 🟢 O SEGREDO 2: O parâmetro 'cache: no-store'
       const fetchConfig: RequestInit = { headers, cache: 'no-store' };
 
       const [userRes, wsRes, membersRes, invRes, subRes] = await Promise.all([
@@ -104,27 +105,19 @@ function ProfileContent() {
   };
 
   // ==========================================
-  // EFEITOS E GATILHOS (Aqui mora a mágica)
+  // EFEITOS E GATILHOS
   // ==========================================
   useEffect(() => {
-    // Carregamento normal ao abrir a tela
     fetchData();
 
-    // 🟢 O GATILHO DA VOLTA DO STRIPE: Se tiver success na URL
     if (stripeSuccess) {
-      console.log("Volta do Stripe detectada! Atualizando...");
-      // Espera 2 segundos pro backend terminar de gravar no Mongo e busca de novo
       setTimeout(() => {
         fetchData(); 
       }, 2000);
-      
-      // Limpa a URL (Tira o ?success=true para não ficar estranho)
       window.history.replaceState(null, '', '/profile');
     }
   }, [stripeSuccess, API_URL, router]); 
 
-  // 🟢 BÔNUS: O GATILHO DE MUDANÇA DE ABA
-  // Atualiza automaticamente quando o usuário volta para esta aba no navegador
   useEffect(() => {
     const onFocus = () => {
       fetchData();
@@ -134,63 +127,14 @@ function ProfileContent() {
   }, []);
 
   // ==========================================
-  // HANDLERS (Ações do Usuário)
+  // HANDLERS FINANCEIROS
   // ==========================================
-  const handleInvite = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail) return;
-    setInviteLoading(true);
-    
-    try {
-      const token = localStorage.getItem('bawzi_token');
-      const res = await fetch(`${API_URL}/api/workspace/invite`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: inviteEmail })
-      });
-
-      if (res.ok) {
-        alert("Convite enviado com sucesso!");
-        setInviteEmail('');
-        fetchData();
-      } else {
-        const err = await res.json();
-        alert(err.detail || "Erro ao enviar convite.");
-      }
-    } catch (err) {
-      alert("Falha na conexão.");
-    } finally {
-      setInviteLoading(false);
-    }
-  };
-
-  const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Tem certeza que deseja remover este membro da equipe?")) return;
-
-    try {
-      const token = localStorage.getItem('bawzi_token');
-      const res = await fetch(`${API_URL}/api/workspace/members/${memberId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        fetchData();
-      } else {
-        alert("Erro ao remover membro.");
-      }
-    } catch (err) {
-      alert("Erro de conexão.");
-    }
-  };
-
   const handleManageSubscription = async () => {
     try {
-      const token = localStorage.getItem('bawzi_token');
       const res = await fetch(`${API_URL}/api/billing/customer-portal`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -206,16 +150,43 @@ function ProfileContent() {
     }
   };
 
+  // ==========================================
+  // TELA DE CARREGAMENTO
+  // ==========================================
   if (isLoading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center font-black text-slate-400 uppercase text-xs animate-pulse">Carregando Bawzi...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden">
+        <div className="absolute w-[400px] h-[400px] bg-violet-600/10 blur-[100px] rounded-full animate-pulse"></div>
+        <div className="relative flex flex-col items-center z-10">
+          <div className="animate-pulse mb-8 transform hover:scale-105 transition-transform duration-500">
+            <Image 
+              src="/logo-bawzi.png" 
+              alt="Bawzi Logo" 
+              width={160} 
+              height={45} 
+              className="object-contain drop-shadow-md" 
+              priority
+            />
+          </div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-8 h-8 border-4 border-violet-100 border-t-violet-600 rounded-full animate-spin shadow-sm"></div>
+            <span className="font-black text-slate-400 uppercase tracking-widest text-[10px] animate-pulse">
+              A orquestrar inteligência...
+            </span>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  // A partir daqui vem o return com a sua UI (HTML) normal do perfil
+  // ==========================================
+  // RENDERIZAÇÃO FINAL (LAYOUT C-LEVEL)
+  // ==========================================
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
         
-        {/* HEADER */}
+        {/* HEADER BREADCRUMB */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
           <div className="flex items-center gap-4">
             <button onClick={() => router.push('/workspace')} className="w-10 h-10 bg-slate-100 text-slate-500 hover:text-violet-600 hover:bg-violet-50 rounded-xl flex items-center justify-center transition-colors">←</button>
@@ -236,81 +207,45 @@ function ProfileContent() {
             </div>
           </div>
 
-          {/* LADO DIREITO: ABAS DE CONTEÚDO */}
+          {/* LADO DIREITO: COMPONENTES MODULARES */}
           <div className="space-y-8">
             
-            {/* 1. GESTÃO DE EQUIPE */}
-            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
-                  <span className="w-10 h-10 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center text-lg">👥</span> 
-                  Gestão da Equipe
+            {/* 1. DADOS PESSOAIS E ZONA DE RISCO */}
+            <PersonalDataForm 
+              userData={userData} 
+              token={authToken} 
+              onUpdate={fetchData} 
+            />
+
+            {/* 2. GESTÃO DE EQUIPE */}
+            <TeamManager 
+              userToken={authToken} 
+              tier={userTier} 
+              members={members} 
+              is_admin={isAdmin} 
+              onUpdate={fetchData} 
+            />
+
+            {/* 3. INTELIGÊNCIA DE MERCADO (CNAE) */}
+            <div className="bg-white p-6 sm:p-8 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <h2 className="text-lg font-black text-slate-900 flex items-center gap-3">
+                  <span className="w-9 h-9 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-base">🏢</span> 
+                  Inteligência de Mercado (CNAE)
                 </h2>
-                <span className="text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">
-                  {userData?.workspace_users_count} / {userData?.vagas_totais} Vagas ocupadas
-                </span>
-              </div>
-
-              {isAdmin ? (
-                <>
-                  <form onSubmit={handleInvite} className="flex gap-3 mb-10">
-                    <input 
-                      type="email" 
-                      placeholder="E-mail do novo membro..." 
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-5 py-3 text-sm font-medium focus:ring-2 focus:ring-violet-500/20 focus:border-violet-400 outline-none transition-all"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                    />
-                    <button 
-                      type="submit" 
-                      disabled={inviteLoading || userData?.workspace_users_count >= userData?.vagas_totais}
-                      className="bg-slate-900 text-white px-6 py-3 rounded-xl font-black text-sm hover:bg-violet-600 transition-all disabled:opacity-30"
-                    >
-                      {inviteLoading ? 'Enviando...' : 'Convidar'}
-                    </button>
-                  </form>
-                </>
-              ) : (
-                <div className="mb-8 p-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-xs font-bold">
-                  ⚠️ Apenas administradores podem convidar ou remover membros.
+                <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded-full w-fit">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">DNA Empresarial Ativo</span>
                 </div>
-              )}
-
-              <div className="space-y-3">
-                {members.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between p-4 bg-slate-50/50 border border-slate-100 rounded-2xl">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-white border border-slate-200 flex items-center justify-center font-black text-slate-400 text-xs">
-                        {member.name?.charAt(0) || member.email.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-black text-slate-900">{member.name || 'Usuário Pendente'}</h4>
-                        <p className="text-xs font-medium text-slate-400">{member.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${member.is_admin ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                        {member.is_admin ? 'Admin' : 'Membro'}
-                      </span>
-                      {isAdmin && !member.is_admin && (
-                        <button onClick={() => handleRemoveMember(member.id)} className="text-slate-300 hover:text-red-500 transition-colors p-1">✕</button>
-                      )}
-                    </div>
-                  </div>
-                ))}
               </div>
+              
+              <CompanyProfileForm 
+                token={authToken} 
+                userTier={userTier} 
+              />
             </div>
 
-            {/* 2. DADOS DA EMPRESA */}
-            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
-              <h2 className="text-xl font-black text-slate-900 mb-8 flex items-center gap-3">
-                <span className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-lg">🏢</span> 
-                Inteligência de Mercado (CNAE)
-              </h2>
-              <CompanyProfileForm token={localStorage.getItem('bawzi_token') || ''} />
-            </div>
-
-            {/* 3. PLANO E FATURAMENTO */}
+            {/* 4. PLANO E FATURAMENTO */}
             <div id="planos" className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
               <div className="mb-8">
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-3">
@@ -319,83 +254,87 @@ function ProfileContent() {
                 </h2>
               </div>
 
-              {/* 1º PARTE: STATUS DA ASSINATURA (Aparece apenas se for pagante) */}
-              {userTier > 1 && subDetails?.status === 'active' && (
-                <div className="mb-10 space-y-4 animate-in fade-in duration-500">
-                  {/* Banner Principal de Gestão */}
-                  <div className="bg-slate-50 border border-slate-100 p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+              {userTier > 1 ? (
+                <div className="animate-in fade-in duration-500">
+                  <div className="bg-slate-50 border border-slate-100 p-6 md:p-8 rounded-3xl flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
                     <div className="space-y-3">
                       <span className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-100 px-3 py-1.5 rounded-lg">
                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
                         Assinatura Ativa
                       </span>
-                      <h3 className="text-lg font-black text-slate-900">
+                      <h3 className="text-xl font-black text-slate-900 tracking-tight">
                         Seu plano atual é o Nível {userTier}
                       </h3>
                       <p className="text-sm font-medium text-slate-500 max-w-xl leading-relaxed">
-                        Você tem acesso total aos recursos premium do seu plano. Para visualizar o seu histórico de faturas, alterar o método de pagamento ou cancelar a renovação automática, acesse o painel seguro.
+                        Você tem acesso total aos recursos premium. Gerencie faturas e métodos de pagamento no painel seguro.
                       </p>
                     </div>
                     <button 
                       onClick={handleManageSubscription}
-                      className="shrink-0 bg-slate-900 text-white hover:bg-violet-600 px-6 py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-sm w-full md:w-auto text-center"
+                      className="shrink-0 bg-slate-900 text-white hover:bg-violet-600 px-8 py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-md hover:-translate-y-1 w-full md:w-auto text-center"
                     >
                       Gerenciar Assinatura ↗
                     </button>
                   </div>
-
-                  {/* Informações Resumidas de Cobrança */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Próxima Cobrança</p>
-                      <span className="text-sm font-bold text-slate-700">{subDetails.current_period_end}</span>
+                </div>
+              ) : (
+                <div className="animate-in fade-in duration-500">
+                  <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] p-8 md:p-10 relative overflow-hidden shadow-xl">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/20 blur-[80px] rounded-full -mr-20 -mt-20"></div>
+                    <div className="absolute bottom-0 left-0 w-40 h-40 bg-emerald-500/10 blur-[60px] rounded-full -ml-10 -mb-10"></div>
+                    <div className="relative z-10 flex flex-col lg:flex-row items-center justify-between gap-8">
+                      <div className="space-y-4 text-center lg:text-left">
+                        <div className="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 px-3 py-1.5 rounded-full">
+                          <span className="text-[10px] font-black text-violet-400 uppercase tracking-widest">Upgrade Disponível</span>
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-tight">
+                          Desbloqueie o Poder Total <br />da Inteligência Bawzi
+                        </h3>
+                        <p className="text-slate-400 font-medium max-w-md">
+                          Seu plano atual (Nível 1) possui limites de análise. Faça o upgrade para acessar o motor Multi-LLM, monitoramento de CND e suporte prioritário.
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-center gap-4 shrink-0">
+                        <Link 
+                          href="/plans"
+                          className="bg-violet-600 hover:bg-violet-500 text-white px-10 py-5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg shadow-violet-600/20 hover:-translate-y-1 active:scale-95 w-full sm:w-auto text-center"
+                        >
+                          Escolher Plano de Assinatura
+                        </Link>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter">
+                          Planos a partir de R$ 79/mês
+                        </p>
+                      </div>
                     </div>
-                    <div className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm flex items-center justify-between">
-                      <p className="text-[10px] font-black text-slate-400 uppercase">Valor do Plano</p>
-                      <span className="text-sm font-bold text-slate-700">{subDetails.amount}<span className="text-[10px] text-slate-400 font-medium"> /mês</span></span>
+                    <div className="relative z-10 mt-10 pt-8 border-t border-white/5 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[
+                        { icon: '🧠', label: 'GPT-4o & Claude 3.5' },
+                        { icon: '🛡️', label: 'Blindagem de CND' },
+                        { icon: '📈', label: 'Análise de Riscos' },
+                        { icon: '⚡', label: 'Processamento Prioritário' }
+                      ].map((item, i) => (
+                        <div key={i} className="flex items-center gap-2 justify-center lg:justify-start">
+                          <span className="text-lg">{item.icon}</span>
+                          <span className="text-[10px] font-black text-slate-300 uppercase tracking-tight">{item.label}</span>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                  
-                  {/* Alerta de Cancelamento */}
-                  {subDetails.cancel_at_period_end && (
-                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-xs font-bold flex items-center gap-3">
-                      <span className="text-lg">⚠️</span>
-                      Sua assinatura foi cancelada e expirará em {subDetails.current_period_end}.
-                    </div>
-                  )}
-
-                  {/* Divisória elegante antes das opções de upgrade */}
-                  <div className="pt-6 pb-2">
-                    <hr className="border-slate-100" />
                   </div>
                 </div>
               )}
 
-              {/* 2º PARTE: TABELA DE PREÇOS (Aparece para todos: Free compra, Pago faz Upgrade) */}
-              <div className="mb-12">
-                {/* Mostra um título secundário se o usuário já tiver um plano pago */}
-                {userTier > 1 && subDetails?.status === 'active' && (
-                  <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 px-1">
-                    Evoluir Plano (Upgrade)
-                  </h3>
-                )}
-                
-                {/* O componente PricingSection já recebe o userTier e saberá qual botão desabilitar */}
-                <PricingSection currentTier={userTier} />
-              </div>
-
-              {/* HISTÓRICO DE PAGAMENTOS */}
               {invoices.length > 0 && (
                 <div className="mt-10 animate-in fade-in slide-in-from-top-4">
                   <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 px-1">
                     Histórico de Pagamentos
                   </h3>
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-sm border-collapse min-w-[500px]">
                         <thead>
                           <tr className="border-b border-slate-200/60 bg-slate-100/50">
-                            <th className="px-6 py-4 font-black text-slate-900">Data</th>
+                            <th className="px-6 py-4 font-black text-slate-900">Emissão</th>
+                            <th className="px-6 py-4 font-black text-slate-900">Vencimento</th>
                             <th className="px-6 py-4 font-black text-slate-900">Fatura</th>
                             <th className="px-6 py-4 font-black text-slate-900">Valor</th>
                             <th className="px-6 py-4 font-black text-slate-900">Status</th>
@@ -405,8 +344,9 @@ function ProfileContent() {
                         <tbody className="divide-y divide-slate-100">
                           {invoices.map((inv) => (
                             <tr key={inv.id} className="hover:bg-white transition-colors">
-                              <td className="px-6 py-4 text-slate-500 font-medium">{inv.date}</td>
-                              <td className="px-6 py-4 text-slate-900 font-bold">{inv.number}</td>
+                              <td className="px-6 py-4 text-slate-500 font-medium text-xs">{inv.date}</td>
+                              <td className="px-6 py-4 text-slate-900 font-bold text-xs">{inv.vencimento}</td>
+                              <td className="px-6 py-4 text-slate-500 text-xs font-mono">{inv.number}</td>
                               <td className="px-6 py-4 text-slate-900 font-black">{inv.amount}</td>
                               <td className="px-6 py-4">
                                 <span className={`px-2.5 py-1 text-[10px] font-black rounded-md uppercase tracking-widest ${
@@ -443,7 +383,6 @@ function ProfileContent() {
   );
 }
 
-// 🟢 ENVOLVEDOR OBRIGATÓRIO PARA O NEXT.JS 13+ QUANDO SE USA useSearchParams
 export default function ProfilePage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center font-black text-slate-400 uppercase text-xs animate-pulse">Verificando Conta...</div>}>

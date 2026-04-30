@@ -7,9 +7,12 @@ interface UserProfileCardProps {
     tier?: number;
     workspace_users_count?: number;
     vagas_totais?: number;
+    // 🟢 Tipagem atualizada para o modelo em Português
     company?: {
-      name?: string;
-      fantasy_name?: string;
+      cnpj?: string;
+      razao_social?: string;
+      nome_fantasia?: string;
+      enquadramento?: string;
     } | null;
   };
   currentTier?: number; 
@@ -40,7 +43,7 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
     }
   };
 
-// Lógica da Barra de Progresso (Vagas da Equipe)
+  // Lógica da Barra de Progresso (Vagas da Equipe)
   const vagasUsadas = user.workspace_users_count || 1;
   
   // 🟢 Fallback inteligente: se o servidor falhar a enviar, deduz as vagas pelo Nível
@@ -130,7 +133,7 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
             Empresa Vinculada
           </span>
           <span className="text-sm font-bold text-slate-700 truncate">
-            {user.company?.fantasy_name || user.company?.name || 'Empresa não identificada'}
+            {user.company?.nome_fantasia || user.company?.razao_social || 'Empresa não identificada'}
           </span>
         </div>
       </div>
