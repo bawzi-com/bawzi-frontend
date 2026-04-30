@@ -41,11 +41,11 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
     setLoading(true);
     
     try {
-      const res = await fetch(`${API_URL}/api/workspace/add-user`, {
+      const res = await fetch(`${API_URL}/api/workspace/invite`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${userToken}`,
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userToken}`
         },
         body: JSON.stringify({ email: newEmail })
       });
@@ -152,7 +152,6 @@ const handleToggleAdmin = async (email: string) => {
                 )}
               </div>
               <div className="flex flex-col min-w-0">
-                {/* ... dentro de <div className="space-y-3">, no map dos members ... */}
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-slate-900 truncate">
                     {member.name} {member.is_me && '(Você)'}

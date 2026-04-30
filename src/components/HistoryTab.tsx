@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useMemo } from 'react';
 
-export default function HistoryTab({ token }: { token: string }) {
+// 🟢 Adicionamos userTier e a função onRedoAnalysis nas Props
+export default function HistoryTab({ 
+  token, 
+  userTier = 1, 
+  onRedoAnalysis 
+}: { 
+  token: string, 
+  userTier?: number, 
+  onRedoAnalysis?: (analysis: any) => void 
+}) {
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedAnalysis, setSelectedAnalysis] = useState<any | null>(null);
@@ -13,8 +22,6 @@ export default function HistoryTab({ token }: { token: string }) {
   const itemsPerPage = 6;
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-  // ESTADO DE HIDRATAÇÃO SEGURA
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -26,7 +33,6 @@ export default function HistoryTab({ token }: { token: string }) {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        // 🟢 TRAVA DE SEGURANÇA: Sessão Expirada
         if (res.status === 401) {
           localStorage.clear();
           window.location.reload();
@@ -60,19 +66,15 @@ export default function HistoryTab({ token }: { token: string }) {
 
   const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-
-    // 🟢 Ajuste para PT-BR
     if (!confirm("Tem certeza que deseja excluir esta análise? Esta ação não pode ser desfeita.")) return;
 
     try {
       const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      
       const res = await fetch(`${API_URL}/api/analyses/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${tokenLocal}` }
       });
 
-      // 🟢 TRAVA DE SEGURANÇA: Sessão Expirada ao tentar excluir
       if (res.status === 401) {
         alert("Sua sessão expirou por segurança. Faça login novamente.");
         localStorage.clear();
@@ -82,13 +84,13 @@ export default function HistoryTab({ token }: { token: string }) {
 
       if (res.ok) {
         setAnalyses(prev => prev.filter((item: any) => item.id !== id));
+        if (selectedAnalysis?.id === id) setSelectedAnalysis(null);
       } else {
         const error = await res.json();
-        alert(error.detail || "Erro ao excluir a análise."); // 🟢 PT-BR
+        alert(error.detail || "Erro ao excluir a análise."); 
       }
     } catch (err) {
-      console.error("Falha ao excluir:", err);
-      alert("Erro de conexão. Tente novamente."); // 🟢 PT-BR (ligação -> conexão)
+      alert("Erro de conexão. Tente novamente."); 
     }
   };
 
@@ -111,21 +113,24 @@ export default function HistoryTab({ token }: { token: string }) {
 
   if (!isMounted) return null;
 
-  // 🟢 Ajuste para PT-BR: "A carregar" -> "Carregando"
   if (isLoading) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">Carregando o cofre estratégico...</div>;
 
   // ============================================================================
-  // MODO DETALHADO COMPLETÍSSIMO (COM RESPONSIVIDADE MOBILE)
+  // MODO DETALHADO (TELA DE VISUALIZAÇÃO)
   // ============================================================================
   if (selectedAnalysis) {
     const res = selectedAnalysis;
     const isGo = res.score >= 70;
     const isAtention = res.score >= 45 && res.score < 70;
 
+    // 🟢 LÓGICA DE UPGRADE DE ANÁLISE: Verifica se o Tier atual do utilizador é maior que o da análise salva
+    // Assumimos que o backend guarda o 'tier' da análise. Se não guardar, assumimos 1 (básico).
+    const analysisTier = res.tier || 1;
+    const canRedo = userTier > analysisTier;
+
     return (
       <div className="space-y-6 md:space-y-8 animate-in slide-in-from-right-10 duration-700 pb-20">
         
-        {/* HEADER DE NAVEGAÇÃO */}
         <div className="flex items-center justify-between bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-slate-200 sticky top-0 z-30 shadow-sm flex-wrap gap-3">
           <button 
             onClick={() => setSelectedAnalysis(null)}
@@ -142,36 +147,64 @@ export default function HistoryTab({ token }: { token: string }) {
           </div>
         </div>
 
-        {/* CARD PRINCIPAL - RESUMO E SCORE */}
+        {/* 🟢 BANNER DE UPGRADE DE ANÁLISE (Só aparece se canRedo for TRUE) */}
+        {canRedo && (
+          <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-3xl p-6 md:p-8 text-white shadow-xl shadow-violet-500/20 flex flex-col md:flex-row items-center justify-between gap-6 animate-in fade-in slide-in-from-top-4">
+            <div>
+              <h4 className="font-black text-xl flex items-center gap-2 mb-2">
+                <span className="text-2xl">🚀</span> Nova Inteligência Disponível!
+              </h4>
+              <p className="text-violet-100 text-sm font-medium leading-relaxed">
+                Esta análise foi gerada com um motor de nível inferior (Tier {analysisTier}). Como você atualizou o seu plano para o <strong>Nível {userTier}</strong>, o nosso motor Multi-LLM pode processar este edital com muito mais profundidade e extrair riscos ocultos que o motor básico não viu.
+              </p>
+            </div>
+            <button
+              onClick={() => onRedoAnalysis && onRedoAnalysis(res)}
+              className="w-full md:w-auto px-8 py-4 bg-white text-violet-900 font-black rounded-2xl hover:bg-slate-50 transition-all shrink-0 shadow-lg active:scale-95 whitespace-nowrap"
+            >
+              Refazer Análise Agora
+            </button>
+          </div>
+        )}
+
         <div className="bg-white rounded-3xl md:rounded-[3rem] p-6 md:p-12 shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-start relative overflow-hidden break-words">
           <div className={`absolute top-0 left-0 w-full h-2 ${isGo ? 'bg-emerald-500' : isAtention ? 'bg-amber-500' : 'bg-red-500'}`}></div>
           
           <div className="flex-1 w-full">
             <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-6">
               <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-slate-200">
-                {/* 🟢 Ajuste para PT-BR: "A processar" -> "Processando" */}
                 <span>📅 {isMounted && res.created_at ? new Date(res.created_at).toLocaleDateString('pt-BR') : 'Processando...'}</span>
               </span>
               <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-violet-100">
                 🤖 {res.model_source || "Motor Bawzi"}
               </span>
-              {res.effort && (
-                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-blue-100">
-                  Esforço: {res.effort}
-                </span>
-              )}
+              <span className="text-[10px] font-black text-slate-600 bg-slate-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-slate-200">
+                Tier {analysisTier}
+              </span>
             </div>
             
             <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 mb-4 tracking-tight leading-tight">
               {res.title || "Análise de Edital"}
             </h1>
             
-            <span className={`inline-block px-4 py-1.5 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest mb-6 md:mb-8 ${
-              res.classification?.includes('Força') ? 'bg-emerald-100 text-emerald-700' :
-              res.classification?.includes('Atenção') ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-            }`}>
-              {res.classification || "Não Classificado"}
-            </span>
+            <div className="flex flex-wrap items-center gap-3 mb-6 md:mb-8">
+              <span className={`inline-block px-4 py-1.5 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest ${
+                res.classification?.includes('Força') || isGo ? 'bg-emerald-100 text-emerald-700' :
+                res.classification?.includes('Atenção') || isAtention ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+              }`}>
+                {res.classification || "Não Classificado"}
+              </span>
+              
+              {res.probabilidade_de_sucesso && (
+                <span className={`inline-block px-4 py-1.5 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest border ${
+                  String(res.probabilidade_de_sucesso).toLowerCase().includes('alta') ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                  String(res.probabilidade_de_sucesso).toLowerCase().includes('media') || String(res.probabilidade_de_sucesso).toLowerCase().includes('média') ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                  'bg-red-50 text-red-600 border-red-200'
+                }`}>
+                  Probabilidade: {res.probabilidade_de_sucesso}
+                </span>
+              )}
+            </div>
 
             <p className="text-slate-600 text-base md:text-xl leading-relaxed font-medium mb-6 md:mb-8 break-words whitespace-pre-wrap">{res.summary}</p>
             
@@ -186,48 +219,220 @@ export default function HistoryTab({ token }: { token: string }) {
             )}
           </div>
 
-          {/* BOLA DO SCORE NO HISTÓRICO */}
           <div className={`shrink-0 w-32 h-32 md:min-w-[180px] md:h-[180px] rounded-full md:rounded-[3rem] border-4 md:border-8 flex flex-col items-center justify-center shadow-xl transition-transform hover:scale-105 duration-500 ${isGo ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : isAtention ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
             <span className="text-5xl md:text-7xl font-black leading-none tracking-tighter">{res.score || 0}</span>
             <span className="text-[10px] md:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score Geral</span>
           </div>
         </div>
 
-        {/* RECOMENDAÇÃO E GRID DE DETALHES */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-          
-          <div className="bg-white rounded-3xl md:rounded-[3rem] p-6 md:p-10 shadow-lg border border-slate-100 flex flex-col break-words">
-            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-4 md:mb-6 flex items-center gap-3">
-              <span className="text-2xl md:text-3xl">💡</span> Recomendação
+        {/* 1. INTELIGÊNCIA COMPETITIVA & VEREDITO FINANCEIRO */}
+        <div className="grid lg:grid-cols-2 gap-6 mb-6">
+          <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 h-full">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <span className="text-lg">🎯</span> Recomendação / Rationale
             </h3>
-            <div className="flex-1 bg-amber-50/50 p-6 md:p-8 rounded-2xl md:rounded-[2rem] border border-amber-100/50">
-              <p className="text-slate-800 font-bold text-base md:text-lg leading-relaxed">{res.recommendation}</p>
-            </div>
+            <p className="text-slate-700 leading-relaxed font-medium text-sm lg:text-base">
+              {res.rationale || res.recommendation}
+            </p>
           </div>
 
-          <div className="bg-white rounded-3xl md:rounded-[3rem] p-6 md:p-10 shadow-lg border border-slate-100 break-words">
-            <h3 className="text-lg md:text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
-              <span className="text-2xl md:text-3xl text-red-500">🛡️</span> Riscos Fatais
+          <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-8 rounded-[2rem] text-white shadow-xl h-full relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-[50px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-white/20 transition-colors"></div>
+            <h3 className="text-[10px] font-black text-violet-200 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
+              <span className="text-lg">👑</span> Inteligência Competitiva
             </h3>
-            <div className="space-y-4">
-              {res.risks?.length > 0 ? res.risks.map((risk: any, i: number) => {
-                const title = typeof risk === 'string' ? risk : (risk.title || 'Risco Detectado');
-                const quote = typeof risk === 'object' ? (risk.quote || risk.description) : null;
+            <p className="text-white/90 leading-relaxed font-medium text-sm lg:text-base mb-6 relative z-10">
+              {res.recommendation}
+            </p>
+            {res.pricing_intelligence && (
+              <div className="mt-auto bg-black/20 p-5 rounded-2xl border border-white/10 relative z-10">
+                <h4 className="text-[10px] uppercase tracking-widest font-black text-violet-300 mb-2">Veredito Financeiro</h4>
+                <p className="text-sm font-bold text-emerald-300">{res.pricing_intelligence.financial_verdict}</p>
+                {res.pricing_intelligence.estimated_discount && (
+                  <p className="text-xs text-white/70 mt-1">Deságio Médio: {res.pricing_intelligence.estimated_discount}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. PRAZOS E CRITÉRIOS DE JULGAMENTO */}
+        {((res.prazos && res.prazos.length > 0) || (res.criterios_de_julgamento && res.criterios_de_julgamento.length > 0)) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {res.prazos && res.prazos.length > 0 && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-violet-200 transition-colors">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  ⏱️ Linha do Tempo
+                </h3>
+                <ul className="space-y-3">
+                  {res.prazos.map((prazo: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
+                      <span className="text-violet-500 mt-0.5 text-lg leading-none">•</span> {prazo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {res.criterios_de_julgamento && res.criterios_de_julgamento.length > 0 && (
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 transition-colors">
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  ⚖️ Critério de Julgamento
+                </h3>
+                <ul className="space-y-3">
+                  {res.criterios_de_julgamento.map((criterio: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
+                      <span className="text-emerald-500 mt-0.5 text-lg leading-none">✓</span> {criterio}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. MATRIZ DE DECISÃO (SWOT RÁPIDO) */}
+        {((res.vantagens && res.vantagens.length > 0) || (res.desvantagens && res.desvantagens.length > 0)) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {res.vantagens && res.vantagens.length > 0 && (
+              <div className="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100">
+                <h3 className="text-xs font-black text-emerald-700 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  👍 Vantagens Competitivas
+                </h3>
+                <ul className="space-y-3">
+                  {res.vantagens.map((vantagem: string, idx: number) => (
+                    <li key={idx} className="text-sm text-emerald-900 font-medium flex items-start gap-3">
+                      <span className="text-emerald-500 font-bold">＋</span> {vantagem}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {res.desvantagens && res.desvantagens.length > 0 && (
+              <div className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100">
+                <h3 className="text-xs font-black text-orange-700 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  👎 Desvantagens & Barreiras
+                </h3>
+                <ul className="space-y-3">
+                  {res.desvantagens.map((desvantagem: string, idx: number) => (
+                    <li key={idx} className="text-sm text-orange-900 font-medium flex items-start gap-3">
+                      <span className="text-orange-500 font-bold">−</span> {desvantagem}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 4. REQUISITOS OPERACIONAIS */}
+        {((res.exigencias_criticas && res.exigencias_criticas.length > 0) || (res.documentos_necessarios && res.documentos_necessarios.length > 0)) && (
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-12">
+            <div className="p-6 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Carga Operacional</h3>
+              <p className="text-slate-900 font-black text-lg">Exigências & Documentação Obrigatória</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+              <div className="p-6 md:p-8">
+                <h4 className="text-xs font-bold text-slate-800 mb-5 flex items-center gap-2">📌 Exigências Críticas</h4>
+                <ul className="space-y-4">
+                  {res.exigencias_criticas?.map((exigencia: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-2 shrink-0"></div>
+                      {exigencia}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="p-6 md:p-8">
+                <h4 className="text-xs font-bold text-slate-800 mb-5 flex items-center gap-2">📁 Documentos Chave</h4>
+                <ul className="space-y-4">
+                  {res.documentos_necessarios?.map((doc: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-2 shrink-0"></div>
+                      {doc}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 5. MATRIZ DE RISCO */}
+        <div className="mb-12">
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
+            <span className="text-lg">🛡️</span> Matriz de Riscos Críticos
+          </h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {res.risks?.length > 0 ? res.risks.map((risk: any, i: number) => {
+              // 🟢 EXTRATOR BLINDADO (Tenta chaves conhecidas, se falhar, agarra no 1º valor do objeto)
+              const tituloRisk = typeof risk === 'string' ? risk : (risk.titulo || risk.title || risk.risk || risk.perigo || risk.nome || risk.Risco || risk.Titulo || (Object.keys(risk || {}).length > 0 ? Object.values(risk)[0] as string : null));
+              
+              const trechoRisk = typeof risk === 'object' ? (risk.quote || risk.snippet || risk.texto || risk.trecho) : null;
+              
+              const impactoRisk = typeof risk === 'object' ? (risk.descricao || risk.impact || risk.consequence || risk.impacto || risk.consequencia || risk.Descricao || risk.Impacto || (Object.keys(risk || {}).length > 1 ? Object.values(risk)[1] as string : null)) : null;
+
+              return (
+                <div key={i} className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-red-200 hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
+                  <div className="flex items-start justify-between mb-4">
+                    <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg border border-red-100">
+                      Alto Risco
+                    </span>
+                  </div>
+                  <h4 className="font-black text-slate-900 mb-3 leading-snug text-sm">
+                    {tituloRisk || "Risco Identificado"}
+                  </h4>
+                  {trechoRisk && String(trechoRisk) !== String(tituloRisk) && (
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
+                      <p className="text-[11px] text-slate-600 font-medium italic leading-relaxed">"{trechoRisk}"</p>
+                    </div>
+                  )}
+                  {impactoRisk && String(impactoRisk) !== String(tituloRisk) && (
+                    <p className="text-xs text-slate-500 font-medium mt-auto pt-2 border-t border-slate-50">
+                      <strong className="text-red-700">Impacto:</strong> {impactoRisk}
+                    </p>
+                  )}
+                </div>
+              );
+            }) : (
+              <p className="col-span-full text-emerald-600 font-bold bg-emerald-50 p-6 rounded-2xl border border-emerald-100">✓ Nenhum risco fatal identificado pela IA.</p>
+            )}
+          </div>
+        </div>
+
+        {/* 6. CHECKLIST DE AÇÃO */}
+        {(res.checklist?.length ?? 0) > 0 && (
+          <div className="mb-12">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
+              <span className="text-lg">📋</span> Plano de Ação (Checklist)
+            </h3>
+            <div className="space-y-3">
+              {res.checklist?.map((item: any, i: number) => {
+                // 🟢 EXTRATOR BLINDADO PARA CHECKLIST
+                const titulo = typeof item === 'string' ? item : (item.tarefa || item.title || item.task || item.item || item.acao || item.nome || item.Tarefa || (Object.keys(item || {}).length > 0 ? Object.values(item)[0] as string : null));
+                
+                const descricao = typeof item === 'object' ? (item.descricao || item.description || item.detalhe || item.contexto || item.obs || item.status || (Object.keys(item || {}).length > 1 ? Object.values(item)[1] as string : null)) : null;
+
                 return (
-                  <div key={i} className="p-5 md:p-6 bg-red-50/40 rounded-2xl md:rounded-3xl border border-red-100/50 group hover:bg-red-50 transition-colors w-full">
-                    <div className="flex flex-col sm:flex-row gap-3 md:gap-4 items-start">
-                      <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center shrink-0 font-black text-xs hidden sm:flex">!</div>
-                      <div className="flex-1 w-full">
-                        <strong className="text-red-950 text-sm block mb-1 font-black break-words">{title}</strong>
-                        {quote && <p className="text-red-800/70 text-xs italic leading-relaxed break-words whitespace-pre-wrap">"{quote}"</p>}
-                      </div>
+                  <div key={i} className="flex gap-4 p-5 bg-slate-50 hover:bg-white border border-slate-100 hover:border-slate-300 rounded-2xl transition-all shadow-sm group">
+                    <div className="w-6 h-6 rounded-full border-2 border-slate-300 group-hover:border-violet-500 flex items-center justify-center shrink-0 mt-0.5 transition-colors">
+                      <span className="text-[10px] font-black text-slate-400 group-hover:text-violet-500">{i + 1}</span>
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm mb-1">{titulo || "Ação Recomendada"}</h4>
+                      {descricao && String(descricao) !== String(titulo) && (
+                        <p className="text-sm text-slate-500 font-medium leading-relaxed">{descricao}</p>
+                      )}
                     </div>
                   </div>
                 );
-              }) : <p className="text-emerald-600 font-bold bg-emerald-50 p-6 rounded-2xl border border-emerald-100">✓ Nenhum risco fatal identificado pela IA.</p>}
+              })}
             </div>
           </div>
-        </div>
+        )}
 
         <button 
           onClick={() => { setSelectedAnalysis(null); window.scrollTo({top: 0, behavior: 'smooth'}); }}
@@ -244,32 +449,18 @@ export default function HistoryTab({ token }: { token: string }) {
   // ==========================================
   return (
     <div className="animate-in fade-in duration-500">
-      
-      {/* BARRA DE FILTROS */}
       <div className="flex flex-wrap items-center gap-2 mb-8 bg-white p-3 rounded-[2rem] border border-slate-200 shadow-sm">
-        <button onClick={() => setActiveFilter('all')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>
-          Todos
-        </button>
-        <button onClick={() => setActiveFilter('favorites')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeFilter === 'favorites' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>
-          ★ Favoritos
-        </button>
+        <button onClick={() => setActiveFilter('all')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Todos</button>
+        <button onClick={() => setActiveFilter('favorites')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeFilter === 'favorites' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>★ Favoritos</button>
         <div className="w-px h-6 bg-slate-200 mx-2"></div>
-        <button onClick={() => setActiveFilter('go')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'go' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-400 hover:bg-slate-50'}`}>
-          🟢 Go
-        </button>
-        <button onClick={() => setActiveFilter('attention')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'attention' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>
-          🟡 Atenção
-        </button>
-        <button onClick={() => setActiveFilter('nogo')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'nogo' ? 'bg-red-100 text-red-800' : 'text-slate-400 hover:bg-slate-50'}`}>
-          🔴 No-Go
-        </button>
+        <button onClick={() => setActiveFilter('go')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'go' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-400 hover:bg-slate-50'}`}>🟢 Go</button>
+        <button onClick={() => setActiveFilter('attention')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'attention' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>🟡 Atenção</button>
+        <button onClick={() => setActiveFilter('nogo')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'nogo' ? 'bg-red-100 text-red-800' : 'text-slate-400 hover:bg-slate-50'}`}>🔴 No-Go</button>
       </div>
 
-      {/* LISTAGEM */}
       {paginatedAnalyses.length === 0 ? (
         <div className="bg-white p-20 rounded-[3rem] border border-slate-100 text-center shadow-inner">
            <span className="text-5xl block mb-4 grayscale opacity-30">📂</span>
-           {/* 🟢 Ajuste para PT-BR: "registo" -> "registro" */}
            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Nenhum registro encontrado para este filtro.</p>
         </div>
       ) : (
@@ -283,7 +474,6 @@ export default function HistoryTab({ token }: { token: string }) {
                 onClick={() => setSelectedAnalysis(item)}
                 className="bg-white p-6 rounded-[2rem] border border-slate-200 hover:border-violet-400 hover:shadow-xl transition-all group flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer overflow-hidden"
               >
-                {/* LADO ESQUERDO: SCORE E TÍTULO */}
                 <div className="flex items-center gap-6">
                   <div className={`h-16 w-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border-2 ${
                     score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
@@ -304,12 +494,11 @@ export default function HistoryTab({ token }: { token: string }) {
                   </div>
                 </div>
                 
-                {/* LADO DIREITO: BOTÕES ALINHADOS */}
                 <div className="flex items-center gap-2 md:gap-3 shrink-0 self-end md:self-auto mt-4 md:mt-0">
                   <button 
                     onClick={(e) => handleDeleteAnalysis(item.id, e)}
                     className="p-3 md:p-4 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                    title="Excluir Análise" /* 🟢 PT-BR: "Eliminar" -> "Excluir" */
+                    title="Excluir Análise" 
                   >
                     🗑️
                   </button>
@@ -324,14 +513,12 @@ export default function HistoryTab({ token }: { token: string }) {
                     Ver Detalhes
                   </div>
                 </div>
-
               </div>
             );
           })}
         </div>
       )}
 
-      {/* PAGINAÇÃO */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-12 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
           <button 
@@ -347,7 +534,6 @@ export default function HistoryTab({ token }: { token: string }) {
             disabled={currentPage === totalPages}
             className="px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 rounded-xl hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            {/* 🟢 PT-BR: "Seguinte" -> "Próxima" */}
             Próxima
           </button>
         </div>
