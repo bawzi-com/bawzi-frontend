@@ -171,7 +171,7 @@ ${detalhamentoTecnico}
 
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
 
-  return (
+return (
     <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-100 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-violet-50/20 to-transparent pointer-events-none" />
       
@@ -242,65 +242,92 @@ ${detalhamentoTecnico}
 
         {error && <div className="mb-6 p-4 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold border border-amber-100">{error}</div>}
 
-        {/* 🔥 SCORE DE MERCADO PÚBLICO (TAM/SAM/SOM DO GOVERNO) 🔥 */}
+        {/* 🔥 SCORE DE MERCADO PÚBLICO (UX C-LEVEL) 🔥 */}
         {results.length > 0 && marketData && (
           <div className="mb-8 animate-in fade-in slide-in-from-bottom-4">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2 flex items-center gap-2">
-              <span className="text-lg">🧠</span> Score de Mercado Público: "{searchTerm}"
-            </h3>
+            
+            {/* 🟢 ALERTA VISUAL DE UNIVERSO RESTRITO */}
+            {uf && (
+              <div className="mb-5 bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-3 shadow-sm">
+                <span className="text-amber-500 text-lg">🎯</span>
+                <div>
+                  <p className="text-[11px] font-black text-amber-900 uppercase tracking-wider">
+                    Filtro Regional Ativo: ({uf})
+                  </p>
+                  <p className="text-[11px] text-amber-800/80 font-medium mt-0.5 leading-relaxed">
+                    Atenção: Todos os indicadores de mercado, preços médios e volumes abaixo refletem <strong>exclusiva e estritamente</strong> a realidade de contratações <strong>({uf})</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Cabeçalho Estratégico com Selo de Base de Inteligência */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 px-2">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <span className="text-lg">🧠</span> Inteligência de Mercado: "{searchTerm}" {uf ? `(${uf})` : `(Nacional)`}
+              </h3>
+              
+              {/* Badge Dinâmica de Universo */}
+              <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${
+                uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-violet-100 text-violet-800 border-violet-200'
+              }`}>
+                <span className="text-sm">{uf ? '📍' : '🔍'}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest">
+                  {uf 
+                    ? `Universo Restrito: ${marketData.previsaoVolume} contratos (${uf})` 
+                    : `Universo Amplo: ${marketData.previsaoVolume} contratos (Brasil)`}
+                </span>
+              </div>
+            </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {/* Card 1: Tamanho do Mercado */}
+              {/* Card 1: Teto de Faturamento */}
               <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl shadow-slate-900/10 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-violet-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Tamanho (Gov TAM)</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                  Teto de Faturamento {uf && <span className="text-amber-400">({uf})</span>}
+                </span>
                 <span className="text-xl md:text-2xl font-black text-white">R$ {marketData.tamanhoMercado}</span>
                 <span className="text-[10px] text-emerald-400 font-bold block mt-1">Estimativa Histórica</span>
               </div>
 
-              {/* Card 2: Volume Previsto & Amostra */}
+              {/* Card 2: Preço Alvo */}
               <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-5 rounded-2xl shadow-xl shadow-violet-600/20 relative overflow-hidden group">
-                {/* Efeito de brilho de fundo */}
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
-                
                 <span className="text-[9px] font-black text-violet-200 uppercase tracking-widest block mb-1 relative z-10">
-                  Volume Histórico (PNCP)
+                  Preço Alvo Sugerido
                 </span>
-                
                 <div className="flex items-baseline gap-1.5 relative z-10">
                   <span className="text-xl md:text-2xl font-black text-white">
-                    {marketData.previsaoVolume}
-                  </span>
-                  <span className="text-[10px] text-violet-300 font-bold uppercase">
-                    Contratos
+                    {formatCurrency(marketData.ticketMedio)}
                   </span>
                 </div>
-                
-                {/* A "Badge" de Transparência da IA */}
-                <div className="mt-2.5 inline-flex items-center gap-1.5 px-2 py-1 bg-black/20 rounded-md border border-white/10 relative z-10">
-                  <span className="text-[9px] font-black text-white/90 uppercase tracking-wider">
-                    Amostra: Últimos 50
-                  </span>
-                </div>
+                <span className="text-[10px] text-violet-300 font-bold uppercase block mt-1 relative z-10">
+                  Média dos Vencedores {uf ? `({uf})` : '(Brasil)'}
+                </span>
               </div>
 
-              {/* Card 3: Competitividade & Taxa */}
+              {/* Card 3: Concorrência & Facilidade de Entrada */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Competitividade</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">
+                    Concorrência {uf && <span className="text-slate-600">({uf})</span>}
+                  </span>
                   <span className="text-sm font-black text-slate-800 leading-tight block">{marketData.competitividade}</span>
                 </div>
                 <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Taxa Sucesso</span>
-                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">{marketData.taxaSucesso}%</span>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Facilidade Entrada</span>
+                  <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{marketData.taxaSucesso}%</span>
                 </div>
               </div>
 
-              {/* Card 4: Ticket Médio */}
+              {/* Card 4: Volume de Negócios */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Ticket Médio (Gov SOM)</span>
-                <span className="text-xl font-black text-slate-900">{formatCurrency(marketData.ticketMedio)}</span>
-                <span className="text-[10px] text-slate-500 font-bold block mt-1">Por Contrato</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume de Negócios</span>
+                <span className="text-xl font-black text-slate-900">{marketData.previsaoVolume}</span>
+                <span className="text-[10px] text-slate-500 font-bold block mt-1">
+                  Contratos Ativos {uf ? `(${uf})` : '(Brasil)'}
+                </span>
               </div>
             </div>
           </div>
@@ -308,7 +335,6 @@ ${detalhamentoTecnico}
 
         <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
           {results.map((edital, index) => {
-            // Mantemos o mock visual preditivo APENAS nos cards da lista para demonstrar a ideia
             const isRecorrente = index % 3 === 0; 
             const diasPredicao = 30 + (index * 12); 
 
@@ -326,7 +352,6 @@ ${detalhamentoTecnico}
                 <h3 className="font-bold text-slate-800 text-sm mb-2 line-clamp-1 pr-4">{edital.orgao}</h3>
                 <p className="text-slate-500 text-xs font-medium line-clamp-2 mb-5">{edital.objeto}</p>
                 
-                {/* RADAR PREDITIVO (MOCK VISUAL) */}
                 {isRecorrente && (
                   <div className="mb-5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200/60 rounded-2xl p-4 flex items-start gap-3 relative overflow-hidden group/preditivo shadow-inner">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
