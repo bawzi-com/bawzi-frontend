@@ -21,9 +21,10 @@ interface PncpItem {
 interface PncpSearchProps {
   onAnalyzeOportunity: (textoCompleto: string) => void;
   charLimit?: number; 
+  onUfChange?: (estadoSelecionado: string) => void;
 }
 
-export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000 }: PncpSearchProps) {
+export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -198,7 +199,12 @@ return (
           {/* 🟢 DROPDOWN DE ESTADO (UF) */}
           <select
             value={uf}
-            onChange={(e) => setUf(e.target.value)}
+            onChange={(e) => {
+              setUf(e.target.value); // 1. Mantém a atualização local
+              if (onUfChange) {
+                onUfChange(e.target.value); // 🎯 2. O GRANDE SEGREDO: Avisa o componente pai!
+              }
+            }}
             className="px-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-violet-500 outline-none transition-all font-bold text-slate-600 cursor-pointer appearance-none min-w-[140px]"
           >
             <option value="">Brasil (Todos)</option>

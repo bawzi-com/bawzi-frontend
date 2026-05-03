@@ -42,7 +42,6 @@ interface AnalysisResult {
   recommendation: string;
   rationale: string; 
   
-  // NOVAS CHAVES ESTRATÉGICAS (Opcionais para não quebrar cache antigo)
   probabilidade_de_sucesso?: string;
   vantagens?: string[];
   desvantagens?: string[];
@@ -55,7 +54,6 @@ interface AnalysisResult {
   uf?: string;
   estado?: string;
 
-  // Chaves de objetos e arrays originais
   risks?: any[]; 
   checklist?: any[]; 
   pricing_intelligence?: PricingIntelligence;
@@ -89,6 +87,8 @@ interface ConcorrenteProvavel {
   porte?: string;
   capital_social?: string;
   cnae?: string;
+  uf?: string;
+  municipio?: string;
 }
 
 // --- Utilitários ---
@@ -115,6 +115,7 @@ export default function AnalysisApp() {
   // 🟢 1. ESTADOS PRINCIPAIS
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [uf, setUf] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -376,6 +377,12 @@ export default function AnalysisApp() {
       const formData = new FormData();
       if (text.trim()) formData.append('raw_text', text.trim());
       files.forEach(f => formData.append('files', f));
+
+      formData.append('uf', 'SP');
+
+      if (uf && uf.trim() !== '') {
+        formData.append("uf", uf.trim().toUpperCase());
+      }
 
       const headers: Record<string, string> = {};
       const currentToken = localStorage.getItem('bawzi_token');
@@ -644,6 +651,7 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch 
                             charLimit={currentCharLimit}
+                            onUfChange={(estadoSelecionado: string) => setUf(estadoSelecionado)}
                             onAnalyzeOportunity={(textoSimulado: string) => {
                               setText(textoSimulado);
                               setFiles([]);

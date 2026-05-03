@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Building2, Briefcase, DollarSign, ChevronDown, ChevronUp, Globe, MapPin } from 'lucide-react';
+import { ShieldAlert, Building2, Briefcase, DollarSign, ChevronDown, ChevronUp, Globe, MapPin, Navigation } from 'lucide-react';
 
 export interface ConcorrenteProvavel {
   empresa: string;
@@ -9,6 +9,9 @@ export interface ConcorrenteProvavel {
   porte?: string;
   capital_social?: string;
   cnae?: string;
+  // 🟢 Novas tipagens
+  uf?: string;
+  municipio?: string;
 }
 
 interface ThreatRadarProps {
@@ -118,7 +121,7 @@ const ThreatRadar: React.FC<ThreatRadarProps> = ({
                 {isExpanded && (
                   <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex items-start gap-3">
-                      <Building2 className="w-5 h-5 text-indigo-500 mt-0.5" />
+                      <Building2 className="w-5 h-5 text-indigo-500 mt-0.5 min-w-[20px]" />
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Porte da Empresa</p>
                         <p className="text-sm text-slate-800 font-bold mt-0.5">{empresa.porte || "Não informado"}</p>
@@ -126,12 +129,25 @@ const ThreatRadar: React.FC<ThreatRadarProps> = ({
                     </div>
 
                     <div className="flex items-start gap-3">
-                      <DollarSign className="w-5 h-5 text-emerald-600 mt-0.5" />
+                      <DollarSign className="w-5 h-5 text-emerald-600 mt-0.5 min-w-[20px]" />
                       <div>
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Capital Social</p>
                         <p className="text-sm text-slate-800 font-bold mt-0.5">{empresa.capital_social || "?"}</p>
                       </div>
                     </div>
+
+                    {/* 🟢 NOVO BLOCO: LOCALIZAÇÃO */}
+                    {(empresa.uf || empresa.municipio) && (
+                      <div className="flex items-start gap-3 md:col-span-2">
+                        <Navigation className="w-5 h-5 text-sky-500 mt-0.5 min-w-[20px]" />
+                        <div>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Localização Sede</p>
+                          <p className="text-sm text-slate-800 font-bold mt-0.5 leading-relaxed">
+                            {empresa.municipio ? `${empresa.municipio} - ` : ''}{empresa.uf}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex items-start gap-3 md:col-span-2">
                       <Briefcase className="w-5 h-5 text-amber-500 mt-0.5 min-w-[20px]" />
