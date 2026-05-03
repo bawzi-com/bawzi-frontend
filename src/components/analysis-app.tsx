@@ -13,6 +13,7 @@ import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
+import ThreatRadar from './ThreatRadar';
 
 const logout = () => {
   localStorage.clear();
@@ -50,6 +51,9 @@ interface AnalysisResult {
   documentos_necessarios?: string[];
   criterios_de_julgamento?: string[];
   concorrentes_provaveis?: ConcorrenteProvavel[];
+  concorrentes_regionais?: ConcorrenteProvavel[];
+  uf?: string;
+  estado?: string;
 
   // Chaves de objetos e arrays originais
   risks?: any[]; 
@@ -81,6 +85,10 @@ interface ConcorrenteProvavel {
   empresa: string;
   probabilidade: number;
   forca: string;
+  vitorias: number;
+  porte?: string;
+  capital_social?: string;
+  cnae?: string;
 }
 
 // --- Utilitários ---
@@ -1133,22 +1141,17 @@ export default function AnalysisApp() {
 
                           // Tenta extrair o valor estimado. 
                           let valorEstimado = pricing.valor_estimado_raw || extrairValorNumerico(result.estimated_value);
-                          
-                          // 💉 VACINA ANTI-ZERO: Se o edital for "Orçamento Sigiloso" (Zero), 
-                          // injetamos um teto provisório para a matemática da UI não explodir.
-                          if (!valorEstimado || valorEstimado === 0) {
-                            valorEstimado = 50000; 
-                          }
 
                           // 🟢 RENDERIZA O WAR ROOM 2.0 (Motor Preditivo)
                           return (
                             <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                               <BawziShadowSimulator 
                                 valorEstimadoOrgao={valorEstimado}
-                                nomeObjeto={result.title || "este objeto"}
                                 desagioPreditivoOrgao={pricing.desagioPreditivoOrgao}
                                 nivelAmeaca={pricing.nivelAmeaca}
                                 perfilVencedor={pricing.perfilVencedor}
+                                valorMedioMercado={pricing.valorMedioMercado}
+                                debugInfo={pricing.debugInfo}
                               />
                             </div>
                           );
@@ -1160,7 +1163,7 @@ export default function AnalysisApp() {
                         <div className="mb-8 animate-in fade-in slide-in-from-bottom-6 duration-700 delay-150">
                           {userTier === 4 ? (
                             (!result.concorrentes_provaveis || result.concorrentes_provaveis.length === 0) ? (
-                              /* 🔴 ESTADO 1: PONTO CEGO (SÓ APARECE SE TIER 4 E SEM DADOS NO GOVERNO) */
+                              /* 🔴 ESTADO 1: PONTO CEGO */
                               <div className="bg-slate-900 rounded-[1.5rem] p-6 md:p-8 border border-slate-800 shadow-xl relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-40 h-40 bg-slate-800/40 blur-[40px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/2 transition-all group-hover:bg-slate-700/40"></div>
                                 <div className="flex flex-col sm:flex-row items-start gap-5 relative z-10">
@@ -1179,27 +1182,13 @@ export default function AnalysisApp() {
                                 </div>
                               </div>
                             ) : (
-                              /* 🟢 ESTADO 2: CONCORRENTES ENCONTRADOS (TIER 4) */
+                              /* 🟢 ESTADO 2: CONCORRENTES ENCONTRADOS (NOVO COMPONENTE THREAT RADAR) */
                               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-                                <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2">
-                                  <span className="text-lg">⚔️</span> Radar de Ameaças (Top 5)
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  {result.concorrentes_provaveis.slice(0, 5).map((concorrente: any, idx: number) => {
-                                    const prob = Math.round((concorrente.probabilidade || 0) * 100);
-                                    return (
-                                      <div key={idx} className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col gap-2">
-                                        <div className="flex justify-between items-center">
-                                          <span className="text-sm font-bold text-slate-800 truncate pr-2">{idx + 1}. {concorrente.empresa}</span>
-                                          <span className="text-[9px] font-black uppercase px-2 py-1 bg-rose-50 text-rose-700 rounded border border-rose-100 shrink-0">Força {concorrente.forca}</span>
-                                        </div>
-                                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                          <div className="h-full bg-rose-500 rounded-full" style={{ width: `${prob}%` }}></div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                <ThreatRadar 
+                                  concorrentesGlobais={result.concorrentes_provaveis?.slice(0, 5)} 
+                                  concorrentesRegionais={result.concorrentes_regionais?.slice(0, 5)}
+                                  ufEdital={result.uf || result.estado || "UF"} 
+                                />
                               </div>
                             )
                           ) : (

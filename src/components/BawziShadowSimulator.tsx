@@ -1,176 +1,214 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-// Mock das tipagens que virão do nosso novo Backend Python
-interface ShadowSimulatorProps {
-  valorEstimadoOrgao?: number;
-  nomeObjeto?: string;
-  desagioPreditivoOrgao?: number;
-  nivelAmeaca?: string;
-  perfilVencedor?: string;
+interface BawziShadowSimulatorProps {
+  valorEstimadoOrgao: number;
+  desagioPreditivoOrgao: number;
+  nivelAmeaca: string;
+  perfilVencedor: string;
+  valorMedioMercado?: number; 
+  debugInfo?: any; // 🟢 NOVA PROP DE DEBUG
 }
 
-const BawziShadowSimulator: React.FC<ShadowSimulatorProps> = ({ 
-  valorEstimadoOrgao = 54649.99, 
-  nomeObjeto = "este objeto",
-  desagioPreditivoOrgao = 18.5, // Recebe do pai em vez de ser mockado
-  nivelAmeaca = "MODERADO",     // Recebe do pai
-  perfilVencedor = "Estratégico"// Recebe do pai
-}) => {
-  const [custoOperacional, setCustoOperacional] = useState<number>(38000.00);
-  
-  // ==========================================
-  // MOTOR MATEMÁTICO (Frontend UI)
-  // ==========================================
-  // 1. O Lance Sniper (Recomendação estatística para ganhar)
-  const lanceSniper = valorEstimadoOrgao * (1 - (desagioPreditivoOrgao / 100));
-  
-  // 2. A Realidade do Utilizador
-  const lucroProjetado = lanceSniper - custoOperacional;
-  const margemLucroPercentual = (lucroProjetado / lanceSniper) * 100;
-  
-  // 3. Termómetro de Viabilidade
-  const isPrejuizo = lucroProjetado <= 0;
-  const isMargemApertada = margemLucroPercentual > 0 && margemLucroPercentual < 10;
+const formatBRL = (valor: number) => {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+};
 
-  // Formatação de Moeda BRL
-  const formatBRL = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+export default function BawziShadowSimulator({
+  valorEstimadoOrgao,
+  desagioPreditivoOrgao,
+  nivelAmeaca,
+  perfilVencedor,
+  valorMedioMercado,
+  debugInfo
+}: BawziShadowSimulatorProps) {
+  
+  const [tetoEditalRaw, setTetoEditalRaw] = useState<string>(
+    valorEstimadoOrgao > 0 
+      ? valorEstimadoOrgao.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) 
+      : ''
+  );
+  
+  const [custoOperacionalRaw, setCustoOperacionalRaw] = useState<string>('');
+  
+  // 🟢 ESTADO DO PAINEL DE DEBUG
+  const [showDebug, setShowDebug] = useState(false);
+
+  useEffect(() => {
+    if (valorEstimadoOrgao > 0) {
+      setTetoEditalRaw(valorEstimadoOrgao.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    }
+  }, [valorEstimadoOrgao]);
+
+  const tetoEdital = parseFloat(tetoEditalRaw.replace(/\./g, '').replace(',', '.')) || 0;
+  const custoOperacional = parseFloat(custoOperacionalRaw.replace(/\./g, '').replace(',', '.')) || 0;
+  
+  const lanceSniper = tetoEdital * (1 - (desagioPreditivoOrgao / 100));
+  const lucroLiquidoAbsoluto = lanceSniper - custoOperacional;
+  const lucroLiquidoPercentual = lanceSniper > 0 ? (lucroLiquidoAbsoluto / lanceSniper) * 100 : 0;
+
+  const isPrejuizo = lucroLiquidoAbsoluto < 0;
+  const isApertado = lucroLiquidoPercentual > 0 && lucroLiquidoPercentual < 10;
+  
+  let themeColor = "text-emerald-600"; let themeBg = "bg-emerald-50"; let themeBorder = "border-emerald-200";
+  if (isPrejuizo) {
+    themeColor = "text-red-600"; themeBg = "bg-red-50"; themeBorder = "border-red-200";
+  } else if (isApertado) {
+    themeColor = "text-amber-600"; themeBg = "bg-amber-50"; themeBorder = "border-amber-200";
+  }
+
+  const handleCurrencyChange = (setter: React.Dispatch<React.SetStateAction<string>>) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value === '') { setter(''); return; }
+    const numberValue = parseInt(value, 10) / 100;
+    setter(numberValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   };
 
   return (
-    <div className="bg-white rounded-[1.5rem] border border-slate-200 shadow-sm overflow-hidden font-sans">
+    <div className="bg-slate-950 rounded-[1.5rem] p-6 md:p-8 border border-slate-800 shadow-xl relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-64 h-64 bg-violet-900/20 blur-[80px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
       
-      {/* HEADER: TÍTULO SHADOW */}
-      <div className="bg-slate-900 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">⚔️</span>
-          <div>
-            <h3 className="text-white font-black text-lg tracking-tight uppercase">Simulador Shadow 2.0</h3>
-            <p className="text-slate-400 text-xs font-medium">Motor Preditivo de Licitações (Bottom-Up)</p>
-          </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 border-b border-slate-800 pb-6 relative z-10">
+        <div>
+          <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+            <span className="text-2xl">⚔️</span> SIMULADOR SHADOW 2.0
+          </h3>
+          <p className="text-sm text-slate-400 font-medium mt-1">Motor Preditivo de Licitações (Bottom-Up)</p>
         </div>
-        <div className="bg-slate-800 border border-slate-700 px-3 py-1 rounded-full text-xs font-bold text-emerald-400">
-          IA ATIVA
+        
+        <div className="flex items-center gap-3">
+          {/* 🟢 BOTÃO DE DEBUG SECRETO */}
+          <button 
+            onClick={() => setShowDebug(!showDebug)}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${showDebug ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-slate-800 text-slate-500 hover:text-slate-300'}`}
+            title="Telemetria de Debug"
+          >
+            🐛
+          </button>
+          <div className="bg-violet-500/10 text-violet-400 px-3 py-1.5 rounded-lg border border-violet-500/20 flex items-center gap-2 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse"></span>
+            <span className="text-[10px] font-black uppercase tracking-widest">IA ATIVA</span>
+          </div>
         </div>
       </div>
 
-      <div className="p-6">
+      {/* 🟢 PAINEL DE DEBUG EXPANSÍVEL */}
+      {showDebug && debugInfo && (
+        <div className="mb-8 p-4 bg-slate-900 border border-amber-500/30 rounded-xl relative z-10 animate-in fade-in slide-in-from-top-2">
+          <h4 className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-3">📡 Terminal de Debug: PNCP RAW DATA</h4>
+          <pre className="text-xs text-amber-200/80 font-mono overflow-x-auto whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar">
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {/* MÉTRICAS DE MERCADO */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
+        <div className="bg-slate-900/80 p-5 rounded-2xl border border-slate-800">
+          <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Fator Aperto (Órgão)</h4>
+          <p className="text-2xl font-black text-white">-{desagioPreditivoOrgao}%</p>
+          <p className="text-xs text-slate-500 mt-2">Deságio médio histórico.</p>
+        </div>
         
-        {/* ZONA 1: O TABULEIRO (Inteligência do PNCP) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="bg-slate-900/80 p-5 rounded-2xl border border-slate-800">
+          <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Radar de Ameaça</h4>
+          <p className={`text-xl mt-1 font-black ${nivelAmeaca === 'ALTO' ? 'text-red-400' : nivelAmeaca === 'MODERADO' ? 'text-amber-400' : 'text-emerald-400'}`}>
+            {nivelAmeaca}
+          </p>
+          <p className="text-xs text-slate-500 mt-2 truncate">Tubarões: {perfilVencedor}</p>
+        </div>
+
+        <div className="bg-slate-900/80 p-5 rounded-2xl border border-violet-500/30 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-violet-500/5 group-hover:bg-violet-500/10 transition-colors"></div>
+          <h4 className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-1 relative z-10">Fechamentos Reais (Mercado)</h4>
+          <p className="text-xl mt-1 font-black text-white relative z-10">
+            {valorMedioMercado ? formatBRL(valorMedioMercado) : 'Dados Sigilosos/Insuficientes'}
+          </p>
+          <p className="text-xs text-slate-500 mt-2 relative z-10">Ticket médio do setor (B2B).</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
+        <div className="space-y-6">
           
-          {/* Card: Fator Aperto (Órgão) */}
-          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Fator Aperto (Órgão)</p>
-            <div className="flex items-end gap-2">
-              <span className="text-2xl font-black text-slate-800">-{desagioPreditivoOrgao}%</span>
-              <span className="text-xs text-slate-500 mb-1 pb-0.5">Deságio Médio</span>
+          <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 focus-within:border-indigo-500/50 transition-colors">
+            <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">1. Valor Referência (Teto do Edital)</h4>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+              <input 
+                type="text" 
+                value={tetoEditalRaw}
+                onChange={handleCurrencyChange(setTetoEditalRaw)}
+                placeholder="0,00"
+                className="w-full bg-slate-950 border border-slate-700 text-white font-bold text-lg rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
+              />
             </div>
-            <p className="text-[11px] text-slate-500 mt-2 leading-tight">
-              Estatística baseada no histórico de compras deste CNPJ.
-            </p>
+            <p className="text-[11px] text-slate-500 mt-2">Valor base da licitação. Extraído pela IA ou preencha se sigiloso.</p>
           </div>
 
-          {/* Card: Radar de Concorrentes */}
-          <div className="bg-rose-50 border border-rose-100 rounded-xl p-4">
-            <p className="text-xs text-rose-800 font-bold uppercase tracking-wider mb-1">Radar de Ameaça</p>
-            <div className="flex items-end gap-2">
-              <span className="text-lg font-black text-rose-900 uppercase">{nivelAmeaca}</span>
+          <div className="bg-slate-900 p-6 rounded-2xl border border-violet-500/30 shadow-[0_0_15px_rgba(139,92,246,0.1)]">
+            <h4 className="text-[10px] font-black text-violet-400 uppercase tracking-widest mb-2">2. Custo Total Operacional</h4>
+            <div className="relative">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
+              <input 
+                type="text" 
+                value={custoOperacionalRaw}
+                onChange={handleCurrencyChange(setCustoOperacionalRaw)}
+                placeholder="0,00"
+                className="w-full bg-slate-950 border border-slate-700 text-white font-bold text-lg rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 transition-all placeholder:text-slate-700"
+              />
             </div>
-            <p className="text-[11px] text-rose-700 mt-2 leading-tight">
-              Tubarões frequentes: <strong>{perfilVencedor}</strong>.
-            </p>
-          </div>
-
-          {/* Card: Valor Teto */}
-          <div className="bg-slate-50 border border-slate-100 rounded-xl p-4">
-            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Teto do Edital</p>
-            <div className="flex items-end gap-2">
-              <span className="text-lg font-black text-slate-800">{formatBRL(valorEstimadoOrgao)}</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 leading-tight">
-              Valor máximo aceitável.
+            <p className="text-[11px] text-slate-500 font-medium mt-3 leading-relaxed">
+              Inclua produto, impostos e comissões. <strong className="text-slate-300">Evite lances abaixo deste valor.</strong>
             </p>
           </div>
         </div>
 
-        {/* ZONA 2 & 3: A CALCULADORA DE GUERRA (Bottom-Up) */}
-        <div className="bg-slate-800 rounded-2xl p-1 shadow-inner">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-px">
+        <div className="flex flex-col h-full space-y-4">
+          <div className="bg-indigo-600 p-6 rounded-2xl shadow-lg relative overflow-hidden flex-1 flex flex-col justify-center">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-2xl rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            <h4 className="text-sm font-black text-indigo-200 uppercase tracking-widest mb-2 flex items-center gap-2 relative z-10">
+              <span className="text-xl">🎯</span> O Lance Sniper (Recomendado)
+            </h4>
+            <p className="text-3xl md:text-4xl font-black text-white tracking-tighter relative z-10">
+              {formatBRL(lanceSniper)}
+            </p>
+            <p className="text-xs text-indigo-200/80 mt-2 font-medium relative z-10">
+              Cálculo preditivo p/ vitória ({desagioPreditivoOrgao}% de deságio sobre o Teto).
+            </p>
+          </div>
+
+          <div className={`p-6 rounded-2xl border transition-colors duration-300 ${themeBg} ${themeBorder} flex-1 flex flex-col justify-center`}>
+            <div className="flex justify-between items-start mb-2">
+              <h4 className={`text-[10px] font-black uppercase tracking-widest ${themeColor} opacity-80`}>
+                Lucro Líquido Projetado
+              </h4>
+              <span className={`text-lg font-black ${themeColor}`}>
+                {custoOperacional > 0 && tetoEdital > 0 ? `${lucroLiquidoPercentual.toFixed(1)}%` : '---'}
+              </span>
+            </div>
             
-            {/* Esquerda: Custo do Utilizador (Input) */}
-            <div className="bg-white rounded-l-[15px] rounded-r-none p-6 md:pr-8">
-              <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <span>1.</span> O seu Chão de Fábrica
-              </h4>
-              
-              <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
-                Custo Total Operacional (R$)
-              </label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">R$</span>
-                <input 
-                  type="number" 
-                  value={custoOperacional}
-                  onChange={(e) => setCustoOperacional(Number(e.target.value))}
-                  className="w-full bg-slate-50 border border-slate-300 text-slate-800 text-lg font-black rounded-xl py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
-                />
-              </div>
-              <p className="text-[11px] text-slate-400 mt-3">
-                Inclua produto, frete, impostos e comissões. <strong className="text-slate-600">Nunca dê um lance abaixo deste valor.</strong>
+            <p className={`text-3xl font-black tracking-tighter ${themeColor}`}>
+              {custoOperacional > 0 && tetoEdital > 0 ? formatBRL(lucroLiquidoAbsoluto) : 'R$ 0,00'}
+            </p>
+            
+            {isPrejuizo && custoOperacional > 0 && tetoEdital > 0 && (
+              <p className="text-[11px] font-bold text-red-600 mt-2 bg-red-100 px-2 py-1 rounded w-max">
+                🚨 Risco de Prejuízo! Lance menor que custo.
               </p>
-            </div>
-
-            {/* Direita: O Lance Sniper (Output da IA) */}
-            <div className="bg-slate-900 rounded-r-[15px] rounded-l-none p-6 relative overflow-hidden">
-              {/* Efeito de Fundo */}
-              <div className="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl"></div>
-              
-              <h4 className="text-sm font-bold text-emerald-400 mb-4 flex items-center gap-2 relative z-10">
-                <span>🎯</span> O Lance Sniper (Recomendado)
-              </h4>
-              
-              <div className="mb-4 relative z-10">
-                <span className="text-4xl font-black text-white tracking-tight block">
-                  {formatBRL(lanceSniper)}
-                </span>
-                <span className="text-xs text-slate-400 mt-1 block">
-                  Cálculo preditivo p/ vitória ({desagioPreditivoOrgao}% de deságio)
-                </span>
-              </div>
-
-              {/* Termómetro de Lucro Dinâmico */}
-              <div className={`mt-6 p-4 rounded-xl border relative z-10 ${
-                  isPrejuizo ? 'bg-rose-950/50 border-rose-800' : 
-                  isMargemApertada ? 'bg-amber-950/50 border-amber-800' : 
-                  'bg-emerald-950/50 border-emerald-800'
-                }`}>
-                
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Lucro Líquido Projetado</span>
-                  <span className={`text-sm font-black ${isPrejuizo ? 'text-rose-400' : isMargemApertada ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {margemLucroPercentual.toFixed(1)}%
-                  </span>
-                </div>
-                
-                <span className={`text-lg font-black ${isPrejuizo ? 'text-rose-400' : 'text-white'}`}>
-                  {isPrejuizo ? 'PREJUÍZO!' : formatBRL(lucroProjetado)}
-                </span>
-
-                {isPrejuizo && (
-                  <p className="text-[10px] text-rose-300 mt-2 leading-tight">
-                    Alerta Crítico: O lance necessário para ganhar este pregão não cobre a sua operação. Não entre, ou renegocie com fornecedores.
-                  </p>
-                )}
-              </div>
-
-            </div>
+            )}
+            {isApertado && custoOperacional > 0 && tetoEdital > 0 && (
+              <p className="text-[11px] font-bold text-amber-700 mt-2 bg-amber-100 px-2 py-1 rounded w-max">
+                ⚠️ Margem perigosa (&lt;10%). Avalie viabilidade.
+              </p>
+            )}
+            {!isPrejuizo && !isApertado && custoOperacional > 0 && tetoEdital > 0 && (
+              <p className="text-[11px] font-bold text-emerald-700 mt-2 bg-emerald-100 px-2 py-1 rounded w-max">
+                ✅ Margem saudável para executar.
+              </p>
+            )}
           </div>
         </div>
-
       </div>
     </div>
   );
-};
-
-export default BawziShadowSimulator;
+}
