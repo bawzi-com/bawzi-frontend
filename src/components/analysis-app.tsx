@@ -28,7 +28,7 @@ interface PricingIntelligence {
   valor_estimado_raw?: number;
   financial_verdict?: string;
   estimated_discount?: number;
-}
+  valorMedioMercado?: string;}
 
 interface HighlightItem { title: string; quote: string; }
 
@@ -116,6 +116,7 @@ export default function AnalysisApp() {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [uf, setUf] = useState('');
+  const [forceExact, setForceExact] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -355,7 +356,7 @@ export default function AnalysisApp() {
     }
   };
 
-  const handleAnalyze = async () => {
+const handleAnalyze = async () => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
     if (!text.trim() && files.length === 0) { setError("Cole o texto ou adicione documentos."); return; }
     if (isOverLimit) { window.location.href = '#planos'; return; }
@@ -375,14 +376,21 @@ export default function AnalysisApp() {
 
     try {
       const formData = new FormData();
-      if (text.trim()) formData.append('raw_text', text.trim());
-      files.forEach(f => formData.append('files', f));
+      
+      // 1. Textos e Arquivos
+      if (text.trim()) formData.set('raw_text', text.trim());
+      files.forEach(f => formData.append('files', f)); // Arquivos continuam com append pois são um array
 
-      formData.append('uf', 'SP');
-
+      // 2. 🟢 CORREÇÃO: Lógica da UF limpa com .set() para não criar arrays fantasmas ['SP', 'PB']
       if (uf && uf.trim() !== '') {
-        formData.append("uf", uf.trim().toUpperCase());
+        formData.set("uf", uf.trim().toUpperCase());
+      } else {
+        formData.set("uf", "BR");
       }
+
+      // 3. 🟢 CORREÇÃO: Injeção da Busca Exata com Debug
+      console.log("🕵️‍♂️ DEBUG FRONTEND: O estado do botão 'Busca Exata' antes do envio é:", forceExact);
+      formData.set('force_exact', forceExact ? 'true' : 'false');
 
       const headers: Record<string, string> = {};
       const currentToken = localStorage.getItem('bawzi_token');
@@ -1154,12 +1162,11 @@ export default function AnalysisApp() {
                           return (
                             <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                               <BawziShadowSimulator 
-                                valorEstimadoOrgao={valorEstimado}
-                                desagioPreditivoOrgao={pricing.desagioPreditivoOrgao}
-                                nivelAmeaca={pricing.nivelAmeaca}
-                                perfilVencedor={pricing.perfilVencedor}
-                                valorMedioMercado={pricing.valorMedioMercado}
-                                debugInfo={pricing.debugInfo}
+                                // Puxamos os dados da IA (com fallbacks se não existirem)
+                                desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao || 28.9}
+                                nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca || "MODERADO"}
+                                perfilVencedor={result?.pricing_intelligence?.perfilVencedor || "Estratégico"}
+                                valorReferenciaInicial={result?.pricing_intelligence?.valor_estimado_raw || 0}
                               />
                             </div>
                           );
@@ -1193,9 +1200,9 @@ export default function AnalysisApp() {
                               /* 🟢 ESTADO 2: CONCORRENTES ENCONTRADOS (NOVO COMPONENTE THREAT RADAR) */
                               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
                                 <ThreatRadar 
-                                  concorrentesGlobais={result.concorrentes_provaveis?.slice(0, 5)} 
-                                  concorrentesRegionais={result.concorrentes_regionais?.slice(0, 5)}
-                                  ufEdital={result.uf || result.estado || "UF"} 
+                                  concorrentesGlobais={result?.concorrentes_provaveis || []} 
+                                  concorrentesRegionais={result?.concorrentes_regionais || []}
+                                  ufEdital={uf || result?.uf || "Regional"} 
                                 />
                               </div>
                             )
@@ -1427,6 +1434,8 @@ export default function AnalysisApp() {
                                     <div className="relative flex items-center justify-center pt-1">
                                       <input 
                                         type="checkbox" 
+                                        checked={forceExact} 
+                                        onChange={(e) => setForceExact(e.target.checked)}
                                         className="peer appearance-none w-6 h-6 border-2 border-slate-300 rounded-lg checked:bg-emerald-500 checked:border-emerald-500 cursor-pointer transition-all"
                                       />
                                       <svg className="absolute w-4 h-4 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-all" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">

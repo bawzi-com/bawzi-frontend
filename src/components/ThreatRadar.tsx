@@ -136,7 +136,7 @@ const ThreatRadar: React.FC<ThreatRadarProps> = ({
                       </div>
                     </div>
 
-                    {/* 🟢 NOVO BLOCO: LOCALIZAÇÃO */}
+                    {/* LOCALIZAÇÃO */}
                     {(empresa.uf || empresa.municipio) && (
                       <div className="flex items-start gap-3 md:col-span-2">
                         <Navigation className="w-5 h-5 text-sky-500 mt-0.5 min-w-[20px]" />

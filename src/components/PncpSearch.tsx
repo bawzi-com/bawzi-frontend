@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+// 🟢 IMPORT DOS ÍCONES DA LINHA DO TEMPO (Se não tiver instalado: npm install lucide-react)
+import { Calendar, Info, PlayCircle, Timer } from 'lucide-react';
 
 interface PncpItem {
   id: string;
@@ -15,6 +17,11 @@ interface PncpItem {
   valorEstimado?: number;        
   valor_global?: number;         
   link: string;
+  // 🟢 NOVOS CAMPOS ADICIONADOS PARA A LINHA DO TEMPO
+  situacao?: string;
+  data_divulgacao?: string;
+  data_inicio?: string;
+  data_fim?: string;
   [key: string]: any;
 }
 
@@ -27,13 +34,13 @@ interface PncpSearchProps {
 export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
+  const [forceExact, setForceExact] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [results, setResults] = useState<PncpItem[]>([]);
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
   
-  // 🟢 ESTADO PARA OS DADOS REAIS DE MERCADO
   const [marketData, setMarketData] = useState<any>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -59,20 +66,15 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
     setIsSearching(true);
     setError('');
-    setMarketData(null); // Limpa o dashboard anterior
+    setMarketData(null); 
     
     try {
-      // 🟢 FAZEMOS DUAS BUSCAS SIMULTÂNEAS AO SEU BACKEND
       const ufParam = uf ? `&uf=${encodeURIComponent(uf)}` : '';
 
       const [resEditais, resMarket] = await Promise.all([
         fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}`),
         fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(searchTerm)}${ufParam}`).catch(() => null) 
       ]);
-
-      const finalURL = `${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}`;
-
-      console.log("Chamando URL:", finalURL);
 
       const dataEditais = await resEditais.json();
       
@@ -81,7 +83,6 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       setResults(dataEditais.data || []);
       if (dataEditais.data?.length === 0) setError('Nenhuma licitação encontrada para este termo.');
 
-      // 🟢 INJETA OS DADOS REAIS SE A API DEVOLVER SUCESSO
       if (resMarket && resMarket.ok) {
          const marketJson = await resMarket.json();
          setMarketData(marketJson);
@@ -157,8 +158,6 @@ ${detalhamentoTecnico}
       }
 
       const promptEstrategicoFinal = cabecalhoPrompt + conteudoDetalhamentoFinal + rodapePrompt;
-      
-      // 🟢 O NOSSO DETETIVE (Adicione esta linha)
       console.log("TEXTO QUE VAI PARA A IA:\n", promptEstrategicoFinal);
 
       onAnalyzeOportunity(promptEstrategicoFinal);
@@ -187,72 +186,84 @@ return (
           </div>
         </div>
 
-        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-3 mb-8">
-          <input 
-            type="text" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Ex: Livro, Notebook, Limpeza..." 
-            className="flex-1 px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-violet-500 outline-none transition-all font-semibold text-slate-700"
-          />
-          
-          {/* 🟢 DROPDOWN DE ESTADO (UF) */}
-          <select
-            value={uf}
-            onChange={(e) => {
-              setUf(e.target.value); // 1. Mantém a atualização local
-              if (onUfChange) {
-                onUfChange(e.target.value); // 🎯 2. O GRANDE SEGREDO: Avisa o componente pai!
-              }
-            }}
-            className="px-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-violet-500 outline-none transition-all font-bold text-slate-600 cursor-pointer appearance-none min-w-[140px]"
-          >
-            <option value="">Brasil (Todos)</option>
-            <option value="AC">Acre</option>
-            <option value="AL">Alagoas</option>
-            <option value="AP">Amapá</option>
-            <option value="AM">Amazonas</option>
-            <option value="BA">Bahia</option>
-            <option value="CE">Ceará</option>
-            <option value="DF">Distrito Federal</option>
-            <option value="ES">Espírito Santo</option>
-            <option value="GO">Goiás</option>
-            <option value="MA">Maranhão</option>
-            <option value="MT">Mato Grosso</option>
-            <option value="MS">Mato Grosso do Sul</option>
-            <option value="MG">Minas Gerais</option>
-            <option value="PA">Pará</option>
-            <option value="PB">Paraíba</option>
-            <option value="PR">Paraná</option>
-            <option value="PE">Pernambuco</option>
-            <option value="PI">Piauí</option>
-            <option value="RJ">Rio de Janeiro</option>
-            <option value="RN">Rio Grande do Norte</option>
-            <option value="RS">Rio Grande do Sul</option>
-            <option value="RO">Rondônia</option>
-            <option value="RR">Roraima</option>
-            <option value="SC">Santa Catarina</option>
-            <option value="SP">São Paulo</option>
-            <option value="SE">Sergipe</option>
-            <option value="TO">Tocantins</option>
-          </select>
+        <form onSubmit={handleSearch} className="mb-8">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 flex flex-col">
+              <input 
+                type="text" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Ex: Livro, Notebook, Limpeza..." 
+                className="w-full px-6 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-violet-500 outline-none transition-all font-semibold text-slate-700"
+              />
+              <label className="flex items-center gap-2 mt-2 ml-2 text-[11px] text-slate-500 font-bold cursor-pointer hover:text-indigo-600 transition-colors w-max">
+                <input 
+                  type="checkbox" 
+                  checked={forceExact} 
+                  onChange={(e) => setForceExact(e.target.checked)} 
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
+                />
+                <span>Forçar Busca Exata (Ignorar IA)</span>
+              </label>
+            </div>
 
-          <button 
-            type="submit" 
-            disabled={isSearching}
-            className="bg-slate-950 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-slate-800 disabled:opacity-50 transition-all active:scale-95 whitespace-nowrap"
-          >
-            {isSearching ? '...' : 'Buscar'}
-          </button>
+            <div className="flex-none">
+              <select
+                value={uf}
+                onChange={(e) => {
+                  setUf(e.target.value);
+                  if (onUfChange) {
+                    onUfChange(e.target.value);
+                  }
+                }}
+                className="w-full px-4 py-4 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:border-violet-500 outline-none transition-all font-bold text-slate-600 cursor-pointer appearance-none min-w-[140px] sm:min-w-[160px] h-[58px]"
+              >
+                <option value="">Brasil (Todos)</option>
+                <option value="AC">Acre</option>
+                <option value="AL">Alagoas</option>
+                <option value="AP">Amapá</option>
+                <option value="AM">Amazonas</option>
+                <option value="BA">Bahia</option>
+                <option value="CE">Ceará</option>
+                <option value="DF">Distrito Federal</option>
+                <option value="ES">Espírito Santo</option>
+                <option value="GO">Goiás</option>
+                <option value="MA">Maranhão</option>
+                <option value="MT">Mato Grosso</option>
+                <option value="MS">Mato Grosso do Sul</option>
+                <option value="MG">Minas Gerais</option>
+                <option value="PA">Pará</option>
+                <option value="PB">Paraíba</option>
+                <option value="PR">Paraná</option>
+                <option value="PE">Pernambuco</option>
+                <option value="PI">Piauí</option>
+                <option value="RJ">Rio de Janeiro</option>
+                <option value="RN">Rio Grande do Norte</option>
+                <option value="RS">Rio Grande do Sul</option>
+                <option value="RO">Rondônia</option>
+                <option value="RR">Roraima</option>
+                <option value="SC">Santa Catarina</option>
+                <option value="SP">São Paulo</option>
+                <option value="SE">Sergipe</option>
+                <option value="TO">Tocantins</option>
+              </select>
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={isSearching}
+              className="bg-slate-950 text-white px-8 py-4 sm:py-0 rounded-2xl font-black hover:bg-slate-800 disabled:opacity-50 transition-all active:scale-95 whitespace-nowrap h-[58px]"
+            >
+              {isSearching ? '...' : 'Buscar'}
+            </button>
+          </div>
         </form>
 
         {error && <div className="mb-6 p-4 bg-amber-50 text-amber-700 rounded-2xl text-xs font-bold border border-amber-100">{error}</div>}
 
-        {/* 🔥 SCORE DE MERCADO PÚBLICO (UX C-LEVEL) 🔥 */}
         {results.length > 0 && marketData && (
           <div className="mb-8 animate-in fade-in slide-in-from-bottom-4">
             
-            {/* 🟢 ALERTA VISUAL DE UNIVERSO RESTRITO */}
             {uf && (
               <div className="mb-5 bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-3 shadow-sm">
                 <span className="text-amber-500 text-lg">🎯</span>
@@ -267,13 +278,11 @@ return (
               </div>
             )}
 
-            {/* Cabeçalho Estratégico com Selo de Base de Inteligência */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 px-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <span className="text-lg">🧠</span> Inteligência de Mercado: "{searchTerm}" {uf ? `(${uf})` : `(Nacional)`}
               </h3>
               
-              {/* Badge Dinâmica de Universo */}
               <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${
                 uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-violet-100 text-violet-800 border-violet-200'
               }`}>
@@ -287,7 +296,6 @@ return (
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {/* Card 1: Teto de Faturamento */}
               <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl shadow-slate-900/10 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-violet-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">
@@ -297,7 +305,6 @@ return (
                 <span className="text-[10px] text-emerald-400 font-bold block mt-1">Estimativa Histórica</span>
               </div>
 
-              {/* Card 2: Preço Alvo */}
               <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-5 rounded-2xl shadow-xl shadow-violet-600/20 relative overflow-hidden group">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
                 <span className="text-[9px] font-black text-violet-200 uppercase tracking-widest block mb-1 relative z-10">
@@ -313,7 +320,6 @@ return (
                 </span>
               </div>
 
-              {/* Card 3: Concorrência & Facilidade de Entrada */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">
@@ -327,7 +333,6 @@ return (
                 </div>
               </div>
 
-              {/* Card 4: Volume de Negócios */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume de Negócios</span>
                 <span className="text-xl font-black text-slate-900">{marketData.previsaoVolume}</span>
@@ -339,13 +344,13 @@ return (
           </div>
         )}
 
-        <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+        <div className="space-y-6 max-h-[500px] md:max-h-[60vh] 2xl:max-h-[70vh] overflow-y-auto pr-3 pb-8 custom-scrollbar">
           {results.map((edital, index) => {
             const isRecorrente = index % 3 === 0; 
             const diasPredicao = 30 + (index * 12); 
 
             return (
-              <div key={edital.id} className="p-6 border border-slate-100 rounded-[1.5rem] bg-slate-50/30 hover:bg-white transition-all hover:shadow-lg group">
+              <div key={edital.id} className="p-6 border border-slate-200 rounded-[1.5rem] bg-slate-50/50 hover:bg-white transition-all hover:shadow-lg group">
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-2 py-1 rounded-md uppercase border border-violet-100">
                     {edital.uf} • {edital.ano}
@@ -356,15 +361,59 @@ return (
                 </div>
                 
                 <h3 className="font-bold text-slate-800 text-sm mb-2 line-clamp-1 pr-4">{edital.orgao}</h3>
-                <p className="text-slate-500 text-xs font-medium line-clamp-2 mb-5">{edital.objeto}</p>
+                <p className="text-slate-500 text-xs font-medium line-clamp-2 mb-2">{edital.objeto}</p>
                 
+                {/* ========================================================== */}
+                {/* 🟢 NOVA SEÇÃO DE DATAS E SITUAÇÃO AQUI (LINHA DO TEMPO)    */}
+                {/* ========================================================== */}
+                <div className="mt-4 mb-5 grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-slate-200/60 pt-4">
+                  
+                  {/* Divulgação */}
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-indigo-400" />
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Divulgação PNCP</p>
+                      <p className="text-xs text-slate-700 font-semibold">{edital.data_divulgacao || 'Não informada'}</p>
+                    </div>
+                  </div>
+
+                  {/* Situação */}
+                  <div className="flex items-center gap-2">
+                    <Info className="w-4 h-4 text-emerald-500" />
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Situação Atual</p>
+                      <p className="text-xs text-emerald-600 font-bold">{edital.situacao || 'Divulgada no PNCP'}</p>
+                    </div>
+                  </div>
+
+                  {/* Início Propostas */}
+                  <div className="flex items-center gap-2">
+                    <PlayCircle className="w-4 h-4 text-blue-500" />
+                    <div>
+                      <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">Início Propostas</p>
+                      <p className="text-xs text-slate-700 font-semibold">{edital.data_inicio || 'A definir'}</p>
+                    </div>
+                  </div>
+
+                  {/* Fim Propostas (Destacado) */}
+                  <div className="flex items-center gap-2 border-l-2 border-amber-400 pl-2 bg-amber-50 rounded-r py-1">
+                    <Timer className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <p className="text-[10px] text-amber-600/80 uppercase font-black tracking-tighter">Prazo Final (Fim)</p>
+                      <p className="text-xs text-amber-900 font-black">{edital.data_fim || 'Sem data limite'}</p>
+                    </div>
+                  </div>
+
+                </div>
+                {/* ========================================================== */}
+
                 {isRecorrente && (
                   <div className="mb-5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200/60 rounded-2xl p-4 flex items-start gap-3 relative overflow-hidden group/preditivo shadow-inner">
                     <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
                     <div className="w-8 h-8 bg-white border border-orange-100 rounded-full flex items-center justify-center shrink-0 shadow-sm text-lg z-10">
                       🔮
                     </div>
-                    <div className="relative z-10">
+                    <div className="relative z-10 flex flex-col h-full flex-1 min-h-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="text-[10px] font-black text-orange-800 uppercase tracking-widest">Radar Preditivo de Compras</h4>
                         <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[8px] font-black rounded uppercase tracking-widest animate-pulse border border-orange-200/50">
@@ -380,7 +429,21 @@ return (
                 
                 <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                   <button 
-                    onClick={() => handleDeepAnalyze(edital)}
+                    onClick={() => {
+                      // 🟢 VALIDAÇÃO BLINDADA (Bloqueia vazios e a palavra "undefined")
+                      const cnpjInvalido = !edital.cnpj || String(edital.cnpj) === "undefined";
+                      const anoInvalido = !edital.ano || String(edital.ano) === "undefined";
+                      const seqInvalido = !edital.sequencial || String(edital.sequencial) === "undefined";
+
+                      // 🟢 VEJA A MATRIX: Abra o F12 (Console) no navegador e clique no botão
+                      console.log("🕵️ DADOS RECEBIDOS DO BACKEND:", edital);
+
+                      if (cnpjInvalido || anoInvalido || seqInvalido) {
+                        alert("⚠️ Este edital possui uma falha de registo no PNCP (Falta CNPJ, Ano ou Sequencial). A IA não consegue extrair o documento original desta oportunidade.");
+                        return;
+                      }
+                      handleDeepAnalyze(edital);
+                    }}
                     disabled={loadingId !== null}
                     className="flex-1 bg-violet-600 text-white font-black py-3 px-4 rounded-xl text-xs hover:bg-violet-700 transition-all disabled:bg-slate-300 disabled:cursor-not-allowed shadow-md hover:shadow-violet-600/30 flex items-center justify-center gap-2"
                   >
