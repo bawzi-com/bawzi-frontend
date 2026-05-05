@@ -874,34 +874,39 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                           <div className="mt-6 w-full">
                             {userTier === 4 ? (
                               <div className="flex flex-col sm:flex-row gap-4 w-full">
-                                {/* ⚡ ANÁLISE PADRÃO (OPENAI) */}
-                                <button
-                                  type="button" 
-                                  disabled={isAnalyzing}
-                                  onClick={() => handleAnalyze("openai")}
-                                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
-                                >
-                                  <span className="text-xl">⚡</span>
-                                  <div className="flex flex-col items-start text-left">
-                                    <span className="block leading-tight">Análise Padrão</span>
-                                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">GPT-4o (Velocidade)</span>
-                                  </div>
-                                </button>
+  
+                              {/* ⚡ ANÁLISE PADRÃO (OPENAI) - Visual Clean e Ágil */}
+                              <button
+                                type="button" 
+                                disabled={isAnalyzing}
+                                onClick={() => handleAnalyze("openai")}
+                                className="flex-1 bg-white hover:bg-slate-50 text-slate-800 py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-sm border-2 border-slate-200 hover:border-slate-300 disabled:opacity-50"
+                              >
+                                <span className="text-xl opacity-80">⚡</span>
+                                <div className="flex flex-col items-start text-left">
+                                  <span className="block leading-tight">Análise Padrão</span>
+                                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">GPT-4o (Velocidade)</span>
+                                </div>
+                              </button>
 
-                                {/* 🕵️‍♂️ ANÁLISE AVANÇADA (CLAUDE) */}
-                                <button
-                                  type="button"
-                                  disabled={isAnalyzing}
-                                  onClick={() => handleAnalyze("claude")}
-                                  className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-violet-500/25 border border-violet-500/50 disabled:opacity-50"
-                                >
-                                  <span className="text-xl animate-pulse">🧠</span>
-                                  <div className="flex flex-col items-start text-left">
-                                    <span className="block leading-tight">Análise Avançada</span>
-                                    <span className="text-[10px] text-violet-200 font-medium uppercase tracking-tighter">Claude 3.5 (Pente Fino)</span>
-                                  </div>
-                                </button>
-                              </div>
+                              {/* 🧠 ANÁLISE AVANÇADA (CLAUDE) - Visual Preto Premium (Enterprise) */}
+                              <button
+                                type="button"
+                                disabled={isAnalyzing}
+                                onClick={() => handleAnalyze("claude")}
+                                className="flex-1 bg-slate-950 hover:bg-black text-white py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-slate-900/20 border border-slate-800 disabled:opacity-50 relative overflow-hidden group"
+                              >
+                                {/* Efeito de fundo subtil ao passar o rato */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-violet-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                                
+                                <span className="text-xl relative z-10 drop-shadow-md">🧠</span>
+                                <div className="flex flex-col items-start text-left relative z-10">
+                                  <span className="block leading-tight">Análise Avançada</span>
+                                  <span className="text-[10px] text-amber-400 font-black uppercase tracking-widest mt-0.5">Claude 3.5 (Pente Fino)</span>
+                                </div>
+                              </button>
+                              
+                            </div>
                             ) : (
                               /* BOTÃO ÚNICO PARA TIERS 1, 2 e 3 */
                               <button
