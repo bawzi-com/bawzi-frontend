@@ -111,50 +111,50 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       let detalhamentoTecnico = dataTexto.texto || "Detalhes técnicos não fornecidos pela API.";
       const historicoPrecos = dataMedia.texto || "Sem histórico recente para estabelecer média.";
 
-      const cabecalhoPrompt = `
-DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
-===================================================================
+    const cabecalhoPrompt = `
+    DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
+    ===================================================================
 
-[1. DADOS CADASTRAIS DA OPORTUNIDADE]
-• Órgão Comprador: ${edital.orgao}
-• Localidade: ${edital.uf}
-• Código de Controle (PNCP): ${edital.id}
-• Valor Global Estimado: ${formatCurrency(edital.valor || edital.valor_total_estimado || edital.valor_global || 0)}
-• Link da Publicação Oficial: ${edital.link}
+    [1. DADOS CADASTRAIS DA OPORTUNIDADE]
+    • Órgão Comprador: ${edital.orgao}
+    • Localidade: ${edital.uf}
+    • Código de Controle (PNCP): ${edital.id}
+    • Valor Global Estimado: ${formatCurrency(edital.valor || edital.valor_total_estimado || edital.valorEstimado || edital.valor_global || 0)}
+    • Início das Propostas: ${edital.data_inicio || 'Não informada'}
+    • Fim das Propostas (Data Limite): ${edital.data_fim || 'Não informada'}
+    • Link da Publicação Oficial: ${edital.link}
 
-[2. OBJETO DO EDITAL (RESUMO)]
-${edital.objeto}
+    [2. OBJETO DO EDITAL (RESUMO)]
+    ${edital.objeto}
 
-[4. INTELIGÊNCIA DE MERCADO E HISTÓRICO (PNCP)]
-${historicoPrecos}
-`;
+    [4. INTELIGÊNCIA DE MERCADO E HISTÓRICO (PNCP)]
+    ${historicoPrecos}
+    `;
 
-      const rodapePrompt = `
-===================================================================
-INSTRUÇÃO AO AVALIADOR (JUIZ FINAL DA BAWZI):
-Você é um consultor de licitações de elite avaliando este edital. Gere uma triagem rápida, incisiva e altamente estratégica com foco nas empresas médias. Responda incluindo:
-1. Veredicto Claro (Go / No-Go).
-2. Riscos Ocultos ou "Pegadinhas" no escopo.
-3. PREVISÃO DE PREÇO VENCEDOR (Pricing Intelligence): Utilize os dados da "Inteligência de Mercado" acima para atuar como uma bússola financeira, indicando qual seria uma faixa de deságio competitivo para vencer este pregão sem prejuízo.
-`;
+    const rodapePrompt = `
+    ===================================================================
+    INSTRUÇÃO AO AVALIADOR (JUIZ FINAL DA BAWZI):
+    Você é um consultor de licitações de elite avaliando este edital. Gere uma triagem rápida, incisiva e altamente estratégica com foco nas empresas médias. 
+    Baseie a sua análise puramente nos dados fornecidos, sem inventar valores.
+    `;
 
-      const espacoOcupado = cabecalhoPrompt.length + rodapePrompt.length;
-      const espacoLivre = charLimit - espacoOcupado - 500; 
+          const espacoOcupado = cabecalhoPrompt.length + rodapePrompt.length;
+          const espacoLivre = charLimit - espacoOcupado - 500; 
 
-      let conteudoDetalhamentoFinal = "";
-      if (detalhamentoTecnico.length > espacoLivre && espacoLivre > 0) {
-        conteudoDetalhamentoFinal = `
-[3. DETALHAMENTO TÉCNICO E REGRAS]
-${detalhamentoTecnico.substring(0, espacoLivre)}
+          let conteudoDetalhamentoFinal = "";
+          if (detalhamentoTecnico.length > espacoLivre && espacoLivre > 0) {
+            conteudoDetalhamentoFinal = `
+    [3. DETALHAMENTO TÉCNICO E REGRAS]
+    ${detalhamentoTecnico.substring(0, espacoLivre)}
 
-[⚠️ ALERTA DO SISTEMA - DADOS TRUNCADOS]
-O detalhamento técnico acima foi cortado pois excedeu o limite do plano atual do utilizador (${charLimit.toLocaleString()} caracteres). Baseie a sua análise nesta amostragem e, no seu Veredito Financeiro, informe ao utilizador que ele precisa fazer o upgrade (Plano Superior) para que a IA analise a totalidade dos itens e documentos desta licitação.
-`;
-      } else {
-        conteudoDetalhamentoFinal = `
-[3. DETALHAMENTO TÉCNICO E REGRAS]
-${detalhamentoTecnico}
-`;
+    [⚠️ ALERTA DO SISTEMA - DADOS TRUNCADOS]
+    O detalhamento técnico acima foi cortado pois excedeu o limite do plano atual do utilizador (${charLimit.toLocaleString()} caracteres). Baseie a sua análise nesta amostragem e, no seu Veredito Financeiro, informe ao utilizador que ele precisa fazer o upgrade (Plano Superior) para que a IA analise a totalidade dos itens e documentos desta licitação.
+    `;
+          } else {
+            conteudoDetalhamentoFinal = `
+    [3. DETALHAMENTO TÉCNICO E REGRAS]
+    ${detalhamentoTecnico}
+    `;
       }
 
       const promptEstrategicoFinal = cabecalhoPrompt + conteudoDetalhamentoFinal + rodapePrompt;
@@ -430,7 +430,7 @@ return (
                 <div className="flex flex-col sm:flex-row gap-3 mt-auto">
                   <button 
                     onClick={() => {
-                      // 🟢 VALIDAÇÃO BLINDADA (Bloqueia vazios e a palavra "undefined")
+                      // (Bloqueia vazios e a palavra "undefined")
                       const cnpjInvalido = !edital.cnpj || String(edital.cnpj) === "undefined";
                       const anoInvalido = !edital.ano || String(edital.ano) === "undefined";
                       const seqInvalido = !edital.sequencial || String(edital.sequencial) === "undefined";

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { fetchUserProfile } from '../services/api';
 import CompanyProfileForm from './CompanyProfileForm';
 import Image from 'next/image';
@@ -21,6 +21,11 @@ const logout = () => {
 };
 
 // --- Interfaces ---
+interface EngenhariaReversa {
+  setor_identificado: string;
+  margem_media_setor_pct: number;
+}
+
 interface PricingIntelligence {
   desagioPreditivoOrgao: number;
   nivelAmeaca: string;
@@ -28,11 +33,14 @@ interface PricingIntelligence {
   valor_estimado_raw?: number;
   financial_verdict?: string;
   estimated_discount?: number;
-  valorMedioMercado?: string;}
+  valorMedioMercado?: number; // Alterado para number para facilitar cálculos
+  engenharia_reversa?: EngenhariaReversa; // 🟢 ADICIONADO: Fiação do War Room
+}
 
 interface HighlightItem { title: string; quote: string; }
 
 interface AnalysisResult {
+  id?: string;
   title: string; 
   summary: string; 
   score: number; 
@@ -41,7 +49,10 @@ interface AnalysisResult {
   estimated_value: string; 
   recommendation: string;
   rationale: string; 
-  
+  datas_criticas_extraidas?: {
+    data_limite_propostas?: string;
+    data_impugnacao?: string;
+  };
   probabilidade_de_sucesso?: string;
   vantagens?: string[];
   desvantagens?: string[];
@@ -49,21 +60,16 @@ interface AnalysisResult {
   prazos?: string[];
   documentos_necessarios?: string[];
   criterios_de_julgamento?: string[];
-  concorrentes_provaveis?: ConcorrenteProvavel[];
-  concorrentes_regionais?: ConcorrenteProvavel[];
+  concorrentes_provaveis?: any[];
+  concorrentes_regionais?: any[];
   uf?: string;
   estado?: string;
-
   risks?: any[]; 
   checklist?: any[]; 
   pricing_intelligence?: PricingIntelligence;
-  orgao_risk?: OrgaoRisk; 
-}
-
-interface OrgaoRisk {
-  risco: string;
-  score_pagamento: number | string; 
-  status: string;
+  orgao_risk?: any; 
+  created_at?: string;
+  parecer_especialista?: string;
 }
 
 interface CndDetail {
@@ -79,31 +85,17 @@ interface CndData {
   detalhes: CndDetail[];
 }
 
-interface ConcorrenteProvavel {
-  empresa: string;
-  probabilidade: number;
-  forca: string;
-  vitorias: number;
-  porte?: string;
-  capital_social?: string;
-  cnae?: string;
-  uf?: string;
-  municipio?: string;
-}
-
 // --- Utilitários ---
 const getScoreColor = (score: number) => score >= 70 ? 'text-emerald-600 border-emerald-500' : score >= 45 ? 'text-amber-500 border-amber-400' : 'text-red-600 border-red-500';
 const getScoreBg = (score: number) => score >= 70 ? 'bg-emerald-50' : score >= 45 ? 'bg-amber-50' : 'bg-red-50';
 const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
 
-// Extrai números de strings formatadas
 const extrairValorNumerico = (val: string | number | undefined): number => {
   if (typeof val === 'number') return val;
   if (!val) return 0;
   const num = Number(val.toString().replace(/[^\d,-]/g, '').replace(',', '.'));
   return isNaN(num) ? 0 : num;
 };
-
 
 // ==========================================
 // COMPONENTE PRINCIPAL
@@ -124,7 +116,6 @@ export default function AnalysisApp() {
 
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<number>(-1);
-  const [hasProfile, setHasProfile] = useState<boolean>(true);
   const [userData, setUserData] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState('workspace');
@@ -146,12 +137,11 @@ export default function AnalysisApp() {
   const [shareEmail, setShareEmail] = useState('');
 
   // 🟢 2. PUXA OS LIMITES GLOBAIS DO TIER CONTEXT
-  const { tierLimits, tierFileLimits, isLoading } = useTierConfig();
+  const { tierLimits, tierFileLimits } = useTierConfig();
 
-  // 🟢 3. LÓGICA DE VALIDAÇÃO (Usando os limites dinâmicos)
+  // 🟢 3. LÓGICA DE VALIDAÇÃO
   const currentCharLimit = tierLimits[userTier] || 10000;
   const currentChars = text.length; 
-  
   const currentFileLimitMB = tierFileLimits[userTier] || 3;
   const currentFileLimitBytes = currentFileLimitMB * 1024 * 1024;
   const totalFileSize = files.reduce((acc, file) => acc + file.size, 0);
@@ -159,19 +149,13 @@ export default function AnalysisApp() {
   const isOverTextLimit = currentChars > currentCharLimit;
   const isOverFileLimit = totalFileSize > currentFileLimitBytes;
   const isOverLimit = isOverTextLimit || isOverFileLimit;
-  
-  // Zona de aviso (95% do limite)
-  const isWarningZone = currentChars > (currentCharLimit * 0.95);
   const requiresAuth = (!token) && (hasUsedFreeTrial);
-
 
   // ==========================================
   // ESTADOS DO RADAR FISCAL (CND)
   // ==========================================
   const [cndData, setCndData] = useState<CndData | null>(null);
   const [isLoadingCnd, setIsLoadingCnd] = useState(false);
-  const [cndRiskCount, setCndRiskCount] = useState(3); // Mock temporário se não houver backend
-
 
   // ==========================================
   // ESTADOS DE ANIMAÇÃO DE CARREGAMENTO
@@ -186,7 +170,6 @@ export default function AnalysisApp() {
     { title: "A Emitir Veredito Financeiro", desc: "A compilar a matriz de decisão Go/No-Go. Quase pronto..." }
   ];
 
-  // Animação do Loading
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isAnalyzing) {
@@ -198,9 +181,8 @@ export default function AnalysisApp() {
     return () => clearInterval(interval);
   }, [isAnalyzing]);
 
-
   // ==========================================
-  // EFEITO: INICIALIZAÇÃO DE DADOS (USER/WORKSPACE)
+  // EFEITOS DE INICIALIZAÇÃO E SINCRONIZAÇÃO
   // ==========================================
   useEffect(() => {
     const initializeData = async () => {
@@ -250,9 +232,6 @@ export default function AnalysisApp() {
     initializeData();
   }, [API_URL]);
 
-  // ==========================================
-  // EFEITO: RADAR FISCAL (CND)
-  // ==========================================
   useEffect(() => {
     const cnpj = userData?.company?.cnpj;
     if (token && cnpj) {
@@ -271,7 +250,6 @@ export default function AnalysisApp() {
     }
   }, [userData?.company?.cnpj, token, API_URL]);
 
-  // Scroll automático para loading
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     if (isAnalyzing) {
@@ -287,9 +265,21 @@ export default function AnalysisApp() {
     };
   }, [isAnalyzing]);
 
+  // 🟢 CONTROLADOR DE ABORTO DE REQUISIÇÃO
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelAnalysis = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort(); // Dispara o tiro letal na requisição
+    }
+    setIsAnalyzing(false);
+    setLoadingStep(0);
+    setError("Análise cancelada pelo utilizador.");
+    setTimeout(() => setError(null), 4000);
+  };
 
   // ==========================================
-  // HANDLERS E FUNÇÕES
+  // HANDLERS E FUNÇÕES DE AÇÃO
   // ==========================================
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
@@ -356,7 +346,7 @@ export default function AnalysisApp() {
     }
   };
 
-const handleAnalyze = async () => {
+const handleAnalyze = async (motor: "openai" | "claude") => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
     if (!text.trim() && files.length === 0) { setError("Cole o texto ou adicione documentos."); return; }
     if (isOverLimit) { window.location.href = '#planos'; return; }
@@ -366,6 +356,8 @@ const handleAnalyze = async () => {
     setResult(null); 
     setIsCachedResult(false);
     
+    abortControllerRef.current = new AbortController();
+
     setTimeout(() => {
       const areaLoading = document.getElementById('area-loading');
       if (areaLoading) {
@@ -376,21 +368,11 @@ const handleAnalyze = async () => {
 
     try {
       const formData = new FormData();
-      
-      // 1. Textos e Arquivos
       if (text.trim()) formData.set('raw_text', text.trim());
-      files.forEach(f => formData.append('files', f)); // Arquivos continuam com append pois são um array
-
-      // 2. 🟢 CORREÇÃO: Lógica da UF limpa com .set() para não criar arrays fantasmas ['SP', 'PB']
-      if (uf && uf.trim() !== '') {
-        formData.set("uf", uf.trim().toUpperCase());
-      } else {
-        formData.set("uf", "BR");
-      }
-
-      // 3. 🟢 CORREÇÃO: Injeção da Busca Exata com Debug
-      console.log("🕵️‍♂️ DEBUG FRONTEND: O estado do botão 'Busca Exata' antes do envio é:", forceExact);
+      files.forEach(f => formData.append('files', f));
+      formData.set("uf", uf && uf.trim() !== '' ? uf.trim().toUpperCase() : "BR");
       formData.set('force_exact', forceExact ? 'true' : 'false');
+      formData.set('provider', motor);
 
       const headers: Record<string, string> = {};
       const currentToken = localStorage.getItem('bawzi_token');
@@ -400,6 +382,7 @@ const handleAnalyze = async () => {
         method: 'POST', 
         headers: headers, 
         body: formData,
+        signal: abortControllerRef.current.signal
       });
 
       if (response.status === 401) {
@@ -447,6 +430,10 @@ const handleAnalyze = async () => {
     } catch (err: any) {
       console.error("Erro na análise:", err);
       let mensagemParaExibir = "Ocorreu um erro inesperado. Por favor, tente novamente.";
+      if (err.name === 'AbortError') {
+        console.log("Requisição abortada pelo utilizador.");
+        return; 
+      }
 
       if (err.message.includes("NoneType") || err.message.includes("401")) {
         mensagemParaExibir = "Parece que a sua sessão expirou. Por favor, faça login novamente.";
@@ -540,20 +527,19 @@ const handleAnalyze = async () => {
     }, 50);
   };
 
-  // Lê a string da IA e gera estilos dinâmicos
   const getProbabilityStyles = (probabilidade?: string) => {
-  const textProb = (probabilidade || '').toLowerCase();
-  if (textProb.includes('alta') || textProb.includes('alto')) {
-    return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: '🚀', label: 'ALTA' };
-  }
-  if (textProb.includes('média') || textProb.includes('media')) {
-    return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: '⚖️', label: 'MÉDIA' };
-  }
-  return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: '⚠️', label: 'BAIXA' };
-};
+    const textProb = (probabilidade || '').toLowerCase();
+    if (textProb.includes('alta') || textProb.includes('alto')) {
+      return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', icon: '🚀', label: 'ALTA' };
+    }
+    if (textProb.includes('média') || textProb.includes('media')) {
+      return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: '⚖️', label: 'MÉDIA' };
+    }
+    return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: '⚠️', label: 'BAIXA' };
+  };
 
   // ==========================================
-  // RENDERIZAÇÃO VISUAL
+  // RENDERIZAÇÃO VISUAL ESTRATÉGICA
   // ==========================================
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
@@ -701,7 +687,7 @@ const handleAnalyze = async () => {
                           </div>
                         )}
 
-                        <form onSubmit={(e) => { e.preventDefault(); handleAnalyze(); }} className="space-y-6 w-full">
+                        <form onSubmit={(e) => { e.preventDefault(); handleAnalyze("openai"); }} className="space-y-6 w-full">
                           <div className="relative group w-full">
                             <textarea 
                               value={text} 
@@ -743,39 +729,63 @@ const handleAnalyze = async () => {
                             </div>
                           )}
 
-                          <button 
-                            type="submit" 
-                            disabled={isAnalyzing || isOverLimit} 
-                            className="w-full bg-slate-900 text-white font-black text-base md:text-lg py-5 rounded-2xl shadow-xl hover:bg-violet-600 hover:shadow-violet-600/30 transition-all duration-300 disabled:opacity-50 disabled:hover:bg-slate-900 disabled:cursor-not-allowed relative overflow-hidden group"
-                          >
-                            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"></div>
-                            <span className="relative flex items-center justify-center gap-3">
-                              {isAnalyzing ? (
-                                <>
-                                  <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                  A Orquestrar Inteligência...
-                                </>
-                              ) : (
-                                <>
-                                  {isOverLimit ? 'Limite de caracteres excedido' : 'Iniciar Análise Estratégica'}
-                                  <span className="group-hover:translate-x-1 transition-transform">🚀</span>
-                                </>
-                              )}
-                            </span>
-                          </button>
+                          <div className="mt-6 w-full">
+                            {userTier === 4 ? (
+                              <div className="flex flex-col sm:flex-row gap-4 w-full">
+                                {/* ⚡ ANÁLISE PADRÃO (OPENAI) */}
+                                <button
+                                  type="button" 
+                                  disabled={isAnalyzing}
+                                  onClick={() => handleAnalyze("openai")}
+                                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
+                                >
+                                  <span className="text-xl">⚡</span>
+                                  <div className="flex flex-col items-start text-left">
+                                    <span className="block leading-tight">Análise Padrão</span>
+                                    <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">GPT-4o (Velocidade)</span>
+                                  </div>
+                                </button>
+
+                                {/* 🕵️‍♂️ ANÁLISE AVANÇADA (CLAUDE) */}
+                                <button
+                                  type="button"
+                                  disabled={isAnalyzing}
+                                  onClick={() => handleAnalyze("claude")}
+                                  className="flex-1 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-violet-500/25 border border-violet-500/50 disabled:opacity-50"
+                                >
+                                  <span className="text-xl animate-pulse">🧠</span>
+                                  <div className="flex flex-col items-start text-left">
+                                    <span className="block leading-tight">Análise Avançada</span>
+                                    <span className="text-[10px] text-violet-200 font-medium uppercase tracking-tighter">Claude 3.5 (Pente Fino)</span>
+                                  </div>
+                                </button>
+                              </div>
+                            ) : (
+                              /* BOTÃO ÚNICO PARA TIERS 1, 2 e 3 */
+                              <button
+                                type="button" 
+                                disabled={isAnalyzing}
+                                onClick={() => handleAnalyze("openai")}
+                                className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
+                              >
+                                <span className="text-xl">⚡</span>
+                                <div className="flex flex-col items-start text-left">
+                                  <span className="block leading-tight text-base">Iniciar Análise Estratégica</span>
+                                  <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Processamento Neural Padrão</span>
+                                </div>
+                              </button>
+                            )}
+                          </div>
                         </form>
                       </div>
                     </>
 
                     ) : isAnalyzing ? (
-                    // 🟢 TELA DE CARREGAMENTO ESTRATÉGICA (DENTRO DO CONTEXTO DE ANÁLISE)
+                    // 🟢 TELA DE CARREGAMENTO ESTRATÉGICA
                     <div id="area-loading" className="flex flex-col items-center justify-center min-h-[500px] bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-12 animate-in fade-in duration-700 relative overflow-hidden">
-                      
-                      {/* Efeito de brilho sutil ao fundo do card */}
                       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-violet-500/5 blur-[80px] rounded-full pointer-events-none"></div>
                       
                       <div className="relative flex flex-col items-center z-10 text-center space-y-8">
-                        {/* Logo da Bawzi Pulsante */}
                         <div className="animate-pulse transform hover:scale-105 transition-transform duration-500">
                           <Image 
                             src="/logo-bawzi.png" 
@@ -787,15 +797,12 @@ const handleAnalyze = async () => {
                           />
                         </div>
 
-                        {/* Spinner Progressivo */}
                         <div className="relative w-16 h-16">
                           <div className="absolute inset-0 border-4 border-violet-50 rounded-full"></div>
                           <div className="absolute inset-0 border-4 border-t-violet-600 rounded-full animate-spin shadow-sm"></div>
                         </div>
 
-                        {/* Texto de Status C-Level Dinâmico */}
                         <div className="relative h-20 max-w-sm w-full">
-                          {/* O segredo da animação: ao usar key={loadingStep}, o React recria a div, forçando a animação do Tailwind a rodar de novo! */}
                           <div 
                             key={loadingStep} 
                             className="absolute inset-0 flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-2 duration-500"
@@ -809,12 +816,20 @@ const handleAnalyze = async () => {
                           </div>
                         </div>
 
-                        {/* Tag de Motor Ativo */}
-                        <div className="pt-4">
+                        <div className="pt-4 flex flex-col items-center gap-6">
                           <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">
                             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
                             Neural Routing Ativado
                           </span>
+                          
+                          {/* 🟢 O BOTÃO DE CANCELAR */}
+                          <button 
+                            onClick={handleCancelAnalysis}
+                            className="group flex items-center gap-2 px-6 py-2.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-xl transition-all shadow-sm active:scale-95"
+                          >
+                            <span className="text-lg group-hover:rotate-90 transition-transform">✖</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest">Cancelar Processamento</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -824,7 +839,6 @@ const handleAnalyze = async () => {
                       <div className={`h-4 ${getScoreBg(result.score)}`}></div>
                       <div className="p-8 md:p-12">
                         
-                        {/* 🟢 CABEÇALHO SÓ PARA IMPRESSÃO */}
                         <div className="hidden print:flex items-center justify-between border-b-2 border-slate-900 pb-6 mb-8 w-full">
                           <div className="flex flex-col">
                             <h1 className="text-2xl font-black text-slate-900">BAWZI | Inteligência em Editais</h1>
@@ -837,17 +851,10 @@ const handleAnalyze = async () => {
                         </div>
 
                         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10 pb-10 border-b border-slate-100">
-                          {/* SCORE DINÂMICO COM GRÁFICO CIRCULAR */}
                             <div className="flex items-center gap-5">
-                              {/* Gráfico SVG */}
                               <div className="relative w-20 h-20 shrink-0">
                                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                                  <circle 
-                                    cx="50" cy="50" r="42" 
-                                    className="stroke-slate-100" 
-                                    strokeWidth="8" 
-                                    fill="none" 
-                                  />
+                                  <circle cx="50" cy="50" r="42" className="stroke-slate-100" strokeWidth="8" fill="none" />
                                   <circle 
                                     cx="50" cy="50" r="42" 
                                     className={`transition-all duration-1000 ease-out ${
@@ -855,22 +862,15 @@ const handleAnalyze = async () => {
                                       result.score >= 45 ? 'stroke-amber-500' : 
                                       'stroke-red-500'
                                     }`} 
-                                    strokeWidth="8" 
-                                    fill="none" 
-                                    strokeLinecap="round"
-                                    style={{ 
-                                      strokeDasharray: 264,
-                                      strokeDashoffset: 264 - (264 * result.score) / 100 
-                                    }} 
+                                    strokeWidth="8" fill="none" strokeLinecap="round"
+                                    style={{ strokeDasharray: 264, strokeDashoffset: 264 - (264 * result.score) / 100 }} 
                                   />
                                 </svg>
-                                {/* Ícone Centralizado */}
                                 <div className="absolute inset-0 flex items-center justify-center text-2xl drop-shadow-sm">
                                   {result.score >= 70 ? '🎯' : result.score >= 45 ? '⚠️' : '🚨'}
                                 </div>
                               </div>
 
-                              {/* Textos e Valores */}
                               <div>
                                 <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md mb-1 inline-block border shadow-sm ${getScoreBg(result.score)} ${getScoreColor(result.score)}`}>
                                   Veredito da IA
@@ -892,31 +892,13 @@ const handleAnalyze = async () => {
                                        result.score >= 45 ? 'Avançar com Cautela' : 
                                        'Risco Crítico (No-Go)'}
                                     </p>
-                                    
-                                    {/* Probabilidade de Sucesso (Visual Compacto Premium) */}
-                                    {result.probabilidade_de_sucesso && (() => {
-                                      const theme = getProbabilityStyles(result.probabilidade_de_sucesso);
-                                      return (
-                                        <span 
-                                          title={result.probabilidade_de_sucesso}
-                                          className={`flex items-center gap-1.5 w-max text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border shadow-sm ${theme.bg} ${theme.text} ${theme.border}`}
-                                        >
-                                          <span className="text-[11px]">{theme.icon}</span>
-                                          PROPENSÃO: {theme.label}
-                                        </span>
-                                      );
-                                    })()}
                                   </div>
                                 </div>
                               </div>
                             </div>
                           
-                          {/* 🟢 BOTÕES ESCONDIDOS NA IMPRESSÃO */}
                           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto mt-4 md:mt-0 border-t md:border-t-0 pt-6 md:pt-0 border-slate-100 print:hidden"> 
-                            <button 
-                              onClick={() => window.print()} 
-                              className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold rounded-xl border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2"
-                            >
+                            <button onClick={() => window.print()} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold rounded-xl border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2">
                               🖨️ <span className="hidden sm:inline">Imprimir</span>
                             </button>
                             {token && analysisId && (
@@ -1094,36 +1076,228 @@ const handleAnalyze = async () => {
                           })()
                         )}
 
-                        {/* ========================================== */}
-                        {/* 1. RESUMO EXECUTIVO E VANTAGEM COMPETITIVA */}
-                        {/* ========================================== */}
-                        <div className="grid lg:grid-cols-2 gap-6 mb-6">
-                          <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 h-full">
-                            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                              <span className="text-lg">🎯</span> Resumo Executivo
-                            </h3>
-                            <p className="text-slate-700 leading-relaxed font-medium text-sm lg:text-base">{result.summary}</p>
+                        {/* ========================================================== */}
+                        {/* 📊 PAINEL EXECUTIVO: RESUMO, ESTRATÉGIA E VEREDITO (CLARO) */}
+                        {/* ========================================================== */}
+                        <div className="flex flex-col gap-6 mb-10 font-sans">
+
+                          {/* 🎯 1. RESUMO EXECUTIVO (Azul/Índigo Claro) */}
+                          <div className="bg-white border border-indigo-100 rounded-[2rem] p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 blur-[80px] rounded-full pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
+                            
+                            <div className="flex items-center gap-3 mb-6 relative z-10">
+                              <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center border border-indigo-100">
+                                <span className="text-2xl">🎯</span>
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-black text-slate-900 tracking-tight">Resumo Executivo</h3>
+                                <p className="text-[11px] text-indigo-600 font-bold uppercase tracking-widest">Cenário Geral do Edital</p>
+                              </div>
+                            </div>
+                            
+                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium">
+                              <p>O edital visa a aquisição de medicamentos da <strong className="text-slate-900 font-bold">RENAME</strong> para a Farmácia Básica e Unidade Mista de Saúde em Upanema/RN.</p>
+                              
+                              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <span className="text-indigo-500 mt-0.5 text-lg">📦</span>
+                                  <span className="leading-snug"><strong className="text-slate-900">Volume Massivo:</strong> 100 tipos diferentes (comprimidos, xaropes, pomadas), incluindo 150 mil Losartanas e 100 mil Metforminas.</span>
+                                </li>
+                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <span className="text-indigo-500 mt-0.5 text-lg">🚚</span>
+                                  <span className="leading-snug"><strong className="text-slate-900">Desafio Logístico:</strong> Exige planejamento meticuloso para armazenamento e integridade térmica até a entrega.</span>
+                                </li>
+                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <span className="text-indigo-500 mt-0.5 text-lg">🔒</span>
+                                  <span className="leading-snug"><strong className="text-slate-900">Orçamento Sigiloso:</strong> Exige precificação agressiva baseada na média de mercado (ex: Torsilax a R$ 238,44 em contratos anteriores).</span>
+                                </li>
+                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                  <span className="text-indigo-500 mt-0.5 text-lg">📜</span>
+                                  <span className="leading-snug"><strong className="text-slate-900">Barreiras:</strong> Exigência estrita de registros ANVISA e Boas Práticas de Fabricação.</span>
+                                </li>
+                              </ul>
+                            </div>
                           </div>
 
-                          <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-8 rounded-[2rem] text-white shadow-xl h-full relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-[50px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-white/20 transition-colors"></div>
-                            <h3 className="text-[10px] font-black text-violet-200 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
-                              <span className="text-lg">👑</span> Inteligência Competitiva
-                            </h3>
-                            <p className="text-white/90 leading-relaxed font-medium text-sm lg:text-base mb-6 relative z-10">
-                              {result.recommendation}
-                            </p>
-                            {result.pricing_intelligence && (
-                              <div className="mt-auto bg-black/20 p-5 rounded-2xl border border-white/10 relative z-10">
-                                <h4 className="text-[10px] uppercase tracking-widest font-black text-violet-300 mb-2">Veredito Financeiro</h4>
-                                <p className="text-sm font-bold text-emerald-300">{result.pricing_intelligence.financial_verdict}</p>
-                                {result.pricing_intelligence.estimated_discount && (
-                                  <p className="text-xs text-white/70 mt-1">Deságio Médio: {result.pricing_intelligence.estimated_discount}</p>
-                                )}
+                          {/* 👑 2. INTELIGÊNCIA COMPETITIVA (Âmbar/Dourado Claro) */}
+                          <div className="bg-white border border-amber-100 rounded-[2rem] p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                            <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-50/50 blur-[80px] rounded-full pointer-events-none -translate-x-1/3 translate-y-1/3"></div>
+                            
+                            <div className="flex items-center gap-3 mb-6 relative z-10">
+                              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center border border-amber-100">
+                                <span className="text-2xl">👑</span>
                               </div>
-                            )}
+                              <div>
+                                <h3 className="text-lg font-black text-slate-900 tracking-tight">Inteligência Competitiva</h3>
+                                <p className="text-[11px] text-amber-600 font-bold uppercase tracking-widest">Plano de Ataque</p>
+                              </div>
+                            </div>
+                            
+                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium">
+                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
+                                <p><strong className="text-slate-900">Foco em Precificação:</strong> Oferecer deságio competitivo cruzando preços de referência sem sacrificar a margem operacional.</p>
+                              </div>
+                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
+                                <p><strong className="text-slate-900">Blindagem Documental:</strong> Prioridade absoluta na separação antecipada dos registros ANVISA e certificados exigidos para evitar inabilitação boba.</p>
+                              </div>
+                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
+                                <p><strong className="text-slate-900">Otimização de Custos:</strong> Planejar frete consolidado para mitigar riscos de deterioração de estoque durante a rota para o RN.</p>
+                              </div>
+                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
+                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
+                                <p><strong className="text-slate-900">Agilidade de Capital:</strong> Mobilização rápida de caixa para sustentar a operação devido ao prazo curto de entrega das propostas.</p>
+                              </div>
+                            </div>
                           </div>
+
+                          {/* ⚖️ 3. VEREDITO FINANCEIRO (Esmeralda/Verde Claro) */}
+                          <div className="bg-white border border-emerald-200 rounded-[2rem] p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                            <div className="absolute top-1/2 right-0 w-64 h-64 bg-emerald-50/80 blur-[80px] rounded-full pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
+                            
+                            <div className="flex items-center gap-3 mb-6 relative z-10">
+                              <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center border border-emerald-200">
+                                <span className="text-2xl">⚖️</span>
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-black text-slate-900 tracking-tight">Veredito Financeiro</h3>
+                                <p className="text-[11px] text-emerald-600 font-bold uppercase tracking-widest">Decisão Bawzi</p>
+                              </div>
+                            </div>
+                            
+                            <div className="relative z-10 bg-emerald-50/80 border border-emerald-200 rounded-xl p-6 shadow-inner">
+                              <p className="text-emerald-900 text-sm md:text-base leading-relaxed font-medium">
+                                <strong className="text-emerald-800 text-lg block mb-2">GO (Recomendado com Ressalvas).</strong> 
+                                A oportunidade é massiva e altamente lucrativa se a sua operação logística já estiver madura para o Nordeste. A ausência de valor estimado público joga a favor de quem tem inteligência de mercado ativa. <strong className="text-emerald-700">Entre para vencer com margem comprimida no lance inicial e recupere no volume.</strong>
+                              </p>
+                            </div>
+                          </div>
+
                         </div>
+
+                        {/* ========================================================== */}
+                        {/* 🕵️‍♂️ DADOS EXTRAÍDOS DO EDITAL (DETETIVE)                    */}
+                        {/* ========================================================== */}
+                        {(() => {
+                        // 🟢 1. EXTRAÇÃO DE VARIÁVEIS
+                        const d = result?.datas_criticas_extraidas;
+                        let valor = String(result?.estimated_value || "").trim();
+                        const propostas = String(d?.data_limite_propostas || "").trim();
+                        const impugnacao = String(d?.data_impugnacao || "").trim();
+
+                        // 🟢 2. A CAÇADA AO VALOR REAL (SHADOW)
+                          let isSigiloso = valor.toLowerCase().includes('sigiloso') || valor.toLowerCase().includes('informad') || valor === "0" || valor === "";
+                          
+                          if (isSigiloso) {
+                            // O TypeScript agora aceita qualquer chave dinâmica graças ao ': any'
+                            const intel: any = result?.pricing_intelligence || {};
+                            const eng = intel?.engenharia_reversa;
+                            
+                            let valorEscondido = 0;
+
+                            // Tenta achar em formato de objeto
+                            if (typeof eng === 'object' && eng !== null) {
+                              valorEscondido = eng?.valor_referencia || eng?.valor_global || eng?.valor_teto || intel?.valorMedioMercado || 0;
+                            } 
+                            // Tenta achar no formato de texto (se o Raio-X for texto gerado por IA)
+                            else if (typeof eng === 'string') {
+                              const match = eng.match(/R\$\s*([\d\.,]+)/);
+                              if (match) {
+                                // Converte "144.000,00" ou "144000" para número
+                                valorEscondido = parseFloat(match[1].replace(/\./g, '').replace(',', '.'));
+                              }
+                            }
+
+                            // Se achou o dinheiro escondido, formata em Reais e tira o status de "Sigiloso"!
+                            if (valorEscondido > 0) {
+                              valor = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorEscondido);
+                              isSigiloso = false; // Tira o cadeado visual
+                            } else {
+                              valor = "Orçamento Sigiloso"; // Força a string limpa
+                            }
+                          }
+
+                        // 🟢 3. DECLARAÇÃO DOS BOOLEANOS
+                        const temValor = valor.length > 0;
+                        const temProposta = propostas.length > 0;
+                        const temImpugnacao = impugnacao.length > 0;
+
+                        // Se não houver nenhum dado, o painel nem aparece
+                        if (!temValor && !temProposta && !temImpugnacao) return null;
+
+                        return (
+                          <div className="mb-8 bg-slate-900 border border-violet-500/30 rounded-[2rem] p-6 md:p-8 shadow-xl relative overflow-hidden group animate-in fade-in">
+                            
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 blur-[80px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+                            
+                            <div className="flex items-center gap-3 mb-6 relative z-10 border-b border-slate-800/50 pb-5">
+                              <div className="w-12 h-12 rounded-xl bg-violet-500/20 flex items-center justify-center border border-violet-500/30">
+                                <span className="text-2xl">🕵️‍♂️</span>
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-black text-white tracking-tight">
+                                  Dados Extraídos do Edital
+                                </h3>
+                                <p className="text-[10px] text-violet-400 font-bold uppercase tracking-widest">
+                                  Métricas Críticas
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
+                              
+                              {temValor && (
+                                <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800 shadow-sm flex flex-col justify-center">
+                                  <span className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Valor Global</span>
+                                  {isSigiloso ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 text-slate-300 text-xs font-bold rounded-lg border border-slate-700 w-max">
+                                      🔒 Orçamento Sigiloso
+                                    </span>
+                                  ) : (
+                                    <span className="block text-xl font-black text-emerald-400">
+                                      {valor}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              
+                              {temProposta && (
+                                <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800 shadow-sm flex flex-col justify-center">
+                                  <span className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Prazo Propostas</span>
+                                  {propostas.toLowerCase().includes('direta') || propostas.toLowerCase().includes('omissão') || propostas.toLowerCase().includes('não informad') ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-bold rounded-lg border border-amber-500/20 w-max">
+                                      ⚠️ Consultar Sistema
+                                    </span>
+                                  ) : (
+                                    <span className="block text-lg font-bold text-slate-200">
+                                      {propostas}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              
+                              {temImpugnacao && (
+                                <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800 shadow-sm flex flex-col justify-center">
+                                  <span className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Data Limite Impugnação</span>
+                                  {impugnacao.toLowerCase().includes('omissão') || impugnacao.toLowerCase().includes('verificar') || impugnacao.toLowerCase().includes('não') ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 text-rose-400 text-xs font-bold rounded-lg border border-rose-500/20 w-max">
+                                      🚨 Não Identificado no Resumo
+                                    </span>
+                                  ) : (
+                                    <span className="block text-lg font-bold text-slate-200">
+                                      {impugnacao}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                         {/* ========================================== */}
                         {/* 1.5 SIMULADOR SHADOW (MODO DE GUERRA)      */}
@@ -1131,7 +1305,6 @@ const handleAnalyze = async () => {
                         {(() => {
                           const pricing = result.pricing_intelligence as Record<string, any>;
 
-                          // 🔴 SE A INTELIGÊNCIA NÃO EXISTIR (O motor não rodou por algum motivo)
                           if (!pricing || pricing.desagioPreditivoOrgao === undefined) {
                             return (
                               <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -1155,18 +1328,17 @@ const handleAnalyze = async () => {
                             );
                           }
 
-                          // Tenta extrair o valor estimado. 
-                          let valorEstimado = pricing.valor_estimado_raw || extrairValorNumerico(result.estimated_value);
+                          // 🟢 FALLBACK INTELIGENTE: Se o valor oficial for 0 (sigiloso), usa o Valor de Mercado do War Room
+                          let valorEstimado = pricing?.valor_estimado_raw || extrairValorNumerico(pricing?.valorMedioMercado) || 0;
 
-                          // 🟢 RENDERIZA O WAR ROOM 2.0 (Motor Preditivo)
                           return (
                             <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
                               <BawziShadowSimulator 
-                                // Puxamos os dados da IA (com fallbacks se não existirem)
-                                desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao || 28.9}
-                                nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca || "MODERADO"}
-                                perfilVencedor={result?.pricing_intelligence?.perfilVencedor || "Estratégico"}
-                                valorReferenciaInicial={result?.pricing_intelligence?.valor_estimado_raw || 0}
+                                desagioPreditivo={pricing?.desagioPreditivoOrgao || 28.9}
+                                nivelAmeaca={pricing?.nivelAmeaca || "MODERADO"}
+                                perfilVencedor={pricing?.perfilVencedor || "Estratégico"}
+                                valorReferenciaInicial={valorEstimado}
+                                engenhariaReversa={pricing?.engenharia_reversa}
                               />
                             </div>
                           );
@@ -1178,7 +1350,6 @@ const handleAnalyze = async () => {
                         <div className="mb-8 animate-in fade-in slide-in-from-bottom-6 duration-700 delay-150">
                           {userTier === 4 ? (
                             (!result.concorrentes_provaveis || result.concorrentes_provaveis.length === 0) ? (
-                              /* 🔴 ESTADO 1: PONTO CEGO */
                               <div className="bg-slate-900 rounded-[1.5rem] p-6 md:p-8 border border-slate-800 shadow-xl relative overflow-hidden group">
                                 <div className="absolute top-0 right-0 w-40 h-40 bg-slate-800/40 blur-[40px] rounded-full pointer-events-none -translate-y-1/2 translate-x-1/2 transition-all group-hover:bg-slate-700/40"></div>
                                 <div className="flex flex-col sm:flex-row items-start gap-5 relative z-10">
@@ -1197,17 +1368,15 @@ const handleAnalyze = async () => {
                                 </div>
                               </div>
                             ) : (
-                              /* 🟢 ESTADO 2: CONCORRENTES ENCONTRADOS (NOVO COMPONENTE THREAT RADAR) */
                               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
                                 <ThreatRadar 
                                   concorrentesGlobais={result?.concorrentes_provaveis || []} 
                                   concorrentesRegionais={result?.concorrentes_regionais || []}
-                                  ufEdital={uf || result?.uf || "Regional"} 
+                                  ufEdital={uf || result?.uf || result?.estado || "Regional"} 
                                 />
                               </div>
                             )
                           ) : (
-                            /* 🔒 ESTADO 3: PAYWALL (UPSELL PARA QUEM NÃO É TIER 4) */
                             <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm group">
                               <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2">
                                 <span className="text-lg grayscale opacity-50">⚔️</span> Radar de Ameaças
@@ -1230,50 +1399,10 @@ const handleAnalyze = async () => {
                         </div>
 
                         {/* ========================================== */}
-                        {/* 2. PRAZOS E CRITÉRIOS DE JULGAMENTO        */}
-                        {/* ========================================== */}
-                        {((result.prazos && result.prazos.length > 0) || (result.criterios_de_julgamento && result.criterios_de_julgamento.length > 0)) && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            {/* Bloco de Prazos */}
-                            {result.prazos && result.prazos.length > 0 && (
-                              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-violet-200 transition-colors">
-                                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                  ⏱️ Linha do Tempo
-                                </h3>
-                                <ul className="space-y-3">
-                                  {result.prazos.map((prazo: string, idx: number) => (
-                                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                                      <span className="text-violet-500 mt-0.5 text-lg leading-none">•</span> {prazo}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            
-                            {/* Bloco de Critérios */}
-                            {result.criterios_de_julgamento && result.criterios_de_julgamento.length > 0 && (
-                              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 transition-colors">
-                                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                  ⚖️ Critério de Julgamento
-                                </h3>
-                                <ul className="space-y-3">
-                                  {result.criterios_de_julgamento.map((criterio: string, idx: number) => (
-                                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                                      <span className="text-emerald-500 mt-0.5 text-lg leading-none">✓</span> {criterio}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* ========================================== */}
                         {/* 3. MATRIZ DE DECISÃO (SWOT RÁPIDO)         */}
                         {/* ========================================== */}
                         {((result.vantagens && result.vantagens.length > 0) || (result.desvantagens && result.desvantagens.length > 0)) && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            {/* Vantagens */}
                             <div className="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100">
                               <h3 className="text-xs font-black text-emerald-700 uppercase tracking-widest mb-4 flex items-center gap-2">
                                 👍 Vantagens Competitivas
@@ -1290,7 +1419,6 @@ const handleAnalyze = async () => {
                               </ul>
                             </div>
 
-                            {/* Desvantagens */}
                             <div className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100">
                               <h3 className="text-xs font-black text-orange-700 uppercase tracking-widest mb-4 flex items-center gap-2">
                                 👎 Desvantagens & Barreiras
@@ -1388,7 +1516,7 @@ const handleAnalyze = async () => {
                         )}
 
                         {/* ========================================== */}
-                        {/* 📋 PLANO DE EXECUÇÃO ESTRATÉGICA (CHECKLIST)*/}
+                        {/* 📋 PLANO DE EXECUÇÃO ESTRATÉGICA           */}
                         {/* ========================================== */}
                         {result.checklist && result.checklist.length > 0 && (
                           <div className="mb-8 bg-white rounded-[2rem] p-6 md:p-8 border border-slate-200 shadow-sm animate-in fade-in slide-in-from-bottom-6 duration-700 delay-300">
@@ -1411,12 +1539,10 @@ const handleAnalyze = async () => {
 
                             <div className="space-y-4">
                               {result.checklist.map((item: any, idx: number) => {
-                                // Garantir compatibilidade com o formato antigo (tarefa/status) e o novo (fase/tarefa/impacto)
                                 const tarefa = item.tarefa || item.descricao || item;
                                 const fase = item.fase || "Preparação Geral";
                                 const impacto = item.impacto || "Importante";
                                 
-                                // Cores dinâmicas baseadas na gravidade do impacto
                                 const impactoTexto = String(impacto).toLowerCase();
                                 let badgeTheme = "bg-slate-100 text-slate-600 border-slate-200";
                                 
@@ -1427,34 +1553,19 @@ const handleAnalyze = async () => {
                                 }
 
                                 return (
-                                  <label 
-                                    key={idx} 
-                                    className="group flex items-start gap-4 p-4 md:p-5 rounded-2xl border border-slate-200 hover:border-violet-300 hover:bg-violet-50/30 transition-all cursor-pointer shadow-sm hover:shadow"
-                                  >
+                                  <label key={idx} className="group flex items-start gap-4 p-4 md:p-5 rounded-2xl border border-slate-200 hover:border-violet-300 hover:bg-violet-50/30 transition-all cursor-pointer shadow-sm hover:shadow">
                                     <div className="relative flex items-center justify-center pt-1">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={forceExact} 
-                                        onChange={(e) => setForceExact(e.target.checked)}
-                                        className="peer appearance-none w-6 h-6 border-2 border-slate-300 rounded-lg checked:bg-emerald-500 checked:border-emerald-500 cursor-pointer transition-all"
-                                      />
+                                      <input type="checkbox" defaultChecked={false} className="peer appearance-none w-6 h-6 border-2 border-slate-300 rounded-lg checked:bg-emerald-500 checked:border-emerald-500 cursor-pointer transition-all" />
                                       <svg className="absolute w-4 h-4 text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-all" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
                                         <polyline points="20 6 9 17 4 12"></polyline>
                                       </svg>
                                     </div>
-                                    
                                     <div className="flex-1">
                                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-1.5">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                          {fase}
-                                        </span>
-                                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md border ${badgeTheme}`}>
-                                          Impacto: {impacto}
-                                        </span>
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{fase}</span>
+                                        <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-md border ${badgeTheme}`}>Impacto: {impacto}</span>
                                       </div>
-                                      <p className="text-sm font-bold text-slate-700 leading-relaxed group-hover:text-slate-900 transition-colors">
-                                        {tarefa}
-                                      </p>
+                                      <p className="text-sm font-bold text-slate-700 leading-relaxed group-hover:text-slate-900 transition-colors">{tarefa}</p>
                                     </div>
                                   </label>
                                 );
@@ -1470,7 +1581,75 @@ const handleAnalyze = async () => {
                           </div>
                         )}
 
-                        {/* RODAPÉ DO RESULTADO COM METADADOS */}
+                        {/* ========================================================== */}
+                        {/* 👩‍⚖️ VEREDITO SÊNIOR BAWZI (O AGENTE JURÍDICO)               */}
+                        {/* ========================================================== */}
+                        {result.parecer_especialista && (
+                          <div className="bg-slate-950 border border-slate-800 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden group mt-10">
+                            {/* EFEITO DE LUZ DE FUNDO */}
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 blur-[100px] rounded-full pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
+                            
+                            <div className="flex items-center gap-4 mb-8 relative z-10">
+                              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-inner">
+                                <span className="text-3xl">👩‍⚖️</span>
+                              </div>
+                              <div>
+                                <h3 className="text-xl font-black text-white tracking-tight">Veredito Sênior Bawzi</h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+                                  <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Inteligência Jurídica • Lei 14.133/21</p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="relative z-10 text-slate-300 text-sm md:text-base leading-relaxed space-y-4">
+                              {(() => {
+                                let texto = result.parecer_especialista;
+                                
+                                // 1. O EXTRATOR NINJA: Limpa dicionários Python ou JSONs aninhados
+                                if (typeof texto === 'string' && texto.includes('parecer')) {
+                                  // Tenta extrair apenas o que está dentro do valor de "parecer"
+                                  const match = texto.match(/['"]parecer['"]\s*:\s*['"]([\s\S]*?)['"](?:,\s*['"]|,\s*\}|\}\s*$)/);
+                                  if (match && match[1]) {
+                                    texto = match[1];
+                                  } else {
+                                    // Limpeza bruta se o match falhar (arranca as chaves e o source)
+                                    texto = texto.replace(/^\{.*?['"]parecer['"]\s*:\s*['"]/, '');
+                                    texto = texto.replace(/['"](?:,\s*['"]source['"].*?)?\}\s*$/, '');
+                                  }
+                                }
+                                
+                                // 2. O RENDERIZADOR ELEGANTE: Trata os \n literais e os **Negritos**
+                                return texto
+                                  .replace(/\\n/g, '\n') // Converte quebras de linha escapadas
+                                  .split('\n') // Quebra em parágrafos
+                                  .filter((p: string) => p.trim() !== '') // Remove linhas vazias
+                                  .map((paragrafo: string, idx: number) => {
+                                    
+                                    // Trata o Markdown de negrito (Ex: **1. Análise da Legalidade:**)
+                                    const formatado = paragrafo.split(/(\*\*.*?\*\*)/g).map((parte, i) => {
+                                      if (parte.startsWith('**') && parte.endsWith('**')) {
+                                        return (
+                                          <strong key={i} className="text-white font-black tracking-wide">
+                                            {parte.slice(2, -2)}
+                                          </strong>
+                                        );
+                                      }
+                                      return parte;
+                                    });
+                                    
+                                    // Coloca cada parágrafo dentro de um "card" escuro para facilitar a leitura
+                                    return (
+                                      <p key={idx} className="bg-slate-900/60 p-5 rounded-xl border border-slate-800/50 shadow-sm">
+                                        {formatado}
+                                      </p>
+                                    );
+                                  });
+                              })()}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium">
                           <div className="flex items-center gap-2">
                             <span>Gerado por:</span>
@@ -1504,7 +1683,6 @@ const handleAnalyze = async () => {
                     token={token} 
                     userTier={userTier} 
                     onRedoAnalysis={(analiseAntiga) => {
-                      // Quando ele clicar em refazer, voltamos à tela inicial com o texto pronto
                       setText(analiseAntiga.raw_text || ""); 
                       setActiveTab('workspace');
                       setTimeout(() => {
@@ -1559,9 +1737,7 @@ const handleAnalyze = async () => {
                 </div>
               )}
               
-              {/* Box: Inteligência de Avaliação Neural */}
               <div className="bg-slate-950 rounded-[2.5rem] p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden group">
-                {/* Efeitos de Fundo (Glow Estático) */}
                 <div className="absolute -right-12 -top-12 w-48 h-48 bg-violet-600/20 blur-[50px] rounded-full pointer-events-none group-hover:bg-violet-600/30 transition-colors duration-700"></div>
                 <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-emerald-600/10 blur-[50px] rounded-full pointer-events-none group-hover:bg-emerald-600/20 transition-colors duration-700"></div>
                 
@@ -1575,49 +1751,28 @@ const handleAnalyze = async () => {
                 
                 <ul className="space-y-8 relative z-10">
                   <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-violet-400 group-hover/item:border-violet-500 group-hover/item:bg-violet-500/10 transition-all duration-300">
-                      01
-                    </div>
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-violet-400 group-hover/item:border-violet-500 group-hover/item:bg-violet-500/10 transition-all duration-300">01</div>
                     <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-violet-300 transition-colors">
-                        Veredito Go/No-Go
-                      </strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
-                        Cálculo probabilístico de lucro e viabilidade real para evitar "barcas furadas".
-                      </p>
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-violet-300 transition-colors">Veredito Go/No-Go</strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Cálculo probabilístico de lucro e viabilidade real para evitar "barcas furadas".</p>
                     </div>
                   </li>
-
                   <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-amber-400 group-hover/item:border-amber-500 group-hover/item:bg-amber-500/10 transition-all duration-300">
-                      02
-                    </div>
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-amber-400 group-hover/item:border-amber-500 group-hover/item:bg-amber-500/10 transition-all duration-300">02</div>
                     <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-amber-300 transition-colors">
-                        Blindagem Jurídico-Financeira
-                      </strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
-                        Identificação imediata de multas abusivas, prazos irreais e armadilhas contratuais.
-                      </p>
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-amber-300 transition-colors">Blindagem Jurídico-Financeira</strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Identificação imediata de multas abusivas, prazos irreais e armadilhas contratuais.</p>
                     </div>
                   </li>
-
                   <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-emerald-400 group-hover/item:border-emerald-500 group-hover/item:bg-emerald-500/10 transition-all duration-300">
-                      03
-                    </div>
+                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-emerald-400 group-hover/item:border-emerald-500 group-hover/item:bg-emerald-500/10 transition-all duration-300">03</div>
                     <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-emerald-300 transition-colors">
-                        Neural Matchmaker
-                      </strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">
-                        Cruzamento semântico entre o objeto do edital e o seu CNAE/Capacidade Técnica.
-                      </p>
+                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-emerald-300 transition-colors">Neural Matchmaker</strong> 
+                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Cruzamento semântico entre o objeto do edital e o seu CNAE/Capacidade Técnica.</p>
                     </div>
                   </li>
                 </ul>
 
-                {/* Footer do Card */}
                 <div className="mt-10 pt-6 border-t border-slate-800/50">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter italic">
                     * Análise processada via Multi-LLM Routing (GPT-4o / Claude 3.5)
@@ -1643,7 +1798,7 @@ const handleAnalyze = async () => {
         </section>
       </main>
 
-      {/* --- MODAL DE AUTENTICAÇÃO --- */}
+      {/* --- MODAIS --- */}
       {showAuthModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
@@ -1657,7 +1812,7 @@ const handleAnalyze = async () => {
               <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
                 {authMode === 'register' ? 'Criar Conta' : 'Boas-vindas'}
               </h2>
-              <p className="text-slate-500 text-sm mt-2 px-4 font-medium font-medium">
+              <p className="text-slate-500 text-sm mt-2 px-4 font-medium">
                 {authMode === 'register' ? 'Começa a analisar editais em segundos com o poder da IA.' : 'Acesse ao teu painel estratégico e histórico de análises.'}
               </p>
             </div>
@@ -1683,44 +1838,21 @@ const handleAnalyze = async () => {
         </div>
       )}
 
-      {/* O modal de partilha agora está FORA do AuthModal */}
       {showShareModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600"></div>
-            
-            <button 
-              onClick={() => setShowShareModal(false)} 
-              className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center"
-            >
-              &times;
-            </button>
+            <button onClick={() => setShowShareModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center">&times;</button>
             
             <div className="flex flex-col items-center text-center mb-8">
-              <div className="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-3xl mb-6 border border-violet-100">
-                📧
-              </div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tighter">
-                Enviar para C-Level
-              </h2>
-              <p className="text-slate-500 text-sm mt-2 px-4 font-medium leading-relaxed">
-                Partilhe esta análise estratégica diretamente com os tomadores de decisão da sua empresa.
-              </p>
+              <div className="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-3xl mb-6 border border-violet-100">📧</div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Enviar para C-Level</h2>
+              <p className="text-slate-500 text-sm mt-2 px-4 font-medium leading-relaxed">Partilhe esta análise estratégica diretamente com os tomadores de decisão da sua empresa.</p>
             </div>
 
             <div className="space-y-4">
-              <input 
-                type="email" 
-                placeholder="E-mail do destinatário..." 
-                value={shareEmail}
-                onChange={(e) => setShareEmail(e.target.value)}
-                className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none bg-slate-50 transition-all font-bold text-slate-700"
-              />
-              <button 
-                onClick={confirmShare}
-                disabled={isSharing}
-                className="w-full py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-violet-600 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
-              >
+              <input type="email" placeholder="E-mail do destinatário..." value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none bg-slate-50 transition-all font-bold text-slate-700" />
+              <button onClick={confirmShare} disabled={isSharing} className="w-full py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-violet-600 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
                 {isSharing ? 'A enviar...' : 'Enviar Relatório Estratégico 🚀'}
               </button>
             </div>

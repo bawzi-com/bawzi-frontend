@@ -18,7 +18,7 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
   desagioPreditivo = 28.5,
   nivelAmeaca = "ALTO",
   perfilVencedor = "Tubarão Agressivo",
-  valorReferenciaInicial = 150000, // Teto lido do PDF pela IA
+  valorReferenciaInicial = 150000, 
   engenhariaReversa = {
     setor_identificado: "Comércio Atacadista",
     margem_media_setor_pct: 12.0
@@ -39,12 +39,12 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
 
   // 2. A Estratégia do Nosso Cliente:
   let margemSugerida = 0;
-  if (estrategia === 'CONSERVADOR') margemSugerida = engenhariaReversa.margem_media_setor_pct + 5; // Quer lucrar mais que a média
-  if (estrategia === 'SNIPER') margemSugerida = engenhariaReversa.margem_media_setor_pct; // Iguala a média para brigar de frente
-  if (estrategia === 'KAMIKAZE') margemSugerida = engenhariaReversa.margem_media_setor_pct / 2; // Esmaga a margem para destruir o concorrente
+  if (estrategia === 'CONSERVADOR') margemSugerida = engenhariaReversa.margem_media_setor_pct + 5; 
+  if (estrategia === 'SNIPER') margemSugerida = engenhariaReversa.margem_media_setor_pct; 
+  if (estrategia === 'KAMIKAZE') margemSugerida = engenhariaReversa.margem_media_setor_pct / 2; 
 
   const nossoLanceSugerido = estrategia === 'KAMIKAZE' 
-    ? precoHistoricoVencedor * 0.95 // 5% mais barato que o vencedor histórico
+    ? precoHistoricoVencedor * 0.95 
     : precoHistoricoVencedor;
 
   const nossaMetaCusto = nossoLanceSugerido * (1 - (margemSugerida / 100));
@@ -131,12 +131,13 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
             </h4>
 
             {/* SELETOR DE ESTRATÉGIA (ZERO-CLICK) */}
+            {/* 🟢 CORREÇÃO: Fonte base menor e menos padding vertical para não encravar nos limites */}
             <div className="flex bg-slate-800 rounded-xl p-1 mb-8">
               {(['CONSERVADOR', 'SNIPER', 'KAMIKAZE'] as const).map((est) => (
                 <button
                   key={est}
                   onClick={() => setEstrategia(est)}
-                  className={`flex-1 py-2.5 text-xs font-black uppercase tracking-wider rounded-lg transition-all ${
+                  className={`flex-1 py-2 px-1 text-[9px] sm:text-[10px] md:text-xs font-black uppercase tracking-wide rounded-lg transition-all ${
                     estrategia === est 
                       ? est === 'KAMIKAZE' ? 'bg-red-500 text-white shadow-lg' : 'bg-violet-600 text-white shadow-lg' 
                       : 'text-slate-500 hover:text-slate-300'
@@ -149,8 +150,8 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
 
             {/* O ALVO A BATER */}
             <div className="flex-1 flex flex-col justify-center items-center text-center space-y-2 mb-8">
-              <p className="text-slate-400 text-sm font-medium">Para vencer com {margemSugerida.toFixed(1)}% de margem, o seu custo total deve ser de no máximo:</p>
-              <div className={`text-5xl md:text-6xl font-black tracking-tighter ${estrategia === 'KAMIKAZE' ? 'text-red-400' : 'text-emerald-400'}`}>
+              <p className="text-slate-400 text-xs font-medium">Para vencer com {margemSugerida.toFixed(1)}% de margem, o seu custo total deve ser de no máximo:</p>
+              <div className={`text-3xl md:text-4xl font-black tracking-tighter ${estrategia === 'KAMIKAZE' ? 'text-red-400' : 'text-emerald-400'}`}>
                 {formatToBRL(nossaMetaCusto)}
               </div>
               <div className="flex items-center gap-4 mt-4 pt-4 border-t border-slate-800 w-full justify-center">
@@ -165,10 +166,6 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
                 </div>
               </div>
             </div>
-
-            <button className="w-full py-4 rounded-xl bg-white text-slate-900 font-black uppercase tracking-wide hover:bg-slate-200 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-              Enviar Meta para Compras / Fornecedores
-            </button>
           </div>
         </div>
       </div>
