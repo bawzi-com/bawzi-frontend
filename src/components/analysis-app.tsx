@@ -548,68 +548,93 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
       </div>
 
       <main>
-        <div className="relative pt-12 pb-12 lg:pt-28 lg:pb-20 overflow-hidden bg-slate-50">
-          <div className="absolute top-0 right-0 -translate-y-12 translate-x-1/4 w-[600px] h-[600px] bg-gradient-to-br from-violet-200/40 to-transparent blur-[100px] rounded-full pointer-events-none"></div>
+        <div className="relative w-full max-w-4xl mx-auto p-8 md:p-12 rounded-[2.5rem] bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden font-sans group">
+  
+          {/* EFEITOS DE LUZ PREMIUM */}
+          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none transition-transform duration-700 group-hover:scale-110"></div>
+          <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-600/10 blur-[100px] rounded-full pointer-events-none"></div>
 
-          <div className="container mx-auto px-4 relative z-10 max-w-[1400px]">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-100 text-violet-800 text-[10px] font-black uppercase tracking-widest mb-6 border border-violet-200">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
-                  </span>
-                  Multi-LLM Routing Ativado
+          {/* ========================================== */}
+          {/* 1. MARKETING COPY (O GATILHO)                */}
+          {/* ========================================== */}
+          <div className="mb-12 text-center md:text-left relative z-10">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold tracking-widest uppercase mb-6 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
+              Multi-LLM Routing Ativado
+            </div>
+            <h2 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-4 leading-tight">
+              Pare de assumir <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">riscos cegos</span><br className="hidden md:block" /> em contratos e editais.
+            </h2>
+            <p className="text-slate-400 text-lg max-w-2xl md:leading-relaxed">
+              O motor da Bawzi analisa dezenas de páginas em segundos, blindando a sua equipe contra cláusulas abusivas e destravando negociações.
+            </p>
+          </div>
+
+          {/* ========================================== */}
+          {/* 2. O WIDGET (SIMULAÇÃO DO PRODUTO)           */}
+          {/* ========================================== */}
+          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-700/50 p-6 md:p-8 shadow-2xl relative z-10 transition-all duration-300 hover:border-slate-600/50">
+            
+            {/* CABEÇALHO DO WIDGET (SCORE E MOTOR IA) */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8 border-b border-slate-800/80 pb-8">
+              <div className="flex items-center gap-5">
+                
+                {/* Gráfico Circular do Score */}
+                <div className="relative w-20 h-20 rounded-full flex items-center justify-center bg-slate-950 border-4 border-slate-800 shadow-inner group-hover:border-emerald-500/30 transition-colors duration-500">
+                    {/* SVG Simula a barra de progresso em 98% */}
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
+                      <path className="text-emerald-500 transition-all duration-1000 ease-out drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]" strokeDasharray="98, 100" strokeWidth="2.5" fill="none" stroke="currentColor" strokeLinecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <span className="text-2xl font-black text-emerald-400 tracking-tighter">98</span>
                 </div>
-                <h1 className="text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 tracking-tight leading-[1.1] mb-6">
-                  Pare de assumir riscos cegos em <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 to-indigo-600">contratos e editais.</span>
-                </h1>
-                <p className="text-sm font-medium text-slate-500 leading-relaxed">
-                  O motor da Bawzi analisa dezenas de páginas em segundos, blindando a sua equipe contra cláusulas abusivas.
-                </p>
-              </div>
-
-              <div className="hidden lg:block relative perspective-1000">
-                <div className="relative w-full max-w-lg mx-auto transform rotate-[-2deg] hover:rotate-0 transition-transform duration-700 ease-out">
-                  <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-indigo-500 transform translate-x-4 translate-y-6 rounded-[3rem] blur-2xl opacity-30"></div>
-                  
-                  <div className="relative bg-white/90 backdrop-blur-xl border border-white p-8 rounded-[3rem] shadow-2xl pointer-events-none">
-                    <div className="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center text-2xl font-black">98</div>
-                        <div>
-                          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-1">Score de Segurança Jurídica</h3>
-                          <p className="text-lg font-bold text-emerald-600">Pronto para Assinatura</p>
-                        </div>
-                      </div>
-                      <div className="px-3 py-1 bg-slate-100 text-slate-500 text-xs font-bold rounded-lg border border-slate-200">Claude 3.5 Sonnet</div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shrink-0 font-bold">💡</div>
-                        <div>
-                          <h4 className="font-bold text-slate-900 mb-1">Oportunidade de Negociação</h4>
-                          <p className="text-sm text-slate-600 font-medium">A cláusula de reajuste pode ser indexada ao IPCA para proteger a margem a longo prazo.</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-4 mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-100/50">
-                        <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-500 flex items-center justify-center shrink-0 font-bold">!</div>
-                        <div>
-                          <h4 className="font-bold text-amber-900 mb-1">Risco Financeiro Identificado</h4>
-                          <p className="text-sm text-amber-700/80 font-medium">Multa rescisória unilateral de 30% (cláusula 7.4). Sugestão automática de revisão gerada.</p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="absolute -right-8 -bottom-8 bg-slate-950 text-white p-5 rounded-3xl shadow-xl border border-slate-800 transform rotate-[5deg]">
-                      <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">Valor Protegido</span>
-                      <span className="text-2xl font-black">R$ 145.000</span>
-                    </div>
+                
+                {/* Título do Score */}
+                <div>
+                  <h4 className="text-slate-500 text-[10px] font-bold tracking-widest uppercase mb-1.5">Score de Segurança Jurídica</h4>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-lg md:text-xl font-bold text-white tracking-tight">Pronto para Assinatura</span>
+                    <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Aprovado
+                    </span>
                   </div>
                 </div>
               </div>
+              
+              {/* Etiqueta do Motor de IA */}
+              <div className="flex flex-col md:items-end w-full md:w-auto">
+                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1.5">Processado por</span>
+                <div className="flex items-center gap-2 px-3 py-2 bg-slate-950 rounded-xl border border-slate-800 shadow-sm">
+                  <span className="text-lg">🧠</span>
+                  <span className="text-slate-300 text-xs font-bold">Claude 3.5 Sonnet</span>
+                </div>
+              </div>
             </div>
+
+            {/* INSIGHTS (OPORTUNIDADE E RISCO) */}
+            <div className="space-y-4">
+              {/* Card de Oportunidade */}
+              <div className="flex items-start gap-4 bg-sky-950/20 border border-sky-500/20 p-5 rounded-2xl transition-colors hover:bg-sky-950/30">
+                <div className="mt-0.5 w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center border border-sky-500/20 shrink-0 shadow-inner">
+                  <span className="text-sky-400 text-lg">💡</span>
+                </div>
+                <div>
+                  <h5 className="text-sky-300 font-black text-sm uppercase tracking-wide mb-1.5">Oportunidade de Negociação</h5>
+                  <p className="text-sky-100/70 text-sm leading-relaxed font-medium">A cláusula de reajuste pode ser indexada ao <strong className="text-sky-200">IPCA</strong> para proteger a margem a longo prazo.</p>
+                </div>
+              </div>
+              
+              {/* Card de Risco */}
+              <div className="flex items-start gap-4 bg-rose-950/20 border border-rose-500/20 p-5 rounded-2xl transition-colors hover:bg-rose-950/30">
+                <div className="mt-0.5 w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0 shadow-inner">
+                  <span className="text-rose-500 font-black text-xl">!</span>
+                </div>
+                <div>
+                  <h5 className="text-rose-400 font-black text-sm uppercase tracking-wide mb-1.5">Risco Financeiro Identificado</h5>
+                  <p className="text-rose-100/70 text-sm leading-relaxed font-medium">Multa rescisória unilateral de <strong className="text-rose-200">30%</strong> (cláusula 7.4). Sugestão automática de revisão gerada e anexada.</p>
+                </div>
+              </div>
+            </div>
+            
           </div>
         </div>
 
