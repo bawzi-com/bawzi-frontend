@@ -33,8 +33,8 @@ interface PricingIntelligence {
   valor_estimado_raw?: number;
   financial_verdict?: string;
   estimated_discount?: number;
-  valorMedioMercado?: number; // Alterado para number para facilitar cálculos
-  engenharia_reversa?: EngenhariaReversa; // 🟢 ADICIONADO: Fiação do War Room
+  valorMedioMercado?: number; 
+  engenharia_reversa?: EngenhariaReversa; 
 }
 
 interface HighlightItem { title: string; quote: string; }
@@ -121,6 +121,8 @@ export default function AnalysisApp() {
   const [activeTab, setActiveTab] = useState('workspace');
   const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
   const [isCachedResult, setIsCachedResult] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [termoAlvo, setTermoAlvo] = useState('');
   
   // Modais de Autenticação e Upsell
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -162,12 +164,27 @@ export default function AnalysisApp() {
   // ==========================================
   const [loadingStep, setLoadingStep] = useState(0);
 
-  const loadingMessages = [
-    { title: "A Orquestrar Motores LLM", desc: "A selecionar o modelo neural mais eficiente para o volume deste edital..." },
-    { title: "A Varrer Cláusulas de Risco", desc: "A analisar o documento linha a linha em busca de armadilhas e multas..." },
-    { title: "Inteligência de Precificação", desc: "A cruzar valores com a base do PNCP para calcular o deságio ideal..." },
-    { title: "A Mapear Concorrentes", desc: "A identificar quem são os predadores que costumam vencer este objeto..." },
-    { title: "A Emitir Veredito Financeiro", desc: "A compilar a matriz de decisão Go/No-Go. Quase pronto..." }
+const loadingMessages = [
+    { 
+      title: "A Orquestrar Swarm de Agentes", 
+      desc: "A instanciar modelos neurais especializados (Jurídico, Financeiro e Estratégico) para análise simultânea do edital..." 
+    },
+    { 
+      title: "Agente Jurídico em Operação", 
+      desc: "A varrer as entrelinhas do documento à procura de multas ocultas, SLAs abusivos e riscos de inabilitação..." 
+    },
+    { 
+      title: "Agente Financeiro a Calcular", 
+      desc: "A cruzar o seu termo alvo com o histórico do PNCP para encontrar a margem exata de deságio predatório..." 
+    },
+    { 
+      title: "Agente de Mercado a Rastrear", 
+      desc: "A mapear o ecossistema da região para antecipar o comportamento e a agressividade dos concorrentes locais..." 
+    },
+    { 
+      title: "A Consolidar Veredito do Comitê", 
+      desc: "Os agentes estão a fundir os dados para emitir a matriz de decisão final (Go/No-Go). A gerar Dossiê Elite..." 
+    }
   ];
 
   useEffect(() => {
@@ -399,6 +416,9 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
 
       const data = await response.json();
 
+      console.log("==== 📥 DEBUG 3: RESPOSTA DO BACKEND ====");
+      console.log("JSON recebido:", data);
+
       if (!response.ok) {
         throw new Error(data?.detail || 'Erro no servidor.');
       }
@@ -547,94 +567,192 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
         <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-violet-200/50 to-transparent rounded-full blur-[100px]"></div>
       </div>
 
-      <main>
-        <div className="relative w-full max-w-4xl mx-auto p-8 md:p-12 rounded-[2.5rem] bg-slate-950 border border-slate-800 shadow-2xl overflow-hidden font-sans group">
+      <main>  
   
-          {/* EFEITOS DE LUZ PREMIUM */}
-          <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none transition-transform duration-700 group-hover:scale-110"></div>
-          <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-600/10 blur-[100px] rounded-full pointer-events-none"></div>
+        <div className="w-full max-w-[1400px] mx-auto p-2 md:p-4 font-sans relative group">
+          
+          {/* ========================================== */}
+          {/* 🚀 MOTOR DE ANIMAÇÕES CSS NATIVAS          */}
+          {/* ========================================== */}
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes route-data {
+              0% { stroke-dashoffset: 60; }
+              100% { stroke-dashoffset: 0; }
+            }
+            @keyframes scan-laser {
+              0% { transform: translateY(-10px); opacity: 0; }
+              15% { opacity: 1; }
+              85% { opacity: 1; }
+              100% { transform: translateY(100px); opacity: 0; }
+            }
+            @keyframes float-agent {
+              0%, 100% { transform: translateY(0); }
+              50% { transform: translateY(-5px); }
+            }
+            .path-routing {
+              stroke-dasharray: 8;
+              animation: route-data 1.2s linear infinite;
+            }
+            @keyframes draw-arc {
+              0% { stroke-dasharray: 0, 100; }
+              100% { stroke-dasharray: 98, 100; }
+            }
+          `}} />
 
-          {/* ========================================== */}
-          {/* 1. MARKETING COPY (O GATILHO)                */}
-          {/* ========================================== */}
-          <div className="mb-12 text-center md:text-left relative z-10">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold tracking-widest uppercase mb-6 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
-              <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-              Multi-LLM Routing Ativado
-            </div>
-            <h2 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-4 leading-tight">
-              Pare de assumir <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">riscos cegos</span><br className="hidden md:block" /> em contratos e editais.
-            </h2>
-            <p className="text-slate-400 text-lg max-w-2xl md:leading-relaxed">
-              O motor da Bawzi analisa dezenas de páginas em segundos, blindando a sua equipe contra cláusulas abusivas e destravando negociações.
-            </p>
-          </div>
+          {/* CONTAINER PRINCIPAL */}
+          <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
 
-          {/* ========================================== */}
-          {/* 2. O WIDGET (SIMULAÇÃO DO PRODUTO)           */}
-          {/* ========================================== */}
-          <div className="bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-slate-700/50 p-6 md:p-8 shadow-2xl relative z-10 transition-all duration-300 hover:border-slate-600/50">
-            
-            {/* CABEÇALHO DO WIDGET (SCORE E MOTOR IA) */}
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8 border-b border-slate-800/80 pb-8">
-              <div className="flex items-center gap-5">
-                
-                {/* Gráfico Circular do Score */}
-                <div className="relative w-20 h-20 rounded-full flex items-center justify-center bg-slate-950 border-4 border-slate-800 shadow-inner group-hover:border-emerald-500/30 transition-colors duration-500">
-                    {/* SVG Simula a barra de progresso em 98% */}
-                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 36 36">
-                      <path className="text-emerald-500 transition-all duration-1000 ease-out drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]" strokeDasharray="98, 100" strokeWidth="2.5" fill="none" stroke="currentColor" strokeLinecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    </svg>
-                    <span className="text-2xl font-black text-emerald-400 tracking-tighter">98</span>
+            {/* ============================================================== */}
+            {/* ⬅️ LADO ESQUERDO: 2/3 DA TELA (ORQUESTRAÇÃO DE AGENTES)      */}
+            {/* ============================================================== */}
+            <div className="xl:w-2/3 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
+              
+              {/* Brilho de Fundo Dinâmico */}
+              <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
+
+              {/* TEXTO (O Pitch dos Agentes) */}
+              <div className="flex-1 relative z-10">
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Orquestração Multi-Agentes</span>
                 </div>
+
+                <h2 className="text-4xl md:text-5xl lg:text-5xl font-black text-slate-900 leading-[1.1] mb-5 tracking-tight">
+                  Um esquadrão de IAs <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-sky-500">
+                    dissecando o seu edital.
+                  </span>
+                </h2>
+                <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
+                  Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico caça riscos, o Financeiro projeta margens e o Compliance blinda a entrega.
+                </p>
+              </div>
+
+              {/* DIAGRAMA DOS AGENTES (Widescreen Action) */}
+              <div className="flex-1 w-full relative h-[320px] hidden lg:flex items-center justify-center z-10">
                 
-                {/* Título do Score */}
-                <div>
-                  <h4 className="text-slate-500 text-[10px] font-bold tracking-widest uppercase mb-1.5">Score de Segurança Jurídica</h4>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className="text-lg md:text-xl font-bold text-white tracking-tight">Pronto para Assinatura</span>
-                    <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Aprovado
-                    </span>
+                {/* Documento Central */}
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-24 h-32 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center gap-2 z-20">
+                  <div className="w-12 h-1 bg-slate-200 rounded-full"></div>
+                  <div className="w-16 h-1 bg-slate-200 rounded-full"></div>
+                  <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
+                  {/* Laser Scaneando */}
+                  <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
+                </div>
+
+                {/* Fiação SVG Animada Roteando para 3 Agentes */}
+                <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
+                  {/* Cabo Superior (Agente Jurídico) */}
+                  <path d="M 0 50 C 30 50, 50 15, 100 15" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 30 50, 50 15, 100 15" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
+                  
+                  {/* Cabo Central (Agente Financeiro) */}
+                  <path d="M 0 50 C 40 50, 60 50, 100 50" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 40 50, 60 50, 100 50" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
+
+                  {/* Cabo Inferior (Agente Compliance) */}
+                  <path d="M 0 50 C 30 50, 50 85, 100 85" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 30 50, 50 85, 100 85" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
+                </svg>
+
+                {/* Nós dos Agentes (Os 3 Especialistas) */}
+                <div className="absolute right-0 top-[5%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
+                    <span className="text-indigo-500 text-sm">⚖️</span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">Agente Jurídico</span>
+                    <span className="block text-xs font-bold text-slate-700 leading-none">Claude 3.5 Sonnet</span>
                   </div>
                 </div>
-              </div>
-              
-              {/* Etiqueta do Motor de IA */}
-              <div className="flex flex-col md:items-end w-full md:w-auto">
-                <span className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-1.5">Processado por</span>
-                <div className="flex items-center gap-2 px-3 py-2 bg-slate-950 rounded-xl border border-slate-800 shadow-sm">
-                  <span className="text-lg">🧠</span>
-                  <span className="text-slate-300 text-xs font-bold">Claude 3.5 Sonnet</span>
+                
+                <div className="absolute right-0 top-[40%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
+                    <span className="text-emerald-500 text-sm">💰</span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none mb-1">Agente Financeiro</span>
+                    <span className="block text-xs font-bold text-slate-700 leading-none">GPT-4o Omni</span>
+                  </div>
                 </div>
+
+                <div className="absolute right-0 top-[75%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
+                    <span className="text-amber-500 text-sm">🛡️</span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none mb-1">Agente Compliance</span>
+                    <span className="block text-xs font-bold text-slate-700 leading-none">Llama 3 (Local)</span>
+                  </div>
+                </div>
+
               </div>
             </div>
 
-            {/* INSIGHTS (OPORTUNIDADE E RISCO) */}
-            <div className="space-y-4">
-              {/* Card de Oportunidade */}
-              <div className="flex items-start gap-4 bg-sky-950/20 border border-sky-500/20 p-5 rounded-2xl transition-colors hover:bg-sky-950/30">
-                <div className="mt-0.5 w-10 h-10 rounded-xl bg-sky-500/10 flex items-center justify-center border border-sky-500/20 shrink-0 shadow-inner">
-                  <span className="text-sky-400 text-lg">💡</span>
-                </div>
-                <div>
-                  <h5 className="text-sky-300 font-black text-sm uppercase tracking-wide mb-1.5">Oportunidade de Negociação</h5>
-                  <p className="text-sky-100/70 text-sm leading-relaxed font-medium">A cláusula de reajuste pode ser indexada ao <strong className="text-sky-200">IPCA</strong> para proteger a margem a longo prazo.</p>
-                </div>
-              </div>
+            {/* ============================================================== */}
+            {/* ➡️ LADO DIREITO: 1/3 DA TELA (OS RESULTADOS DOS AGENTES)     */}
+            {/* ============================================================== */}
+            <div className="xl:w-1/3 flex flex-col gap-4">
               
-              {/* Card de Risco */}
-              <div className="flex items-start gap-4 bg-rose-950/20 border border-rose-500/20 p-5 rounded-2xl transition-colors hover:bg-rose-950/30">
-                <div className="mt-0.5 w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0 shadow-inner">
-                  <span className="text-rose-500 font-black text-xl">!</span>
+              {/* RESULTADO 1: O SCORE (Consenso) */}
+              <div className="flex-1 bg-white rounded-[2rem] p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-5 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="relative w-[80px] h-[80px] shrink-0">
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                      <path className="text-slate-100" strokeWidth="3" stroke="currentColor" fill="none" strokeLinecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                      <path className="text-emerald-500 drop-shadow-[0_2px_4px_rgba(16,185,129,0.3)]" strokeDasharray="98, 100" strokeWidth="3" strokeLinecap="round" fill="none" stroke="currentColor" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" style={{ animation: "draw-arc 1.5s ease-out forwards" }} />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-3xl font-black text-slate-900 tracking-tighter">98</span>
+                    </div>
                 </div>
                 <div>
-                  <h5 className="text-rose-400 font-black text-sm uppercase tracking-wide mb-1.5">Risco Financeiro Identificado</h5>
-                  <p className="text-rose-100/70 text-sm leading-relaxed font-medium">Multa rescisória unilateral de <strong className="text-rose-200">30%</strong> (cláusula 7.4). Sugestão automática de revisão gerada e anexada.</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">Score Consolidado</p>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-md border border-emerald-100 uppercase mb-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Pronto para Assinar
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">🤖</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Consenso dos 3 Agentes</span>
+                    </div>
                 </div>
               </div>
+
+              {/* RESULTADO 2: A OPORTUNIDADE (Descoberta pelo Financeiro) */}
+              <div className="flex-1 bg-sky-50/50 rounded-[2rem] p-5 border border-sky-100 flex flex-col justify-center relative overflow-hidden group hover:bg-sky-50 transition-colors cursor-default">
+                <div className="absolute left-0 top-0 w-1.5 h-full bg-sky-400"></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sky-600 text-base">💡</span>
+                    <h5 className="text-sky-800 font-black text-[10px] uppercase tracking-widest">Oportunidade (Alpha)</h5>
+                  </div>
+                  <span className="text-[8px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded uppercase font-black tracking-widest border border-sky-200">💰 Agente Financeiro</span>
+                </div>
+                <p className="text-slate-600 text-sm leading-relaxed font-medium">
+                  A cláusula de reajuste omite o índice base. Indexar ao <span className="inline-block bg-white text-slate-900 px-1.5 py-0 rounded text-xs font-bold border border-slate-200 shadow-sm">IPCA</span> garante a blindagem da sua margem operacional.
+                </p>
+              </div>
+
+              {/* RESULTADO 3: O RISCO (Descoberto pelo Jurídico) */}
+              <div className="flex-1 bg-rose-50/50 rounded-[2rem] p-5 border border-rose-100 flex flex-col justify-center relative overflow-hidden group hover:bg-rose-50 transition-colors cursor-default">
+                <div className="absolute left-0 top-0 w-1.5 h-full bg-rose-400"></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-rose-600 text-base font-black">!</span>
+                    <h5 className="text-rose-800 font-black text-[10px] uppercase tracking-widest">Risco Contratual Oculto</h5>
+                  </div>
+                  <span className="text-[8px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded uppercase font-black tracking-widest border border-rose-200">⚖️ Agente Jurídico</span>
+                </div>
+                <p className="text-slate-600 text-sm leading-relaxed font-medium">
+                  Detetada multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1.5 py-0 rounded text-xs font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Parecer de defesa técnica já elaborado e anexado.
+                </p>
+              </div>
+
             </div>
-            
+
           </div>
         </div>
 
@@ -652,29 +770,28 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                     <>
                       {/* --- CARD: RADAR PNCP --- */}
                       <div id="radar-pncp-section" className="animate-in fade-in slide-in-from-bottom-4">
-                        <div className="mb-6 p-6 bg-gradient-to-r from-indigo-50/80 to-white border border-indigo-100 rounded-[2rem] flex flex-col sm:flex-row items-start sm:items-center gap-5 shadow-sm transition-all hover:shadow-md">
-                          <div className="w-14 h-14 bg-white text-indigo-600 rounded-2xl flex items-center justify-center shrink-0 text-2xl shadow-sm border border-indigo-50">📡</div>
-                          <div>
-                            <div className="flex items-center gap-3 mb-1">
-                              <h4 className="text-base font-black text-slate-900 tracking-tight">O que é o Radar PNCP?</h4>
-                              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-lg uppercase tracking-widest">
-                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Online
-                              </span>
-                            </div>
-                            <p className="text-sm font-medium text-slate-500 leading-relaxed">
-                              A base de dados oficial do Governo. Busque licitações em tempo real e envie o edital para a nossa IA analisar com apenas um clique.
-                            </p>
-                          </div>
-                        </div>
 
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
+
                           <PncpSearch 
-                            charLimit={currentCharLimit}
-                            onUfChange={(estadoSelecionado: string) => setUf(estadoSelecionado)}
-                            onAnalyzeOportunity={(textoSimulado: string) => {
-                              setText(textoSimulado);
-                              setFiles([]);
-                              document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            token={token} 
+                            userUf={userData?.company?.uf}
+                            onAnalyzeOportunity={(textoExtraido, termoPesquisado) => {
+                              // 🟢 1. O MATA-FANTASMAS (Destrói o dashboard antigo instantaneamente)
+                              setResult(null);
+                              setError(null);
+                              
+                              // 🟢 2. INJEÇÃO DE DADOS FRESCOS
+                              setText(textoExtraido);
+                              setTermoAlvo(termoPesquisado); 
+                              
+                              // 🟢 3. ROLAGEM AUTOMÁTICA (Leva o usuário para o botão de Iniciar Análise)
+                              setTimeout(() => {
+                                const element = document.getElementById('area-submissao');
+                                if (element) {
+                                  element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }
+                              }, 150);
                             }} 
                           />
                         </div>
@@ -876,51 +993,68 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                         </div>
 
                         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-10 pb-10 border-b border-slate-100">
-                            <div className="flex items-center gap-5">
-                              <div className="relative w-20 h-20 shrink-0">
-                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                                  <circle cx="50" cy="50" r="42" className="stroke-slate-100" strokeWidth="8" fill="none" />
-                                  <circle 
-                                    cx="50" cy="50" r="42" 
-                                    className={`transition-all duration-1000 ease-out ${
-                                      result.score >= 70 ? 'stroke-emerald-500' : 
-                                      result.score >= 45 ? 'stroke-amber-500' : 
-                                      'stroke-red-500'
-                                    }`} 
-                                    strokeWidth="8" fill="none" strokeLinecap="round"
-                                    style={{ strokeDasharray: 264, strokeDashoffset: 264 - (264 * result.score) / 100 }} 
-                                  />
-                                </svg>
-                                <div className="absolute inset-0 flex items-center justify-center text-2xl drop-shadow-sm">
-                                  {result.score >= 70 ? '🎯' : result.score >= 45 ? '⚠️' : '🚨'}
-                                </div>
-                              </div>
-
-                              <div>
-                                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md mb-1 inline-block border shadow-sm ${getScoreBg(result.score)} ${getScoreColor(result.score)}`}>
-                                  Veredito da IA
-                                </span>
-                                <div className="flex flex-col mt-0.5">
-                                  <div className="flex items-baseline gap-1">
-                                    <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter leading-none">
-                                      {result.score}
-                                    </span>
-                                    <span className="text-sm font-bold text-slate-400">/100</span>
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-1.5">
-                                    <p className={`text-[11px] font-black uppercase tracking-widest ${
-                                        result.score >= 70 ? 'text-emerald-600' : 
-                                        result.score >= 45 ? 'text-amber-600' : 
-                                        'text-red-600'
-                                      }`}>
-                                      {result.score >= 70 ? 'Alta Viabilidade (Go)' : 
-                                       result.score >= 45 ? 'Avançar com Cautela' : 
-                                       'Risco Crítico (No-Go)'}
-                                    </p>
-                                  </div>
-                                </div>
+                            <div className="flex items-center gap-6">
+                            {/* O CÍRCULO DO SCORE */}
+                            <div className="relative w-20 h-20 shrink-0 md:w-24 md:h-24">
+                              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="42" className="stroke-slate-100" strokeWidth="8" fill="none" />
+                                <circle 
+                                  cx="50" cy="50" r="42" 
+                                  className={`transition-all duration-1000 ease-out ${
+                                    result.score >= 70 ? 'stroke-emerald-500' : 
+                                    result.score >= 45 ? 'stroke-amber-500' : 
+                                    'stroke-red-500'
+                                  }`} 
+                                  strokeWidth="8" fill="none" strokeLinecap="round"
+                                  style={{ strokeDasharray: 264, strokeDashoffset: 264 - (264 * result.score) / 100 }} 
+                                />
+                              </svg>
+                              <div className="absolute inset-0 flex items-center justify-center text-2xl md:text-3xl drop-shadow-sm">
+                                {result.score >= 70 ? '🟢' : result.score >= 45 ? '🟡' : '🔴'}
                               </div>
                             </div>
+
+                            {/* DADOS DO SCORE E TERMO ALVO INTEGRADOS */}
+                            <div className="flex flex-col">
+                              {/* BADGES NO TOPO */}
+                              <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border shadow-sm ${getScoreBg(result.score)} ${getScoreColor(result.score)}`}>
+                                  Veredito da IA
+                                </span>
+                                
+                                {/* 🎯 A NOVA BADGE DO TERMO ALVO (Estilo Premium Escuro) */}
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 rounded-md border border-slate-700 shadow-sm">
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    Foco:
+                                  </span>
+                                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                                    {termoAlvo || "Visão Global"}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {/* NÚMERO DO SCORE */}
+                              <div className="flex items-baseline gap-1 mt-1">
+                                <span className="text-4xl md:text-5xl font-black text-slate-900 tracking-tighter leading-none">
+                                  {result.score}
+                                </span>
+                                <span className="text-sm md:text-base font-bold text-slate-400">/100</span>
+                              </div>
+                              
+                              {/* TEXTO DE STATUS */}
+                              <div className="flex items-center gap-2 mt-2">
+                                <p className={`text-[11px] md:text-xs font-black uppercase tracking-widest ${
+                                    result.score >= 70 ? 'text-emerald-600' : 
+                                    result.score >= 45 ? 'text-amber-600' : 
+                                    'text-red-600'
+                                  }`}>
+                                  {result.score >= 70 ? 'Alta Viabilidade (Go)' : 
+                                  result.score >= 45 ? 'Avançar com Cautela' : 
+                                  'Risco Crítico (No-Go)'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                           
                           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto mt-4 md:mt-0 border-t md:border-t-0 pt-6 md:pt-0 border-slate-100 print:hidden"> 
                             <button onClick={() => window.print()} className="px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold rounded-xl border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2">
@@ -1120,27 +1254,9 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                               </div>
                             </div>
                             
-                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium">
-                              <p>O edital visa a aquisição de medicamentos da <strong className="text-slate-900 font-bold">RENAME</strong> para a Farmácia Básica e Unidade Mista de Saúde em Upanema/RN.</p>
-                              
-                              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                  <span className="text-indigo-500 mt-0.5 text-lg">📦</span>
-                                  <span className="leading-snug"><strong className="text-slate-900">Volume Massivo:</strong> 100 tipos diferentes (comprimidos, xaropes, pomadas), incluindo 150 mil Losartanas e 100 mil Metforminas.</span>
-                                </li>
-                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                  <span className="text-indigo-500 mt-0.5 text-lg">🚚</span>
-                                  <span className="leading-snug"><strong className="text-slate-900">Desafio Logístico:</strong> Exige planejamento meticuloso para armazenamento e integridade térmica até a entrega.</span>
-                                </li>
-                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                  <span className="text-indigo-500 mt-0.5 text-lg">🔒</span>
-                                  <span className="leading-snug"><strong className="text-slate-900">Orçamento Sigiloso:</strong> Exige precificação agressiva baseada na média de mercado (ex: Torsilax a R$ 238,44 em contratos anteriores).</span>
-                                </li>
-                                <li className="flex items-start gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                  <span className="text-indigo-500 mt-0.5 text-lg">📜</span>
-                                  <span className="leading-snug"><strong className="text-slate-900">Barreiras:</strong> Exigência estrita de registros ANVISA e Boas Práticas de Fabricação.</span>
-                                </li>
-                              </ul>
+                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line">
+                              {/* 🟢 AQUI ESTAVA O TEXTO FIXO. AGORA USA O DADO DA IA: */}
+                              {result.summary}
                             </div>
                           </div>
 
@@ -1158,23 +1274,9 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                               </div>
                             </div>
                             
-                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium">
-                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
-                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
-                                <p><strong className="text-slate-900">Foco em Precificação:</strong> Oferecer deságio competitivo cruzando preços de referência sem sacrificar a margem operacional.</p>
-                              </div>
-                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
-                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
-                                <p><strong className="text-slate-900">Blindagem Documental:</strong> Prioridade absoluta na separação antecipada dos registros ANVISA e certificados exigidos para evitar inabilitação boba.</p>
-                              </div>
-                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
-                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
-                                <p><strong className="text-slate-900">Otimização de Custos:</strong> Planejar frete consolidado para mitigar riscos de deterioração de estoque durante a rota para o RN.</p>
-                              </div>
-                              <div className="flex items-start gap-3 bg-slate-50/50 p-3 rounded-lg">
-                                <div className="w-2 h-2 rounded-full bg-amber-500 mt-1.5 shrink-0"></div>
-                                <p><strong className="text-slate-900">Agilidade de Capital:</strong> Mobilização rápida de caixa para sustentar a operação devido ao prazo curto de entrega das propostas.</p>
-                              </div>
+                            <div className="relative z-10 text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line">
+                              {/* 🟢 LIGADO AOS DADOS REAIS: */}
+                              {result.rationale || result.recommendation || "Análise estratégica em processamento."}
                             </div>
                           </div>
 
@@ -1192,10 +1294,10 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                               </div>
                             </div>
                             
-                            <div className="relative z-10 bg-emerald-50/80 border border-emerald-200 rounded-xl p-6 shadow-inner">
+                            <div className="relative z-10 bg-emerald-50/80 border border-emerald-200 rounded-xl p-6 shadow-inner whitespace-pre-line">
                               <p className="text-emerald-900 text-sm md:text-base leading-relaxed font-medium">
-                                <strong className="text-emerald-800 text-lg block mb-2">GO (Recomendado com Ressalvas).</strong> 
-                                A oportunidade é massiva e altamente lucrativa se a sua operação logística já estiver madura para o Nordeste. A ausência de valor estimado público joga a favor de quem tem inteligência de mercado ativa. <strong className="text-emerald-700">Entre para vencer com margem comprimida no lance inicial e recupere no volume.</strong>
+                                {/* 🟢 LIGADO AOS DADOS REAIS DA API DE PRECIFICAÇÃO: */}
+                                {result.pricing_intelligence?.financial_verdict || result.classification || "Aguardando cálculo financeiro."}
                               </p>
                             </div>
                           </div>
@@ -1607,70 +1709,56 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
                         )}
 
                         {/* ========================================================== */}
-                        {/* 👩‍⚖️ VEREDITO SÊNIOR BAWZI (O AGENTE JURÍDICO)               */}
+                        {/* 👩‍⚖️ AGENTE JURÍDICO: PARECER SÊNIOR (TIERS 3 E 4)        */}
                         {/* ========================================================== */}
                         {result.parecer_especialista && (
-                          <div className="bg-slate-950 border border-slate-800 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden group mt-10">
-                            {/* EFEITO DE LUZ DE FUNDO */}
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/10 blur-[100px] rounded-full pointer-events-none translate-x-1/2 -translate-y-1/2"></div>
+                          <div className="bg-slate-900 border border-slate-800 rounded-[2rem] p-6 md:p-8 shadow-2xl relative overflow-hidden group mt-6 mb-10">
+                            {/* Efeito de luz sutil no fundo escuro */}
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-slate-800/50 blur-[80px] rounded-full pointer-events-none translate-x-1/3 -translate-y-1/3"></div>
                             
-                            <div className="flex items-center gap-4 mb-8 relative z-10">
-                              <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 shadow-inner">
-                                <span className="text-3xl">👩‍⚖️</span>
+                            {/* Cabeçalho do Parecer */}
+                            <div className="flex items-center gap-4 mb-8 relative z-10 border-b border-slate-800 pb-6">
+                              <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700 shadow-inner shrink-0">
+                                <span className="text-2xl">⚖️</span> {/* Mudei o emoji para uma balança, fica mais sério */}
                               </div>
                               <div>
-                                <h3 className="text-xl font-black text-white tracking-tight">Veredito Sênior Bawzi</h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span>
-                                  <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Inteligência Jurídica • Lei 14.133/21</p>
-                                </div>
+                                <h3 className="text-xl font-black text-white tracking-tight flex items-center gap-3">
+                                  Bawzi Legal Intelligence
+                                  <span className="bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[9px] px-2 py-0.5 rounded uppercase tracking-widest flex items-center gap-1">
+                                    <span className="w-1 h-1 rounded-full bg-rose-400 animate-pulse"></span>
+                                    Compliance & Risco
+                                  </span>
+                                </h3>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">
+                                  Auditoria Automatizada • Lei 14.133/21
+                                </p>
                               </div>
                             </div>
                             
-                            <div className="relative z-10 text-slate-300 text-sm md:text-base leading-relaxed space-y-4">
-                              {(() => {
-                                let texto = result.parecer_especialista;
-                                
-                                // 1. O EXTRATOR NINJA: Limpa dicionários Python ou JSONs aninhados
-                                if (typeof texto === 'string' && texto.includes('parecer')) {
-                                  // Tenta extrair apenas o que está dentro do valor de "parecer"
-                                  const match = texto.match(/['"]parecer['"]\s*:\s*['"]([\s\S]*?)['"](?:,\s*['"]|,\s*\}|\}\s*$)/);
-                                  if (match && match[1]) {
-                                    texto = match[1];
-                                  } else {
-                                    // Limpeza bruta se o match falhar (arranca as chaves e o source)
-                                    texto = texto.replace(/^\{.*?['"]parecer['"]\s*:\s*['"]/, '');
-                                    texto = texto.replace(/['"](?:,\s*['"]source['"].*?)?\}\s*$/, '');
+                            {/* Corpo do Texto Jurídico */}
+                            <div className="relative z-10 text-slate-300 text-sm md:text-base leading-relaxed space-y-6 font-medium">
+                              {/* O whitespace-pre-wrap garante que as quebras de linha enviadas pela IA 
+                                sejam respeitadas (os parágrafos 1, 2 e 3 ficarão separados perfeitamente). 
+                              */}
+                              <div className="whitespace-pre-wrap p-5 bg-slate-950/50 rounded-xl border border-slate-800/80 shadow-inner">
+                                {result.parecer_especialista.split('\n').map((paragrafo, index) => {
+                                  // Pequeno truque para deixar os títulos do parecer (1., 2., 3.) em destaque
+                                  if (paragrafo.match(/^[0-9]\.\s/)) {
+                                    return <h4 key={index} className="text-white font-black text-lg mt-6 mb-2">{paragrafo}</h4>;
                                   }
-                                }
-                                
-                                // 2. O RENDERIZADOR ELEGANTE: Trata os \n literais e os **Negritos**
-                                return texto
-                                  .replace(/\\n/g, '\n') // Converte quebras de linha escapadas
-                                  .split('\n') // Quebra em parágrafos
-                                  .filter((p: string) => p.trim() !== '') // Remove linhas vazias
-                                  .map((paragrafo: string, idx: number) => {
-                                    
-                                    // Trata o Markdown de negrito (Ex: **1. Análise da Legalidade:**)
-                                    const formatado = paragrafo.split(/(\*\*.*?\*\*)/g).map((parte, i) => {
-                                      if (parte.startsWith('**') && parte.endsWith('**')) {
-                                        return (
-                                          <strong key={i} className="text-white font-black tracking-wide">
-                                            {parte.slice(2, -2)}
-                                          </strong>
-                                        );
-                                      }
-                                      return parte;
-                                    });
-                                    
-                                    // Coloca cada parágrafo dentro de um "card" escuro para facilitar a leitura
-                                    return (
-                                      <p key={idx} className="bg-slate-900/60 p-5 rounded-xl border border-slate-800/50 shadow-sm">
-                                        {formatado}
-                                      </p>
-                                    );
-                                  });
-                              })()}
+                                  if (paragrafo.trim() === '') return null;
+                                  
+                                  return <p key={index} className="mb-3">{paragrafo}</p>;
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Rodapé de Aviso */}
+                            <div className="mt-6 pt-5 border-t border-slate-800 flex items-center gap-3 relative z-10">
+                              <span className="text-slate-500 text-xl">⚖️</span>
+                              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-widest">
+                                Este documento constitui uma análise técnica preditiva e não substitui a consulta formal a um advogado constituído pela empresa.
+                              </p>
                             </div>
                           </div>
                         )}

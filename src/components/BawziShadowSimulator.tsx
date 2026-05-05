@@ -131,7 +131,6 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
             </h4>
 
             {/* SELETOR DE ESTRATÉGIA (ZERO-CLICK) */}
-            {/* 🟢 CORREÇÃO: Fonte base menor e menos padding vertical para não encravar nos limites */}
             <div className="flex bg-slate-800 rounded-xl p-1 mb-8">
               {(['CONSERVADOR', 'SNIPER', 'KAMIKAZE'] as const).map((est) => (
                 <button
@@ -146,6 +145,27 @@ const BawziShadowSimulator: React.FC<BawziShadowSimulatorProps> = ({
                   {est}
                 </button>
               ))}
+            </div>
+
+            {/* 🟢 A TRUST BADGE DO IBGE (Corrigida) */}
+            <div className="flex items-center gap-4 bg-slate-950/50 p-4 rounded-xl border border-slate-800 mb-6 shadow-inner">
+              <div className="w-10 h-10 rounded-full bg-sky-500/10 flex items-center justify-center border border-sky-500/20 shrink-0">
+                <span className="text-sky-400 text-lg">📊</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-black text-white">Margem Média do Setor: {engenhariaReversa.margem_media_setor_pct}%</h4>
+                  
+                  {/* O SELO DE CONFIANÇA DO IBGE */}
+                  <span className="px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse"></span>
+                    API IBGE
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 font-medium mt-1 leading-tight">
+                  Baseado na relação (Receita Bruta vs. Custos) para o CNAE principal dos fornecedores deste segmento.
+                </p>
+              </div>
             </div>
 
             {/* O ALVO A BATER */}
