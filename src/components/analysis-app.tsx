@@ -1186,7 +1186,6 @@ const handleGerarImpugnacao = async () => {
                           const pricing = result.pricing_intelligence as Record<string, any>;
                           
                           // 🟢 A FUNÇÃO "SACA-ROLHAS" SUPREMA
-                          // Procura por todos os "R$" no texto e devolve o maior valor numérico
                           const extrairMaiorDinheiro = (textoBase: any): number => {
                             if (!textoBase) return 0;
                             if (typeof textoBase === 'number' && textoBase > 0) return textoBase;
@@ -1197,7 +1196,6 @@ const handleGerarImpugnacao = async () => {
                             if (matches.length > 0) {
                               let maiorValor = 0;
                               matches.forEach(m => {
-                                 // Transforma "2.755,20" em número matemático limpo (2755.20)
                                  const num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
                                  if (num > maiorValor) maiorValor = num;
                               });
@@ -1209,10 +1207,10 @@ const handleGerarImpugnacao = async () => {
                             return 0;
                           };
 
-                          // 🟢 A ORDEM DE PRIORIDADE: O Resumo agora manda no Simulador!
-                          let valorEstimado = extrairMaiorDinheiro(result?.summary) // 1º Puxa direto do texto do resumo
-                                           || extrairMaiorDinheiro(result?.estimated_value) // 2º Puxa do campo de extração
-                                           || extrairMaiorDinheiro(pricing?.valor_estimado_raw) // 3º Puxa da matemática
+                          // 🟢 A ORDEM DE PRIORIDADE
+                          let valorEstimado = extrairMaiorDinheiro(result?.summary) 
+                                           || extrairMaiorDinheiro(result?.estimated_value) 
+                                           || extrairMaiorDinheiro(pricing?.valor_estimado_raw) 
                                            || 0;
 
                           if (!pricing || pricing.desagioPreditivoOrgao === undefined) return null;
@@ -1227,7 +1225,7 @@ const handleGerarImpugnacao = async () => {
                                 desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
                                 nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
                                 perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
-                                valorReferenciaInicial={result?.pricing_intelligence?.valor_estimado_raw}
+                                valorReferenciaInicial={valorEstimado} /* 🟢 CORREÇÃO: Passamos a variável inteligente aqui! */
                                 engenhariaReversa={result?.pricing_intelligence?.engenharia_reversa}
                                 userTier={userTier} 
                                 onUpgradeClick={() => setShowUpgradeModal(true)} 
