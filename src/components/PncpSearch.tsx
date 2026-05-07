@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Info, PlayCircle, Timer } from 'lucide-react';
+import { Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp } from 'lucide-react';
 
 interface PncpItem {
   id: string;
@@ -89,6 +89,35 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
     detectarLocalizacao();
   }, [userUf]);
+
+// =================================================================
+  // 🟢 EFEITO RADAR 360: Textos dinâmicos durante o carregamento
+  // =================================================================
+  const [loadingText, setLoadingText] = useState("A inicializar Radar 360º...");
+
+  useEffect(() => {
+    // 🟢 CORRIGIDO AQUI: isSearching em vez de isLoading
+    if (!isSearching) {
+      setLoadingText("Carregando Radar 360º..."); 
+      return;
+    }
+
+    const phrases = [
+      "A estabelecer ligação com o PNCP...",
+      "A extrair histórico de adjudicações...",
+      "A mapear o comportamento dos concorrentes...",
+      "A calcular margens e risco operacional...",
+      "A finalizar Dossiê Estratégico..."
+    ];
+    
+    let step = 0;
+    const interval = setInterval(() => {
+      step = (step + 1) % phrases.length;
+      setLoadingText(phrases[step]);
+    }, 2500); 
+
+    return () => clearInterval(interval);
+  }, [isSearching]); // 🟢 CORRIGIDO AQUI TAMBÉM
 
   const formatCurrency = (value: number | undefined | null) => {
     if (value === undefined || value === null || value === 0) {
@@ -285,8 +314,13 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 relative z-10">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <span className="text-indigo-600 text-3xl">📡</span> RADAR 360
+            <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-3">
+              <div className="p-2 bg-indigo-50 rounded-lg">
+                <Radar className="w-6 h-6 text-indigo-600" strokeWidth={2.5} />
+              </div>
+              <div className="uppercase">
+                Radar 360
+              </div>
             </h2>
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-100 rounded-md shadow-sm">
               <span className="relative flex h-2 w-2">
@@ -365,11 +399,26 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           </div>
 
           <button 
-            type="submit" 
+            onClick={handleSearch}
             disabled={isSearching}
-            className="w-full md:w-auto h-14 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-8 rounded-xl font-bold tracking-wide shadow-md shadow-indigo-200 transition-colors flex items-center justify-center gap-2 active:scale-95"
+            className="w-full md:w-auto px-6 py-4 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md active:scale-95 disabled:bg-indigo-400 disabled:cursor-not-allowed shrink-0"
           >
-            {isSearching ? <span className="animate-pulse">A varrer...</span> : 'Buscar'}
+            {isSearching ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-sm font-medium tracking-wide animate-pulse">
+                  {loadingText}
+                </span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <Radar className="w-5 h-5 text-indigo-200" strokeWidth={2.5} /> 
+                <span className="font-bold tracking-wide">Buscar Radar 360º</span>
+              </span>
+            )}
           </button>
         </div>
 
@@ -416,8 +465,9 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           )}
 
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 px-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <span className="text-lg">🧠</span> Inteligência de Mercado
+            <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+              <BrainCircuit className="w-4 h-4 text-indigo-600" strokeWidth={2.5} />
+              Inteligência de Mercado
             </h3>
             <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-violet-100 text-violet-800 border-violet-200'}`}>
               <span className="text-sm">{uf ? '📍' : '🔍'}</span>
@@ -545,18 +595,25 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
                 {/* PREDICTIVE RADAR */}
                 {isRecorrente && (
-                  <div className="mb-5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200/60 rounded-xl p-4 flex items-start gap-3 relative overflow-hidden shadow-inner">
-                    <div className="w-8 h-8 bg-white border border-orange-100 rounded-full flex items-center justify-center shrink-0 shadow-sm text-lg z-10">🔮</div>
-                    <div className="relative z-10">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="text-[10px] font-black text-orange-800 uppercase tracking-widest">Radar Preditivo</h4>
-                      </div>
-                      <p className="text-xs text-orange-900/80 font-medium">
-                        Padrão sazonal identificado. Novo edital estimado em <strong className="font-black text-orange-600">{diasPredicao} dias</strong>.
-                      </p>
-                    </div>
+                <div className="mb-5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200/60 rounded-xl p-4 flex items-start gap-3 relative overflow-hidden shadow-inner">
+                  
+                  <div className="w-8 h-8 bg-white border border-orange-100 rounded-full flex items-center justify-center shrink-0 shadow-sm z-10">
+                    <Timer className="w-4 h-4 text-orange-500" strokeWidth={2.5} />
                   </div>
-                )}
+
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="text-[10px] font-black text-orange-800 uppercase tracking-widest flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-orange-600" strokeWidth={3} />
+                        Radar Preditivo
+                      </h4>
+                    </div>
+                    <p className="text-xs text-orange-900/80 font-medium">
+                      Padrão sazonal identificado. Novo edital estimado em <strong className="font-black text-orange-600">{diasPredicao} dias</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
                 
                 {/* BOTÕES DE AÇÃO */}
                 <div className="flex flex-col sm:flex-row gap-3 mt-auto">
