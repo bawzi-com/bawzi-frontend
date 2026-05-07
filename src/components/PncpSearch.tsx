@@ -24,7 +24,8 @@ interface PncpItem {
 }
 
 interface PncpSearchProps {
-  onAnalyzeOportunity: (textoCompleto: string, termoPesquisado: string) => void; 
+  // 🟢 Adicionamos o terceiro parâmetro aqui
+  onAnalyzeOportunity: (textoCompleto: string, termoPesquisado: string, editalDados?: {cnpj: string, ano: number, sequencial: number}) => void; 
   charLimit?: number; 
   onUfChange?: (estadoSelecionado: string) => void;
   token?: string | null;
@@ -257,8 +258,11 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       console.log("Início do Prompt:", promptEstrategicoFinal.substring(0, 150));
       console.log("====================================");
 
-      onAnalyzeOportunity(promptEstrategicoFinal, searchTerm);
-      onAnalyzeOportunity(promptEstrategicoFinal, searchTerm);
+      onAnalyzeOportunity(promptEstrategicoFinal, searchTerm, {
+        cnpj: edital.cnpj,
+        ano: edital.ano,
+        sequencial: edital.sequencial
+      });
       
     } catch (err: any) {
       alert(err.message);
@@ -446,10 +450,23 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{marketData.taxaSucesso}%</span>
               </div>
             </div>
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-center">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume de Negócios</span>
-              <span className="text-xl font-black text-slate-900">{marketData.previsaoVolume}</span>
-              <span className="text-[10px] text-slate-500 font-bold block mt-1">Contratos Ativos</span>
+            {/* 4. VOLUME DE NEGÓCIOS (Estilo Premium Restaurado) */}
+            <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-center relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-16 h-16 bg-sky-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+              
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 relative z-10">
+                Volume de Negócios
+              </span>
+              
+              <div className="flex items-baseline gap-1 relative z-10">
+                <span className="text-2xl md:text-3xl font-black text-white">
+                  {results ? results.length : 0}
+                </span>
+              </div>
+              
+              <span className="text-[10px] text-sky-400 font-bold block mt-1 relative z-10">
+                Contratos Ativos
+              </span>
             </div>
           </div>
         </div>

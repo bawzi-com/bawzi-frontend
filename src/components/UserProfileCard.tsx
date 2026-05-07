@@ -7,7 +7,6 @@ interface UserProfileCardProps {
     tier?: number;
     workspace_users_count?: number;
     vagas_totais?: number;
-    // 🟢 Tipagem atualizada para o modelo em Português
     company?: {
       cnpj?: string;
       razao_social?: string;
@@ -30,16 +29,6 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
       case 3: return 'bg-indigo-50 text-indigo-700 border-indigo-200'; // Pro
       case 2: return 'bg-violet-50 text-violet-700 border-violet-200'; // Essencial
       default: return 'bg-slate-50 text-slate-600 border-slate-200';   // Free
-    }
-  };
-
-  // Nomes dos Tiers (Opcional, se quiser usar no futuro)
-  const getTierName = (tier: number) => {
-    switch (tier) {
-      case 4: return 'Dominador';
-      case 3: return 'Especialista';
-      case 2: return 'Essencial';
-      default: return 'Potencial';
     }
   };
 
