@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff } from 'lucide-react';
+import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff, FileText } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
 import CompanyProfileForm from './CompanyProfileForm';
 import Image from 'next/image';
@@ -174,7 +174,10 @@ export default function AnalysisApp() {
   // ==========================================
   const [loadingStep, setLoadingStep] = useState(0);
 
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
+  const [provider, setProvider] = useState<string>('openai');
+const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
 
 const loadingMessages = [
     { 
@@ -274,23 +277,53 @@ const loadingMessages = [
     initializeData();
   }, [API_URL]);
 
-  useEffect(() => {
+useEffect(() => {
     const cnpj = userData?.company?.cnpj;
-    if (token && cnpj) {
-      setIsLoadingCnd(true);
-      const cleanCnpj = cnpj.replace(/\D/g, '');
-      
-      fetch(`${API_URL.replace(/\/$/, '')}/api/company/cnd/${cleanCnpj}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (!data.detail) setCndData(data);
-      })
-      .catch(err => console.error("Erro ao buscar CNDs:", err))
-      .finally(() => setIsLoadingCnd(false));
-    }
-  }, [userData?.company?.cnpj, token, API_URL]);
+    
+    if (!token || !cnpj) return; // Cláusula de guarda mais limpa
+
+    // 1. Cria o controlador para evitar "Race Conditions" (Requisições atropeladas)
+    const abortController = new AbortController();
+    
+    setIsLoadingCnd(true);
+    const cleanCnpj = cnpj.replace(/\D/g, '');
+    
+    fetch(`${API_URL.replace(/\/$/, '')}/api/company/cnd/${cleanCnpj}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: abortController.signal // 2. Liga o sinal de aborto à requisição
+    })
+    .then(async res => {
+      // 3. O fetch padrão do JS NÃO cai no .catch se der erro 400 ou 500. Precisamos forçar:
+      if (!res.ok) {
+        throw new Error(`Erro na API: ${res.status}`);
+      }
+      return res.json();
+    })
+    .then(data => {
+      // FastAPI costuma mandar erros dentro de "detail"
+      if (!data.detail) {
+        setCndData(data);
+      } else {
+        console.warn("Aviso da API ao buscar CND:", data.detail);
+      }
+    })
+    .catch(err => {
+      // Ignora o erro se foi nós mesmos que abortamos a requisição
+      if (err.name !== 'AbortError') {
+        console.error("Erro ao buscar CNDs:", err);
+      }
+    })
+    .finally(() => {
+      setIsLoadingCnd(false);
+    });
+
+    // 4. Função de limpeza (Cleanup): Se o componente desmontar antes da API responder, cancela o fetch!
+    return () => {
+      abortController.abort();
+    };
+    
+    // Dica: Se o API_URL for uma constante global fora do componente, não precisa estar aqui nas dependências.
+  }, [userData?.company?.cnpj, token]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -307,18 +340,52 @@ const loadingMessages = [
     };
   }, [isAnalyzing]);
 
-  // 🟢 CONTROLADOR DE ABORTO DE REQUISIÇÃO
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleCancelAnalysis = () => {
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort(); // Dispara o tiro letal na requisição
+      abortControllerRef.current.abort();
     }
     setIsAnalyzing(false);
     setLoadingStep(0);
     setError("Análise cancelada pelo utilizador.");
     setTimeout(() => setError(null), 4000);
   };
+
+  useEffect(() => {
+  const loadUser = async () => {
+    const savedToken = localStorage.getItem('bawzi_token');
+    if (savedToken) {
+      try {
+        const profile = await fetchUserProfile(savedToken);
+        
+        setToken(savedToken);
+        setUserTier(profile.tier);
+        
+        const userData = { 
+          name: profile.name || profile.nome, 
+          email: profile.email 
+        };
+        localStorage.setItem('bawzi_user', JSON.stringify(userData));
+        
+      } catch (err) {
+        console.error("Token inválido");
+      }
+    }
+  };
+  loadUser();
+}, []);
+
+useEffect(() => {
+  const syncAuth = (e: StorageEvent) => {
+    if (e.key === 'bawzi_token' && e.newValue) {
+      window.location.reload(); // Recarrega para garantir que todo o estado da app está sincronizado
+    }
+  };
+
+  window.addEventListener('storage', syncAuth);
+  return () => window.removeEventListener('storage', syncAuth);
+}, []);
 
   // ==========================================
   // HANDLERS E FUNÇÕES DE AÇÃO
@@ -402,7 +469,16 @@ const loadingMessages = [
 
 const handleAnalyze = async (motor: "openai" | "claude") => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
-    if (!text.trim() && files.length === 0) { setError("Cole o texto ou adicione documentos."); return; }
+    
+    // 🟢 TRAVA DE UX COM A "DICA DE ELITE" (Feedback visual sem alert)
+    if (!text.trim() && files.length === 0 && !pncpData) { 
+      setError("Por favor, cole um texto, adicione um documento ou selecione um edital no Radar PNCP antes de analisar."); 
+      
+      // O erro desaparece sozinho magicamente após 5 segundos!
+      setTimeout(() => setError(null), 5000); 
+
+      return; 
+    }
     
     if (isOverLimit) { 
       setShowUpgradeModal(true); 
@@ -725,12 +801,12 @@ const handleGerarImpugnacao = async () => {
                   </span>
                 </h2>
                 <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
-                  Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico caça riscos, o Financeiro projeta margens e o Compliance blinda a entrega.
+                  Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico redige defesas, o Financeiro projeta margens, o Auditor cruza legislações em busca de armadilhas e o Compliance blinda a entrega.
                 </p>
               </div>
 
               {/* DIAGRAMA DOS AGENTES (Widescreen Action) */}
-              <div className="flex-1 w-full relative h-[320px] hidden lg:flex items-center justify-center z-10">
+              <div className="flex-1 w-full relative h-[380px] hidden lg:flex items-center justify-center z-10">
                 
                 {/* Documento Central */}
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-24 h-32 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center gap-2 z-20">
@@ -741,23 +817,27 @@ const handleGerarImpugnacao = async () => {
                   <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
                 </div>
 
-                {/* Fiação SVG Animada Roteando para 3 Agentes */}
+                {/* Fiação SVG Animada Roteando para 4 Agentes */}
                 <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  {/* Cabo Superior (Agente Jurídico) */}
-                  <path d="M 0 50 C 30 50, 50 15, 100 15" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 30 50, 50 15, 100 15" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
+                  {/* Cabo 1 (Agente Jurídico) */}
+                  <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
                   
-                  {/* Cabo Central (Agente Financeiro) */}
-                  <path d="M 0 50 C 40 50, 60 50, 100 50" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 40 50, 60 50, 100 50" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
+                  {/* Cabo 2 (Agente Auditor - o3-mini) */}
+                  <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#8b5cf6" strokeWidth="2" className="path-routing" />
 
-                  {/* Cabo Inferior (Agente Compliance) */}
-                  <path d="M 0 50 C 30 50, 50 85, 100 85" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 30 50, 50 85, 100 85" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
+                  {/* Cabo 3 (Agente Financeiro) */}
+                  <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
+
+                  {/* Cabo 4 (Agente Compliance) */}
+                  <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                  <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
                 </svg>
 
-                {/* Nós dos Agentes (Os 3 Especialistas) */}
-                <div className="absolute right-0 top-[5%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
+                {/* Nós dos Agentes (Os 4 Especialistas) */}
+                <div className="absolute right-0 top-[0%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
                   <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
                     <span className="text-indigo-500 text-sm">⚖️</span>
                   </div>
@@ -766,8 +846,19 @@ const handleGerarImpugnacao = async () => {
                     <span className="block text-xs font-bold text-slate-700 leading-none">Claude 3.5 Sonnet</span>
                   </div>
                 </div>
+
+                {/* 🟢 NOVO NÓ: O3-MINI */}
+                <div className="absolute right-0 top-[26%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.2s infinite 0.2s' }}>
+                  <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
+                    <span className="text-violet-500 text-sm">🕵️</span>
+                  </div>
+                  <div>
+                    <span className="block text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none mb-1">Agente Auditor</span>
+                    <span className="block text-xs font-bold text-slate-700 leading-none">OpenAI o3-mini</span>
+                  </div>
+                </div>
                 
-                <div className="absolute right-0 top-[40%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
+                <div className="absolute right-0 top-[52%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
                   <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
                     <span className="text-emerald-500 text-sm">💰</span>
                   </div>
@@ -777,7 +868,7 @@ const handleGerarImpugnacao = async () => {
                   </div>
                 </div>
 
-                <div className="absolute right-0 top-[75%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
+                <div className="absolute right-0 top-[78%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
                   <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
                     <span className="text-amber-500 text-sm">🛡️</span>
                   </div>
@@ -793,59 +884,74 @@ const handleGerarImpugnacao = async () => {
             {/* ============================================================== */}
             {/* ➡️ LADO DIREITO: 1/3 DA TELA (OS RESULTADOS DOS AGENTES)     */}
             {/* ============================================================== */}
-            <div className="xl:w-1/3 flex flex-col gap-4">
+            <div className="xl:w-1/3 flex flex-col gap-3">
               
               {/* RESULTADO 1: O SCORE (Consenso) */}
-              <div className="flex-1 bg-white rounded-[2rem] p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-5 relative overflow-hidden group hover:shadow-md transition-shadow">
-                <div className="relative w-[80px] h-[80px] shrink-0">
+              <div className="flex-1 bg-white rounded-3xl p-4 md:p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div className="relative w-[65px] h-[65px] shrink-0">
                     <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                       <path className="text-slate-100" strokeWidth="3" stroke="currentColor" fill="none" strokeLinecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                       <path className="text-emerald-500 drop-shadow-[0_2px_4px_rgba(16,185,129,0.3)]" strokeDasharray="98, 100" strokeWidth="3" strokeLinecap="round" fill="none" stroke="currentColor" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" style={{ animation: "draw-arc 1.5s ease-out forwards" }} />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-3xl font-black text-slate-900 tracking-tighter">98</span>
+                      <span className="text-2xl font-black text-slate-900 tracking-tighter">98</span>
                     </div>
                 </div>
                 <div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">Score Consolidado</p>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-md border border-emerald-100 uppercase mb-2">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">Score Consolidado</p>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[9px] font-bold rounded border border-emerald-100 uppercase mb-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                       Pronto para Assinar
                     </span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm">🤖</span>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Consenso dos 3 Agentes</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Consenso dos 4 Agentes</span>
                     </div>
                 </div>
               </div>
 
-              {/* RESULTADO 2: A OPORTUNIDADE (Descoberta pelo Financeiro) */}
-              <div className="flex-1 bg-sky-50/50 rounded-[2rem] p-5 border border-sky-100 flex flex-col justify-center relative overflow-hidden group hover:bg-sky-50 transition-colors cursor-default">
-                <div className="absolute left-0 top-0 w-1.5 h-full bg-sky-400"></div>
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-600 text-base">💡</span>
-                    <h5 className="text-sky-800 font-black text-[10px] uppercase tracking-widest">Oportunidade (Alpha)</h5>
+              {/* RESULTADO NOVO: A ARMADILHA (Descoberta pelo Auditor) */}
+              <div className="flex-1 bg-violet-50/50 rounded-3xl p-4 border border-violet-100 flex flex-col justify-center relative overflow-hidden group hover:bg-violet-50 transition-colors cursor-default">
+                <div className="absolute left-0 top-0 w-1.5 h-full bg-violet-400"></div>
+                <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-violet-600 text-sm">🔎</span>
+                    <h5 className="text-violet-800 font-black text-[9px] uppercase tracking-widest">Armadilha Legal Detetada</h5>
                   </div>
-                  <span className="text-[8px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded uppercase font-black tracking-widest border border-sky-200">💰 Agente Financeiro</span>
+                  <span className="text-[7px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-violet-200">🕵️ Agente Auditor</span>
                 </div>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                  A cláusula de reajuste omite o índice base. Indexar ao <span className="inline-block bg-white text-slate-900 px-1.5 py-0 rounded text-xs font-bold border border-slate-200 shadow-sm">IPCA</span> garante a blindagem da sua margem operacional.
+                <p className="text-slate-600 text-xs leading-relaxed font-medium">
+                  Exigência do Item 9.2 em conflito com o Art. 14 (14.133/21). Risco de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">direcionamento de edital</span>.
+                </p>
+              </div>
+
+              {/* RESULTADO 2: A OPORTUNIDADE (Descoberta pelo Financeiro) */}
+              <div className="flex-1 bg-sky-50/50 rounded-3xl p-4 border border-sky-100 flex flex-col justify-center relative overflow-hidden group hover:bg-sky-50 transition-colors cursor-default">
+                <div className="absolute left-0 top-0 w-1.5 h-full bg-sky-400"></div>
+                <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sky-600 text-sm">💡</span>
+                    <h5 className="text-sky-800 font-black text-[9px] uppercase tracking-widest">Oportunidade (Alpha)</h5>
+                  </div>
+                  <span className="text-[7px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-sky-200">💰 Agente Financeiro</span>
+                </div>
+                <p className="text-slate-600 text-xs leading-relaxed font-medium">
+                  A cláusula de reajuste omite o índice base. Indexar ao <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">IPCA</span> blindará a sua margem.
                 </p>
               </div>
 
               {/* RESULTADO 3: O RISCO (Descoberto pelo Jurídico) */}
-              <div className="flex-1 bg-rose-50/50 rounded-[2rem] p-5 border border-rose-100 flex flex-col justify-center relative overflow-hidden group hover:bg-rose-50 transition-colors cursor-default">
+              <div className="flex-1 bg-rose-50/50 rounded-3xl p-4 border border-rose-100 flex flex-col justify-center relative overflow-hidden group hover:bg-rose-50 transition-colors cursor-default">
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-rose-400"></div>
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-rose-600 text-base font-black">!</span>
-                    <h5 className="text-rose-800 font-black text-[10px] uppercase tracking-widest">Risco Contratual Oculto</h5>
+                <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-rose-600 text-sm font-black">!</span>
+                    <h5 className="text-rose-800 font-black text-[9px] uppercase tracking-widest">Risco Contratual Oculto</h5>
                   </div>
-                  <span className="text-[8px] bg-rose-100 text-rose-700 px-2 py-0.5 rounded uppercase font-black tracking-widest border border-rose-200">⚖️ Agente Jurídico</span>
+                  <span className="text-[7px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-rose-200">⚖️ Agente Jurídico</span>
                 </div>
-                <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                  Detetada multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1.5 py-0 rounded text-xs font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Parecer de defesa técnica já elaborado e anexado.
+                <p className="text-slate-600 text-xs leading-relaxed font-medium">
+                  Multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Defesa técnica já anexada.
                 </p>
               </div>
 
@@ -972,57 +1078,128 @@ const handleGerarImpugnacao = async () => {
                           )}
 
                           <div className="mt-6 w-full">
-                            {userTier === 4 ? (
-                              <div className="flex flex-col sm:flex-row gap-4 w-full">
-  
-                              {/* ⚡ ANÁLISE PADRÃO (OPENAI) - Visual Clean e Ágil */}
-                              <button
-                                type="button" 
-                                disabled={isAnalyzing}
-                                onClick={() => handleAnalyze("openai")}
-                                className="flex-1 bg-white hover:bg-slate-50 text-slate-800 py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-sm border-2 border-slate-200 hover:border-slate-300 disabled:opacity-50"
-                              >
-                                <span className="text-xl opacity-80">⚡</span>
-                                <div className="flex flex-col items-start text-left">
-                                  <span className="block leading-tight">Análise Padrão</span>
-                                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">GPT-4o (Velocidade)</span>
+                          {userTier === 4 ? (
+                            <>
+                              {/* 🟢 O SEU AVISO ELEGANTE ENTRA AQUI (Acima dos botões) */}
+                              {error && (
+                                <div className="mb-2 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-xl shadow-sm flex items-center gap-3 transition-all duration-500 animate-in fade-in slide-in-from-top-4">
+                                  <span className="text-xl shrink-0">⚠️</span>
+                                  <p className="text-sm font-bold">{error}</p>
                                 </div>
-                              </button>
-
-                              {/* 🧠 ANÁLISE AVANÇADA (CLAUDE) - Visual Preto Premium (Enterprise) */}
-                              <button
-                                type="button"
-                                disabled={isAnalyzing}
-                                onClick={() => handleAnalyze("claude")}
-                                className="flex-1 bg-slate-950 hover:bg-black text-white py-4 px-6 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all shadow-xl shadow-slate-900/20 border border-slate-800 disabled:opacity-50 relative overflow-hidden group"
-                              >
-                                {/* Efeito de fundo subtil ao passar o rato */}
-                                <div className="absolute inset-0 bg-gradient-to-r from-violet-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                                
-                                <span className="text-xl relative z-10 drop-shadow-md">🧠</span>
-                                <div className="flex flex-col items-start text-left relative z-10">
-                                  <span className="block leading-tight">Análise Avançada</span>
-                                  <span className="text-[10px] text-amber-400 font-black uppercase tracking-widest mt-0.5">Claude 3.5 (Pente Fino)</span>
-                                </div>
-                              </button>
+                              )}
                               
-                            </div>
-                            ) : (
-                              /* BOTÃO ÚNICO PARA TIERS 1, 2 e 3 */
-                              <button
-                                type="button" 
-                                disabled={isAnalyzing}
-                                onClick={() => handleAnalyze("openai")}
-                                className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
-                              >
-                                <span className="text-xl">⚡</span>
-                                <div className="flex flex-col items-start text-left">
-                                  <span className="block leading-tight text-base">Iniciar Análise Estratégica</span>
-                                  <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Processamento Neural Padrão</span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 my-8">
+                                {/* ⚡ OPÇÃO 1: ANÁLISE RÁPIDA (CLARO) */}
+                                <div
+                                  onClick={() => setProvider('openai')}
+                                  className={`relative p-6 rounded-2xl border-2 transition-all duration-300 text-left flex flex-col gap-3 group cursor-pointer ${
+                                    provider === 'openai'
+                                      ? 'border-violet-500 bg-violet-50/50 shadow-[0_0_20px_rgba(139,92,246,0.15)]'
+                                      : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-2xl">⚡</span>
+                                      <span className="text-xl font-black text-slate-900 tracking-tight">Análise Rápida</span>
+                                    </div>
+                                    {provider === 'openai' && (
+                                      <span className="w-3 h-3 rounded-full bg-violet-500 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.8)]"></span>
+                                    )}
+                                  </div>
+                                  
+                                  <p className="text-sm font-medium text-slate-500 leading-relaxed">
+                                    Foco em velocidade e extração de dados estruturados do edital. Entrega em ~5 segundos.
+                                  </p>
+
+                                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-slate-200">
+                                      🔎 GPT-4o
+                                    </span>
+                                    <span className="text-slate-300 font-bold">+</span>
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-slate-200">
+                                      ✍️ GPT-4o
+                                    </span>
+                                  </div>
+
+                                  {/* 🟢 O SEU BOTÃO FINAL DE AÇÃO APARECE AQUI! */}
+                                  {provider === 'openai' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAnalyze("openai")}
+                                      className="mt-4 w-full py-3 px-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-colors shadow-md flex justify-center items-center gap-2 animate-fade-in-up"
+                                    >
+                                      <span>Iniciar Análise Rápida</span>
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                    </button>
+                                  )}
                                 </div>
-                              </button>
-                            )}
-                          </div>
+
+                                {/* 🧠 OPÇÃO 2: AUDITORIA PROFUNDA (ESCURO/PREMIUM) */}
+                                <div
+                                  onClick={() => setProvider('claude')}
+                                  className={`relative p-6 rounded-2xl border-2 transition-all duration-300 text-left flex flex-col gap-3 group overflow-hidden cursor-pointer ${
+                                    provider === 'claude'
+                                      ? 'border-indigo-500 bg-slate-900 shadow-[0_0_30px_rgba(99,102,241,0.2)] ring-4 ring-indigo-500/10'
+                                      : 'border-slate-800 bg-slate-950 hover:border-indigo-500/50 hover:bg-slate-900'
+                                  }`}
+                                >
+                                  <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-indigo-500/10 blur-2xl group-hover:bg-indigo-500/20 transition-all"></div>
+
+                                  <div className="flex items-center justify-between w-full relative z-10">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-2xl">🧠</span>
+                                      <span className="text-xl font-black text-white tracking-tight">Auditoria Profunda</span>
+                                    </div>
+                                    {provider === 'claude' && (
+                                      <span className="w-3 h-3 rounded-full bg-indigo-400 animate-pulse shadow-[0_0_10px_rgba(129,140,248,0.8)]"></span>
+                                    )}
+                                  </div>
+                                  
+                                  <p className="text-sm font-medium text-indigo-200/60 leading-relaxed relative z-10">
+                                    Motor de raciocínio para cruzamento de leis e redação jurídica cirúrgica. Entrega em ~30 seg.
+                                  </p>
+
+                                  <div className="flex flex-wrap items-center gap-2 mt-1 relative z-10">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider shadow-inner">
+                                      🔎 O3-MINI
+                                    </span>
+                                    <span className="text-indigo-500/50 font-bold">+</span>
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider shadow-inner">
+                                      ✍️ CLAUDE 3.5
+                                    </span>
+                                  </div>
+
+                                  {/* 🟢 O SEU BOTÃO FINAL DE AÇÃO APARECE AQUI! */}
+                                  {provider === 'claude' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAnalyze("claude")}
+                                      className="mt-4 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)] flex justify-center items-center gap-2 relative z-10 animate-fade-in-up"
+                                    >
+                                      <span>Executar Auditoria Profunda</span>
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            /* BOTÃO ÚNICO PARA TIERS 1, 2 e 3 */
+                            <button
+                              type="button" 
+                              disabled={isAnalyzing}
+                              onClick={() => handleAnalyze("openai")}
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
+                            >
+                              <span className="text-xl">⚡</span>
+                              <div className="flex flex-col items-start text-left">
+                                <span className="block leading-tight text-base">Iniciar Análise Estratégica</span>
+                                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Processamento Neural Padrão</span>
+                              </div>
+                            </button>
+                          )}
+                        </div>
                         </form>
                       </div>
                     </>
@@ -1253,67 +1430,78 @@ const handleGerarImpugnacao = async () => {
                           );
                         })()}
 
-                        {/* 4. INTELIGÊNCIA COMPETITIVA E RANKING DE VENCEDORES (ABAS CORRIGIDAS) */}
+                        {/* 4. INTELIGÊNCIA COMPETITIVA E RANKING DE VENCEDORES */}
                         <div className="relative border border-slate-200 rounded-2xl p-8 mb-12 bg-white shadow-sm">
                           <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2.5">
-                            {/* 🟢 NOVO ÍCONE: Award profissional em vez de Coroa */}
                             <Award className="w-5 h-5 text-indigo-500" strokeWidth={2.5} />
                             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência Competitiva</h3>
                           </div>
                           
-                          {/* PARTE SUPERIOR: ABAS DE CONCORRENTES (Sempre visíveis) */}
                           <div className="mb-8 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 shadow-inner">
-                            
-                            {/* Cabeçalho das Abas - 🟢 CORREÇÃO: Sem condições para exibir */}
+                            {/* Abas */}
                             <div className="flex border-b border-slate-200 bg-slate-100/50">
                               <button
                                 onClick={() => setAbaConcorrentes('nacional')}
                                 className={`flex-1 py-3.5 px-5 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                                  abaConcorrentes === 'nacional'
-                                    ? 'bg-white text-indigo-700 border-t-2 border-t-indigo-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                                  abaConcorrentes === 'nacional' ? 'bg-white text-indigo-700 border-t-2 border-t-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
                                 }`}
                               >
-                                {/* 🟢 NOVO ÍCONE: Globe */}
-                                <Globe className={`w-4 h-4 ${abaConcorrentes === 'nacional' ? 'text-indigo-500' : 'text-slate-400'}`} />
-                                Nacionais
+                                <Globe className="w-4 h-4" /> Nacionais
                               </button>
                               <button
                                 onClick={() => setAbaConcorrentes('regional')}
                                 className={`flex-1 py-3.5 px-5 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                                  abaConcorrentes === 'regional'
-                                    ? 'bg-white text-emerald-700 border-t-2 border-t-emerald-600 shadow-sm'
-                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                                  abaConcorrentes === 'regional' ? 'bg-white text-emerald-700 border-t-2 border-t-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
                                 }`}
                               >
-                                {/* 🟢 NOVO ÍCONE: MapPin */}
-                                <MapPin className={`w-4 h-4 ${abaConcorrentes === 'regional' ? 'text-emerald-500' : 'text-slate-400'}`} />
-                                Regionais ({result.uf || "GO"})
+                                <MapPin className="w-4 h-4" /> Regionais ({result.uf || "GO"})
                               </button>
                             </div>
 
                             {/* Conteúdo das Abas */}
                             <div className="p-6 bg-white">
-                              {/* ABA NACIONAL */}
-                              {abaConcorrentes === 'nacional' && (
-                                result.concorrentes_provaveis && result.concorrentes_provaveis.length > 0 ? (
-                                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                    {result.concorrentes_provaveis.slice(0, 6).map((concorrente: string, index: number) => {
-                                      // 🟢 TRUQUE DE ELITE: Separar o nome da empresa do número de vitórias
-                                      let nomeEmpresa = concorrente;
-                                      let vitorias = "";
-                                      const match = concorrente.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)/i);
-                                      if (match) {
-                                        nomeEmpresa = match[1];
-                                        vitorias = match[2];
+                              {['nacional', 'regional'].map((tipo) => (
+                                abaConcorrentes === tipo && (
+                                  <ul key={tipo} className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                    {(tipo === 'nacional' ? result.concorrentes_provaveis : result.concorrentes_regionais)?.slice(0, 6).map((item: any, index: number) => {
+                                      
+                                      // 🟢 LÓGICA DE EXTRAÇÃO BLINDADA
+                                      let nomeEmpresa = "Empresa não identificada";
+                                      let vitorias = "0";
+                                      let cnpj = "";
+                                      let dadosParaModal = item;
+
+                                      if (typeof item === 'string') {
+                                        // Regex atualizada para capturar 3 grupos: Nome, Vitórias e CNPJ
+                                        const match = item.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)(?:\s*-\s*CNPJ:\s*([\d]+))?/i);
+                                        if (match) {
+                                          nomeEmpresa = match[1].trim();
+                                          vitorias = match[2];
+                                          cnpj = match[3] || "";
+                                          dadosParaModal = { nome: nomeEmpresa, vitorias, cnpj, uf: tipo === 'nacional' ? 'Nacional' : (result.uf || 'GO') };
+                                        } else {
+                                          nomeEmpresa = item;
+                                          dadosParaModal = { nome: item, uf: result.uf };
+                                        }
+                                      } else {
+                                        // Se já for um objeto vindo do backend enriquecido
+                                        nomeEmpresa = item.empresa || item.nome || "Empresa não identificada";
+                                        vitorias = item.vitorias || "0";
+                                        cnpj = item.cnpj || "";
                                       }
 
                                       return (
-                                        <li key={index} className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-hover hover:border-indigo-100 hover:bg-indigo-50/30">
-                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-indigo-600 font-black shrink-0 border border-indigo-100 shadow-sm text-[10px]">{index + 1}</span>
-                                          <span className="truncate uppercase tracking-tight flex-1" title={nomeEmpresa}>{nomeEmpresa}</span>
-                                          {/* 🟢 A NOVA TAG DE VITÓRIAS */}
-                                          {vitorias && (
+                                        <li 
+                                          key={index} 
+                                          onClick={() => setSelectedCompetitor(dadosParaModal)}
+                                          className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-all hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer group"
+                                        >
+                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-indigo-600 font-black shrink-0 border border-indigo-100 shadow-sm text-[10px] group-hover:bg-indigo-600 group-hover:text-white transition-colors">{index + 1}</span>
+                                          <div className="flex-1 min-w-0 flex flex-col">
+                                            <span className="truncate uppercase tracking-tight">{nomeEmpresa}</span>
+                                            <span className="text-[9px] text-slate-400 group-hover:text-indigo-500 font-mono mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">Ver Raio-X &rarr;</span>
+                                          </div>
+                                          {Number(vitorias) > 0 && (
                                             <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-indigo-200/50">
                                               🏆 {vitorias}
                                             </span>
@@ -1322,51 +1510,34 @@ const handleGerarImpugnacao = async () => {
                                       );
                                     })}
                                   </ul>
-                                ) : (
-                                  <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-3">
-                                    <SearchX className="w-10 h-10 text-slate-300" strokeWidth={1} />
-                                    <p className="text-sm text-slate-500 font-medium">Nenhum tubarão nacional identificado para este termo no PNCP.</p>
-                                  </div>
                                 )
-                              )}
-
-                              {/* ABA REGIONAL */}
-                              {abaConcorrentes === 'regional' && (
-                                result.concorrentes_regionais && result.concorrentes_regionais.length > 0 ? (
-                                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                    {result.concorrentes_regionais.slice(0, 6).map((concorrente: string, index: number) => {
-                                      // 🟢 TRUQUE DE ELITE (Regional)
-                                      let nomeEmpresa = concorrente;
-                                      let vitorias = "";
-                                      const match = concorrente.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)/i);
-                                      if (match) {
-                                        nomeEmpresa = match[1];
-                                        vitorias = match[2];
-                                      }
-
-                                      return (
-                                        <li key={index} className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-hover hover:border-emerald-100 hover:bg-emerald-50/30">
-                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-emerald-600 font-black shrink-0 border border-emerald-100 shadow-sm text-[10px]">{index + 1}</span>
-                                          <span className="truncate uppercase tracking-tight flex-1" title={nomeEmpresa}>{nomeEmpresa}</span>
-                                          {/* 🟢 A NOVA TAG DE VITÓRIAS (Verde) */}
-                                          {vitorias && (
-                                            <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-emerald-200/50">
-                                              🏆 {vitorias}
-                                            </span>
-                                          )}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                ) : (
-                                  <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-3">
-                                    <MapPinOff className="w-10 h-10 text-slate-300" strokeWidth={1} />
-                                    <p className="text-sm text-slate-500 font-medium">Nenhum concorrente regional forte encontrado na UF {result.uf || "GO"}.</p>
-                                  </div>
-                                )
-                              )}
+                              ))}
                             </div>
                           </div>
+
+                          <div className="mt-8 p-6 bg-slate-50 rounded-3xl border border-slate-200 border-dashed">
+                          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                                <span className="text-lg">⚖️</span> Exportar Parecer Técnico-Jurídico
+                              </h4>
+                              <p className="text-xs text-slate-500 font-medium">
+                                Gere uma minuta formal em PDF/Doc baseada na análise neural. 
+                                <span className="text-indigo-600 block mt-1 italic">
+                                  * Ferramenta de apoio: requer validação obrigatória de um advogado.
+                                </span>
+                              </p>
+                            </div>
+                            
+                            <button
+                              onClick={() => window.print()} // Ou sua função de gerar PDF
+                              className="px-6 py-3 bg-white border-2 border-slate-900 text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-md flex items-center gap-3"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Gerar Parecer para Revisão
+                            </button>
+                          </div>
+                        </div>
 
                           {/* PARTE INFERIOR: PARECER TÉCNICO */}
                           <div className="mt-8 pt-6 border-t border-slate-100">
@@ -1558,22 +1729,49 @@ const handleGerarImpugnacao = async () => {
                     </div>
                     <p className="text-slate-500 text-sm font-medium ml-16">Recupera estratégias de editais que já analisaste.</p>
                   </div>
-                  {token ? (
-                  <HistoryTab 
-                    token={token} 
-                    userTier={userTier} 
-                    onRedoAnalysis={(analiseAntiga) => {
-                      setText(analiseAntiga.raw_text || ""); 
-                      setActiveTab('workspace');
-                      setTimeout(() => {
-                        document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }, 100);
-                    }} 
-                  />
-                ) : (
+
+                  {/* 🟢 BLINDAGEM DO FALSO ANÓNIMO (Três estados) */}
+                  {isCheckingAuth ? (
+                    /* 1. ESTADO DE LOADING (Evita que a página pisque) */
+                    <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm flex flex-col items-center animate-pulse">
+                      <div className="w-16 h-16 bg-slate-100 rounded-full mb-4"></div>
+                      <div className="h-5 w-48 bg-slate-100 rounded-lg mb-2"></div>
+                      <div className="h-4 w-64 bg-slate-50 rounded-lg"></div>
+                    </div>
+                    
+                  ) : (token && userTier !== -1) ? (
+                    /* 2. ESTADO LOGADO (Renderiza o componente real) */
+                    <HistoryTab 
+                      token={token} 
+                      userTier={userTier} 
+                      onRedoAnalysis={(analiseAntiga) => {
+                        setText(analiseAntiga.raw_text || ""); 
+                        setActiveTab('workspace');
+                        setTimeout(() => {
+                          document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 100);
+                      }} 
+                    />
+                    
+                  ) : (
+                    /* 3. ESTADO DESLOGADO REAL (Apresenta o painel de bloqueio) */
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
-                        <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center text-2xl mx-auto mb-4">🔒</div>
-                        <p className="text-slate-500 font-medium">Inicie sessão para aceder ao histórico.</p>
+                      <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-slate-100 shadow-inner">
+                        🕵️
+                      </div>
+                      <h3 className="text-lg font-black text-slate-800 mb-2">Modo Anónimo</h3>
+                      <p className="text-slate-500 font-medium mb-6">
+                        Inicie sessão para ativar o histórico de editais e aceder ao Matchmaker de CNAE.
+                      </p>
+                      <button 
+                        onClick={() => {
+                          setAuthMode('login'); // Garante que abre na aba de login
+                          setShowAuthModal(true); // Abre o seu modal de autenticação
+                        }} 
+                        className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
+                      >
+                        Entrar na Conta
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1726,7 +1924,7 @@ const handleGerarImpugnacao = async () => {
             <button
               onClick={() => {
                 const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8000';
-                window.location.href = `${apiUrl}/api/auth/google/login`;
+                window.location.href = `${apiUrl}/auth/google/login`;
               }} 
               type="button"
               className="mt-4 w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
@@ -1816,6 +2014,99 @@ const handleGerarImpugnacao = async () => {
                 * Revisão humana obrigatória. Preencha as lacunas com os dados da sua empresa antes de protocolar no órgão.
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🟢 MODAL DE RAIO-X DO CONCORRENTE */}
+      {selectedCompetitor && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            
+            {/* Header do Modal */}
+            <div className="p-6 bg-slate-900 flex justify-between items-start">
+              <div className="pr-4">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-3 rounded-lg bg-indigo-500/20 border border-indigo-400/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider">
+                  Raio-X Competitivo
+                </div>
+                <h3 className="text-xl font-black text-white leading-tight">
+                  {selectedCompetitor.razao_social || selectedCompetitor.nome || 'Concorrente'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setSelectedCompetitor(null)} 
+                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                ✖
+              </button>
+            </div>
+
+            {/* Corpo do Modal */}
+            <div className="p-6 space-y-5">
+              
+              {/* Bloco de Destaque: Vitórias */}
+              <div className="flex items-center justify-between bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">🏆</span>
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Histórico no PNCP</p>
+                    <p className="text-sm font-medium text-amber-800">Vitórias recentes</p>
+                  </div>
+                </div>
+                <span className="text-3xl font-black text-amber-600">
+                  {selectedCompetitor.quantidade_vitorias || selectedCompetitor.vitorias || selectedCompetitor.vitorias_pncp || 0}
+                </span>
+              </div>
+
+              {/* Informações Fiscais */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CNPJ</p>
+                  <p className="text-sm font-mono font-bold text-slate-700">
+                    {selectedCompetitor.cnpj || 'Não identificado'}
+                  </p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Estado (UF)</p>
+                  <p className="text-sm font-bold text-slate-700">
+                    {selectedCompetitor.uf || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Outras informações (Se existirem na sua API: Porte, Município, etc) */}
+              {(selectedCompetitor.porte || selectedCompetitor.municipio) && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                  {selectedCompetitor.porte && (
+                    <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                      <span className="text-xs font-bold text-slate-500 uppercase">Porte da Empresa</span>
+                      <span className="text-sm font-bold text-slate-800">{selectedCompetitor.porte}</span>
+                    </div>
+                  )}
+                  {selectedCompetitor.municipio && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500 uppercase">Município</span>
+                      <span className="text-sm font-bold text-slate-800">{selectedCompetitor.municipio}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer com Ação */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50">
+              <button 
+                onClick={() => {
+                  // Se quiser futuramente copiar o CNPJ ou abrir num radar completo
+                  navigator.clipboard.writeText(selectedCompetitor.cnpj || '');
+                  alert(`CNPJ ${selectedCompetitor.cnpj} copiado para a área de transferência!`);
+                }}
+                className="w-full py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+              >
+                📋 Copiar CNPJ para Investigação
+              </button>
+            </div>
+
           </div>
         </div>
       )}

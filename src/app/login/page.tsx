@@ -70,7 +70,7 @@ export default function LoginPage() {
     }
   };
 
-  // ==========================================
+// ==========================================
   // HANDLER: LOGIN/REGISTO COM E-MAIL
   // ==========================================
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -103,10 +103,31 @@ export default function LoginPage() {
         throw new Error(data.detail || 'Falha na autenticação');
       }
 
+      // 1. Grava as credenciais base
       localStorage.setItem('bawzi_token', data.access_token);
       localStorage.setItem('bawzi_tier', (data.tier !== undefined ? data.tier : 1).toString());
       
+      // ==============================================================
+      // 🟢 2. A MAGIA DO TOAST: GRAVAÇÃO DINÂMICA DO UTILIZADOR
+      // ==============================================================
+      // Tenta pegar o nome da resposta da API (data.user) OU do formulário de registo
+      const userName = data.user?.name || data.user?.nome_completo || data.name || authForm.name || 'Gestor da Conta';
+      // Tenta pegar o email da resposta da API OU do formulário preenchido
+      const userEmail = data.user?.email || data.email || authForm.email;
+
+      const userData = { 
+        name: userName,
+        email: userEmail
+      };
+      
+      localStorage.setItem('bawzi_user', JSON.stringify(userData));
+      // ==============================================================
+
+      // Se isto estiver dentro de um Modal e você já estiver no /workspace, 
+      // talvez queira usar um window.location.reload() para forçar o Header a ler os dados novos.
+      // Se for uma página separada de Login, o router.push faz o trabalho perfeitamente!
       router.push('/workspace');
+      
     } catch (err: any) { 
       setAuthError(err.message); 
     } finally { 

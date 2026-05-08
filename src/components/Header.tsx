@@ -6,14 +6,13 @@ import { useRouter, usePathname } from 'next/navigation';
 
 export default function Header() {
   const router = useRouter();
-  const pathname = usePathname(); // Para saber qual a aba ativa
+  const pathname = usePathname();
   
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
+  // 🟢 NOVO: Estado para guardar nome e email
+  const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
 
-  // ==========================================
-  // ESTADOS DA CENTRAL DE NOTIFICAÇÕES
-  // ==========================================
   const [showNotifMenu, setShowNotifMenu] = useState(false);
   const [notifications, setNotifications] = useState([
     { 
@@ -27,7 +26,7 @@ export default function Header() {
       id: 2, 
       type: 'success', 
       title: 'Neural Matchmaker', 
-      message: 'Encontramos 2 novos editais milionários compatíveis com o seu CNAE.', 
+      message: 'Encontramos 2 novos editais compatíveis com o seu CNAE.', 
       isRead: false,
     }
   ]);
@@ -38,20 +37,31 @@ export default function Header() {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-  // Verifica o status de login ao carregar qualquer página
   useEffect(() => {
     const savedToken = localStorage.getItem('bawzi_token');
     const savedTier = localStorage.getItem('bawzi_tier');
+    
+    // 🟢 BUSCA OS DADOS DO UTILIZADOR (Assumindo que guarda no login como 'bawzi_user')
+    const savedUser = localStorage.getItem('bawzi_user');
+
     if (savedToken) setToken(savedToken);
     if (savedTier) setUserTier(savedTier);
-  }, [pathname]); // Recalcula se a rota mudar
+    if (savedUser) {
+      try {
+        setUserData(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Erro ao ler dados do utilizador", e);
+      }
+    }
+  }, [pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('bawzi_token');
     localStorage.removeItem('bawzi_tier');
+    localStorage.removeItem('bawzi_user'); // Limpa também o utilizador
     setToken(null);
-    router.push('/'); // Volta para a Landing Page
-    window.location.reload(); // Força a limpeza visual
+    router.push('/');
+    window.location.reload();
   };
 
   return (
@@ -65,38 +75,15 @@ export default function Header() {
 
         {/* NAVEGAÇÃO CENTRAL */}
         <nav className="hidden md:flex items-center gap-8 mr-8">
-          <Link 
-            href="/workspace" 
-            className={`text-sm font-bold pb-1 border-b-2 transition-all ${
-              pathname === '/workspace' || pathname === '/' 
-                ? 'text-slate-900 border-slate-900' 
-                : 'text-slate-500 border-transparent hover:text-slate-900'
-            }`}
-          >
+          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' || pathname === '/' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Workspace
           </Link>
-          
           {token && (
-            <Link 
-              href="/history" 
-              className={`text-sm font-bold pb-1 border-b-2 transition-all ${
-                pathname === '/history' 
-                  ? 'text-slate-900 border-slate-900' 
-                  : 'text-slate-500 border-transparent hover:text-slate-900'
-              }`}
-            >
+            <Link href="/history" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/history' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
               Histórico
             </Link>
           )}
-          
-          <Link 
-            href="/plans" 
-            className={`text-sm font-bold pb-1 border-b-2 transition-all ${
-                pathname === '/plans' 
-                ? 'text-slate-900 border-slate-900' 
-                : 'text-slate-500 border-transparent hover:text-slate-900'
-            }`}
-          >
+          <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Planos
           </Link>
         </nav>
@@ -106,12 +93,9 @@ export default function Header() {
           {token ? (
             <div className="flex items-center gap-3 sm:gap-4">
               
-              {/* 🟢 CENTRAL DE NOTIFICAÇÕES (SINO) */}
+              {/* SINO DE NOTIFICAÇÕES */}
               <div className="relative">
-                <button 
-                  onClick={() => setShowNotifMenu(!showNotifMenu)} 
-                  className="relative flex items-center justify-center h-9 w-9 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors border border-slate-200"
-                >
+                <button onClick={() => setShowNotifMenu(!showNotifMenu)} className="relative flex items-center justify-center h-9 w-9 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors border border-slate-200">
                   <span className="text-base">🔔</span>
                   {unreadCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-in zoom-in">
@@ -120,7 +104,6 @@ export default function Header() {
                   )}
                 </button>
 
-                {/* Dropdown do Radar Estratégico */}
                 {showNotifMenu && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowNotifMenu(false)}></div>
@@ -133,65 +116,59 @@ export default function Header() {
                           </button>
                         )}
                       </div>
-                      
                       <div className="max-h-[350px] overflow-y-auto">
-                        {notifications.length === 0 ? (
-                          <div className="p-8 text-center text-slate-400 font-medium text-sm">
-                            Nenhum alerta no seu radar.
+                        {notifications.map(notif => (
+                          <div key={notif.id} className={`p-4 flex gap-4 ${notif.isRead ? 'opacity-60' : 'bg-violet-50/30'}`}>
+                            <div className="mt-1">{notif.type === 'critical' ? '🚨' : '🎯'}</div>
+                            <div className="flex-1">
+                              <h4 className="text-sm font-bold mb-1">{notif.title}</h4>
+                              <p className="text-xs text-slate-500 leading-relaxed">{notif.message}</p>
+                            </div>
                           </div>
-                        ) : (
-                          <div className="divide-y divide-slate-100">
-                            {notifications.map(notif => (
-                              <div key={notif.id} className={`p-4 hover:bg-slate-50 transition-colors flex gap-4 ${notif.isRead ? 'opacity-60' : 'bg-violet-50/30'}`}>
-                                <div className="mt-1">
-                                  {notif.type === 'critical' ? '🚨' : notif.type === 'success' ? '🎯' : '💡'}
-                                </div>
-                                <div className="flex-1">
-                                  <h4 className={`text-sm font-bold mb-1 ${notif.type === 'critical' ? 'text-red-700' : 'text-slate-900'}`}>
-                                    {notif.title}
-                                  </h4>
-                                  <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                                    {notif.message}
-                                  </p>
-                                  <span className="text-[10px] text-slate-400 font-bold mt-2 block uppercase tracking-wider">Há 2 horas</span>
-                                </div>
-                                {!notif.isRead && <div className="w-2 h-2 rounded-full bg-violet-500 mt-2 shrink-0"></div>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="p-3 border-t border-slate-100 bg-slate-50 text-center">
-                        <button className="text-xs font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest">
-                          Ver Histórico Completo
-                        </button>
+                        ))}
                       </div>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* BADGE DE NÍVEL */}
-              <span className="hidden sm:inline-block text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                ⭐ Nível {userTier}
-              </span>
-              
-              {/* AVATAR DO UTILIZADOR */}
-              <Link href="/profile" className="h-9 w-9 rounded-full bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white font-bold shadow-md hover:scale-110 transition-transform" title="Definições de Perfil">
-                B
-              </Link>
+              {/* 🟢 AVATAR COM TOAST DINÂMICO */}
+              <div className="relative group cursor-pointer">
+                <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-violet-500/20">
+                  {/* Pega a inicial do nome Marcelo ou usa B como fallback */}
+                  {userData?.name ? userData.name.charAt(0).toUpperCase() : 'B'}
+                </Link>
 
-              {/* BOTÃO SAIR */}
-              <button onClick={handleLogout} className="text-sm font-bold text-red-500 hover:text-red-700 transition ml-2">
-                Sair
-              </button>
+                {/* O TOAST */}
+                <div className="absolute right-0 mt-3 w-max min-w-[220px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right scale-95 group-hover:scale-100 z-50">
+                  <div className="bg-slate-900 rounded-2xl p-4 shadow-2xl border border-slate-700 relative">
+                    <div className="absolute -top-2 right-4 w-4 h-4 bg-slate-900 border-t border-l border-slate-700 transform rotate-45"></div>
+                    <div className="relative z-10 flex flex-col text-left">
+                      {/* 🟢 NOME REAL DO MARCELO AQUI */}
+                      <span className="text-sm font-black text-white truncate max-w-[180px]">
+                        {userData?.name || 'Utilizador Bawzi'}
+                      </span>
+                      {/* 🟢 EMAIL REAL AQUI */}
+                      <span className="text-[10px] font-medium text-slate-400 truncate max-w-[180px] mt-0.5">
+                        {userData?.email || 'Definições de Perfil'}
+                      </span>
+                      
+                      <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
+                         <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[9px] font-black uppercase tracking-widest rounded-lg">
+                           ⭐ Nível {userTier}
+                         </span>
+                         <button onClick={handleLogout} className="text-[9px] font-bold text-slate-500 hover:text-rose-400 transition-colors uppercase tracking-widest">
+                           Sair
+                         </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           ) : (
-             <Link 
-              href="/login" 
-              className="bg-slate-950 !text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg hover:-translate-y-0.5"
-            >
+             <Link href="/login" className="bg-slate-950 !text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg">
               Acessar a Conta
             </Link>
           )}
