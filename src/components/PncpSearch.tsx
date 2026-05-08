@@ -24,8 +24,11 @@ interface PncpItem {
 }
 
 interface PncpSearchProps {
-  // 🟢 Adicionamos o terceiro parâmetro aqui
-  onAnalyzeOportunity: (textoCompleto: string, termoPesquisado: string, editalDados?: {cnpj: string, ano: number, sequencial: number}) => void; 
+  onAnalyzeOportunity: (
+    textoCompleto: string, 
+    termoPesquisado: string, 
+    editalDados?: { cnpj: string; ano: number; sequencial: number; uf?: string } 
+  ) => void;
   charLimit?: number; 
   onUfChange?: (estadoSelecionado: string) => void;
   token?: string | null;
@@ -98,7 +101,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   useEffect(() => {
     // 🟢 CORRIGIDO AQUI: isSearching em vez de isLoading
     if (!isSearching) {
-      setLoadingText("Carregando Radar 360º..."); 
+      setLoadingText("A inicializar Radar 360º..."); 
       return;
     }
 
@@ -290,7 +293,8 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       onAnalyzeOportunity(promptEstrategicoFinal, searchTerm, {
         cnpj: edital.cnpj,
         ano: edital.ano,
-        sequencial: edital.sequencial
+        sequencial: edital.sequencial,
+        uf: edital.uf
       });
       
     } catch (err: any) {

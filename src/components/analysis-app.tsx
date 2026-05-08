@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
 import CompanyProfileForm from './CompanyProfileForm';
 import Image from 'next/image';
@@ -131,7 +132,7 @@ export default function AnalysisApp() {
   const [isCachedResult, setIsCachedResult] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [termoAlvo, setTermoAlvo] = useState('');
-  const [pncpData, setPncpData] = useState<{cnpj: string, ano: number, sequencial: number} | null>(null);
+  const [pncpData, setPncpData] = useState<{cnpj: string, ano: number, sequencial: number, uf?: string} | null>(null);
   
   // Modais de Autenticação e Upsell
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -172,6 +173,8 @@ export default function AnalysisApp() {
   // ESTADOS DE ANIMAÇÃO DE CARREGAMENTO
   // ==========================================
   const [loadingStep, setLoadingStep] = useState(0);
+
+  const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
 
 const loadingMessages = [
     { 
@@ -354,32 +357,44 @@ const loadingMessages = [
     setShowShareModal(true);
   };
 
+  // FUNÇÃO DE PARTILHA
   const confirmShare = async () => {
     if (!shareEmail || !shareEmail.includes('@')) {
       alert("Por favor, insira um e-mail válido.");
       return;
     }
 
+    if (!analysisId) {
+      alert("Erro: Não foi possível identificar o ID desta análise. Tente fazer a análise novamente.");
+      return;
+    }
+
     setIsSharing(true);
     try {
-      const res = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyses/${analysisId}/share`, {
+      const currentToken = localStorage.getItem('bawzi_token');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8000';
+      
+      const response = await fetch(`${apiUrl}/api/analyses/${analysisId}/share`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {})
         },
         body: JSON.stringify({ target_email: shareEmail })
       });
 
-      if (res.ok) {
-        alert("✅ Análise partilhada com sucesso!");
-        setShowShareModal(false);
-      } else {
-        const errorData = await res.json();
-        alert(`Erro: ${errorData.detail || 'Falha ao partilhar.'}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Falha ao partilhar o relatório.");
       }
-    } catch (error) {
-      alert("❌ Erro de comunicação.");
+
+      alert("✅ Relatório estratégico enviado com sucesso para o C-Level!");
+      setShowShareModal(false);
+      setShareEmail(""); // Limpa o campo
+      
+    } catch (err: any) {
+      console.error("Erro no compartilhamento:", err);
+      alert(`Erro: ${err.message}`);
     } finally {
       setIsSharing(false);
     }
@@ -421,6 +436,10 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
         formData.set('pncp_cnpj', pncpData.cnpj);
         formData.set('pncp_ano', pncpData.ano.toString());
         formData.set('pncp_sequencial', pncpData.sequencial.toString());
+        
+        if (pncpData.uf) {
+          formData.set('uf', pncpData.uf); 
+        }
       }
 
       const headers: Record<string, string> = {};
@@ -1234,15 +1253,130 @@ const handleGerarImpugnacao = async () => {
                           );
                         })()}
 
-                        {/* 4. INTELIGÊNCIA COMPETITIVA (WIRE FRAME) */}
-                        <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
-                          <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                            <span className="text-lg">👑</span>
+                        {/* 4. INTELIGÊNCIA COMPETITIVA E RANKING DE VENCEDORES (ABAS CORRIGIDAS) */}
+                        <div className="relative border border-slate-200 rounded-2xl p-8 mb-12 bg-white shadow-sm">
+                          <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2.5">
+                            {/* 🟢 NOVO ÍCONE: Award profissional em vez de Coroa */}
+                            <Award className="w-5 h-5 text-indigo-500" strokeWidth={2.5} />
                             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência Competitiva</h3>
                           </div>
                           
-                          <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line mt-2">
-                            {result.rationale || result.recommendation || "Sem dados estratégicos."}
+                          {/* PARTE SUPERIOR: ABAS DE CONCORRENTES (Sempre visíveis) */}
+                          <div className="mb-8 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 shadow-inner">
+                            
+                            {/* Cabeçalho das Abas - 🟢 CORREÇÃO: Sem condições para exibir */}
+                            <div className="flex border-b border-slate-200 bg-slate-100/50">
+                              <button
+                                onClick={() => setAbaConcorrentes('nacional')}
+                                className={`flex-1 py-3.5 px-5 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                                  abaConcorrentes === 'nacional'
+                                    ? 'bg-white text-indigo-700 border-t-2 border-t-indigo-600 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                                }`}
+                              >
+                                {/* 🟢 NOVO ÍCONE: Globe */}
+                                <Globe className={`w-4 h-4 ${abaConcorrentes === 'nacional' ? 'text-indigo-500' : 'text-slate-400'}`} />
+                                Nacionais
+                              </button>
+                              <button
+                                onClick={() => setAbaConcorrentes('regional')}
+                                className={`flex-1 py-3.5 px-5 text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                                  abaConcorrentes === 'regional'
+                                    ? 'bg-white text-emerald-700 border-t-2 border-t-emerald-600 shadow-sm'
+                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                                }`}
+                              >
+                                {/* 🟢 NOVO ÍCONE: MapPin */}
+                                <MapPin className={`w-4 h-4 ${abaConcorrentes === 'regional' ? 'text-emerald-500' : 'text-slate-400'}`} />
+                                Regionais ({result.uf || "GO"})
+                              </button>
+                            </div>
+
+                            {/* Conteúdo das Abas */}
+                            <div className="p-6 bg-white">
+                              {/* ABA NACIONAL */}
+                              {abaConcorrentes === 'nacional' && (
+                                result.concorrentes_provaveis && result.concorrentes_provaveis.length > 0 ? (
+                                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                    {result.concorrentes_provaveis.slice(0, 6).map((concorrente: string, index: number) => {
+                                      // 🟢 TRUQUE DE ELITE: Separar o nome da empresa do número de vitórias
+                                      let nomeEmpresa = concorrente;
+                                      let vitorias = "";
+                                      const match = concorrente.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)/i);
+                                      if (match) {
+                                        nomeEmpresa = match[1];
+                                        vitorias = match[2];
+                                      }
+
+                                      return (
+                                        <li key={index} className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-hover hover:border-indigo-100 hover:bg-indigo-50/30">
+                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-indigo-600 font-black shrink-0 border border-indigo-100 shadow-sm text-[10px]">{index + 1}</span>
+                                          <span className="truncate uppercase tracking-tight flex-1" title={nomeEmpresa}>{nomeEmpresa}</span>
+                                          {/* 🟢 A NOVA TAG DE VITÓRIAS */}
+                                          {vitorias && (
+                                            <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-indigo-200/50">
+                                              🏆 {vitorias}
+                                            </span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                ) : (
+                                  <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-3">
+                                    <SearchX className="w-10 h-10 text-slate-300" strokeWidth={1} />
+                                    <p className="text-sm text-slate-500 font-medium">Nenhum tubarão nacional identificado para este termo no PNCP.</p>
+                                  </div>
+                                )
+                              )}
+
+                              {/* ABA REGIONAL */}
+                              {abaConcorrentes === 'regional' && (
+                                result.concorrentes_regionais && result.concorrentes_regionais.length > 0 ? (
+                                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                    {result.concorrentes_regionais.slice(0, 6).map((concorrente: string, index: number) => {
+                                      // 🟢 TRUQUE DE ELITE (Regional)
+                                      let nomeEmpresa = concorrente;
+                                      let vitorias = "";
+                                      const match = concorrente.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)/i);
+                                      if (match) {
+                                        nomeEmpresa = match[1];
+                                        vitorias = match[2];
+                                      }
+
+                                      return (
+                                        <li key={index} className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-hover hover:border-emerald-100 hover:bg-emerald-50/30">
+                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-emerald-600 font-black shrink-0 border border-emerald-100 shadow-sm text-[10px]">{index + 1}</span>
+                                          <span className="truncate uppercase tracking-tight flex-1" title={nomeEmpresa}>{nomeEmpresa}</span>
+                                          {/* 🟢 A NOVA TAG DE VITÓRIAS (Verde) */}
+                                          {vitorias && (
+                                            <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-emerald-200/50">
+                                              🏆 {vitorias}
+                                            </span>
+                                          )}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                ) : (
+                                  <div className="text-center py-8 px-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center gap-3">
+                                    <MapPinOff className="w-10 h-10 text-slate-300" strokeWidth={1} />
+                                    <p className="text-sm text-slate-500 font-medium">Nenhum concorrente regional forte encontrado na UF {result.uf || "GO"}.</p>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+
+                          {/* PARTE INFERIOR: PARECER TÉCNICO */}
+                          <div className="mt-8 pt-6 border-t border-slate-100">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                              <BrainCircuit className="w-4 h-4 text-indigo-400" strokeWidth={2} />
+                              Parecer Estratégico da IA
+                            </h4>
+                            <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
+                              {result.rationale || result.recommendation || "Sem dados estratégicos."}
+                            </div>
                           </div>
                         </div>
 
@@ -1582,6 +1716,31 @@ const handleGerarImpugnacao = async () => {
               </button>
             </form>
             
+            {/* 🟢 DIVISOR E BOTÃO GOOGLE */}
+            <div className="mt-6 flex items-center justify-between">
+              <span className="border-b border-slate-200 w-1/5 lg:w-1/4"></span>
+              <span className="text-[10px] text-center text-slate-400 font-black uppercase tracking-widest">Ou continue com</span>
+              <span className="border-b border-slate-200 w-1/5 lg:w-1/4"></span>
+            </div>
+
+            <button
+              onClick={() => {
+                const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8000';
+                window.location.href = `${apiUrl}/api/auth/google/login`;
+              }} 
+              type="button"
+              className="mt-4 w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+              </svg>
+              Acessar com o Google
+            </button>
+            {/* 🔴 FIM DO BLOCO GOOGLE */}
+
             <p className="text-center mt-8 text-sm text-slate-500 font-medium">
               {authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'} 
               <button onClick={() => setAuthMode(authMode === 'register' ? 'login' : 'register')} className="ml-2 text-violet-600 font-bold hover:underline underline-offset-4">
@@ -1591,7 +1750,7 @@ const handleGerarImpugnacao = async () => {
           </div>
         </div>
       )}
-
+      
       {showShareModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
