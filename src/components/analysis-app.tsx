@@ -2013,27 +2013,35 @@ useEffect(() => {
       )}
 
       {selectedCompetitor && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          
+          {/* 🟢 A MÁGICA AQUI: max-h-[90vh] e flex-col garantem que a modal nunca é maior que a tela */}
+          <div className="bg-white rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             
-            <div className="p-6 bg-slate-900 flex justify-between items-start">
+            {/* ======================================================== */}
+            {/* CABEÇALHO FIXO (Com o botão de fechar sempre visível)    */}
+            {/* ======================================================== */}
+            <div className="p-5 md:p-6 bg-slate-900 flex justify-between items-start shrink-0">
               <div className="pr-4">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-3 rounded-lg bg-indigo-500/20 border border-indigo-400/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider">
                   Raio-X Competitivo
                 </div>
-                <h3 className="text-xl font-black text-white leading-tight">
+                <h3 className="text-xl font-black text-white leading-tight line-clamp-2">
                   {selectedCompetitor.razao_social || selectedCompetitor.nome || 'Concorrente'}
                 </h3>
               </div>
               <button 
                 onClick={() => setSelectedCompetitor(null)} 
-                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
+                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-800 text-slate-400 hover:bg-rose-500 hover:text-white transition-colors"
               >
                 ✖
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
+            {/* ======================================================== */}
+            {/* CONTEÚDO COM SCROLL INTERNO (Aqui a mágica rola)         */}
+            {/* ======================================================== */}
+            <div className="p-5 md:p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
               <div className="flex items-center justify-between bg-amber-50 p-4 rounded-2xl border border-amber-100">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">🏆</span>
@@ -2054,11 +2062,9 @@ useEffect(() => {
                     {(() => {
                       const rawCnpj = selectedCompetitor.cnpj || '';
                       const nums = rawCnpj.replace(/\D/g, '');
-                      // Se tiver 14 números exatos, aplica a máscara padrão
                       if (nums.length === 14) {
                         return nums.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
                       }
-                      // Se não tiver (ex: Raiz de MEI), devolve como a IA entregou
                       return rawCnpj || 'Não identificado';
                     })()}
                   </p>
@@ -2075,7 +2081,7 @@ useEffect(() => {
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                   {selectedCompetitor.porte && (
                     <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                      <span className="text-xs font-bold text-slate-500 uppercase">Porte da Empresa</span>
+                      <span className="text-xs font-bold text-slate-500 uppercase">Porte</span>
                       <span className="text-sm font-bold text-slate-800">{selectedCompetitor.porte}</span>
                     </div>
                   )}
@@ -2087,9 +2093,76 @@ useEffect(() => {
                   )}
                 </div>
               )}
+
+              {/* 🔍 HISTÓRICO DE VITÓRIAS PNCP */}
+              <div className="mt-6 border-t border-slate-100 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <span className="text-sm">🎯</span> Últimos Contratos Vencidos
+                  </h4>
+                </div>
+
+                {loadingHistory ? (
+                  <div className="animate-pulse space-y-3">
+                    {[1, 2, 3].map(i => (
+                       <div key={i} className="h-24 bg-slate-50 border border-slate-100 rounded-xl"></div>
+                    ))}
+                  </div>
+                ) : history.length > 0 ? (
+                  // Retiramos o max-h daqui porque o scroll agora é na div pai!
+                  <div className="space-y-3">
+                    {history.map((h, i) => (
+                      <a
+                        key={i}
+                        href={h.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 hover:shadow-md transition-all group relative"
+                      >
+                        <div className="absolute top-4 right-4 text-slate-300 group-hover:text-indigo-500 transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        </div>
+
+                        <div className="pr-6">
+                          <span className="block text-[10px] font-black text-slate-500 uppercase truncate mb-1.5">
+                            {h.orgao}
+                          </span>
+                          <p className="text-xs text-slate-700 font-medium line-clamp-2 leading-relaxed mb-3">
+                            {h.objeto}
+                          </p>
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 mt-auto">
+                            <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
+                              📅 {h.data ? new Date(h.data).toLocaleDateString('pt-BR') : 'Sem data'}
+                            </span>
+                            {h.valor > 0 ? (
+                              <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 flex items-center gap-1">
+                                💰 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(h.valor)}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                                Valor Sigiloso
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                    <span className="text-2xl mb-2 block opacity-50">👻</span>
+                    <p className="text-slate-400 text-xs font-medium px-4">
+                      Nenhum contrato detalhado encontrado recentemente.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50">
+            {/* ======================================================== */}
+            {/* RODAPÉ FIXO (Sempre colado na parte inferior)            */}
+            {/* ======================================================== */}
+            <div className="p-4 border-t border-slate-200 bg-slate-50 shrink-0">
               <button 
                 onClick={() => {
                   const numerosLimpos = (selectedCompetitor.cnpj || '').replace(/\D/g, '');
@@ -2100,83 +2173,10 @@ useEffect(() => {
                     alert('Nenhum CNPJ disponível para copiar.');
                   }
                 }}
-                className="w-full py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-sm"
+                className="w-full py-3.5 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-black tracking-wide rounded-xl transition-all text-xs uppercase flex items-center justify-center gap-2 shadow-sm"
               >
                 📋 Copiar CNPJ (Apenas Números)
               </button>
-            </div>
-
-            {/* ======================================================== */}
-            {/* 🔍 HISTÓRICO DE VITÓRIAS PNCP (DESIGN PREMIUM)           */}
-            {/* ======================================================== */}
-            <div className="mt-6 border-t border-slate-100 pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <span className="text-sm">🎯</span> Últimos Contratos Vencidos
-                </h4>
-              </div>
-
-              {loadingHistory ? (
-                <div className="animate-pulse space-y-3">
-                  {[1, 2, 3].map(i => (
-                     <div key={i} className="h-24 bg-slate-50 border border-slate-100 rounded-xl"></div>
-                  ))}
-                </div>
-              ) : history.length > 0 ? (
-                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar">
-                  {history.map((h, i) => (
-                    <a
-                      key={i}
-                      href={h.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block p-4 bg-slate-50 border border-slate-100 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 hover:shadow-sm transition-all group relative"
-                    >
-                      {/* Ícone de Link Externo */}
-                      <div className="absolute top-4 right-4 text-slate-300 group-hover:text-indigo-500 transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                      </div>
-
-                      <div className="pr-6">
-                        {/* Nome do Órgão */}
-                        <span className="block text-[10px] font-black text-slate-500 uppercase truncate mb-1.5">
-                          {h.orgao}
-                        </span>
-                        
-                        {/* Objeto do Contrato */}
-                        <p className="text-xs text-slate-700 font-medium line-clamp-2 leading-relaxed mb-3">
-                          {h.objeto}
-                        </p>
-                        
-                        {/* Rodapé do Card: Data e Valor */}
-                        <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 mt-auto">
-                          <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
-                            📅 {h.data ? new Date(h.data).toLocaleDateString('pt-BR') : 'Data não informada'}
-                          </span>
-                          
-                          {/* Badge de Valor Financeiro */}
-                          {h.valor > 0 ? (
-                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/50 px-2 py-1 rounded border border-emerald-200/50 flex items-center gap-1">
-                              💰 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(h.valor)}
-                            </span>
-                          ) : (
-                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
-                              Valor Sigiloso
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
-                  <span className="text-2xl mb-2 block opacity-50">👻</span>
-                  <p className="text-slate-400 text-xs font-medium px-4">
-                    Nenhum contrato detalhado encontrado recentemente.
-                  </p>
-                </div>
-              )}
             </div>
 
           </div>
