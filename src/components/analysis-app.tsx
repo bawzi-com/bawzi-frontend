@@ -177,9 +177,9 @@ export default function AnalysisApp() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
   const [provider, setProvider] = useState<string>('openai');
-const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
+  const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
 
-const loadingMessages = [
+  const loadingMessages = [
     { 
       title: "A Orquestrar Swarm de Agentes", 
       desc: "A instanciar modelos neurais especializados (Jurídico, Financeiro e Estratégico) para análise simultânea do edital..." 
@@ -226,7 +226,6 @@ const loadingMessages = [
         'Content-Type': 'application/json'
       };
 
-      // 🟢 FUNÇÃO DE BUSCA REPETITIVA (POLLING)
       const fetchWithRetry = async (attemptsLeft = 5) => {
         try {
           const [userRes, wsRes, companyRes] = await Promise.all([
@@ -242,14 +241,12 @@ const loadingMessages = [
 
             const currentTier = wsData.tier !== undefined ? wsData.tier : (userDataInfo.tier !== undefined ? userDataInfo.tier : 1);
 
-            // Se o usuário acabou de pagar mas o banco ainda diz Nível 1, tentamos de novo em 2s
             if (isSuccessReturn && currentTier === 1 && attemptsLeft > 0) {
               console.log(`⏳ Aguardando confirmação do pagamento... (Tentativas restantes: ${attemptsLeft})`);
               setTimeout(() => fetchWithRetry(attemptsLeft - 1), 2000);
               return;
             }
 
-            // Se chegamos aqui, ou o nível atualizou ou esgotaram as tentativas
             setUserTier(currentTier);
             localStorage.setItem('bawzi_tier', currentTier.toString());
             window.dispatchEvent(new Event('storage'));
@@ -261,7 +258,6 @@ const loadingMessages = [
               company: companyData.cnpj ? companyData : userDataInfo.company
             });
 
-            // Limpa a URL se o nível já estiver correto
             if (isSuccessReturn && currentTier > 1) {
               window.history.replaceState({}, document.title, window.location.pathname);
             }
@@ -277,12 +273,11 @@ const loadingMessages = [
     initializeData();
   }, [API_URL]);
 
-useEffect(() => {
+  useEffect(() => {
     const cnpj = userData?.company?.cnpj;
     
-    if (!token || !cnpj) return; // Cláusula de guarda mais limpa
+    if (!token || !cnpj) return; 
 
-    // 1. Cria o controlador para evitar "Race Conditions" (Requisições atropeladas)
     const abortController = new AbortController();
     
     setIsLoadingCnd(true);
@@ -290,17 +285,15 @@ useEffect(() => {
     
     fetch(`${API_URL.replace(/\/$/, '')}/api/company/cnd/${cleanCnpj}`, {
       headers: { 'Authorization': `Bearer ${token}` },
-      signal: abortController.signal // 2. Liga o sinal de aborto à requisição
+      signal: abortController.signal 
     })
     .then(async res => {
-      // 3. O fetch padrão do JS NÃO cai no .catch se der erro 400 ou 500. Precisamos forçar:
       if (!res.ok) {
         throw new Error(`Erro na API: ${res.status}`);
       }
       return res.json();
     })
     .then(data => {
-      // FastAPI costuma mandar erros dentro de "detail"
       if (!data.detail) {
         setCndData(data);
       } else {
@@ -308,7 +301,6 @@ useEffect(() => {
       }
     })
     .catch(err => {
-      // Ignora o erro se foi nós mesmos que abortamos a requisição
       if (err.name !== 'AbortError') {
         console.error("Erro ao buscar CNDs:", err);
       }
@@ -317,13 +309,10 @@ useEffect(() => {
       setIsLoadingCnd(false);
     });
 
-    // 4. Função de limpeza (Cleanup): Se o componente desmontar antes da API responder, cancela o fetch!
     return () => {
       abortController.abort();
     };
-    
-    // Dica: Se o API_URL for uma constante global fora do componente, não precisa estar aqui nas dependências.
-  }, [userData?.company?.cnpj, token]);
+  }, [userData?.company?.cnpj, token, API_URL]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -353,40 +342,64 @@ useEffect(() => {
   };
 
   useEffect(() => {
-  const loadUser = async () => {
-    const savedToken = localStorage.getItem('bawzi_token');
-    if (savedToken) {
-      try {
-        const profile = await fetchUserProfile(savedToken);
-        
-        setToken(savedToken);
-        setUserTier(profile.tier);
-        
-        const userData = { 
-          name: profile.name || profile.nome, 
-          email: profile.email 
-        };
-        localStorage.setItem('bawzi_user', JSON.stringify(userData));
-        
-      } catch (err) {
-        console.error("Token inválido");
+    const loadUser = async () => {
+      const savedToken = localStorage.getItem('bawzi_token');
+      if (savedToken) {
+        try {
+          const profile = await fetchUserProfile(savedToken);
+          setToken(savedToken);
+          setUserTier(profile.tier);
+          const userDataInfo = { 
+            name: profile.name || profile.nome, 
+            email: profile.email 
+          };
+          localStorage.setItem('bawzi_user', JSON.stringify(userDataInfo));
+        } catch (err) {
+          console.error("Token inválido");
+        }
       }
-    }
-  };
-  loadUser();
-}, []);
+      setIsCheckingAuth(false);
+    };
+    loadUser();
+  }, []);
+
+  useEffect(() => {
+    const syncAuth = (e: StorageEvent) => {
+      if (e.key === 'bawzi_token' && e.newValue) {
+        window.location.reload(); 
+      }
+    };
+    window.addEventListener('storage', syncAuth);
+    return () => window.removeEventListener('storage', syncAuth);
+  }, []);
+
+  const [history, setHistory] = useState<any[]>([]);
+const [loadingHistory, setLoadingHistory] = useState(false);
 
 useEffect(() => {
-  const syncAuth = (e: StorageEvent) => {
-    if (e.key === 'bawzi_token' && e.newValue) {
-      window.location.reload(); // Recarrega para garantir que todo o estado da app está sincronizado
-    }
-  };
-
-  window.addEventListener('storage', syncAuth);
-  return () => window.removeEventListener('storage', syncAuth);
-}, []);
-
+  if (selectedCompetitor?.cnpj) {
+    setLoadingHistory(true);
+    
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    const cleanCnpj = selectedCompetitor.cnpj.replace(/\D/g, '');
+    
+    fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${cleanCnpj}`)
+      .then(res => {
+        if (!res.ok) throw new Error("Erro na rota");
+        return res.json();
+      })
+      .then(data => {
+        setHistory(data);
+      })
+      .catch(err => {
+        console.error("Erro ao buscar histórico:", err);
+        setHistory([]);
+      })
+      .finally(() => {
+        setLoadingHistory(false);
+      });
+  }
+}, [selectedCompetitor]);
   // ==========================================
   // HANDLERS E FUNÇÕES DE AÇÃO
   // ==========================================
@@ -424,7 +437,6 @@ useEffect(() => {
     setShowShareModal(true);
   };
 
-  // FUNÇÃO DE PARTILHA
   const confirmShare = async () => {
     if (!shareEmail || !shareEmail.includes('@')) {
       alert("Por favor, insira um e-mail válido.");
@@ -457,7 +469,7 @@ useEffect(() => {
 
       alert("✅ Relatório estratégico enviado com sucesso para o C-Level!");
       setShowShareModal(false);
-      setShareEmail(""); // Limpa o campo
+      setShareEmail(""); 
       
     } catch (err: any) {
       console.error("Erro no compartilhamento:", err);
@@ -467,16 +479,12 @@ useEffect(() => {
     }
   };
 
-const handleAnalyze = async (motor: "openai" | "claude") => {
+  const handleAnalyze = async (motor: "openai" | "claude") => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
     
-    // 🟢 TRAVA DE UX COM A "DICA DE ELITE" (Feedback visual sem alert)
     if (!text.trim() && files.length === 0 && !pncpData) { 
       setError("Por favor, cole um texto, adicione um documento ou selecione um edital no Radar PNCP antes de analisar."); 
-      
-      // O erro desaparece sozinho magicamente após 5 segundos!
       setTimeout(() => setError(null), 5000); 
-
       return; 
     }
     
@@ -535,7 +543,6 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
         return;
       }
 
-      // 🟢 O Backend barrou por limite de uso (Estourou a cota)
       if (response.status === 402) {
         setShowUpgradeModal(true);
         setIsAnalyzing(false);     
@@ -543,9 +550,6 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
       }
 
       const data = await response.json();
-
-      console.log("==== 📥 DEBUG 3: RESPOSTA DO BACKEND ====");
-      console.log("JSON recebido:", data);
 
       if (!response.ok) {
         throw new Error(data?.detail || 'Erro no servidor.');
@@ -576,14 +580,8 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
       }
 
     } catch (err: any) {
-      console.error("Erro na análise:", err);
-      
-      if (err.name === 'AbortError') {
-        console.log("Requisição abortada pelo utilizador.");
-        return; 
-      }
+      if (err.name === 'AbortError') return; 
 
-      // 🟢 MUDANÇA 2: Se o utilizador é anónimo e deu qualquer erro (ex: payload gigante), mostra o modal de conversão em vez de erro!
       if (userTier === -1) {
         setShowUpgradeModal(true);
         setIsAnalyzing(false);
@@ -615,13 +613,8 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
       const payload: any = { ...authForm };
       
       if (!payload.cnpj) delete payload.cnpj; 
-      
-      if (authMode === 'login') {
-         delete payload.name; 
-      } else {
-         payload.plan = "free"; 
-         payload.tier = 1; 
-      }
+      if (authMode === 'login') delete payload.name; 
+      else { payload.plan = "free"; payload.tier = 1; }
 
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST', 
@@ -645,7 +638,9 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
       
       localStorage.setItem('bawzi_token', data.access_token);
       localStorage.setItem('bawzi_tier', userTierToSave.toString());
-      localStorage.setItem('bawzi_workspace_id', data.workspace_id);
+      if (data.workspace_id) {
+        localStorage.setItem('bawzi_workspace_id', data.workspace_id);
+      }
 
       router.push('/workspace');
       setShowAuthModal(false);
@@ -684,53 +679,82 @@ const handleAnalyze = async (motor: "openai" | "claude") => {
     }, 50);
   };
 
-const [isGeneratingImpugnacao, setIsGeneratingImpugnacao] = useState(false);
-const [impugnacaoText, setImpugnacaoText] = useState("");
-const [showImpugnacaoModal, setShowImpugnacaoModal] = useState(false);
+  const [isGeneratingImpugnacao, setIsGeneratingImpugnacao] = useState(false);
+  const [impugnacaoText, setImpugnacaoText] = useState("");
+  const [showImpugnacaoModal, setShowImpugnacaoModal] = useState(false);
 
-const handleGerarImpugnacao = async () => {
-  // Vamos usar a lista de riscos (que é o que a IA devolve) ou a pegadinha
-  const riscosParaEnviar = result?.risks || [];
-  
-  if (riscosParaEnviar.length === 0 && !result?.pegadinha) {
-      alert("Nenhum risco detectado para impugnar.");
+  // ==========================================
+  // GERADOR DE PARECER PDF BLINDADO
+  // ==========================================
+  const handleExportPDF = () => {
+    if (!result) return;
+    
+    // Abre uma janela invisível para montar o documento perfeito
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Por favor, permita pop-ups no seu navegador para gerar o PDF.");
       return;
-  }
-
-  setIsGeneratingImpugnacao(true);
-  
-  try {
-    // 1. Aponta para a URL correta e inclui o Token de segurança (boa prática)
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    const response = await fetch(`${API_URL.replace(/\/$/, '')}/api/gerar-impugnacao`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify({
-        // 2. Chaves rigorosamente iguais ao modelo Pydantic do backend
-        edital_texto: text, 
-        riscos_identificados: riscosParaEnviar.length > 0 ? riscosParaEnviar : [result?.pegadinha],
-        provedor: modelSource?.toLowerCase().includes("claude") ? "claude" : "openai" 
-      })
-    });
-
-    const data = await response.json();
-
-    // 3. Lê o retorno correto do backend
-    if (response.ok && data.documento_markdown) {
-      setImpugnacaoText(data.documento_markdown);
-      setShowImpugnacaoModal(true);
-    } else {
-      throw new Error(data.detail || "Erro ao gerar a peça de impugnação.");
     }
-  } catch (error: any) {
-    console.error("Erro ao gerar impugnação:", error);
-    alert(`Falha: ${error.message}`);
-  } finally {
-    setIsGeneratingImpugnacao(false);
-  }
-};
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Parecer Técnico-Jurídico - Bawzi</title>
+          <style>
+            @page { size: A4; margin: 2.5cm 2cm; }
+            body { font-family: 'Times New Roman', Times, serif; line-height: 1.6; color: #000; padding: 0; margin: 0; }
+            .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 30px; }
+            h1 { font-size: 20px; text-transform: uppercase; margin: 0 0 5px 0; font-weight: bold; letter-spacing: 1px; }
+            .subtitle { font-size: 11px; font-weight: bold; color: #555; text-transform: uppercase; letter-spacing: 2px; margin: 0; }
+            .warning { background: #f9f9f9; border-left: 3px solid #000; padding: 12px 15px; font-size: 11px; font-weight: bold; margin-bottom: 30px; color: #333; text-align: justify; }
+            h3 { font-size: 13px; font-weight: bold; margin-top: 25px; border-bottom: 1px solid #ccc; padding-bottom: 5px; text-transform: uppercase; }
+            p { font-size: 12px; text-align: justify; white-space: pre-wrap; margin-bottom: 15px; }
+            .signature { margin-top: 80px; text-align: center; page-break-inside: avoid; }
+            .line { width: 250px; border-top: 1px solid #000; margin: 0 auto 10px auto; }
+            .sig-text { font-weight: bold; text-transform: uppercase; font-size: 11px; margin: 0; }
+            .sig-sub { font-size: 10px; margin-top: 5px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Bawzi Intelligence</h1>
+            <p class="subtitle">Parecer Técnico-Jurídico Preliminar</p>
+          </div>
+          
+          <div class="warning">
+            NOTA DE RESPONSABILIDADE: Este rascunho foi gerado por Inteligência Artificial para facilitar a triagem de editais. A revisão, validação e assinatura por um profissional habilitado da área jurídica é indispensável antes do uso oficial.
+          </div>
+
+          <h3>1. Resumo da Análise</h3>
+          <p>${result.summary}</p>
+
+          <h3>2. Fundamentação Legal e Riscos</h3>
+          <p>${result.parecer_especialista || result.rationale || "Sem riscos críticos identificados nesta análise."}</p>
+
+          <h3>3. Conclusão Estratégica</h3>
+          <p>Veredito da Análise: <strong>${result.classification}</strong> (Bawzi Score: ${result.score}/100)</p>
+
+          <div class="signature">
+            <div class="line"></div>
+            <p class="sig-text">Validação Jurídica</p>
+            <p class="sig-sub">OAB/UF nº _________</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    
+    // Pequeno delay para garantir que o DOM do PDF carrega antes de imprimir
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 300);
+  };
+
 
   // ==========================================
   // RENDERIZAÇÃO VISUAL ESTRATÉGICA
@@ -745,9 +769,6 @@ const handleGerarImpugnacao = async () => {
   
         <div className="w-full max-w-[1400px] mx-auto p-2 md:p-4 font-sans relative group">
           
-          {/* ========================================== */}
-          {/* 🚀 MOTOR DE ANIMAÇÕES CSS NATIVAS          */}
-          {/* ========================================== */}
           <style dangerouslySetInnerHTML={{__html: `
             @keyframes route-data {
               0% { stroke-dashoffset: 60; }
@@ -776,15 +797,9 @@ const handleGerarImpugnacao = async () => {
           {/* CONTAINER PRINCIPAL */}
           <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
 
-            {/* ============================================================== */}
-            {/* ⬅️ LADO ESQUERDO: 2/3 DA TELA (ORQUESTRAÇÃO DE AGENTES)      */}
-            {/* ============================================================== */}
             <div className="xl:w-2/3 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
-              
-              {/* Brilho de Fundo Dinâmico */}
               <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
 
-              {/* TEXTO (O Pitch dos Agentes) */}
               <div className="flex-1 relative z-10">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
                   <span className="relative flex h-2 w-2">
@@ -805,38 +820,28 @@ const handleGerarImpugnacao = async () => {
                 </p>
               </div>
 
-              {/* DIAGRAMA DOS AGENTES (Widescreen Action) */}
               <div className="flex-1 w-full relative h-[380px] hidden lg:flex items-center justify-center z-10">
-                
-                {/* Documento Central */}
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-24 h-32 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center gap-2 z-20">
                   <div className="w-12 h-1 bg-slate-200 rounded-full"></div>
                   <div className="w-16 h-1 bg-slate-200 rounded-full"></div>
                   <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
-                  {/* Laser Scaneando */}
                   <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
                 </div>
 
-                {/* Fiação SVG Animada Roteando para 4 Agentes */}
                 <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  {/* Cabo 1 (Agente Jurídico) */}
                   <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
                   <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
                   
-                  {/* Cabo 2 (Agente Auditor - o3-mini) */}
                   <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
                   <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#8b5cf6" strokeWidth="2" className="path-routing" />
 
-                  {/* Cabo 3 (Agente Financeiro) */}
                   <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
                   <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
 
-                  {/* Cabo 4 (Agente Compliance) */}
                   <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
                   <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
                 </svg>
 
-                {/* Nós dos Agentes (Os 4 Especialistas) */}
                 <div className="absolute right-0 top-[0%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
                   <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
                     <span className="text-indigo-500 text-sm">⚖️</span>
@@ -847,7 +852,6 @@ const handleGerarImpugnacao = async () => {
                   </div>
                 </div>
 
-                {/* 🟢 NOVO NÓ: O3-MINI */}
                 <div className="absolute right-0 top-[26%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.2s infinite 0.2s' }}>
                   <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
                     <span className="text-violet-500 text-sm">🕵️</span>
@@ -881,12 +885,7 @@ const handleGerarImpugnacao = async () => {
               </div>
             </div>
 
-            {/* ============================================================== */}
-            {/* ➡️ LADO DIREITO: 1/3 DA TELA (OS RESULTADOS DOS AGENTES)     */}
-            {/* ============================================================== */}
             <div className="xl:w-1/3 flex flex-col gap-3">
-              
-              {/* RESULTADO 1: O SCORE (Consenso) */}
               <div className="flex-1 bg-white rounded-3xl p-4 md:p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="relative w-[65px] h-[65px] shrink-0">
                     <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
@@ -910,7 +909,6 @@ const handleGerarImpugnacao = async () => {
                 </div>
               </div>
 
-              {/* RESULTADO NOVO: A ARMADILHA (Descoberta pelo Auditor) */}
               <div className="flex-1 bg-violet-50/50 rounded-3xl p-4 border border-violet-100 flex flex-col justify-center relative overflow-hidden group hover:bg-violet-50 transition-colors cursor-default">
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-violet-400"></div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
@@ -925,7 +923,6 @@ const handleGerarImpugnacao = async () => {
                 </p>
               </div>
 
-              {/* RESULTADO 2: A OPORTUNIDADE (Descoberta pelo Financeiro) */}
               <div className="flex-1 bg-sky-50/50 rounded-3xl p-4 border border-sky-100 flex flex-col justify-center relative overflow-hidden group hover:bg-sky-50 transition-colors cursor-default">
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-sky-400"></div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
@@ -940,7 +937,6 @@ const handleGerarImpugnacao = async () => {
                 </p>
               </div>
 
-              {/* RESULTADO 3: O RISCO (Descoberto pelo Jurídico) */}
               <div className="flex-1 bg-rose-50/50 rounded-3xl p-4 border border-rose-100 flex flex-col justify-center relative overflow-hidden group hover:bg-rose-50 transition-colors cursor-default">
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-rose-400"></div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
@@ -954,29 +950,22 @@ const handleGerarImpugnacao = async () => {
                   Multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Defesa técnica já anexada.
                 </p>
               </div>
-
             </div>
 
           </div>
         </div>
 
-        <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10">
-          <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start">
+        <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0">
+          <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start print:block">
             
-            {/* ========================================== */}
-            {/* LADO ESQUERDO: CONTEÚDO PRINCIPAL          */}
-            {/* ========================================== */}
-            <div className="flex flex-col gap-8 w-full overflow-hidden">
+            <div className="flex flex-col gap-8 w-full overflow-hidden print:m-0">
               {activeTab === 'workspace' && (
-                <div className="animate-in fade-in duration-500 flex flex-col gap-8 w-full">
+                <div className="animate-in fade-in duration-500 flex flex-col gap-8 w-full print:m-0">
                   
                   {!isAnalyzing && !result ? (
                     <>
-                      {/* --- CARD: RADAR PNCP --- */}
                       <div id="radar-pncp-section" className="animate-in fade-in slide-in-from-bottom-4">
-
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-
                           <PncpSearch 
                             token={token} 
                             userUf={userData?.company?.uf}
@@ -1003,7 +992,6 @@ const handleGerarImpugnacao = async () => {
                         </div>
                       </div>
 
-                      {/* --- CARD: SUBMISSÃO DIRETA --- */}
                       <div id="area-submissao" className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-6 md:p-10 relative z-20 w-full">
                         <div className="flex items-center gap-4 mb-8">
                           <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-violet-100">📄</div>
@@ -1080,7 +1068,6 @@ const handleGerarImpugnacao = async () => {
                           <div className="mt-6 w-full">
                           {userTier === 4 ? (
                             <>
-                              {/* 🟢 O SEU AVISO ELEGANTE ENTRA AQUI (Acima dos botões) */}
                               {error && (
                                 <div className="mb-2 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-xl shadow-sm flex items-center gap-3 transition-all duration-500 animate-in fade-in slide-in-from-top-4">
                                   <span className="text-xl shrink-0">⚠️</span>
@@ -1089,7 +1076,6 @@ const handleGerarImpugnacao = async () => {
                               )}
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 my-8">
-                                {/* ⚡ OPÇÃO 1: ANÁLISE RÁPIDA (CLARO) */}
                                 <div
                                   onClick={() => setProvider('openai')}
                                   className={`relative p-6 rounded-2xl border-2 transition-all duration-300 text-left flex flex-col gap-3 group cursor-pointer ${
@@ -1122,7 +1108,6 @@ const handleGerarImpugnacao = async () => {
                                     </span>
                                   </div>
 
-                                  {/* 🟢 O SEU BOTÃO FINAL DE AÇÃO APARECE AQUI! */}
                                   {provider === 'openai' && (
                                     <button
                                       type="button"
@@ -1135,7 +1120,6 @@ const handleGerarImpugnacao = async () => {
                                   )}
                                 </div>
 
-                                {/* 🧠 OPÇÃO 2: AUDITORIA PROFUNDA (ESCURO/PREMIUM) */}
                                 <div
                                   onClick={() => setProvider('claude')}
                                   className={`relative p-6 rounded-2xl border-2 transition-all duration-300 text-left flex flex-col gap-3 group overflow-hidden cursor-pointer ${
@@ -1170,7 +1154,6 @@ const handleGerarImpugnacao = async () => {
                                     </span>
                                   </div>
 
-                                  {/* 🟢 O SEU BOTÃO FINAL DE AÇÃO APARECE AQUI! */}
                                   {provider === 'claude' && (
                                     <button
                                       type="button"
@@ -1185,7 +1168,6 @@ const handleGerarImpugnacao = async () => {
                               </div>
                             </>
                           ) : (
-                            /* BOTÃO ÚNICO PARA TIERS 1, 2 e 3 */
                             <button
                               type="button" 
                               disabled={isAnalyzing}
@@ -1205,7 +1187,6 @@ const handleGerarImpugnacao = async () => {
                     </>
 
                     ) : isAnalyzing ? (
-                    // 🟢 TELA DE CARREGAMENTO ESTRATÉGICA
                     <div id="area-loading" className="flex flex-col items-center justify-center min-h-[500px] bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-12 animate-in fade-in duration-700 relative overflow-hidden">
                       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-violet-500/5 blur-[80px] rounded-full pointer-events-none"></div>
                       
@@ -1246,7 +1227,6 @@ const handleGerarImpugnacao = async () => {
                             Neural Routing Ativado
                           </span>
                           
-                          {/* 🟢 O BOTÃO DE CANCELAR */}
                           <button 
                             onClick={handleCancelAnalysis}
                             className="group flex items-center gap-2 px-6 py-2.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded-xl transition-all shadow-sm active:scale-95"
@@ -1263,9 +1243,6 @@ const handleGerarImpugnacao = async () => {
                       <div className={`h-2 ${getScoreBg(result.score)}`}></div>
                       <div className="p-8 md:p-12">
                         
-                        {/* ========================================================== */}
-                        {/* CABEÇALHO DO RELATÓRIO (IMPRESSÃO & AÇÕES)               */}
-                        {/* ========================================================== */}
                         <div className="hidden print:flex items-center justify-between border-b border-slate-900 pb-6 mb-8 w-full">
                           <div className="flex flex-col">
                             <h1 className="text-xl font-black text-slate-900">BAWZI | Inteligência em Editais</h1>
@@ -1277,14 +1254,14 @@ const handleGerarImpugnacao = async () => {
                           </div>
                         </div>
 
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 print:hidden">
                            <div className="flex items-center gap-3">
                              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Análise de Viabilidade</h2>
                              <span className="px-3 py-1 bg-slate-50 text-slate-600 rounded-md text-[10px] font-bold uppercase tracking-widest border border-slate-200">
                                {termoAlvo || "Visão Global"}
                              </span>
                            </div>
-                           <div className="flex flex-wrap gap-3 w-full md:w-auto print:hidden"> 
+                           <div className="flex flex-wrap gap-3 w-full md:w-auto"> 
                             <button onClick={() => window.print()} className="px-4 py-2 hover:bg-slate-50 text-slate-600 font-bold rounded-lg border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2">
                               🖨️ <span className="hidden sm:inline">Imprimir</span>
                             </button>
@@ -1299,13 +1276,7 @@ const handleGerarImpugnacao = async () => {
                           </div>
                         </div>
 
-                        {/* ========================================================== */}
-                        {/* NOVO PADRÃO: "FIELDSET/LEGEND" LINE UI                     */}
-                        {/* A Linha passa exatamente no meio do título                 */}
-                        {/* ========================================================== */}
-
-                        {/* 1. SCORE E VEREDITO (O GRANDE DESTAQUE INICIAL) */}
-                        <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-14 bg-slate-50 border border-slate-200 rounded-[1.5rem] p-8">
+                        <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-14 bg-slate-50 border border-slate-200 rounded-[1.5rem] p-8 print:border-none print:p-0">
                           <div className="flex items-center gap-6">
                             <div className="relative w-24 h-24 shrink-0">
                               <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -1338,25 +1309,37 @@ const handleGerarImpugnacao = async () => {
                             </div>
                           </div>
                           
-                          {/* PRAZOS (Alinhados à direita do Score) */}
                           {(() => {
                             const d = result?.datas_criticas_extraidas;
                             const propostas = String(d?.data_limite_propostas || "").trim();
                             const impugnacao = String(d?.data_impugnacao || "").trim();
                             
-                            if (!propostas && !impugnacao) return null;
+                            // 🟢 FILTRO INTELIGENTE: Bloqueia respostas vagas da IA
+                            const isValida = (texto: string) => {
+                               if (!texto) return false;
+                               const t = texto.toLowerCase();
+                               // Se a IA devolver alguma destas palavras, o React esconde a secção
+                               return !t.includes("não") && !t.includes("nao") && !t.includes("n/a") && !t.includes("informad") && !t.includes("localizad");
+                            };
+
+                            const propValida = isValida(propostas) ? propostas : null;
+                            const impValida = isValida(impugnacao) ? impugnacao : null;
+
+                            // Se as duas datas forem inválidas/vazias, a secção inteira desaparece
+                            if (!propValida && !impValida) return null;
+                            
                             return (
                               <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
-                                {propostas && (
+                                {propValida && (
                                   <div>
                                     <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span>
-                                    <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-amber-500">📅</span> {propostas}</span>
+                                    <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-amber-500">📅</span> {propValida}</span>
                                   </div>
                                 )}
-                                {impugnacao && (
+                                {impValida && (
                                   <div>
                                     <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span>
-                                    <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-rose-500">🚨</span> {impugnacao}</span>
+                                    <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-rose-500">🚨</span> {impValida}</span>
                                   </div>
                                 )}
                               </div>
@@ -1364,24 +1347,19 @@ const handleGerarImpugnacao = async () => {
                           })()}
                         </div>
 
-                        {/* 2. RESUMO EXECUTIVO (WIRE FRAME) */}
                         <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
-                          {/* A Mágica: Título "cortando" a borda superior */}
                           <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
                             <span className="text-lg">🎯</span>
                             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Resumo Executivo</h3>
                           </div>
-                          
                           <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
                             {result.summary}
                           </div>
                         </div>
 
-                        {/* 3. SIMULADOR SHADOW E PRECIFICAÇÃO (WIRE FRAME) */}
                         {(() => {
                           const pricing = result.pricing_intelligence as Record<string, any>;
                           
-                          // 🟢 A FUNÇÃO "SACA-ROLHAS" SUPREMA
                           const extrairMaiorDinheiro = (textoBase: any): number => {
                             if (!textoBase) return 0;
                             if (typeof textoBase === 'number' && textoBase > 0) return textoBase;
@@ -1403,7 +1381,6 @@ const handleGerarImpugnacao = async () => {
                             return 0;
                           };
 
-                          // 🟢 A ORDEM DE PRIORIDADE
                           let valorEstimado = extrairMaiorDinheiro(result?.summary) 
                                            || extrairMaiorDinheiro(result?.estimated_value) 
                                            || extrairMaiorDinheiro(pricing?.valor_estimado_raw) 
@@ -1412,7 +1389,7 @@ const handleGerarImpugnacao = async () => {
                           if (!pricing || pricing.desagioPreditivoOrgao === undefined) return null;
 
                           return (
-                            <div className="relative border border-slate-200 rounded-2xl p-2 mb-12">
+                            <div className="relative border border-slate-200 rounded-2xl p-2 mb-12 print:hidden">
                               <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
                                 <span className="text-lg">💰</span>
                                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Preço & Engenharia Reversa</h3>
@@ -1421,7 +1398,7 @@ const handleGerarImpugnacao = async () => {
                                 desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
                                 nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
                                 perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
-                                valorReferenciaInicial={valorEstimado} /* 🟢 CORREÇÃO: Passamos a variável inteligente aqui! */
+                                valorReferenciaInicial={valorEstimado} 
                                 engenhariaReversa={result?.pricing_intelligence?.engenharia_reversa}
                                 userTier={userTier} 
                                 onUpgradeClick={() => setShowUpgradeModal(true)} 
@@ -1430,15 +1407,13 @@ const handleGerarImpugnacao = async () => {
                           );
                         })()}
 
-                        {/* 4. INTELIGÊNCIA COMPETITIVA E RANKING DE VENCEDORES */}
-                        <div className="relative border border-slate-200 rounded-2xl p-8 mb-12 bg-white shadow-sm">
+                        <div className="relative border border-slate-200 rounded-2xl p-8 mb-12 bg-white shadow-sm print:hidden">
                           <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2.5">
                             <Award className="w-5 h-5 text-indigo-500" strokeWidth={2.5} />
                             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência Competitiva</h3>
                           </div>
                           
                           <div className="mb-8 border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50 shadow-inner">
-                            {/* Abas */}
                             <div className="flex border-b border-slate-200 bg-slate-100/50">
                               <button
                                 onClick={() => setAbaConcorrentes('nacional')}
@@ -1458,35 +1433,45 @@ const handleGerarImpugnacao = async () => {
                               </button>
                             </div>
 
-                            {/* Conteúdo das Abas */}
                             <div className="p-6 bg-white">
                               {['nacional', 'regional'].map((tipo) => (
                                 abaConcorrentes === tipo && (
                                   <ul key={tipo} className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                                     {(tipo === 'nacional' ? result.concorrentes_provaveis : result.concorrentes_regionais)?.slice(0, 6).map((item: any, index: number) => {
                                       
-                                      // 🟢 LÓGICA DE EXTRAÇÃO BLINDADA
                                       let nomeEmpresa = "Empresa não identificada";
                                       let vitorias = "0";
                                       let cnpj = "";
                                       let dadosParaModal = item;
 
                                       if (typeof item === 'string') {
-                                        // Regex atualizada para capturar 3 grupos: Nome, Vitórias e CNPJ
+                                        let extraidoCnpj = "";
+                                        
                                         const match = item.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)(?:\s*-\s*CNPJ:\s*([\d]+))?/i);
                                         if (match) {
                                           nomeEmpresa = match[1].trim();
                                           vitorias = match[2];
-                                          cnpj = match[3] || "";
-                                          dadosParaModal = { nome: nomeEmpresa, vitorias, cnpj, uf: tipo === 'nacional' ? 'Nacional' : (result.uf || 'GO') };
+                                          extraidoCnpj = match[3] || "";
                                         } else {
                                           nomeEmpresa = item;
-                                          dadosParaModal = { nome: item, uf: result.uf };
                                         }
+
+                                        if (!extraidoCnpj) {
+                                          const matchFormatado = item.match(/\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b|\b\d{14}\b/);
+                                          if (matchFormatado) {
+                                            extraidoCnpj = matchFormatado[0];
+                                          } else {
+                                            const matchMei = item.match(/\b\d{2}\.\d{3}\.\d{3}\b/);
+                                            if (matchMei) extraidoCnpj = matchMei[0] + " (Raiz MEI)";
+                                          }
+                                        }
+
+                                        cnpj = extraidoCnpj;
+                                        dadosParaModal = { nome: nomeEmpresa, vitorias, cnpj, uf: tipo === 'nacional' ? 'Nacional' : (result.uf || 'GO') };
+                                      
                                       } else {
-                                        // Se já for um objeto vindo do backend enriquecido
-                                        nomeEmpresa = item.empresa || item.nome || "Empresa não identificada";
-                                        vitorias = item.vitorias || "0";
+                                        nomeEmpresa = item.empresa || item.nome || item.razao_social || "Empresa não identificada";
+                                        vitorias = item.vitorias || item.quantidade_vitorias || "0";
                                         cnpj = item.cnpj || "";
                                       }
 
@@ -1514,112 +1499,8 @@ const handleGerarImpugnacao = async () => {
                               ))}
                             </div>
                           </div>
-
-                          <div className="mt-8 p-6 bg-slate-50 rounded-3xl border border-slate-200 border-dashed">
-                          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                            <div className="flex-1">
-                              <h4 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
-                                <span className="text-lg">⚖️</span> Exportar Parecer Técnico-Jurídico
-                              </h4>
-                              <p className="text-xs text-slate-500 font-medium">
-                                Gere uma minuta formal em PDF/Doc baseada na análise neural. 
-                                <span className="text-indigo-600 block mt-1 italic">
-                                  * Ferramenta de apoio: requer validação obrigatória de um advogado.
-                                </span>
-                              </p>
-                            </div>
-                            
-                            <button
-                              onClick={() => window.print()} // Ou sua função de gerar PDF
-                              className="px-6 py-3 bg-white border-2 border-slate-900 text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-900 hover:text-white transition-all shadow-md flex items-center gap-3"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Gerar Parecer para Revisão
-                            </button>
-                          </div>
                         </div>
 
-                          {/* PARTE INFERIOR: PARECER TÉCNICO */}
-                          <div className="mt-8 pt-6 border-t border-slate-100">
-                            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                              <BrainCircuit className="w-4 h-4 text-indigo-400" strokeWidth={2} />
-                              Parecer Estratégico da IA
-                            </h4>
-                            <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
-                              {result.rationale || result.recommendation || "Sem dados estratégicos."}
-                            </div>
-                          </div>
-                        </div>
-
-
-                        {/* ======================================================= */}
-                        {/* ⚖️ PARECER JURÍDICO ELITE (Bloqueio Tier -1, 1 e 2)      */}
-                        {/* ======================================================= */}
-                        {result && (  /* 🟢 AQUI ESTÁ A MUDANÇA: Tiramos o ?.parecer_especialista */
-                          <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
-                            <div className="bg-indigo-900 p-4 border-b border-indigo-800 flex items-center justify-between">
-                              <h3 className="text-white font-bold flex items-center gap-2 text-sm">
-                                <span className="text-xl">⚖️</span> PARECER TÉCNICO-JURÍDICO BAWZI
-                              </h3>
-                              <span className="text-[10px] uppercase tracking-widest text-amber-400 font-black px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
-                                Agente IA Especialista
-                              </span>
-                            </div>
-
-                            {/* 🔴 LÓGICA DE BLOQUEIO: Se for menor ou igual a Tier 2, aplica o Paywall */}
-                            {userTier <= 2 ? (
-                              <div className="relative p-6">
-                                
-                                {/* TEXTO DE ISCA (As primeiras linhas do parecer) */}
-                                <div className="prose prose-slate max-w-none mb-3 opacity-60">
-                                  <p className="text-slate-700 text-sm font-medium italic">
-                                    "Após análise minuciosa das cláusulas de habilitação técnica e financeira, 
-                                    identificamos pontos de atenção..."
-                                  </p>
-                                </div>
-
-                                {/* OVERLAY DE BLOQUEIO COM CADEADO (Mais compacto) */}
-                                <div className="absolute inset-0 top-[50px] z-20 flex flex-col items-center justify-center bg-white/50 backdrop-blur-md rounded-b-2xl pb-2">
-                                  <div className="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-xl max-w-sm text-center border border-slate-700 mx-4">
-                                    <div className="w-12 h-12 bg-amber-400/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-400/20">
-                                      <span className="text-2xl">🔒</span>
-                                    </div>
-                                    <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
-                                    <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-                                      O Parecer Jurídico detalhado (SWOT, risco e fundamentação legal) está disponível apenas para membros <strong className="text-indigo-400 uppercase">Especialistas</strong> e <strong className="text-amber-400 uppercase">Dominadores</strong>.
-                                    </p>
-                                    <button 
-                                      onClick={() => setShowUpgradeModal(true)} 
-                                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
-                                    >
-                                      Fazer Upgrade Agora ⚡
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* EFEITO VISUAL BORRADO (Reduzido para encurtar a altura total do bloco) */}
-                                <div className="space-y-3 blur-[5px] select-none pointer-events-none opacity-20 mt-2 min-h-[220px]">
-                                  <div className="h-3 w-full bg-slate-300 rounded"></div>
-                                  <div className="h-3 w-5/6 bg-slate-300 rounded"></div>
-                                  <div className="h-3 w-4/6 bg-slate-300 rounded"></div>
-                                  <div className="h-16 w-full bg-indigo-50 rounded-xl mt-4"></div>
-                                </div>
-                              </div>
-                            ) : (
-                              
-                              /* ✅ VISUALIZAÇÃO COMPLETA (Tier 3 e 4) */
-                              result.parecer_especialista && (
-                                <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-indigo-600">
-                                  <div className="whitespace-pre-wrap font-sans leading-relaxed">
-                                    {result.parecer_especialista}
-                                  </div>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        )}
-
-                        {/* 6. CARGA OPERACIONAL (WIRE FRAME) */}
                         {((result.exigencias_criticas && result.exigencias_criticas.length > 0) || (result.documentos_necessarios && result.documentos_necessarios.length > 0) || (result.vantagens && result.vantagens.length > 0) || (result.desvantagens && result.desvantagens.length > 0)) && (
                           <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
                             <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
@@ -1628,7 +1509,6 @@ const handleGerarImpugnacao = async () => {
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 mt-2">
-                               {/* Vantagens / Desvantagens */}
                                {result.vantagens && result.vantagens.length > 0 && (
                                  <div>
                                    <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4">👍 Vantagens (Por que avançar?)</h4>
@@ -1646,7 +1526,6 @@ const handleGerarImpugnacao = async () => {
                                  </div>
                                )}
                                
-                               {/* Documentos e Exigências */}
                                {result.exigencias_criticas && result.exigencias_criticas.length > 0 && (
                                  <div>
                                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">📌 Exigências Críticas</h4>
@@ -1667,9 +1546,75 @@ const handleGerarImpugnacao = async () => {
                           </div>
                         )}
 
-                        {/* 7. CHECKLIST ROADMAP (WIRE FRAME) */}
+                        {result && (  
+                          <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
+                            <div className="bg-indigo-900 p-4 border-b border-indigo-800 flex items-center justify-between">
+                              <h3 className="text-white font-bold flex items-center gap-2 text-sm">
+                                <span className="text-xl">⚖️</span> PARECER TÉCNICO-JURÍDICO BAWZI
+                              </h3>
+                              <span className="text-[10px] uppercase tracking-widest text-amber-400 font-black px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
+                                Agente IA Especialista
+                              </span>
+                            </div>
+
+                            {userTier <= 2 ? (
+                              <div className="relative p-6">
+                                <div className="prose prose-slate max-w-none mb-3 opacity-60">
+                                  <p className="text-slate-700 text-sm font-medium italic">
+                                    "Após análise minuciosa das cláusulas de habilitação técnica e financeira, 
+                                    identificamos pontos de atenção..."
+                                  </p>
+                                </div>
+
+                                <div className="absolute inset-0 top-[50px] z-20 flex flex-col items-center justify-center bg-white/50 backdrop-blur-md rounded-b-2xl pb-2">
+                                  <div className="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-xl max-w-sm text-center border border-slate-700 mx-4">
+                                    <div className="w-12 h-12 bg-amber-400/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-400/20">
+                                      <span className="text-2xl">🔒</span>
+                                    </div>
+                                    <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
+                                    <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
+                                      O Parecer Jurídico detalhado (SWOT, risco e fundamentação legal) está disponível apenas para membros <strong className="text-indigo-400 uppercase">Especialistas</strong> e <strong className="text-amber-400 uppercase">Dominadores</strong>.
+                                    </p>
+                                    <button 
+                                      onClick={() => setShowUpgradeModal(true)} 
+                                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+                                    >
+                                      Fazer Upgrade Agora ⚡
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-3 blur-[5px] select-none pointer-events-none opacity-20 mt-2 min-h-[220px]">
+                                  <div className="h-3 w-full bg-slate-300 rounded"></div>
+                                  <div className="h-3 w-5/6 bg-slate-300 rounded"></div>
+                                  <div className="h-3 w-4/6 bg-slate-300 rounded"></div>
+                                  <div className="h-16 w-full bg-indigo-50 rounded-xl mt-4"></div>
+                                </div>
+                              </div>
+                            ) : (
+                              result.parecer_especialista && (
+                                <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-indigo-600">
+                                  <div className="whitespace-pre-wrap font-sans leading-relaxed text-sm">
+                                    {result.parecer_especialista}
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+
+                        <div className="mt-8 pt-6 border-t border-slate-100 print:hidden">
+                          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                            <BrainCircuit className="w-4 h-4 text-indigo-400" strokeWidth={2} />
+                            Raciocínio Estratégico da IA
+                          </h4>
+                          <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
+                            {result.rationale || result.recommendation || "Sem dados estratégicos."}
+                          </div>
+                        </div>
+
                         {result.checklist && result.checklist.length > 0 && (
-                          <div className="relative border border-slate-200 rounded-2xl p-8">
+                          <div className="relative border border-slate-200 rounded-2xl p-8 mt-12 print:hidden">
                             <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
                               <span className="text-lg">✅</span>
                               <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Roadmap de Execução</h3>
@@ -1698,10 +1643,75 @@ const handleGerarImpugnacao = async () => {
                           </div>
                         )}
 
-                        {/* ========================================================== */}
-                        {/* RODAPÉ TÉCNICO MINIMALISTA                                 */}
-                        {/* ========================================================== */}
-                        <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium">
+                        {/* ============================================== */}
+                        {/* CTA DE EXPORTAÇÃO (NOVO LAYOUT)                */}
+                        {/* ============================================== */}
+                        <div className="mt-12 p-6 md:p-8 bg-slate-50 rounded-[2rem] border border-slate-200 border-dashed print:hidden">
+                          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                            <div className="flex-1 text-center md:text-left">
+                              <h4 className="text-base font-black text-slate-900 mb-2 flex items-center justify-center md:justify-start gap-2">
+                                <span className="text-xl">⚖️</span> Exportar Parecer Técnico-Jurídico
+                              </h4>
+                              <p className="text-sm text-slate-500 font-medium">
+                                Gere uma minuta formal em PDF baseada na análise neural da Bawzi.
+                              </p>
+                              
+                              {/* O ALERTA AGORA TEM O SEU PRÓPRIO ESPAÇO */}
+                              <div className="mt-3">
+                                <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg font-black border border-amber-200 uppercase tracking-widest shadow-sm">
+                                  <span>⚠️</span> Requer validação de um advogado
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <button
+                              onClick={handleExportPDF}
+                              className="w-full md:w-auto px-8 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-800 hover:-translate-y-0.5 transition-all shadow-md flex items-center justify-center gap-3 shrink-0"
+                            >
+                              <FileText className="w-4 h-4" />
+                              Gerar Parecer (PDF)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* 🟢 O DOCUMENTO FORMAL PARA IMPRESSÃO (SÓ APARECE NO PDF) */}
+                        <div className="hidden print:block bg-white p-10 font-serif text-slate-900 leading-relaxed text-sm">
+                          <div className="border-b-2 border-slate-900 pb-4 mb-6">
+                            <h1 className="text-2xl font-black uppercase">Bawzi Intelligence</h1>
+                            <p className="font-bold text-slate-500 uppercase">Parecer Técnico-Jurídico Preliminar</p>
+                          </div>
+
+                          <div className="bg-slate-100 p-4 mb-6 border-l-4 border-slate-900">
+                            <p className="font-bold text-xs">
+                              ⚠️ Nota de Responsabilidade: Este rascunho foi gerado por IA para facilitar a triagem. A revisão e validação por um profissional da área jurídica é indispensável.
+                            </p>
+                          </div>
+
+                          <div className="space-y-6">
+                            <section>
+                              <h3 className="font-bold border-b border-slate-200 mb-2">1. Resumo da Análise</h3>
+                              <p>{result.summary}</p>
+                            </section>
+                            
+                            <section>
+                              <h3 className="font-bold border-b border-slate-200 mb-2">2. Fundamentação e Riscos</h3>
+                              <p className="whitespace-pre-wrap">{result.parecer_especialista || result.rationale || "Sem riscos críticos identificados."}</p>
+                            </section>
+
+                            <section>
+                              <h3 className="font-bold border-b border-slate-200 mb-2">3. Conclusão Estratégica</h3>
+                              <p>Veredito da Análise: <strong>{result.classification}</strong> (Score: {result.score}/100)</p>
+                            </section>
+                          </div>
+
+                          <div className="mt-20 pt-10 border-t border-slate-300 flex flex-col items-center">
+                            <div className="w-64 h-px bg-slate-900 mb-2"></div>
+                            <p className="font-bold uppercase text-xs">Validação Jurídica (Assinatura)</p>
+                            <p className="text-xs mt-1">OAB/UF nº _________</p>
+                          </div>
+                        </div>
+
+                        <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium print:hidden">
                           <div className="flex items-center gap-2">
                             <span>Gerado por:</span>
                             <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-bold uppercase tracking-widest">{modelSource || 'Motor Bawzi IA'}</span>
@@ -1719,7 +1729,6 @@ const handleGerarImpugnacao = async () => {
                 </div>
               )}
 
-              {/* ABA HISTÓRICO */}
               {activeTab === 'history' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="mb-8">
@@ -1730,17 +1739,13 @@ const handleGerarImpugnacao = async () => {
                     <p className="text-slate-500 text-sm font-medium ml-16">Recupera estratégias de editais que já analisaste.</p>
                   </div>
 
-                  {/* 🟢 BLINDAGEM DO FALSO ANÓNIMO (Três estados) */}
                   {isCheckingAuth ? (
-                    /* 1. ESTADO DE LOADING (Evita que a página pisque) */
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm flex flex-col items-center animate-pulse">
                       <div className="w-16 h-16 bg-slate-100 rounded-full mb-4"></div>
                       <div className="h-5 w-48 bg-slate-100 rounded-lg mb-2"></div>
                       <div className="h-4 w-64 bg-slate-50 rounded-lg"></div>
                     </div>
-                    
                   ) : (token && userTier !== -1) ? (
-                    /* 2. ESTADO LOGADO (Renderiza o componente real) */
                     <HistoryTab 
                       token={token} 
                       userTier={userTier} 
@@ -1752,9 +1757,7 @@ const handleGerarImpugnacao = async () => {
                         }, 100);
                       }} 
                     />
-                    
                   ) : (
-                    /* 3. ESTADO DESLOGADO REAL (Apresenta o painel de bloqueio) */
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
                       <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-slate-100 shadow-inner">
                         🕵️
@@ -1765,8 +1768,8 @@ const handleGerarImpugnacao = async () => {
                       </p>
                       <button 
                         onClick={() => {
-                          setAuthMode('login'); // Garante que abre na aba de login
-                          setShowAuthModal(true); // Abre o seu modal de autenticação
+                          setAuthMode('login');
+                          setShowAuthModal(true);
                         }} 
                         className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
                       >
@@ -1778,10 +1781,7 @@ const handleGerarImpugnacao = async () => {
               )}
             </div>
 
-            {/* ========================================== */}
-            {/* LADO DIREITO: BARRA LATERAL (SIDEBAR)      */}
-            {/* ========================================== */}
-            <div className="flex flex-col gap-6 sticky top-28">
+            <div className="flex flex-col gap-6 sticky top-28 print:hidden">
               <div className="flex flex-col gap-3 mb-2 p-2 bg-slate-100/50 rounded-[2rem] border border-slate-200/50">
                 <button onClick={() => setActiveTab('workspace')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'workspace' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
                   <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">⚡</span> Nova Análise</span>
@@ -1869,7 +1869,7 @@ const handleGerarImpugnacao = async () => {
           </div>
         </section>
 
-        <section id="planos" className="bg-white py-24 px-6 border-t border-slate-100">
+        <section id="planos" className="bg-white py-24 px-6 border-t border-slate-100 print:hidden">
           <div className="max-w-[1400px] mx-auto">
             <div className="text-center mb-16">
               <span className="text-violet-700 bg-violet-50 px-5 py-2 rounded-full font-black uppercase text-xs tracking-widest">Transparência e Escala</span>
@@ -1914,7 +1914,6 @@ const handleGerarImpugnacao = async () => {
               </button>
             </form>
             
-            {/* 🟢 DIVISOR E BOTÃO GOOGLE */}
             <div className="mt-6 flex items-center justify-between">
               <span className="border-b border-slate-200 w-1/5 lg:w-1/4"></span>
               <span className="text-[10px] text-center text-slate-400 font-black uppercase tracking-widest">Ou continue com</span>
@@ -1937,7 +1936,6 @@ const handleGerarImpugnacao = async () => {
               </svg>
               Acessar com o Google
             </button>
-            {/* 🔴 FIM DO BLOCO GOOGLE */}
 
             <p className="text-center mt-8 text-sm text-slate-500 font-medium">
               {authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'} 
@@ -1971,12 +1969,10 @@ const handleGerarImpugnacao = async () => {
         </div>
       )}
 
-      {/* MODAL DO DOCUMENTO DE IMPUGNAÇÃO */}
       {showImpugnacaoModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-[2rem] flex flex-col shadow-2xl relative overflow-hidden">
             
-            {/* Header do Modal */}
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center text-xl shadow-inner">⚖️</div>
@@ -2001,14 +1997,12 @@ const handleGerarImpugnacao = async () => {
               </div>
             </div>
             
-            {/* Corpo do Documento (Rola se for grande) */}
             <div className="p-8 overflow-y-auto flex-1 bg-slate-100/50">
               <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-8 max-w-3xl mx-auto font-serif text-slate-800 text-sm leading-relaxed whitespace-pre-wrap">
                 {impugnacaoText}
               </div>
             </div>
             
-            {/* Footer do Modal */}
             <div className="p-4 bg-white border-t border-slate-100 text-center">
               <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">
                 * Revisão humana obrigatória. Preencha as lacunas com os dados da sua empresa antes de protocolar no órgão.
@@ -2018,12 +2012,10 @@ const handleGerarImpugnacao = async () => {
         </div>
       )}
 
-      {/* 🟢 MODAL DE RAIO-X DO CONCORRENTE */}
       {selectedCompetitor && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             
-            {/* Header do Modal */}
             <div className="p-6 bg-slate-900 flex justify-between items-start">
               <div className="pr-4">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-3 rounded-lg bg-indigo-500/20 border border-indigo-400/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider">
@@ -2041,10 +2033,7 @@ const handleGerarImpugnacao = async () => {
               </button>
             </div>
 
-            {/* Corpo do Modal */}
             <div className="p-6 space-y-5">
-              
-              {/* Bloco de Destaque: Vitórias */}
               <div className="flex items-center justify-between bg-amber-50 p-4 rounded-2xl border border-amber-100">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">🏆</span>
@@ -2058,12 +2047,20 @@ const handleGerarImpugnacao = async () => {
                 </span>
               </div>
 
-              {/* Informações Fiscais */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CNPJ</p>
                   <p className="text-sm font-mono font-bold text-slate-700">
-                    {selectedCompetitor.cnpj || 'Não identificado'}
+                    {(() => {
+                      const rawCnpj = selectedCompetitor.cnpj || '';
+                      const nums = rawCnpj.replace(/\D/g, '');
+                      // Se tiver 14 números exatos, aplica a máscara padrão
+                      if (nums.length === 14) {
+                        return nums.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+                      }
+                      // Se não tiver (ex: Raiz de MEI), devolve como a IA entregou
+                      return rawCnpj || 'Não identificado';
+                    })()}
                   </p>
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
@@ -2074,7 +2071,6 @@ const handleGerarImpugnacao = async () => {
                 </div>
               </div>
 
-              {/* Outras informações (Se existirem na sua API: Porte, Município, etc) */}
               {(selectedCompetitor.porte || selectedCompetitor.municipio) && (
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                   {selectedCompetitor.porte && (
@@ -2093,18 +2089,94 @@ const handleGerarImpugnacao = async () => {
               )}
             </div>
 
-            {/* Footer com Ação */}
             <div className="p-4 border-t border-slate-100 bg-slate-50">
               <button 
                 onClick={() => {
-                  // Se quiser futuramente copiar o CNPJ ou abrir num radar completo
-                  navigator.clipboard.writeText(selectedCompetitor.cnpj || '');
-                  alert(`CNPJ ${selectedCompetitor.cnpj} copiado para a área de transferência!`);
+                  const numerosLimpos = (selectedCompetitor.cnpj || '').replace(/\D/g, '');
+                  if (numerosLimpos) {
+                    navigator.clipboard.writeText(numerosLimpos);
+                    alert(`CNPJ copiado com sucesso!`);
+                  } else {
+                    alert('Nenhum CNPJ disponível para copiar.');
+                  }
                 }}
-                className="w-full py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold rounded-xl transition-all text-sm flex items-center justify-center gap-2"
+                className="w-full py-3 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold rounded-xl transition-all text-sm flex items-center justify-center gap-2 shadow-sm"
               >
-                📋 Copiar CNPJ para Investigação
+                📋 Copiar CNPJ (Apenas Números)
               </button>
+            </div>
+
+            {/* ======================================================== */}
+            {/* 🔍 HISTÓRICO DE VITÓRIAS PNCP (DESIGN PREMIUM)           */}
+            {/* ======================================================== */}
+            <div className="mt-6 border-t border-slate-100 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="text-sm">🎯</span> Últimos Contratos Vencidos
+                </h4>
+              </div>
+
+              {loadingHistory ? (
+                <div className="animate-pulse space-y-3">
+                  {[1, 2, 3].map(i => (
+                     <div key={i} className="h-24 bg-slate-50 border border-slate-100 rounded-xl"></div>
+                  ))}
+                </div>
+              ) : history.length > 0 ? (
+                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-2 custom-scrollbar">
+                  {history.map((h, i) => (
+                    <a
+                      key={i}
+                      href={h.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 bg-slate-50 border border-slate-100 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/30 hover:shadow-sm transition-all group relative"
+                    >
+                      {/* Ícone de Link Externo */}
+                      <div className="absolute top-4 right-4 text-slate-300 group-hover:text-indigo-500 transition-colors">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                      </div>
+
+                      <div className="pr-6">
+                        {/* Nome do Órgão */}
+                        <span className="block text-[10px] font-black text-slate-500 uppercase truncate mb-1.5">
+                          {h.orgao}
+                        </span>
+                        
+                        {/* Objeto do Contrato */}
+                        <p className="text-xs text-slate-700 font-medium line-clamp-2 leading-relaxed mb-3">
+                          {h.objeto}
+                        </p>
+                        
+                        {/* Rodapé do Card: Data e Valor */}
+                        <div className="flex items-center justify-between pt-3 border-t border-slate-200/60 mt-auto">
+                          <span className="text-[9px] font-bold text-slate-400 flex items-center gap-1.5">
+                            📅 {h.data ? new Date(h.data).toLocaleDateString('pt-BR') : 'Data não informada'}
+                          </span>
+                          
+                          {/* Badge de Valor Financeiro */}
+                          {h.valor > 0 ? (
+                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-100/50 px-2 py-1 rounded border border-emerald-200/50 flex items-center gap-1">
+                              💰 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(h.valor)}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                              Valor Sigiloso
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                  <span className="text-2xl mb-2 block opacity-50">👻</span>
+                  <p className="text-slate-400 text-xs font-medium px-4">
+                    Nenhum contrato detalhado encontrado recentemente.
+                  </p>
+                </div>
+              )}
             </div>
 
           </div>
