@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff, FileText } from 'lucide-react';
+import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
 import CompanyProfileForm from './CompanyProfileForm';
 import Image from 'next/image';
 import UserProfileCard from './UserProfileCard';
 import BawziShadowSimulator from '../components/BawziShadowSimulator';
+import ReverseEngineeringBlock from '../components/ReverseEngineeringBlock'; 
 import HistoryTab from './HistoryTab';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -140,7 +141,6 @@ export default function AnalysisApp() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedTier, setSelectedTier] = useState<number>(2);
 
-  // 🟢 ADICIONE ESTAS DUAS LINHAS AQUI:
   const [stripeSecret, setStripeSecret] = useState<string | null>(null);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
 
@@ -402,6 +402,7 @@ useEffect(() => {
       });
   }
 }, [selectedCompetitor]);
+
   // ==========================================
   // HANDLERS E FUNÇÕES DE AÇÃO
   // ==========================================
@@ -614,7 +615,7 @@ useEffect(() => {
     }
     
     setSelectedTier(tier); 
-    setIsCheckoutLoading(true); // 🟢 Ativa o overlay roxo de carregamento
+    setIsCheckoutLoading(true);
     
     try {
       const res = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
@@ -630,10 +631,8 @@ useEffect(() => {
 
       if (res.ok) {
         if (data.url) {
-          // Utilizador já tem plano -> Vai para o Portal
           window.location.href = data.url;
         } else if (data.client_secret) {
-          // Novo assinante -> Abre a Modal com o formulário
           setStripeSecret(data.client_secret);
           setShowUpgradeModal(true);
           setIsCheckoutLoading(false);
@@ -674,7 +673,6 @@ useEffect(() => {
   const handleExportPDF = () => {
     if (!result) return;
     
-    // Abre uma janela invisível para montar o documento perfeito
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert("Por favor, permita pop-ups no seu navegador para gerar o PDF.");
@@ -733,7 +731,6 @@ useEffect(() => {
     printWindow.document.write(html);
     printWindow.document.close();
     
-    // Pequeno delay para garantir que o DOM do PDF carrega antes de imprimir
     setTimeout(() => {
       printWindow.focus();
       printWindow.print();
@@ -1303,14 +1300,12 @@ useEffect(() => {
                             const isValida = (texto: string) => {
                                if (!texto) return false;
                                const t = texto.toLowerCase();
-                               // Se a IA devolver alguma destas palavras, o React esconde a secção
                                return !t.includes("não") && !t.includes("nao") && !t.includes("n/a") && !t.includes("informad") && !t.includes("localizad");
                             };
 
                             const propValida = isValida(propostas) ? propostas : null;
                             const impValida = isValida(impugnacao) ? impugnacao : null;
 
-                            // Se as duas datas forem inválidas/vazias, a secção inteira desaparece
                             if (!propValida && !impValida) return null;
                             
                             return (
@@ -1374,19 +1369,32 @@ useEffect(() => {
                           if (!pricing || pricing.desagioPreditivoOrgao === undefined) return null;
 
                           return (
-                            <div className="relative border border-slate-200 rounded-2xl p-2 mb-12 print:hidden">
-                              <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
-                                <span className="text-lg">💰</span>
-                                <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Preço & Engenharia Reversa</h3>
+                            <div className="space-y-12 print:hidden">
+                              
+                              {/* BLOCO ORIGINAL DO SIMULADOR (ANTIGO PREÇO E ENGENHARIA) */}
+                              <div className="relative border border-slate-200 rounded-2xl p-2">
+                                <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
+                                  <span className="text-lg">💰</span>
+                                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Simulador de Lances</h3>
+                                </div>
+                                <BawziShadowSimulator 
+                                  desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
+                                  nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
+                                  perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
+                                  valorReferenciaInicial={valorEstimado} 
+                                  engenhariaReversa={result?.pricing_intelligence?.engenharia_reversa}
+                                  userTier={userTier} 
+                                  onUpgradeClick={() => setShowUpgradeModal(true)} 
+                                />
                               </div>
-                              <BawziShadowSimulator 
-                                desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
-                                nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
-                                perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
-                                valorReferenciaInicial={valorEstimado} 
-                                engenhariaReversa={result?.pricing_intelligence?.engenharia_reversa}
-                                userTier={userTier} 
-                                onUpgradeClick={() => setShowUpgradeModal(true)} 
+
+                              {/* 🟢 O NOVO BLOCO DE ENGENHARIA REVERSA ISOLADO AQUI */}
+                              <ReverseEngineeringBlock
+                                userTier={userTier}
+                                valorReferencia={valorEstimado}
+                                desagio={pricing.desagioPreditivoOrgao}
+                                engenhariaData={pricing.engenharia_reversa}
+                                onUpgradeClick={() => setShowUpgradeModal(true)}
                               />
                             </div>
                           );
@@ -1628,9 +1636,6 @@ useEffect(() => {
                           </div>
                         )}
 
-                        {/* ============================================== */}
-                        {/* CTA DE EXPORTAÇÃO (NOVO LAYOUT)                */}
-                        {/* ============================================== */}
                         <div className="mt-12 p-6 md:p-8 bg-slate-50 rounded-[2rem] border border-slate-200 border-dashed print:hidden">
                           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                             <div className="flex-1 text-center md:text-left">
@@ -1641,7 +1646,6 @@ useEffect(() => {
                                 Gere uma minuta formal em PDF baseada na análise neural da Bawzi.
                               </p>
                               
-                              {/* O ALERTA AGORA TEM O SEU PRÓPRIO ESPAÇO */}
                               <div className="mt-3">
                                 <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg font-black border border-amber-200 uppercase tracking-widest shadow-sm">
                                   <span>⚠️</span> Requer validação de um advogado
@@ -1659,7 +1663,6 @@ useEffect(() => {
                           </div>
                         </div>
 
-                        {/* 🟢 O DOCUMENTO FORMAL PARA IMPRESSÃO (SÓ APARECE NO PDF) */}
                         <div className="hidden print:block bg-white p-10 font-serif text-slate-900 leading-relaxed text-sm">
                           <div className="border-b-2 border-slate-900 pb-4 mb-6">
                             <h1 className="text-2xl font-black uppercase">Bawzi Intelligence</h1>
@@ -1878,8 +1881,6 @@ useEffect(() => {
         onClose={() => setShowAuthModal(false)}
         defaultView={authMode}
         onSuccess={() => {
-          // Quando o login tiver sucesso, recarregamos a página para 
-          // os useEffects puxarem os dados do utilizador e da empresa!
           window.location.reload(); 
         }}
       />
@@ -1952,12 +1953,8 @@ useEffect(() => {
       {selectedCompetitor && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           
-          {/* 🟢 A MÁGICA AQUI: max-h-[90vh] e flex-col garantem que a modal nunca é maior que a tela */}
           <div className="bg-white rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
             
-            {/* ======================================================== */}
-            {/* CABEÇALHO FIXO (Com o botão de fechar sempre visível)    */}
-            {/* ======================================================== */}
             <div className="p-5 md:p-6 bg-slate-900 flex justify-between items-start shrink-0">
               <div className="pr-4">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 mb-3 rounded-lg bg-indigo-500/20 border border-indigo-400/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider">
@@ -1975,9 +1972,6 @@ useEffect(() => {
               </button>
             </div>
 
-            {/* ======================================================== */}
-            {/* CONTEÚDO COM SCROLL INTERNO (Aqui a mágica rola)         */}
-            {/* ======================================================== */}
             <div className="p-5 md:p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
               <div className="flex items-center justify-between bg-amber-50 p-4 rounded-2xl border border-amber-100">
                 <div className="flex items-center gap-3">
@@ -2031,7 +2025,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* 🔍 HISTÓRICO DE VITÓRIAS PNCP */}
               <div className="mt-6 border-t border-slate-100 pt-6">
                 <div className="flex items-center justify-between mb-4">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -2046,7 +2039,6 @@ useEffect(() => {
                     ))}
                   </div>
                 ) : history.length > 0 ? (
-                  // Retiramos o max-h daqui porque o scroll agora é na div pai!
                   <div className="space-y-3">
                     {history.map((h, i) => (
                       <a
@@ -2096,9 +2088,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* ======================================================== */}
-            {/* RODAPÉ FIXO (Sempre colado na parte inferior)            */}
-            {/* ======================================================== */}
             <div className="p-4 border-t border-slate-200 bg-slate-50 shrink-0">
               <button 
                 onClick={() => {
@@ -2124,16 +2113,23 @@ useEffect(() => {
         isOpen={showUpgradeModal} 
         onClose={() => {
           setShowUpgradeModal(false);
-          setStripeSecret(null); // Limpa ao fechar
+          setStripeSecret(null); 
         }} 
         tier={selectedTier} 
         clientSecret={stripeSecret} 
       />
 
-      {/* O seu Overlay de Carregamento já existente cuidará do visual de "Aguarde..." */}
       {isCheckoutLoading && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm ...">
-           {/* ... conteúdo do seu overlay ... */}
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm transition-all duration-300">
+          <div className="bg-white p-8 md:p-10 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-[90%] mx-auto text-center">
+            <div className="relative w-20 h-20 mb-6">
+              <div className="absolute inset-0 border-4 border-violet-100 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-violet-600 rounded-full border-t-transparent animate-spin"></div>
+              <Lock className="absolute inset-0 m-auto text-violet-600" size={24} />
+            </div>
+            <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">Ambiente Seguro</h3>
+            <p className="text-slate-500 font-medium leading-relaxed">Sincronizando com o Stripe...</p>
+          </div>
         </div>
       )}
 
