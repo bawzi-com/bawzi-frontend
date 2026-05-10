@@ -1,53 +1,44 @@
 'use client';
 
-import React, { useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+  EmbeddedCheckoutProvider,
+  EmbeddedCheckout
+} from '@stripe/react-stripe-js';
 
-export default function UpgradeModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+// Inicialize o Stripe fora do componente
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
+
+interface UpgradeModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  tier: number;  
+  clientSecret: string | null; 
+}
+
+export default function UpgradeModal({ isOpen, onClose, tier, clientSecret }: UpgradeModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white rounded-[2.5rem] p-8 md:p-12 max-w-lg w-full shadow-2xl relative overflow-hidden border border-slate-100">
+    <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+      <div className="bg-white w-full max-w-3xl rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col">
         
-        {/* Decoração de fundo */}
-        <div className="absolute -right-20 -top-20 w-64 h-64 bg-violet-100 rounded-full blur-3xl opacity-50"></div>
-        
-        <div className="relative z-10 text-center">
-          <div className="w-20 h-20 bg-violet-100 rounded-3xl flex items-center justify-center text-4xl mx-auto mb-6 shadow-sm">
-            🚀
-          </div>
-          
-          <h2 className="text-3xl font-black text-slate-900 mb-4 leading-tight">
-            Você atingiu o topo do Plano Grátis!
-          </h2>
-          
-          <div className="space-y-4 mb-8">
-            <p className="text-slate-500 font-medium leading-relaxed">
-              As suas 10 análises gratuitas foram concluídas. 
-              <span className="block mt-2 text-slate-700 font-bold">
-                Fique tranquilo: todo o seu histórico de estratégias permanece totalmente acessível para consulta.
-              </span>
-            </p>
-            <p className="text-slate-500 font-medium leading-relaxed">
-              Para continuar analisando novos editais com precisão cirúrgica e IA avançada, mude para o Plano Profissional.
-            </p>
-          </div>
+        {/* Botão de Fechar discreto */}
+        <button onClick={onClose} className="absolute top-5 right-5 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all z-50">&times;</button>
 
-          <div className="space-y-3">
-            <button 
-              onClick={() => window.location.href = '/plans'}
-              className="w-full py-4 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-2xl shadow-lg shadow-violet-200 transition-all active:scale-95 uppercase tracking-widest text-[10px]"
-            >
-              Ver Planos e Fazer Upgrade
-            </button>
-            
-            <button 
-              onClick={onClose}
-              className="w-full py-4 bg-transparent text-slate-400 font-bold hover:text-slate-600 transition-all text-[10px] uppercase tracking-widest"
-            >
-              Continuar navegando no histórico
-            </button>
-          </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+          {clientSecret ? (
+            <div className="animate-in fade-in zoom-in-95 duration-500">
+              <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret }}>
+                <EmbeddedCheckout />
+              </EmbeddedCheckoutProvider>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p className="text-slate-400 text-xs font-black uppercase tracking-widest">Sincronizando com Stripe...</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,258 +1,215 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useState, useEffect } from 'react';
+import { Building2, Search, Lock, ShieldCheck, Landmark, Zap, CheckCircle2, AlertTriangle } from 'lucide-react';
 
-// 🟢 1. Adicionamos a prop "onUpgrade" para comunicar com o Modal da tela principal
-interface CompanyProfileFormProps {
-  token: string;
-  userTier?: number;
-  onUpgrade?: () => void; 
-}
+export default function CompanyProfileForm({ companyData, userTier, token, onUpdate }: any) {
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-export default function CompanyProfileForm({ token, userTier = 1, onUpgrade }: CompanyProfileFormProps) {
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  // ==========================================
-  // ESTADOS DO FORMULÁRIO
-  // ==========================================
-  const [cnpj, setCnpj] = useState('');
-  const [razaoSocial, setRazaoSocial] = useState('');
-  const [enquadramento, setEnquadramento] = useState('');
-  const [capitalSocial, setCapitalSocial] = useState('');
+  const [formData, setFormData] = useState({
+    _id: companyData?._id || '',
+    cnpj: companyData?.cnpj || '',
+    razao_social: companyData?.razao_social || '',
+    enquadramento: companyData?.enquadramento || '',
+    capital_social: companyData?.capital_social || '',
+  });
 
-  const [isLoadingCnpj, setIsLoadingCnpj] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  // Cálculo de Slots (Nível 3 = 2 Slots)
+  const vagasCnpjPermitidas = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
+  const slotsOcupados = companyData?._id ? 1 : 0;
 
-  // ==========================================
-  // 1. CARREGAR DADOS SALVOS NO BANCO
-  // ==========================================
-  useEffect(() => {
-    const fetchExistingData = async () => {
-      if (!token) return;
-      try {
-        const res = await fetch(`${API_URL}/api/workspace/company`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data) {
-            setCnpj(data.cnpj || '');
-            setRazaoSocial(data.razao_social || '');
-            setEnquadramento(data.enquadramento || '');
-            setCapitalSocial(data.capital_social || '');
-          }
-        }
-      } catch (error) {
-        console.error("Erro ao carregar dados da empresa:", error);
-      }
-    };
-    
-    fetchExistingData();
-  }, [token, API_URL]);
+  const handleCnpjChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 14) value = value.slice(0, 14);
+    value = value.replace(/^(\d{2})(\d)/, '$1.$2');
+    value = value.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+    value = value.replace(/\.(\d{3})(\d)/, '.$1/$2');
+    value = value.replace(/(\d{4})(\d)/, '$1-$2');
+    setFormData({ ...formData, cnpj: value });
+  };
 
-  // ==========================================
-  // 2. BUSCAR DADOS DO CNPJ (API EXTERNA/INTERNA)
-  // ==========================================
-  const handleFetchCnpj = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    const cleanCnpj = cnpj.replace(/\D/g, ''); 
-
-    if (cleanCnpj.length !== 14) {
-      alert("Por favor, digite um CNPJ válido com 14 números.");
+  // 🟢 BUSCA CORRIGIDA (TRATAMENTO DE TIPAGEM)
+  const handleFetchCnpj = async () => {
+    const cnpjLimpo = formData.cnpj.replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      setMessage({ type: 'error', text: 'CNPJ incompleto.' });
       return;
     }
 
-    setIsLoadingCnpj(true);
+    setIsSearchingCnpj(true);
+    setMessage(null);
+
     try {
-      const res = await fetch(`${API_URL}/api/company/search/${cleanCnpj}`, {
+      const res = await fetch(`${API_URL}/api/company/search/${cnpjLimpo}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.detail || 'Empresa não encontrada.');
 
-      if (res.ok) {
-        const data = await res.json();
-        setRazaoSocial(data.razao_social || data.nome || '');
-        setEnquadramento(data.porte || data.enquadramento || '');
-        setCapitalSocial(data.capital_social ? `R$ ${data.capital_social}` : '');
-      } else {
-        alert("CNPJ não encontrado ou erro no servidor.");
+      let enquadramentoFinal = '';
+      const porteRecebido = String(data.porte || data.enquadramento || '').toUpperCase();
+      
+      if (porteRecebido === '1' || porteRecebido === '01' || porteRecebido.includes('MICRO') || porteRecebido === 'ME') {
+        enquadramentoFinal = 'ME';
+      } else if (porteRecebido === '3' || porteRecebido === '03' || porteRecebido.includes('PEQUENO') || porteRecebido === 'EPP') {
+        enquadramentoFinal = 'EPP';
+      } else if (porteRecebido === '5' || porteRecebido === '05' || porteRecebido.includes('DEMAIS')) {
+        enquadramentoFinal = 'DEMAIS';
       }
-    } catch (error) {
-      console.error("Erro na busca de CNPJ:", error);
-      alert("Falha de conexão ao buscar CNPJ.");
+
+      let valorBruto = 0;
+      if (typeof data.capital_social === 'string') {
+        const valorLimpo = data.capital_social.replace(/\./g, '').replace(',', '.');
+        valorBruto = parseFloat(valorLimpo) || 0;
+      } else {
+        valorBruto = data.capital_social || 0;
+      }
+
+      const capitalFormatado = new Intl.NumberFormat('pt-BR', { 
+        style: 'currency', 
+        currency: 'BRL' 
+      }).format(valorBruto);
+
+      setFormData(prev => ({
+        ...prev,
+        razao_social: data.razao_social || data.nome_fantasia || '',
+        enquadramento: enquadramentoFinal,
+        capital_social: capitalFormatado
+      }));
+
+      setMessage({ type: 'success', text: 'Dados carregados da Receita Federal.' });
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
     } finally {
-      setIsLoadingCnpj(false);
+      setIsSearchingCnpj(false);
     }
   };
 
-  // ==========================================
-  // 3. SALVAR DADOS NO BANCO
-  // ==========================================
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaving(true);
+    setIsLoading(true);
+    setMessage(null);
     try {
-      const res = await fetch(`${API_URL}/api/workspace/company`, {
-        method: 'PUT', 
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          cnpj: cnpj.replace(/\D/g, ''),
-          razao_social: razaoSocial,
-          enquadramento,
-          capital_social: capitalSocial.replace(/\D/g, '') 
-        })
+      const res = await fetch(`${API_URL}/api/company/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(formData)
       });
+      
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.detail || 'Erro ao salvar no banco.');
 
-      if (res.ok) {
-        alert("DNA Empresarial atualizado com sucesso!");
-      } else {
-        alert("Erro ao salvar os dados da empresa.");
-      }
-    } catch (error) {
-      console.error("Erro ao salvar:", error);
-      alert("Falha de conexão ao salvar.");
+      setMessage({ type: 'success', text: 'Empresa vinculada com sucesso!' });
+      if (onUpdate) onUpdate();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
     } finally {
-      setIsSaving(false);
+      setIsLoading(false);
     }
   };
 
-  // ==========================================
-  // RENDERIZAÇÃO
-  // ==========================================
+  const inputStyle = "w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-slate-700 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 focus:bg-white outline-none transition-all disabled:opacity-50";
+  const labelStyle = "block text-[11px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3 ml-1";
+
   return (
-    <form onSubmit={handleSave} className="relative">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        
-        {/* CNPJ */}
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">CNPJ</label>
-          <div className="flex gap-2">
+    <div className="bg-white p-8 md:p-10 rounded-[2.5rem] border-2 border-slate-100 shadow-sm mt-10">
+      <div className="flex flex-col gap-4 mb-10 pb-8 border-b border-slate-50">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-violet-600 flex items-center justify-center text-white shadow-lg">
+            <Building2 size={24} />
+          </div>
+          <h3 className="text-xl font-black text-slate-900 tracking-tight">Empresa Vinculada</h3>
+        </div>
+        <div className="inline-flex items-center gap-2 self-start px-4 py-2 bg-violet-50 border border-violet-100 rounded-xl">
+          <Zap size={14} className="text-violet-600 fill-violet-600" />
+          <span className="text-[10px] font-black text-violet-700 uppercase tracking-widest">
+            Nível {userTier} • {slotsOcupados} DE {vagasCnpjPermitidas} SLOTS UTILIZADOS
+          </span>
+        </div>
+      </div>
+
+      {message && (
+        <div className={`mb-10 p-5 rounded-2xl flex items-center gap-3 text-sm font-bold border-2 ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-900 border-emerald-100' : 'bg-red-50 text-red-900 border-red-100'
+        }`}>
+          {message.type === 'success' ? <CheckCircle2 className="text-emerald-500" size={20} /> : <AlertTriangle className="text-red-500" size={20} />}
+          {message.text}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-8">
+        <div className="w-full">
+          <label className={labelStyle}>CNPJ</label>
+          <div className="flex gap-3">
             <input 
-              type="text" 
-              value={cnpj}
-              onChange={(e) => setCnpj(e.target.value)}
-              placeholder="00.000.000/0000-00"
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all placeholder:text-slate-300"
+              type="text" className={inputStyle} placeholder="00.000.000/0000-00" 
+              value={formData.cnpj} onChange={handleCnpjChange}
             />
             <button 
-              onClick={handleFetchCnpj}
-              disabled={isLoadingCnpj || !cnpj}
-              className="bg-slate-900 text-white px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-slate-800 transition-colors shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed min-w-[90px]"
+              type="button" onClick={handleFetchCnpj} disabled={isSearchingCnpj}
+              className="px-6 bg-white border-2 border-slate-200 rounded-2xl hover:border-violet-500 hover:text-violet-600 transition-all text-slate-400 flex items-center justify-center shrink-0 shadow-sm"
             >
-              {isLoadingCnpj ? '...' : 'Carregar'}
+              {isSearchingCnpj ? <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div> : <Search size={22} />}
             </button>
           </div>
         </div>
 
-        {/* RAZÃO SOCIAL */}
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Razão Social</label>
+        <div className="w-full">
+          <label className={labelStyle}>Razão Social</label>
           <input 
-            type="text" 
-            value={razaoSocial}
-            onChange={(e) => setRazaoSocial(e.target.value)}
-            placeholder="Razão Social da Empresa"
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all placeholder:text-slate-300"
+            type="text" className={inputStyle} value={formData.razao_social}
+            onChange={e => setFormData({...formData, razao_social: e.target.value})}
           />
         </div>
 
-        {/* ========================================== */}
-        {/* LÓGICA DINÂMICA: CARD (NÍVEL 1) vs CAMPOS (NÍVEL 2+) */}
-        {/* ========================================== */}
-        
-        {userTier < 2 ? (
-          /* --- EXIBE APENAS PARA TIER 1 --- */
-          <div className="relative group overflow-hidden rounded-xl bg-slate-900 p-[1px] shadow-md transition-all hover:shadow-violet-900/30 mt-2">
-            <div className="absolute inset-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-violet-600 opacity-40 group-hover:opacity-100 transition-opacity duration-700 bg-[length:200%_auto] animate-[shimmer_2s_linear_infinite]"></div>
-            <div className="relative bg-slate-950 rounded-[11px] p-5 flex flex-col items-center text-center gap-4 h-full z-10">
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-10 h-10 rounded-full bg-slate-800/80 flex items-center justify-center text-lg border border-slate-700/50 shadow-inner">
-                  <span className="drop-shadow-md">💎</span>
-                </div>
-                <div>
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Inteligência Competitiva</h4>
-                  <p className="text-sm font-bold text-white mt-1">Liberado no Nível Essencial</p>
-                </div>
-              </div>
-              <button 
-                type="button"
-                onClick={() => onUpgrade ? onUpgrade() : (window.location.href = '#planos')}
-                className="w-full py-2.5 bg-white text-slate-900 text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-violet-50 transition-all flex items-center justify-center gap-2"
-              >
-                Desbloquear Agora 🚀
-              </button>
+        <div className="w-full">
+          <label className={labelStyle}>Enquadramento Fiscal</label>
+          <div className="relative">
+            <select 
+              className={`${inputStyle} appearance-none cursor-pointer pr-12`}
+              value={formData.enquadramento}
+              onChange={e => setFormData({...formData, enquadramento: e.target.value})}
+            >
+              <option value="" disabled>Selecione uma opção...</option>
+              <option value="ME">ME (Microempresa)</option>
+              <option value="EPP">EPP (Empresa de Pequeno Porte)</option>
+              {/* 🟢 CORREÇÃO: "DEMAIS" tudo em maiúsculas para dar match perfeito com a API */}
+              <option value="DEMAIS">Demais (Médio/Grande)</option>
+            </select>
+            <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+              <ShieldCheck size={20} />
             </div>
           </div>
-        ) : (
-          <>
-            {/* ENQUADRAMENTO (PADRONIZADO) */}
-            <div className="space-y-1.5 animate-in fade-in slide-in-from-left-4 duration-500">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                Enquadramento
-              </label>
-              <div className="relative">
-                <select 
-                  value={enquadramento}
-                  onChange={(e) => setEnquadramento(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all appearance-none cursor-pointer pr-10"
-                >
-                  <option value="" disabled className="text-slate-300">Selecione o porte</option>
-                  <option value="ME">Microempresa (ME)</option>
-                  <option value="EPP">Empresa de Pequeno Porte (EPP)</option>
-                  <option value="DEMAIS">Demais (Grande Porte)</option>
-                </select>
-                
-                {/* Ícone de Seta Customizado para manter o padrão UI */}
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    width="16" 
-                    height="16" 
-                    viewBox="0 0 24 24" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    strokeWidth="3" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6"/>
-                  </svg>
-                </div>
-              </div>
+        </div>
+
+        <div className="w-full">
+          <label className={labelStyle}>Capital Social</label>
+          <div className="relative">
+            <input 
+              type="text" className={`${inputStyle} pl-12`} 
+              value={formData.capital_social}
+              onChange={e => setFormData({...formData, capital_social: e.target.value})}
+            />
+            <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400">
+              <Landmark size={20} />
             </div>
+          </div>
+        </div>
 
-            <div className="space-y-1.5 animate-in fade-in slide-in-from-right-4 duration-500">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Capital Social</label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">R$</span>
-                <input 
-                  type="text" 
-                  value={capitalSocial}
-                  onChange={(e) => setCapitalSocial(e.target.value)}
-                  placeholder="0,00"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm font-bold focus:ring-2 focus:ring-violet-500/10 outline-none transition-all"
-                />
-              </div>
-            </div>
-          </>
-        )}
-
-      </div>
-
-      {/* BOTÃO SALVAR GLOBAL */}
-      <div className="mt-8 flex justify-end">
-        <button 
-          type="submit"
-          disabled={isSaving}
-          className="bg-violet-600 text-white px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-violet-500 transition-all shadow-md disabled:opacity-50 flex items-center gap-2"
-        >
-          {isSaving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : '💾'} 
-          Salvar
-        </button>
-      </div>
-    </form>
+        <div className="flex justify-end pt-8 border-t border-slate-50 mt-4">
+          <button 
+            type="submit" disabled={isLoading}
+            className="w-full md:w-auto px-12 py-5 bg-slate-900 text-white hover:bg-violet-600 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3"
+          >
+            {isLoading ? 'A Guardar...' : 'Vincular Empresa'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

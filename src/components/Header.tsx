@@ -37,23 +37,24 @@ export default function Header() {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-  useEffect(() => {
+useEffect(() => {
+  const syncData = () => {
     const savedToken = localStorage.getItem('bawzi_token');
     const savedTier = localStorage.getItem('bawzi_tier');
-    
-    // 🟢 BUSCA OS DADOS DO UTILIZADOR (Assumindo que guarda no login como 'bawzi_user')
     const savedUser = localStorage.getItem('bawzi_user');
 
     if (savedToken) setToken(savedToken);
     if (savedTier) setUserTier(savedTier);
     if (savedUser) {
-      try {
-        setUserData(JSON.parse(savedUser));
-      } catch (e) {
-        console.error("Erro ao ler dados do utilizador", e);
-      }
+      try { setUserData(JSON.parse(savedUser)); } catch (e) {}
     }
-  }, [pathname]);
+  };
+
+  syncData();
+
+  window.addEventListener('storage', syncData);
+  return () => window.removeEventListener('storage', syncData);
+}, [pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('bawzi_token');

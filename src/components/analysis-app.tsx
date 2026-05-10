@@ -14,7 +14,7 @@ import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
-import ThreatRadar from './ThreatRadar';
+import AuthModal from './AuthModal';
 
 const logout = () => {
   localStorage.clear();
@@ -134,13 +134,15 @@ export default function AnalysisApp() {
   const [termoAlvo, setTermoAlvo] = useState('');
   const [pncpData, setPncpData] = useState<{cnpj: string, ano: number, sequencial: number, uf?: string} | null>(null);
   
-  // Modais de Autenticação e Upsell
+// Estados para o Modal de Autenticação e Upsell
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', cnpj: '' });
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<number>(2);
+
+  // 🟢 ADICIONE ESTAS DUAS LINHAS AQUI:
+  const [stripeSecret, setStripeSecret] = useState<string | null>(null);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
 
   // Estados de Partilha
   const [analysisId, setAnalysisId] = useState<string | null>(null);
@@ -489,7 +491,7 @@ useEffect(() => {
     }
     
     if (isOverLimit) { 
-      setShowUpgradeModal(true); 
+      handleUpgrade(userTier >= 1 ? userTier + 1 : 2); 
       return; 
     }
 
@@ -544,7 +546,7 @@ useEffect(() => {
       }
 
       if (response.status === 402) {
-        setShowUpgradeModal(true);
+        handleUpgrade(userTier >= 1 ? userTier + 1 : 2);
         setIsAnalyzing(false);     
         return;                    
       }
@@ -604,62 +606,45 @@ useEffect(() => {
     }
   };
 
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true); setAuthError(null);
+  const handleUpgrade = async (tier: number) => {
+    if (!token) { 
+      setAuthMode('register'); 
+      setShowAuthModal(true); 
+      return; 
+    }
+    
+    setSelectedTier(tier); 
+    setIsCheckoutLoading(true); // 🟢 Ativa o overlay roxo de carregamento
     
     try {
-      const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
-      const payload: any = { ...authForm };
-      
-      if (!payload.cnpj) delete payload.cnpj; 
-      if (authMode === 'login') delete payload.name; 
-      else { payload.plan = "free"; payload.tier = 1; }
-
-      const response = await fetch(`${API_URL}${endpoint}`, {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (response.status === 422 && Array.isArray(data.detail)) {
-          const errorMessages = data.detail.map((err: any) => `O campo '${err.loc[err.loc.length - 1]}' ${err.msg}`).join(' | ');
-          throw new Error(`Validação falhou: ${errorMessages}`);
-        }
-        throw new Error(data.detail || 'Falha na autenticação');
-      }
-
-      setToken(data.access_token);
-      const userTierToSave = data.tier !== undefined ? data.tier : 1; 
-      setUserTier(userTierToSave);
-      
-      localStorage.setItem('bawzi_token', data.access_token);
-      localStorage.setItem('bawzi_tier', userTierToSave.toString());
-      if (data.workspace_id) {
-        localStorage.setItem('bawzi_workspace_id', data.workspace_id);
-      }
-
-      router.push('/workspace');
-      setShowAuthModal(false);
-      window.location.reload(); 
-    } catch (err: any) { setAuthError(err.message); } 
-    finally { setAuthLoading(false); }
-  };
-
-  const handleUpgrade = async (tier: number) => {
-    if (!token) { setAuthMode('register'); setShowAuthModal(true); return; }
-    try {
-      const response = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
+      const res = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ tier }),
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ tier })
       });
-      const data = await response.json();
-      if (data.url) window.location.href = data.url; 
-    } catch (err) { alert("Erro ao iniciar processo de pagamento."); }
+      
+      const data = await res.json();
+
+      if (res.ok) {
+        if (data.url) {
+          // Utilizador já tem plano -> Vai para o Portal
+          window.location.href = data.url;
+        } else if (data.client_secret) {
+          // Novo assinante -> Abre a Modal com o formulário
+          setStripeSecret(data.client_secret);
+          setShowUpgradeModal(true);
+          setIsCheckoutLoading(false);
+        }
+      } else {
+        throw new Error(data.detail || "Erro no processamento");
+      }
+    } catch (error) {
+      setIsCheckoutLoading(false);
+      alert("Erro ao processar plano. Tente novamente.");
+    }
   };
 
   const handleResetAnalysis = (e?: React.MouseEvent) => {
@@ -1876,76 +1861,28 @@ useEffect(() => {
               <h2 className="text-4xl md:text-5xl font-black text-slate-900 mt-6 mb-4 tracking-tight">A IA certa para o desafio certo</h2>
               <p className="text-slate-500 text-lg max-w-2xl mx-auto font-medium">Otimizamos o custo e a precisão roteando a sua análise automaticamente para os melhores modelos LLM do mundo.</p>
             </div>
+            
             <PricingSection 
               onRegister={() => { setAuthMode('register'); setShowAuthModal(true); }}
               onUpgrade={handleUpgrade} 
+              currentTier={userTier} 
             />
+            
           </div>
         </section>
       </main>
 
       {/* --- MODAIS --- */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
-            <button onClick={() => setShowAuthModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center">&times;</button>
-            
-            <div className="flex flex-col items-center text-center mb-8">
-              <div className="mb-6 transform hover:scale-105 transition-transform">
-                <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
-              </div>
-              <h2 className="text-3xl font-black text-slate-900 tracking-tighter">
-                {authMode === 'register' ? 'Criar Conta' : 'Boas-vindas'}
-              </h2>
-              <p className="text-slate-500 text-sm mt-2 px-4 font-medium">
-                {authMode === 'register' ? 'Começa a analisar editais em segundos com o poder da IA.' : 'Acesse ao teu painel estratégico e histórico de análises.'}
-              </p>
-            </div>
-
-            <form onSubmit={handleAuthSubmit} className="space-y-4">
-              {authMode === 'register' && (
-                <input type="text" required placeholder="Nome completo" value={authForm.name} onChange={e => setAuthForm({...authForm, name: e.target.value})} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium" />
-              )}
-              <input type="email" required placeholder="E-mail profissional" value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium" />
-              <input type="password" required placeholder="Palavra-passe" value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium" />
-              <button type="submit" disabled={authLoading} className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50">
-                {authLoading ? 'A processar...' : authMode === 'register' ? 'Começar Gratuitamente' : 'Entrar na Conta'}
-              </button>
-            </form>
-            
-            <div className="mt-6 flex items-center justify-between">
-              <span className="border-b border-slate-200 w-1/5 lg:w-1/4"></span>
-              <span className="text-[10px] text-center text-slate-400 font-black uppercase tracking-widest">Ou continue com</span>
-              <span className="border-b border-slate-200 w-1/5 lg:w-1/4"></span>
-            </div>
-
-            <button
-              onClick={() => {
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8000';
-                window.location.href = `${apiUrl}/auth/google/login`;
-              }} 
-              type="button"
-              className="mt-4 w-full flex items-center justify-center gap-3 bg-white border border-slate-200 text-slate-700 font-bold py-3.5 px-4 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-              </svg>
-              Acessar com o Google
-            </button>
-
-            <p className="text-center mt-8 text-sm text-slate-500 font-medium">
-              {authMode === 'register' ? 'Já tens conta na Bawzi?' : 'És novo por aqui?'} 
-              <button onClick={() => setAuthMode(authMode === 'register' ? 'login' : 'register')} className="ml-2 text-violet-600 font-bold hover:underline underline-offset-4">
-                {authMode === 'register' ? 'Fazer Login' : 'Criar Conta Grátis'}
-              </button>
-            </p>
-          </div>
-        </div>
-      )}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)}
+        defaultView={authMode}
+        onSuccess={() => {
+          // Quando o login tiver sucesso, recarregamos a página para 
+          // os useEffects puxarem os dados do utilizador e da empresa!
+          window.location.reload(); 
+        }}
+      />
       
       {showShareModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -2185,8 +2122,20 @@ useEffect(() => {
 
       <UpgradeModal 
         isOpen={showUpgradeModal} 
-        onClose={() => setShowUpgradeModal(false)} 
+        onClose={() => {
+          setShowUpgradeModal(false);
+          setStripeSecret(null); // Limpa ao fechar
+        }} 
+        tier={selectedTier} 
+        clientSecret={stripeSecret} 
       />
+
+      {/* O seu Overlay de Carregamento já existente cuidará do visual de "Aguarde..." */}
+      {isCheckoutLoading && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm ...">
+           {/* ... conteúdo do seu overlay ... */}
+        </div>
+      )}
 
     </div> 
   );
