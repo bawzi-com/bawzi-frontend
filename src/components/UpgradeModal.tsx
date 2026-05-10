@@ -21,12 +21,19 @@ export default function UpgradeModal({ isOpen, onClose, tier, clientSecret }: Up
 
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-      <div className="bg-white w-full max-w-3xl rounded-[2rem] overflow-hidden shadow-2xl relative flex flex-col">
+      {/* 🟢 CORREÇÃO: max-w-lg e h-fit max-h-[90vh] para o modal abraçar o conteúdo do Stripe perfeitamente */}
+      <div className="bg-white w-full max-w-lg h-fit max-h-[90vh] rounded-[2rem] shadow-2xl relative flex flex-col">
         
         {/* Botão de Fechar discreto */}
-        <button onClick={onClose} className="absolute top-5 right-5 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all z-50">&times;</button>
+        <button 
+          onClick={onClose} 
+          className="absolute top-4 right-4 w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-200 transition-all z-50"
+        >
+          &times;
+        </button>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+        {/* 🟢 CORREÇÃO: overflow-y-auto movido para cá para garantir o scroll interno sem quebrar o layout */}
+        <div className="overflow-y-auto p-4 sm:p-8 w-full">
           {clientSecret ? (
             <div className="animate-in fade-in zoom-in-95 duration-500">
               <EmbeddedCheckoutProvider stripe={stripePromise} options={{ clientSecret }}>

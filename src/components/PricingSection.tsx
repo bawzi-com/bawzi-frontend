@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Lock, Check } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 
@@ -13,55 +13,48 @@ interface PricingSectionProps {
 
 export default function PricingSection({ onRegister, onUpgrade, currentTier: propCurrentTier }: PricingSectionProps) {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-  // ESTADOS
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [selectedTier, setSelectedTier] = useState<number>(1); 
   const [stripeSecret, setStripeSecret] = useState<string | null>(null); 
-  
-  // 🟢 ESTADO INTELIGENTE DO TIER (Começa no 0 = Visitante)
   const [activeTier, setActiveTier] = useState<number>(propCurrentTier ?? 0);
 
-  // 🟢 AUTO-BUSCA: Deteta automaticamente o nível se acedido via Menu
+  // 🟢 FUNÇÃO DE ATUALIZAÇÃO REUTILIZÁVEL
+  const refreshTier = useCallback(async () => {
+    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/users/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.tier !== undefined) {
+        setActiveTier(data.tier);
+        // Atualiza o localStorage para garantir que outras partes do app vejam a mudança
+        localStorage.setItem('user_tier', String(data.tier));
+      }
+    } catch (error) {
+      console.error("Erro ao atualizar tier", error);
+    }
+  }, [API_URL]);
+
   useEffect(() => {
-    // Se o pai (ex: Dashboard) já passar a prop corretamente, usamos a prop.
     if (propCurrentTier !== undefined && propCurrentTier > 0) {
       setActiveTier(propCurrentTier);
-      return;
+    } else {
+      refreshTier();
     }
-
-    // Se não foi passada prop (ex: página pública), tenta buscar o tier real
-    const fetchRealTier = async () => {
-      const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
-      if (!token) return; // Utilizador deslogado, mantém tier 0
-
-      try {
-        const res = await fetch(`${API_URL}/api/users/me`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await res.json();
-        if (res.ok && data.tier !== undefined) {
-          setActiveTier(data.tier);
-        }
-      } catch (error) {
-        console.error("Erro ao detetar tier automático", error);
-      }
-    };
-
-    fetchRealTier();
-  }, [propCurrentTier, API_URL]);
+  }, [propCurrentTier, refreshTier]);
 
   const handleRegisterClick = () => {
-    if (onRegister) {
-      onRegister(); 
-    } else {
-      router.push('/login'); 
-    }
+    if (onRegister) onRegister(); 
+    else router.push('/login'); 
   };
 
-  // GESTÃO DE ASSINATURA (Portal do Cliente Stripe)
   const handleManageSubscription = async () => {
     setIsCheckoutLoading(true);
     try {
@@ -73,27 +66,29 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
           'Content-Type': 'application/json'
         }
       });
-      
       const data = await res.json();
-      if (res.ok && data.url) {
-        window.location.href = data.url; 
-      } else {
+      if (res.ok && data.url) window.location.href = data.url; 
+      else {
         setIsCheckoutLoading(false);
         alert(data.detail || "Erro ao abrir faturamento.");
       }
     } catch (error) {
       setIsCheckoutLoading(false);
-      alert("Erro de conexão ao tentar acessar o faturamento.");
+      alert("Erro de conexão.");
     }
   };
 
-  // UPGRADE DE PLANO
   const handleUpgradeClick = async (tier: number) => {
+    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
     setSelectedTier(tier);
     setIsCheckoutLoading(true); 
     
     try {
-      const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
       const res = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
         method: 'POST',
         headers: { 
@@ -102,7 +97,6 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         },
         body: JSON.stringify({ tier })
       });
-      
       const data = await res.json();
 
       if (res.ok) {
@@ -118,7 +112,8 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       }
     } catch (error) {
       setIsCheckoutLoading(false);
-      alert("Erro ao processar plano. Tente novamente.");
+      alert("Sessão expirada. Por favor realize o login novamente.");
+      router.push('/login');
     }
   };
 
@@ -293,6 +288,12 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         onClose={() => {
           setShowUpgradeModal(false);
           setStripeSecret(null);
+          
+          // 🟢 GATILHO COM DELAY: Dá 3 segundos para o Stripe processar o Webhook no backend
+          // antes de tentar buscar o novo plano do utilizador.
+          setTimeout(() => {
+            refreshTier();
+          }, 3000);
         }} 
         tier={selectedTier} 
         clientSecret={stripeSecret} 
