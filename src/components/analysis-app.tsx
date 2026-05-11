@@ -297,7 +297,7 @@ export default function AnalysisApp() {
           const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
           const headers = { 'Authorization': `Bearer ${savedToken}` };
 
-          // 🟢 BUSCA DUPLA: Utilizador e Workspace em paralelo
+          // 🟢 Faz a busca dupla: Utilizador + Workspace
           const [userRes, wsRes] = await Promise.all([
             fetch(`${API_URL}/api/users/me`, { headers }),
             fetch(`${API_URL}/api/workspace/details`, { headers })
@@ -307,25 +307,27 @@ export default function AnalysisApp() {
             const uData = await userRes.json();
             const wData = await wsRes.json();
 
-            // 🟢 PRIORIDADE TOTAL: O Nível vem do Workspace (wData)
-            const tierReal = wData.tier || 1;
+            // Pega o Tier Real do Workspace (ou do utilizador como fallback)
+            const tierReal = wData.tier || uData.tier || 1;
             
             setToken(savedToken);
-            setUserTier(tierReal); // Atualiza o estado local do Radar
-            
-            // Atualiza o cache para o Header ler o valor correto
+            setUserTier(tierReal);
             localStorage.setItem('bawzi_tier', String(tierReal));
 
+            // 🟢 Injeta a lista de empresas (companies) que vem do Workspace
             const userDataInfo = { 
               name: uData.name || uData.nome, 
               email: uData.email,
-              tier: tierReal, // Garante que o objeto salvo também tem o nível certo
-              companies: wData.companies || [] 
+              tier: tierReal,
+              workspace_users_count: wData.workspace_users_count,
+              vagas_totais: wData.vagas_totais,
+              companies: wData.companies || [] // Aqui a magia acontece!
             };
-            
+
+            setUserData(userDataInfo); // Passa para o UserProfileCard
             localStorage.setItem('bawzi_user', JSON.stringify(userDataInfo));
 
-            // DISPARA O EVENTO: Força o Header a atualizar sem precisar de F5
+            // Avisa o Header lá no topo para atualizar a estrela
             window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: tierReal } }));
           }
         } catch (err) {
@@ -334,6 +336,7 @@ export default function AnalysisApp() {
       }
       setIsCheckingAuth(false);
     };
+    
     loadUser();
   }, []);
 
