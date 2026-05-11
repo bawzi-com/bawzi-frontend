@@ -3,8 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
-import CompanyProfileForm from './CompanyProfileForm';
-import Image from 'next/image';
+import Image from 'next/image'
 import UserProfileCard from './UserProfileCard';
 import BawziShadowSimulator from '../components/BawziShadowSimulator';
 import ReverseEngineeringBlock from '../components/ReverseEngineeringBlock'; 
@@ -16,6 +15,8 @@ import PncpSearch from '../components/PncpSearch';
 import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
 import AuthModal from './AuthModal';
+import PremiumLock from '../components/PremiumLock';
+import CguCompliancePanel from '../components/CguCompliancePanel';
 
 const logout = () => {
   localStorage.clear();
@@ -73,19 +74,6 @@ interface AnalysisResult {
   created_at?: string;
   parecer_especialista?: string;
   pegadinha?: PegadinhaData;
-}
-
-interface CndDetail {
-  orgao: string;
-  status: string;
-  vencimento: string;
-}
-
-interface CndData {
-  cnpj: string;
-  risco_geral: string;
-  certidoes_pendentes: number;
-  detalhes: CndDetail[];
 }
 
 interface PegadinhaData {
@@ -166,9 +154,8 @@ export default function AnalysisApp() {
   const requiresAuth = (!token) && (hasUsedFreeTrial);
 
   // ==========================================
-  // ESTADOS DO RADAR FISCAL (CND)
+  // ESTADOS DO RADAR FISCAL E DE CONCORRÊNCIA
   // ==========================================
-  const [cndData, setCndData] = useState<CndData | null>(null);
   const [isLoadingCnd, setIsLoadingCnd] = useState(false);
 
   // ==========================================
@@ -180,6 +167,8 @@ export default function AnalysisApp() {
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
   const [provider, setProvider] = useState<string>('openai');
   const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
+  const currentTier = Math.max(userTier, userData?.active_workspace?.tier || 1);
+
 
   const loadingMessages = [
     { 
@@ -241,8 +230,6 @@ export default function AnalysisApp() {
             const wsData = await wsRes.json();
             const companyData = await companyRes.json();
 
-            const currentTier = wsData.tier !== undefined ? wsData.tier : (userDataInfo.tier !== undefined ? userDataInfo.tier : 1);
-
             if (isSuccessReturn && currentTier === 1 && attemptsLeft > 0) {
               console.log(`⏳ Aguardando confirmação do pagamento... (Tentativas restantes: ${attemptsLeft})`);
               setTimeout(() => fetchWithRetry(attemptsLeft - 1), 2000);
@@ -276,47 +263,6 @@ export default function AnalysisApp() {
   }, [API_URL]);
 
   useEffect(() => {
-    const cnpj = userData?.company?.cnpj;
-    
-    if (!token || !cnpj) return; 
-
-    const abortController = new AbortController();
-    
-    setIsLoadingCnd(true);
-    const cleanCnpj = cnpj.replace(/\D/g, '');
-    
-    fetch(`${API_URL.replace(/\/$/, '')}/api/company/cnd/${cleanCnpj}`, {
-      headers: { 'Authorization': `Bearer ${token}` },
-      signal: abortController.signal 
-    })
-    .then(async res => {
-      if (!res.ok) {
-        throw new Error(`Erro na API: ${res.status}`);
-      }
-      return res.json();
-    })
-    .then(data => {
-      if (!data.detail) {
-        setCndData(data);
-      } else {
-        console.warn("Aviso da API ao buscar CND:", data.detail);
-      }
-    })
-    .catch(err => {
-      if (err.name !== 'AbortError') {
-        console.error("Erro ao buscar CNDs:", err);
-      }
-    })
-    .finally(() => {
-      setIsLoadingCnd(false);
-    });
-
-    return () => {
-      abortController.abort();
-    };
-  }, [userData?.company?.cnpj, token, API_URL]);
-
-  useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     if (isAnalyzing) {
       timeoutId = setTimeout(() => {
@@ -348,16 +294,42 @@ export default function AnalysisApp() {
       const savedToken = localStorage.getItem('bawzi_token');
       if (savedToken) {
         try {
-          const profile = await fetchUserProfile(savedToken);
-          setToken(savedToken);
-          setUserTier(profile.tier);
-          const userDataInfo = { 
-            name: profile.name || profile.nome, 
-            email: profile.email 
-          };
-          localStorage.setItem('bawzi_user', JSON.stringify(userDataInfo));
+          const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+          const headers = { 'Authorization': `Bearer ${savedToken}` };
+
+          // 🟢 BUSCA DUPLA: Utilizador e Workspace em paralelo
+          const [userRes, wsRes] = await Promise.all([
+            fetch(`${API_URL}/api/users/me`, { headers }),
+            fetch(`${API_URL}/api/workspace/details`, { headers })
+          ]);
+
+          if (userRes.ok && wsRes.ok) {
+            const uData = await userRes.json();
+            const wData = await wsRes.json();
+
+            // 🟢 PRIORIDADE TOTAL: O Nível vem do Workspace (wData)
+            const tierReal = wData.tier || 1;
+            
+            setToken(savedToken);
+            setUserTier(tierReal); // Atualiza o estado local do Radar
+            
+            // Atualiza o cache para o Header ler o valor correto
+            localStorage.setItem('bawzi_tier', String(tierReal));
+
+            const userDataInfo = { 
+              name: uData.name || uData.nome, 
+              email: uData.email,
+              tier: tierReal, // Garante que o objeto salvo também tem o nível certo
+              companies: wData.companies || [] 
+            };
+            
+            localStorage.setItem('bawzi_user', JSON.stringify(userDataInfo));
+
+            // DISPARA O EVENTO: Força o Header a atualizar sem precisar de F5
+            window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: tierReal } }));
+          }
         } catch (err) {
-          console.error("Token inválido");
+          console.error("Erro na sincronização de dados:", err);
         }
       }
       setIsCheckingAuth(false);
@@ -1343,10 +1315,8 @@ useEffect(() => {
                           const extrairMaiorDinheiro = (textoBase: any): number => {
                             if (!textoBase) return 0;
                             if (typeof textoBase === 'number' && textoBase > 0) return textoBase;
-                            
                             const texto = String(textoBase);
                             const matches = [...texto.matchAll(/R\$\s*([\d\.,]+)/g)];
-                            
                             if (matches.length > 0) {
                               let maiorValor = 0;
                               matches.forEach(m => {
@@ -1355,9 +1325,6 @@ useEffect(() => {
                               });
                               return maiorValor;
                             }
-                            
-                            const floatDireto = parseFloat(texto);
-                            if (!isNaN(floatDireto) && floatDireto > 0) return floatDireto;
                             return 0;
                           };
 
@@ -1369,33 +1336,43 @@ useEffect(() => {
                           if (!pricing || pricing.desagioPreditivoOrgao === undefined) return null;
 
                           return (
-                            <div className="space-y-12 print:hidden">
+                            <div className="space-y-4 print:hidden">
                               
-                              {/* BLOCO ORIGINAL DO SIMULADOR (ANTIGO PREÇO E ENGENHARIA) */}
-                              <div className="relative border border-slate-200 rounded-2xl p-2">
-                                <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
-                                  <span className="text-lg">💰</span>
-                                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Simulador de Lances</h3>
-                                </div>
-                                <BawziShadowSimulator 
-                                  desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
-                                  nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
-                                  perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
-                                  valorReferenciaInicial={valorEstimado} 
-                                  engenhariaReversa={result?.pricing_intelligence?.engenharia_reversa}
-                                  userTier={userTier} 
-                                  onUpgradeClick={() => setShowUpgradeModal(true)} 
-                                />
-                              </div>
-
-                              {/* 🟢 O NOVO BLOCO DE ENGENHARIA REVERSA ISOLADO AQUI */}
-                              <ReverseEngineeringBlock
-                                userTier={userTier}
-                                valorReferencia={valorEstimado}
-                                desagio={pricing.desagioPreditivoOrgao}
-                                engenhariaData={pricing.engenharia_reversa}
+                              {/* 🔒 BLOQUEIO DO SIMULADOR (Só liberta se Tier >= 2) */}
+                              <PremiumLock 
+                                isLocked={userTier < 2} 
+                                featureTitle="Simulador Tático de Lances" 
+                                requiredTierName="Nível 2 (Essencial)" 
                                 onUpgradeClick={() => setShowUpgradeModal(true)}
-                              />
+                              >
+                                <div className="relative border border-slate-200 rounded-2xl p-2 bg-white">
+                                  <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
+                                    <span className="text-lg">💰</span>
+                                    <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Simulador de Lances</h3>
+                                  </div>
+                                  <BawziShadowSimulator 
+                                    desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
+                                    nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
+                                    perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
+                                    valorReferenciaInicial={valorEstimado} 
+                                  />
+                                </div>
+                              </PremiumLock>
+
+                              {/* 🔒 BLOQUEIO DA ENGENHARIA REVERSA (Só liberta se Tier >= 4) */}
+                              <PremiumLock 
+                                isLocked={userTier < 4} 
+                                featureTitle="Raio-X do Adversário" 
+                                requiredTierName="Nível 4 (Dominador)" 
+                                onUpgradeClick={() => setShowUpgradeModal(true)}
+                              >
+                                <ReverseEngineeringBlock
+                                  valorReferencia={valorEstimado}
+                                  desagio={pricing.desagioPreditivoOrgao}
+                                  engenhariaData={pricing.engenharia_reversa}
+                                />
+                              </PremiumLock>
+
                             </div>
                           );
                         })()}
@@ -1435,6 +1412,8 @@ useEffect(() => {
                                       let nomeEmpresa = "Empresa não identificada";
                                       let vitorias = "0";
                                       let cnpj = "";
+                                      let probabilidade = "";
+                                      let forca = "";
                                       let dadosParaModal = item;
 
                                       if (typeof item === 'string') {
@@ -1466,6 +1445,18 @@ useEffect(() => {
                                         nomeEmpresa = item.empresa || item.nome || item.razao_social || "Empresa não identificada";
                                         vitorias = item.vitorias || item.quantidade_vitorias || "0";
                                         cnpj = item.cnpj || "";
+                                        probabilidade = item.probabilidade || "";
+                                        forca = item.forca || item.nivel_forca || "";
+                                        
+                                        dadosParaModal = { 
+                                          ...item, 
+                                          nome: nomeEmpresa, 
+                                          vitorias, 
+                                          cnpj, 
+                                          probabilidade, 
+                                          forca, 
+                                          uf: item.uf || (tipo === 'nacional' ? 'Nacional' : (result.uf || 'GO')) 
+                                        };
                                       }
 
                                       return (
@@ -1477,7 +1468,24 @@ useEffect(() => {
                                           <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-indigo-600 font-black shrink-0 border border-indigo-100 shadow-sm text-[10px] group-hover:bg-indigo-600 group-hover:text-white transition-colors">{index + 1}</span>
                                           <div className="flex-1 min-w-0 flex flex-col">
                                             <span className="truncate uppercase tracking-tight">{nomeEmpresa}</span>
-                                            <span className="text-[9px] text-slate-400 group-hover:text-indigo-500 font-mono mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity">Ver Raio-X &rarr;</span>
+                                            
+                                            {/* 🟢 NOVAS ETIQUETAS: PROBABILIDADE E FORÇA */}
+                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                              {probabilidade && (
+                                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-black border border-sky-200">
+                                                  Prob: {probabilidade}
+                                                </span>
+                                              )}
+                                              {forca && (
+                                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-black border border-rose-200">
+                                                  Força: {forca}
+                                                </span>
+                                              )}
+                                              <span className="text-[9px] text-slate-400 group-hover:text-indigo-500 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
+                                                Ver Raio-X &rarr;
+                                              </span>
+                                            </div>
+                                            
                                           </div>
                                           {Number(vitorias) > 0 && (
                                             <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-indigo-200/50">
@@ -1636,32 +1644,44 @@ useEffect(() => {
                           </div>
                         )}
 
-                        <div className="mt-12 p-6 md:p-8 bg-slate-50 rounded-[2rem] border border-slate-200 border-dashed print:hidden">
-                          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                            <div className="flex-1 text-center md:text-left">
-                              <h4 className="text-base font-black text-slate-900 mb-2 flex items-center justify-center md:justify-start gap-2">
-                                <span className="text-xl">⚖️</span> Exportar Parecer Técnico-Jurídico
-                              </h4>
-                              <p className="text-sm text-slate-500 font-medium">
-                                Gere uma minuta formal em PDF baseada na análise neural da Bawzi.
-                              </p>
-                              
-                              <div className="mt-3">
-                                <span className="inline-flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg font-black border border-amber-200 uppercase tracking-widest shadow-sm">
-                                  <span>⚠️</span> Requer validação de um advogado
-                                </span>
-                              </div>
-                            </div>
-                            
-                            <button
-                              onClick={handleExportPDF}
-                              className="w-full md:w-auto px-8 py-4 bg-slate-900 text-white font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-800 hover:-translate-y-0.5 transition-all shadow-md flex items-center justify-center gap-3 shrink-0"
-                            >
-                              <FileText className="w-4 h-4" />
-                              Gerar Parecer (PDF)
-                            </button>
-                          </div>
-                        </div>
+                        {/* 3. 🔒 BLOQUEIO DO PARECER JURÍDICO (Só liberta se Tier >= 4) */}
+                              <PremiumLock 
+                                isLocked={currentTier < 4} 
+                                featureTitle="Parecer Técnico-Jurídico (PDF)" 
+                                requiredTierName="Nível 4 (Dominador)" 
+                                onUpgradeClick={() => setShowUpgradeModal(true)}
+                              >
+                                <div className="bg-white rounded-[2rem] border-2 border-slate-100 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm mt-4">
+                                  
+                                  <div className="flex items-start gap-5 flex-1">
+                                    <div className="w-14 h-14 rounded-2xl bg-slate-950 flex items-center justify-center shrink-0 shadow-xl text-2xl border border-slate-800">
+                                      ⚖️
+                                    </div>
+                                    <div>
+                                      <h3 className="font-black text-slate-900 text-xl tracking-tight mb-1">Exportar Parecer Técnico-Jurídico</h3>
+                                      <p className="text-sm font-medium text-slate-500 leading-relaxed mb-4 max-w-xl">
+                                        Gere uma minuta formal em PDF baseada na análise neural da Bawzi. Ideal para anexar a impugnações ou recursos administrativos.
+                                      </p>
+                                      
+                                      {/* Alerta de Validação */}
+                                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200/60 rounded-lg">
+                                        <span className="text-amber-500 text-sm">⚠️</span>
+                                        <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Requer validação final de um advogado</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Botão de Exportação */}
+                                  <button 
+                                    onClick={() => alert("A iniciar geração da minuta em PDF...")} // Substitua pela sua função real de gerar PDF
+                                    className="w-full md:w-auto px-8 py-4 bg-slate-900 hover:bg-violet-600 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
+                                  >
+                                    <span className="text-lg">📄</span> 
+                                    GERAR PARECER (PDF)
+                                  </button>
+
+                                </div>
+                              </PremiumLock>
 
                         <div className="hidden print:block bg-white p-10 font-serif text-slate-900 leading-relaxed text-sm">
                           <div className="border-b-2 border-slate-900 pb-4 mb-6">
@@ -1789,13 +1809,8 @@ useEffect(() => {
                   </h3>
                   <div className="space-y-4">
                      <UserProfileCard 
-                        user={{
-                          name: userData.name,
-                          email: userData.email,
-                          tier: userTier,
-                          workspace_users_count: userData.workspace_users_count,
-                          company: userData.company
-                        }}
+                        user={userData} 
+                        currentTier={currentTier} 
                       />
                   </div>
                 </div>
@@ -2006,6 +2021,20 @@ useEffect(() => {
                     {selectedCompetitor.uf || 'N/A'}
                   </p>
                 </div>
+                
+                {selectedCompetitor.probabilidade && (
+                  <div className="p-3 bg-sky-50 rounded-xl border border-sky-100">
+                    <p className="text-[10px] font-bold text-sky-600 uppercase tracking-wider mb-1">Probabilidade</p>
+                    <p className="text-sm font-bold text-sky-900">{selectedCompetitor.probabilidade}</p>
+                  </div>
+                )}
+                
+                {selectedCompetitor.forca && (
+                  <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                    <p className="text-[10px] font-bold text-rose-600 uppercase tracking-wider mb-1">Nível de Força</p>
+                    <p className="text-sm font-bold text-rose-900">{selectedCompetitor.forca}</p>
+                  </div>
+                )}
               </div>
 
               {(selectedCompetitor.porte || selectedCompetitor.municipio) && (
@@ -2111,9 +2140,27 @@ useEffect(() => {
 
       <UpgradeModal 
         isOpen={showUpgradeModal} 
-        onClose={() => {
+        onClose={async () => {
           setShowUpgradeModal(false);
           setStripeSecret(null); 
+          
+          // 🟢 FORÇA O SYNC QUANDO O MODAL FECHA NA TELA DE ANÁLISE
+          const currentToken = localStorage.getItem('bawzi_token');
+          if (currentToken) {
+            try {
+              const res = await fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
+                headers: { 'Authorization': `Bearer ${currentToken}` }
+              });
+              const data = await res.json();
+              if (res.ok && data.tier !== undefined) {
+                localStorage.setItem('user_tier', String(data.tier));
+                localStorage.setItem('bawzi_tier', String(data.tier));
+                window.location.reload(); // Destranca os cadeados instantaneamente
+              }
+            } catch (e) {
+              console.error("Erro no sync após fechar modal", e);
+            }
+          }
         }} 
         tier={selectedTier} 
         clientSecret={stripeSecret} 

@@ -29,7 +29,7 @@ export function TierProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const carregarConfiguracoes = async () => {
       try {
-        const response = await fetch('/api/tiers/config');
+        const response = await fetch('/tiers/config');
         if (!response.ok) return;
 
         const data = await response.json();

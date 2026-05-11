@@ -10,7 +10,6 @@ export default function Header() {
   
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
-  // 🟢 NOVO: Estado para guardar nome e email
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
 
   const [showNotifMenu, setShowNotifMenu] = useState(false);
@@ -37,29 +36,43 @@ export default function Header() {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-useEffect(() => {
-  const syncData = () => {
-    const savedToken = localStorage.getItem('bawzi_token');
-    const savedTier = localStorage.getItem('bawzi_tier');
-    const savedUser = localStorage.getItem('bawzi_user');
+  useEffect(() => {
+    // 1. Função para carregar os dados iniciais do LocalStorage
+    const syncData = () => {
+      const savedToken = localStorage.getItem('bawzi_token');
+      const savedTier = localStorage.getItem('bawzi_tier');
+      const savedUser = localStorage.getItem('bawzi_user');
 
-    if (savedToken) setToken(savedToken);
-    if (savedTier) setUserTier(savedTier);
-    if (savedUser) {
-      try { setUserData(JSON.parse(savedUser)); } catch (e) {}
-    }
-  };
+      if (savedToken) setToken(savedToken);
+      if (savedTier) setUserTier(savedTier);
+      if (savedUser) {
+        try { setUserData(JSON.parse(savedUser)); } catch (e) {}
+      }
+    };
 
-  syncData();
+    syncData();
 
-  window.addEventListener('storage', syncData);
-  return () => window.removeEventListener('storage', syncData);
-}, [pathname]);
+    // 2. Escuta mudanças feitas noutras abas do navegador
+    window.addEventListener('storage', syncData);
+
+    // 🟢 3. O SEGREDO: Escuta o evento Customizado disparado pelo Profile/Auto-Sync
+    const handleTierUpdate = (e: any) => {
+      if (e.detail && e.detail.tier) {
+        setUserTier(String(e.detail.tier));
+      }
+    };
+    window.addEventListener('bawzi_update', handleTierUpdate);
+
+    return () => {
+      window.removeEventListener('storage', syncData);
+      window.removeEventListener('bawzi_update', handleTierUpdate);
+    };
+  }, [pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('bawzi_token');
     localStorage.removeItem('bawzi_tier');
-    localStorage.removeItem('bawzi_user'); // Limpa também o utilizador
+    localStorage.removeItem('bawzi_user'); 
     setToken(null);
     router.push('/');
     window.location.reload();
@@ -136,7 +149,6 @@ useEffect(() => {
               {/* 🟢 AVATAR COM TOAST DINÂMICO */}
               <div className="relative group cursor-pointer">
                 <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-violet-500/20">
-                  {/* Pega a inicial do nome Marcelo ou usa B como fallback */}
                   {userData?.name ? userData.name.charAt(0).toUpperCase() : 'B'}
                 </Link>
 
@@ -145,11 +157,9 @@ useEffect(() => {
                   <div className="bg-slate-900 rounded-2xl p-4 shadow-2xl border border-slate-700 relative">
                     <div className="absolute -top-2 right-4 w-4 h-4 bg-slate-900 border-t border-l border-slate-700 transform rotate-45"></div>
                     <div className="relative z-10 flex flex-col text-left">
-                      {/* 🟢 NOME REAL DO MARCELO AQUI */}
                       <span className="text-sm font-black text-white truncate max-w-[180px]">
                         {userData?.name || 'Utilizador Bawzi'}
                       </span>
-                      {/* 🟢 EMAIL REAL AQUI */}
                       <span className="text-[10px] font-medium text-slate-400 truncate max-w-[180px] mt-0.5">
                         {userData?.email || 'Definições de Perfil'}
                       </span>
