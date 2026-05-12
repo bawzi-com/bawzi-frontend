@@ -57,6 +57,7 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
   const [loadingMocks, setLoadingMocks] = useState(true);
   const [outrasCertidoes, setOutrasCertidoes] = useState<CertidaoStatus[]>([]);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   // ====================================================================
   // 1. BUSCA: API DA CGU COM CACHE
   // ====================================================================
@@ -108,7 +109,7 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
     else setLoadingFederal(true);
     
     try {
-      const res = await fetch(`http://localhost:8001/api/certidoes/federal/agent/${cnpjLimpo}`);
+      const res = await fetch(`${API_URL}/agente-federal/api/certidoes/federal/agent/${cnpjLimpo}`);
       if (!res.ok) throw new Error('Falha no Agente');
       
       const data = await res.json();
@@ -159,7 +160,7 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
     else setLoadingTst(true);
     
     try {
-      const res = await fetch(`http://localhost:8002/api/certidoes/trabalhista/agent/${cnpjLimpo}`);
+      const res = await fetch(`${API_URL}/agente-trabalhista/api/certidoes/trabalhista/agent/${cnpjLimpo}`);
       if (!res.ok) throw new Error('Falha no Agente TST');
       
       const data = await res.json();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import CguCompliancePanel from './CguCompliancePanel';
+import CguCompliancePanel from './CompliancePanel';
 import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 
