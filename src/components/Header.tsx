@@ -179,9 +179,12 @@ export default function Header() {
 
             </div>
           ) : (
-             <Link href="/login" className="bg-slate-950 !text-white px-6 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-800 transition-all shadow-lg">
-              Acessar a Conta
-            </Link>
+             <button 
+              onClick={() => window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }))}
+              className="px-4 py-2 bg-slate-900 text-white rounded-xl font-black text-sm"
+            >
+              Entrar
+            </button>
           )}
         </div>
       </div>

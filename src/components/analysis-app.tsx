@@ -16,7 +16,7 @@ import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
 import AuthModal from './AuthModal';
 import PremiumLock from '../components/PremiumLock';
-import CguCompliancePanel from '../components/CguCompliancePanel';
+import CompliancePanel from '../components/CompliancePanel';
 
 const logout = () => {
   localStorage.clear();
@@ -91,7 +91,18 @@ const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
 const extrairValorNumerico = (val: string | number | undefined): number => {
   if (typeof val === 'number') return val;
   if (!val) return 0;
-  const num = Number(val.toString().replace(/[^\d,-]/g, '').replace(',', '.'));
+
+  let str = val.toString().trim();
+
+  if (str.includes(',')) {
+    str = str.replace(/[^\d,-]/g, '');
+    str = str.replace(',', '.');
+  } 
+  else {
+    str = str.replace(/[^\d.-]/g, '');
+  }
+
+  const num = Number(str);
   return isNaN(num) ? 0 : num;
 };
 
@@ -353,32 +364,50 @@ export default function AnalysisApp() {
   }, []);
 
   const [history, setHistory] = useState<any[]>([]);
-const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
-useEffect(() => {
-  if (selectedCompetitor?.cnpj) {
-    setLoadingHistory(true);
+  useEffect(() => {
+    if (selectedCompetitor?.cnpj) {
+      setLoadingHistory(true);
+      
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const cleanCnpj = selectedCompetitor.cnpj.replace(/\D/g, '');
+      
+      fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${cleanCnpj}`)
+        .then(res => {
+          if (!res.ok) throw new Error("Erro na rota");
+          return res.json();
+        })
+        .then(data => {
+          setHistory(data);
+        })
+        .catch(err => {
+          console.error("Erro ao buscar histórico:", err);
+          setHistory([]);
+        })
+        .finally(() => {
+          setLoadingHistory(false);
+        });
+    }
+  }, [selectedCompetitor]);
+
+  // ==========================================
+  // OUVINTE DE EVENTOS GLOBAIS (Header -> Modal)
+  // ==========================================
+  useEffect(() => {
+    const handleOpenAuth = (e: any) => {
+      // Pega o modo ('login' ou 'register') que o Header pediu
+      setAuthMode(e.detail || 'login'); 
+      setShowAuthModal(true); // Abre o Modal Moderno!
+    };
+
+    // Fica à escuta do clique lá no Header
+    window.addEventListener('bawzi_open_auth', handleOpenAuth);
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const cleanCnpj = selectedCompetitor.cnpj.replace(/\D/g, '');
-    
-    fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${cleanCnpj}`)
-      .then(res => {
-        if (!res.ok) throw new Error("Erro na rota");
-        return res.json();
-      })
-      .then(data => {
-        setHistory(data);
-      })
-      .catch(err => {
-        console.error("Erro ao buscar histórico:", err);
-        setHistory([]);
-      })
-      .finally(() => {
-        setLoadingHistory(false);
-      });
-  }
-}, [selectedCompetitor]);
+    return () => {
+      window.removeEventListener('bawzi_open_auth', handleOpenAuth);
+    };
+  }, []);
 
   // ==========================================
   // HANDLERS E FUNÇÕES DE AÇÃO
@@ -713,7 +742,6 @@ useEffect(() => {
       printWindow.print();
     }, 300);
   };
-
 
   // ==========================================
   // RENDERIZAÇÃO VISUAL ESTRATÉGICA
@@ -1414,6 +1442,7 @@ useEffect(() => {
                                   <div key={tipo} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {(tipo === 'nacional' ? result.concorrentes_provaveis : result.concorrentes_regionais)?.slice(0, 6).map((item: any, index: number) => {
                                       
+                                      // 1. DECLARAÇÃO INICIAL DAS VARIÁVEIS (É isto que resolve o erro TS2304)
                                       let nomeEmpresa = "Empresa não identificada";
                                       let vitorias = "0";
                                       let cnpj = "";
@@ -1421,13 +1450,14 @@ useEffect(() => {
                                       let forca = "";
                                       let dadosParaModal = item;
 
+                                      // 2. EXTRAÇÃO DOS DADOS (String vs Objeto)
                                       if (typeof item === 'string') {
                                         let extraidoCnpj = "";
-                                        
                                         const match = item.match(/(.*?)\s*\(([\d]+)\s*vitórias?\)(?:\s*-\s*CNPJ:\s*([\d]+))?/i);
+                                        
                                         if (match) {
                                           nomeEmpresa = match[1].trim();
-                                          vitorias = match[2];
+                                          vitorias = match[2] || "0";
                                           extraidoCnpj = match[3] || "";
                                         } else {
                                           nomeEmpresa = item;
@@ -1464,8 +1494,46 @@ useEffect(() => {
                                         };
                                       }
 
-                                      // 🟢 Extração Limpa do CNPJ para a CGU
-                                      const cleanCnpj = cnpj ? cnpj.replace(/\D/g, '') : null;
+                                      // 🟢 3. MOTOR DE INFERÊNCIA GRANULAR E COMPLIANCE
+                                      const cleanCnpj = cnpj ? String(cnpj).replace(/\D/g, '') : null;
+                                      let calcForca = forca;
+                                      let calcProb = probabilidade;
+                                      
+                                      // Extrai apenas os números com precisão (evita bugs se vier "2 vitórias" na string)
+                                      const numVitorias = parseInt(String(vitorias).replace(/\D/g, ''), 10) || 0;
+
+                                      // Se a IA não mandou as variáveis mastigadas, aplicamos o algoritmo Bawzi
+                                      if (!calcForca || !calcProb) {
+                                        // Fórmula algorítmica: Probabilidade base cresce com as vitórias (teto de 95%)
+                                        const taxaSucesso = Math.min(95, 18 + (numVitorias * 7)); 
+                                        calcProb = `~${taxaSucesso}%`;
+
+                                        if (numVitorias === 0) { 
+                                          calcForca = "Iniciante"; 
+                                          calcProb = "< 15%"; 
+                                        } else if (numVitorias === 1) { 
+                                          calcForca = "Oportunista"; 
+                                        } else if (numVitorias === 2) { 
+                                          calcForca = "Ameaça Leve"; 
+                                        } else if (numVitorias >= 3 && numVitorias <= 5) { 
+                                          calcForca = "Habitual"; 
+                                        } else if (numVitorias >= 6 && numVitorias <= 10) { 
+                                          calcForca = "Competidor Feroz"; 
+                                        } else { 
+                                          calcForca = "Predador Dominante"; 
+                                          calcProb = "> 90%"; 
+                                        }
+                                      }
+
+                                      const getPerigoColor = (nivel: string) => {
+                                        if (!nivel) return 'bg-slate-50 text-slate-500 border-slate-200';
+                                        const n = String(nivel).toLowerCase();
+                                        if (n.includes('predador') || n.includes('> 90') || n.includes('feroz') || n.includes('habitual') || parseInt(n.replace(/\D/g,'')) >= 50) 
+                                          return 'bg-rose-50 text-rose-700 border-rose-200';
+                                        if (n.includes('leve') || n.includes('oportunista') || parseInt(n.replace(/\D/g,'')) >= 25) 
+                                          return 'bg-amber-50 text-amber-700 border-amber-200';
+                                        return 'bg-slate-50 text-slate-500 border-slate-200';
+                                      };
 
                                       return (
                                         <div 
@@ -1489,21 +1557,15 @@ useEffect(() => {
                                                   <span className="text-[9px] font-bold text-slate-400">• CNPJ: {cnpj || 'N/A'}</span>
                                                 </div>
                                                 
-                                                {/* ETIQUETAS DE FORÇA */}
-                                                {(probabilidade || forca) && (
-                                                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                                    {probabilidade && (
-                                                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-black border border-sky-200">
-                                                        Prob: {probabilidade}
-                                                      </span>
-                                                    )}
-                                                    {forca && (
-                                                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-black border border-rose-200">
-                                                        Força: {forca}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                )}
+                                                {/* ETIQUETAS DE FORÇA E PROBABILIDADE */}
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+                                                  <span className={`text-[8.5px] px-2 py-1 rounded-md font-black uppercase tracking-wider border ${getPerigoColor(calcProb)}`}>
+                                                    🎯 Prob: {calcProb}
+                                                  </span>
+                                                  <span className={`text-[8.5px] px-2 py-1 rounded-md font-black uppercase tracking-wider border ${getPerigoColor(calcForca)}`}>
+                                                    ⚔️ Força: {calcForca}
+                                                  </span>
+                                                </div>
                                               </div>
                                             </div>
                                             
@@ -1515,17 +1577,22 @@ useEffect(() => {
                                             )}
                                           </div>
 
-                                          {/* 🟢 PAINEL DE COMPLIANCE CGU */}
+                                          {/* PAINÉIS DE COMPLIANCE */}
                                           {cleanCnpj && cleanCnpj.length >= 11 ? (
-                                            <div className="pt-3 border-t border-slate-100">
-                                              <CguCompliancePanel 
-                                                cnpj={cleanCnpj} 
-                                                companyName={nomeEmpresa} 
-                                              />
+                                            <div className="flex flex-col gap-1">
+                                              <div className="pt-3 border-t border-slate-100">
+                                                
+                                                {/* 🟢 O NOME NOVO ENTRA AQUI */}
+                                                <CompliancePanel 
+                                                  cnpj={cleanCnpj} 
+                                                  companyName={nomeEmpresa} 
+                                                />
+                                                
+                                              </div>
                                             </div>
                                           ) : (
                                             <div className="text-[9px] font-medium text-slate-400 italic px-3 py-2 bg-slate-50 rounded-lg text-center border border-slate-200 border-dashed mt-auto">
-                                              CNPJ necessário para consulta de Ficha Limpa (CGU).
+                                              CNPJ necessário para consulta do Radar de Habilitação.
                                             </div>
                                           )}
 
