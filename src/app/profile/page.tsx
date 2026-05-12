@@ -220,12 +220,12 @@ function ProfileContent() {
         </div>
 
         {/* ======================================================= */}
-        {/* LINHA 1: DADOS PESSOAIS E EMPRESA (2 COLUNAS)           */}
+        {/* ESTRUTURA VERTICAL: CONTA > EMPRESAS > SEGURANÇA       */}
         {/* ======================================================= */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start mb-8">
+        <div className="flex flex-col gap-8 mb-8">
           
-          {/* 🛡️ CARTÃO 1: CONFIGURAÇÕES DA CONTA (Apenas Nome e Email) */}
-          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col h-fit">
+          {/* 🛡️ CARTÃO 1: CONFIGURAÇÕES DA CONTA */}
+          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col w-full">
             <div className="flex items-center gap-4 mb-8">
               <div className="p-3 bg-slate-50 text-slate-700 rounded-2xl border border-slate-100">
                 <User size={22} />
@@ -236,45 +236,38 @@ function ProfileContent() {
               </div>
             </div>
             
-            {/* O SEU FORMULÁRIO DE NOME E EMAIL AQUI */}
             <PersonalDataForm userData={userData} token={authToken} onUpdate={fetchData} />
           </div>
 
-          {/* 🏢 CARTÃO 2: EMPRESA VINCULADA */}
-          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col h-fit">
+          {/* 🏢 CARTÃO 2: EMPRESAS EM MONITORIZAÇÃO (WORKSPACE) */}
+          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col w-full">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
                   <Building2 size={22} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Empresa Vinculada</h2>
-                  <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Workspace Atual</p>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Empresas em Monitorização</h2>
+                  <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Slots do Workspace</p>
                 </div>
               </div>
             </div>
-            
-            {activeCnpj && (
-              <div className="mb-8">
-                <CguCompliancePanel 
-                  cnpj={activeCnpj} 
-                  companyName={activeCnpj === userData?.company?.cnpj ? userData?.company?.nome_fantasia : "Nova Consulta"} 
-                />
-              </div>
-            )}
 
             <div className="pt-8 border-t border-slate-100">
               <CompanyProfileForm 
                 token={authToken} 
                 userTier={userTier} 
                 companyData={userData?.companies} 
-                onCnpjDetected={(cnpj: string) => setActiveCnpj(cnpj)}
+                onCnpjDetected={(cnpj: string) => {
+                  setActiveCnpj(cnpj);
+                  localStorage.setItem('bawzi_active_cnpj', cnpj);
+                }}
                 onUpdate={fetchData}
               />
             </div>
           </div>
           
-        </div> {/* <-- FIM DO GRID DE 2 COLUNAS */}
+        </div>
 
 
         {/* ======================================================= */}

@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3 } from 'lucide-react';
+import CguCompliancePanel from './CguCompliancePanel';
+import { useRouter } from 'next/navigation';
+import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
+  const router = useRouter();
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -57,8 +60,14 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Erro ao buscar CNPJ');
-      setFormData({ ...formData, razao_social: data.razao_social || '', enquadramento: data.porte || '', capital_social: data.capital_social || '' });
-      if (onCnpjDetected) onCnpjDetected(cnpjLimpo);
+      
+      setFormData({ 
+        ...formData, 
+        razao_social: data.razao_social || '', 
+        enquadramento: data.porte || '', 
+        capital_social: data.capital_social || '' 
+      });
+            
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
     } finally {
@@ -90,7 +99,6 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     }
   };
 
-  // 🟢 NOVA FUNÇÃO PARA REMOVER EMPRESA
   const handleDelete = async (cnpj: string) => {
     if (!window.confirm("Remover esta empresa da sua monitorização?")) return;
     
@@ -151,37 +159,85 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
       {/* VIEW: LISTA DE EMPRESAS */}
       {view === 'list' && (
-        <div className="space-y-3">
+        <div className="space-y-5">
           {companiesList.map((emp) => (
-            <div key={emp.cnpj} className="group bg-white border border-slate-200 rounded-[1.5rem] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-indigo-200 transition-all">
-              <div className="flex items-center gap-4">
-                <div className="min-w-10 w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600">
-                  <Building2 size={20} />
+            <div 
+              key={emp.cnpj} 
+              className="group bg-white border border-slate-200 rounded-[1.5rem] p-5 flex flex-col gap-4 hover:border-indigo-300 hover:shadow-md transition-all duration-300"
+            >
+              
+              {/* === LINHA 1: DADOS E BOTÕES === */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                
+                {/* Dados da Empresa */}
+                <div className="flex items-center gap-4">
+                  <div className="min-w-[48px] w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                    <Building2 size={22} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight line-clamp-1">
+                      {emp.nome_fantasia || emp.razao_social || 'Empresa em Monitorização'}
+                    </h4>
+                    <p className="text-[10px] font-bold text-slate-400 mt-1">
+                      CNPJ: {emp.cnpj}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight line-clamp-1">{emp.nome_fantasia || emp.razao_social || 'Empresa'}</h4>
-                  <p className="text-[10px] font-bold text-slate-400">CNPJ: {emp.cnpj}</p>
+                
+                {/* Botões de Ação */}
+                <div className="flex items-center gap-2 w-full md:w-auto justify-end border-t border-slate-100 md:border-t-0 pt-4 md:pt-0">
+                  {/* === LINHA 1: DADOS E BOTÕES === */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      
+                      {/* Dados da Empresa... */}
+
+                      <div className="flex items-center gap-2 w-full md:w-auto justify-end border-t border-slate-100 md:border-t-0 pt-4 md:pt-0">
+                        <button 
+                          onClick={() => {
+                            // 🟢 3. AÇÃO DUPLA: Atualiza o estado e Redireciona
+                            if (onCnpjDetected) onCnpjDetected(emp.cnpj); 
+                            router.push('/workspace'); 
+                          }} 
+                          className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-600 hover:text-white transition-all flex-1 md:flex-none whitespace-nowrap"
+                        >
+                          <Activity size={16} /> Ver Radar
+                        </button>
+                        
+                        {/* Botões Editar e Remover... */}
+                      </div>
+                    </div>
+                  <button 
+                    onClick={() => handleEdit(emp)} 
+                    className="flex items-center justify-center p-2.5 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-200 hover:text-slate-800 transition-all shrink-0"
+                    title="Editar"
+                  >
+                    <Edit3 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(emp.cnpj)} 
+                    className="flex items-center justify-center p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-100 hover:text-rose-600 transition-all shrink-0"
+                    title="Remover Empresa"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                <button onClick={() => onCnpjDetected && onCnpjDetected(emp.cnpj)} className="px-3 py-1.5 bg-slate-50 text-[9px] font-black uppercase tracking-wider text-slate-500 rounded-lg hover:bg-slate-100 transition-colors">
-                  Ver Radar
-                </button>
-                <button onClick={() => handleEdit(emp)} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
-                  <Edit3 size={18} />
-                </button>
-                {/* 🟢 BOTÃO DE REMOVER AQUI */}
-                <button onClick={() => handleDelete(emp.cnpj)} className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
-                  <Trash2 size={18} />
-                </button>
+
+              {/* === LINHA 2: CGU COMPLIANCE EMBUTIDO === */}
+              <div className="pt-2">
+                <CguCompliancePanel 
+                  cnpj={emp.cnpj} 
+                  companyName={emp.nome_fantasia || emp.razao_social || 'Consulta Ativa'} 
+                />
               </div>
+
             </div>
           ))}
 
           {/* BOTÃO + CNPJ */}
           {slotsOcupados < vagasTotais && (
-            <button onClick={handleAddNew} className="w-full border-2 border-dashed border-slate-200 rounded-[1.5rem] p-6 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all group mt-2">
-              <div className="p-2 bg-slate-100 rounded-full group-hover:bg-white"><Plus size={20} /></div>
+            <button onClick={handleAddNew} className="w-full border-2 border-dashed border-slate-200 rounded-[1.5rem] p-5 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all mt-2">
+              <div className="p-2 bg-slate-100 rounded-full"><Plus size={20} /></div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em]">Adicionar Nova Empresa</span>
             </button>
           )}

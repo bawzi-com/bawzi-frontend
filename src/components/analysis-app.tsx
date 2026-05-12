@@ -296,6 +296,7 @@ export default function AnalysisApp() {
         try {
           const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
           const headers = { 'Authorization': `Bearer ${savedToken}` };
+          const savedActiveCnpj = localStorage.getItem('bawzi_active_cnpj');
 
           // 🟢 Faz a busca dupla: Utilizador + Workspace
           const [userRes, wsRes] = await Promise.all([
@@ -321,7 +322,8 @@ export default function AnalysisApp() {
               tier: tierReal,
               workspace_users_count: wData.workspace_users_count,
               vagas_totais: wData.vagas_totais,
-              companies: wData.companies || [] // Aqui a magia acontece!
+              active_cnpj: savedActiveCnpj || (wData.companies?.[0]?.cnpj),
+              companies: wData.companies || [] 
             };
 
             setUserData(userDataInfo); // Passa para o UserProfileCard
@@ -1409,7 +1411,7 @@ useEffect(() => {
                             <div className="p-6 bg-white">
                               {['nacional', 'regional'].map((tipo) => (
                                 abaConcorrentes === tipo && (
-                                  <ul key={tipo} className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                  <div key={tipo} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {(tipo === 'nacional' ? result.concorrentes_provaveis : result.concorrentes_regionais)?.slice(0, 6).map((item: any, index: number) => {
                                       
                                       let nomeEmpresa = "Empresa não identificada";
@@ -1462,43 +1464,82 @@ useEffect(() => {
                                         };
                                       }
 
+                                      // 🟢 Extração Limpa do CNPJ para a CGU
+                                      const cleanCnpj = cnpj ? cnpj.replace(/\D/g, '') : null;
+
                                       return (
-                                        <li 
+                                        <div 
                                           key={index} 
-                                          onClick={() => setSelectedCompetitor(dadosParaModal)}
-                                          className="text-[11px] text-slate-700 font-bold flex items-center gap-3 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-sm transition-all hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer group"
+                                          className="group bg-white border border-slate-200 rounded-[1.5rem] p-5 hover:border-indigo-300 hover:shadow-lg transition-all duration-300 flex flex-col gap-4 shadow-sm"
                                         >
-                                          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-white text-indigo-600 font-black shrink-0 border border-indigo-100 shadow-sm text-[10px] group-hover:bg-indigo-600 group-hover:text-white transition-colors">{index + 1}</span>
-                                          <div className="flex-1 min-w-0 flex flex-col">
-                                            <span className="truncate uppercase tracking-tight">{nomeEmpresa}</span>
-                                            
-                                            {/* 🟢 NOVAS ETIQUETAS: PROBABILIDADE E FORÇA */}
-                                            <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
-                                              {probabilidade && (
-                                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-black border border-sky-200">
-                                                  Prob: {probabilidade}
-                                                </span>
-                                              )}
-                                              {forca && (
-                                                <span className="text-[8px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-black border border-rose-200">
-                                                  Força: {forca}
-                                                </span>
-                                              )}
-                                              <span className="text-[9px] text-slate-400 group-hover:text-indigo-500 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-                                                Ver Raio-X &rarr;
-                                              </span>
+                                          {/* CABEÇALHO DO CONCORRENTE */}
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                              <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 border border-slate-100 transition-colors shrink-0">
+                                                <Award size={20} />
+                                              </div>
+                                              <div className="min-w-0">
+                                                <h4 className="text-sm font-black text-slate-900 truncate uppercase tracking-tight">
+                                                  {nomeEmpresa}
+                                                </h4>
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                                                  <span className="text-[9px] font-bold text-slate-500 flex items-center gap-1">
+                                                    <MapPin size={10} /> {tipo === 'nacional' ? 'Nacional' : (result.uf || 'GO')}
+                                                  </span>
+                                                  <span className="text-[9px] font-bold text-slate-400">• CNPJ: {cnpj || 'N/A'}</span>
+                                                </div>
+                                                
+                                                {/* ETIQUETAS DE FORÇA */}
+                                                {(probabilidade || forca) && (
+                                                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                                    {probabilidade && (
+                                                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-black border border-sky-200">
+                                                        Prob: {probabilidade}
+                                                      </span>
+                                                    )}
+                                                    {forca && (
+                                                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-black border border-rose-200">
+                                                        Força: {forca}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
                                             </div>
                                             
+                                            {Number(vitorias) > 0 && (
+                                              <div className="bg-indigo-50 px-2 py-1.5 rounded-lg border border-indigo-100 flex flex-col items-center shrink-0 shadow-sm">
+                                                <span className="text-xs font-black text-indigo-700 leading-none">{vitorias}</span>
+                                                <span className="text-[8px] font-black text-indigo-400/80 uppercase tracking-tighter mt-1">Vitórias</span>
+                                              </div>
+                                            )}
                                           </div>
-                                          {Number(vitorias) > 0 && (
-                                            <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[9px] font-black shrink-0 flex items-center gap-1 shadow-sm border border-indigo-200/50">
-                                              🏆 {vitorias}
-                                            </span>
+
+                                          {/* 🟢 PAINEL DE COMPLIANCE CGU */}
+                                          {cleanCnpj && cleanCnpj.length >= 11 ? (
+                                            <div className="pt-3 border-t border-slate-100">
+                                              <CguCompliancePanel 
+                                                cnpj={cleanCnpj} 
+                                                companyName={nomeEmpresa} 
+                                              />
+                                            </div>
+                                          ) : (
+                                            <div className="text-[9px] font-medium text-slate-400 italic px-3 py-2 bg-slate-50 rounded-lg text-center border border-slate-200 border-dashed mt-auto">
+                                              CNPJ necessário para consulta de Ficha Limpa (CGU).
+                                            </div>
                                           )}
-                                        </li>
+
+                                          {/* BOTÃO VER DOSSIÊ */}
+                                          <button 
+                                            onClick={() => setSelectedCompetitor(dadosParaModal)}
+                                            className="w-full py-2.5 bg-slate-50 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 hover:text-white transition-all mt-auto border border-slate-200 hover:border-slate-800"
+                                          >
+                                            Ver Dossiê Completo
+                                          </button>
+                                        </div>
                                       );
                                     })}
-                                  </ul>
+                                  </div>
                                 )
                               ))}
                             </div>
