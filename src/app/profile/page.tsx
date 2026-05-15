@@ -10,7 +10,7 @@ import CompanyProfileForm from '../../components/CompanyProfileForm';
 import PersonalDataForm from '../../components/PersonalDataForm';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TeamManager from '../../components/TeamManager';
-import CguCompliancePanel from '../../components/CguCompliancePanel';
+import CompliancePanel from '../../components/CompliancePanel';
 
 function ProfileContent() {
   const router = useRouter();

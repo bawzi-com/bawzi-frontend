@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect} from 'react';
 import { Save, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function PersonalDataForm({ userData, token, onUpdate }: any) {
@@ -44,6 +44,15 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (userData) {
+      setProfileData({
+        name: userData.name || userData.nome || '', // Aceita 'name' ou 'nome'
+        email: userData.email || '',
+      });
+    }
+  }, [userData]);
 
   return (
     <form onSubmit={handleProfileSubmit} className="flex flex-col gap-8">

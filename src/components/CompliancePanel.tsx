@@ -3,12 +3,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ShieldCheck, ShieldAlert, AlertTriangle, ChevronDown, ChevronUp, 
-  Landmark, Briefcase, Building, CheckCircle2, XCircle, RotateCw, Bot, ExternalLink 
+  Landmark, Briefcase, Building, CheckCircle2, XCircle, RotateCw, Bot, ExternalLink,
+  Lock, Crown,
 } from 'lucide-react';
 
 interface CompliancePanelProps {
   cnpj: string;
   companyName?: string;
+  userTier: number;
+  onUpgradeClick: () => void;
 }
 
 interface CertidaoStatus {
@@ -16,53 +19,55 @@ interface CertidaoStatus {
   nome: string;
   orgao: string;
   vencimento: string | null; 
-  statusForcado?: 'vencida' | 'alerta' | 'valida' | 'indisponivel';
+  statusForcado?: 'vencida' | 'alerta' | 'valida' | 'indisponivel' | 'processando';
   icone: any;
   engine?: string; 
 }
 
-// Agora incluímos o TST no cache nativo!
 const memoryCache: {
   cgu: Record<string, any>;
   federal: Record<string, CertidaoStatus | null>;
-  tst: Record<string, CertidaoStatus | null>; 
-  mocks: Record<string, CertidaoStatus[]>;
+  tst: Record<string, CertidaoStatus | null>;
+  fgts: Record<string, CertidaoStatus | null>;
 } = {
   cgu: {},
   federal: {},
   tst: {},
-  mocks: {}
+  fgts: {}
 };
 
-export default function CguCompliancePanel({ cnpj, companyName }: CompliancePanelProps) {
+export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgradeClick }: CompliancePanelProps) {
+  
+  // 🟢 1. SEGURANÇA: Trava central baseada no Tier
+  const nivelAtual = typeof userTier !== 'undefined' ? userTier : 0;
+  const isLocked = nivelAtual < 4;
+
   const [expanded, setExpanded] = useState(false);
 
-  // 1. Estados da CGU
+  // Estados da CGU
   const [loadingCgu, setLoadingCgu] = useState(true);
   const [isRefreshingCgu, setIsRefreshingCgu] = useState(false);
   const [cguData, setCguData] = useState<any>(null);
   const [cguError, setCguError] = useState(false);
 
-  // 2. Estados do Agente CND Federal (Porta 8001)
+  // Estados dos Agentes Reais
   const [loadingFederal, setLoadingFederal] = useState(true);
-  const [isRefreshingFederal, setIsRefreshingFederal] = useState(false);
-  const [cndFederal, setCndFederal] = useState<CertidaoStatus | null>(null);
+  const [cndFederal, setCndFederal] = useState<CertidaoStatus | null>(memoryCache.federal[cnpj.replace(/\D/g, '')] || null);
 
-  // 3. Estados do Agente CND Trabalhista / TST (Porta 8002)
   const [loadingTst, setLoadingTst] = useState(true);
-  const [isRefreshingTst, setIsRefreshingTst] = useState(false);
-  const [cndTst, setCndTst] = useState<CertidaoStatus | null>(null);
+  const [cndTst, setCndTst] = useState<CertidaoStatus | null>(memoryCache.tst[cnpj.replace(/\D/g, '')] || null);
 
-  // 4. Estados das Certidões Mock (Restou apenas o FGTS)
-  const [loadingMocks, setLoadingMocks] = useState(true);
-  const [outrasCertidoes, setOutrasCertidoes] = useState<CertidaoStatus[]>([]);
+  const [loadingFgts, setLoadingFgts] = useState(true);
+  const [certFgts, setCertFgts] = useState<CertidaoStatus | null>(memoryCache.fgts[cnpj.replace(/\D/g, '')] || null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
   // ====================================================================
-  // 1. BUSCA: API DA CGU COM CACHE
+  // 1. BUSCA: CGU COM CACHE (Bloqueado se isLocked)
   // ====================================================================
   const fetchCompliance = useCallback(async (isManualRefresh = false) => {
-    if (!cnpj) return;
+    if (!cnpj || isLocked) return; // 🛑 TRAVA DE REDE
+    
     const cnpjLimpo = cnpj.replace(/\D/g, ''); 
 
     if (!isManualRefresh && memoryCache.cgu[cnpjLimpo]) {
@@ -76,181 +81,145 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
     
     setCguError(false);
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const res = await fetch(`${API_URL}/api/cgu/compliance/${cnpjLimpo}`);
       if (!res.ok) throw new Error('Falha ao consultar CGU');
       
       const data = await res.json();
       setCguData(data);
       memoryCache.cgu[cnpjLimpo] = data; 
-
     } catch (err) {
       setCguError(true);
     } finally {
       if (isManualRefresh) setIsRefreshingCgu(false);
       else setLoadingCgu(false);
     }
-  }, [cnpj]);
+  }, [cnpj, API_URL, isLocked]);
 
   // ====================================================================
-  // 2. BUSCA REAL: AGENTE FEDERAL COM CACHE (Porta 8001)
+  // 2. BUSCA: FILA COMUM (Bloqueado se isLocked)
   // ====================================================================
-  const fetchAgenteFederal = useCallback(async (isManualRefresh = false) => {
-    if (!cnpj) return;
-    const cnpjLimpo = cnpj.replace(/\D/g, ''); 
-
-    if (!isManualRefresh && memoryCache.federal[cnpjLimpo]) {
-      setCndFederal(memoryCache.federal[cnpjLimpo]);
-      setLoadingFederal(false);
-      return;
-    }
-
-    if (isManualRefresh) setIsRefreshingFederal(true);
-    else setLoadingFederal(true);
+  const colocarNaFila = useCallback(async (tipo: 'federal' | 'trabalhista' | 'fgts', setter: Function) => {
+    if (!cnpj || isLocked) return; // 🛑 TRAVA DE REDE
     
-    try {
-      const res = await fetch(`${API_URL}/agente-federal/api/certidoes/federal/agent/${cnpjLimpo}`);
-      if (!res.ok) throw new Error('Falha no Agente');
-      
-      const data = await res.json();
-      let statusForce: 'vencida' | 'indisponivel' | undefined = undefined;
-      if (data.status === 'vencida') statusForce = 'vencida';
-      if (data.status === 'indisponivel') statusForce = 'indisponivel';
-
-      const novaCertidao: CertidaoStatus = {
-        id: 'federal',
-        nome: 'CND Federal',
-        orgao: 'Receita',
-        vencimento: data.data_validade,
-        statusForcado: statusForce,
-        icone: Landmark,
-        engine: data.engine
-      };
-
-      setCndFederal(novaCertidao);
-      memoryCache.federal[cnpjLimpo] = novaCertidao; 
-
-    } catch (err) {
-      const erroCertidao: CertidaoStatus = {
-        id: 'federal', nome: 'CND Federal', orgao: 'Receita',
-        vencimento: null, statusForcado: 'indisponivel',
-        icone: Landmark, engine: 'Agente Falhou'
-      };
-      setCndFederal(erroCertidao);
-    } finally {
-      if (isManualRefresh) setIsRefreshingFederal(false);
-      else setLoadingFederal(false);
-    }
-  }, [cnpj]);
-
-  // ====================================================================
-  // 3. BUSCA REAL: AGENTE TST COM CACHE (Porta 8002)
-  // ====================================================================
-  const fetchAgenteTst = useCallback(async (isManualRefresh = false) => {
-    if (!cnpj) return;
     const cnpjLimpo = cnpj.replace(/\D/g, ''); 
 
-    if (!isManualRefresh && memoryCache.tst[cnpjLimpo]) {
-      setCndTst(memoryCache.tst[cnpjLimpo]);
-      setLoadingTst(false);
-      return;
-    }
+    let icone = Landmark;
+    let nome = 'CND Federal';
+    let orgao = 'Receita Federal';
+    if (tipo === 'trabalhista') { icone = Briefcase; nome = 'CND Trabalhista'; orgao = 'TST'; }
+    if (tipo === 'fgts') { icone = Building; nome = 'Regularidade FGTS'; orgao = 'Caixa Econômica'; }
 
-    if (isManualRefresh) setIsRefreshingTst(true);
-    else setLoadingTst(true);
+    setter({
+      id: tipo, nome, orgao, vencimento: null,
+      statusForcado: 'processando', icone, engine: 'Fila Bawzi'
+    });
+
+    try {
+      await fetch(`${API_URL}/api/certidoes/enfileirar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cnpjs: [cnpjLimpo], tipo })
+      });
+    } catch (err) {
+      console.error(`Falha ao enfileirar ${tipo}`, err);
+    }
+  }, [cnpj, API_URL, isLocked]);
+
+  // ====================================================================
+  // 3. O RADAR (POLLING) - Não inicia se estiver bloqueado
+  // ====================================================================
+  useEffect(() => {
+    if (!cnpj || isLocked) return; // 🛑 TRAVA DO RADAR
     
-    try {
-      const res = await fetch(`${API_URL}/agente-trabalhista/api/certidoes/trabalhista/agent/${cnpjLimpo}`);
-      if (!res.ok) throw new Error('Falha no Agente TST');
-      
-      const data = await res.json();
-      let statusForce: 'vencida' | 'indisponivel' | undefined = undefined;
-      if (data.status === 'vencida') statusForce = 'vencida';
-      if (data.status === 'indisponivel') statusForce = 'indisponivel';
+    const cnpjLimpo = cnpj.replace(/\D/g, '');
 
-      const novaCertidao: CertidaoStatus = {
-        id: 'tst',
-        nome: 'CND Trabalhista',
-        orgao: 'TST',
-        vencimento: data.data_validade,
-        statusForcado: statusForce,
-        icone: Briefcase,
-        engine: data.engine || 'Gemini 2.5 CNDT'
-      };
+    const verificarStatus = async (tipo: 'federal' | 'trabalhista' | 'fgts', setCert: Function, cacheLocal: any) => {
+      try {
+        const res = await fetch(`${API_URL}/api/certidoes/status/${tipo}/${cnpjLimpo}`);
+        if (!res.ok) return;
+        const data = await res.json();
 
-      setCndTst(novaCertidao);
-      memoryCache.tst[cnpjLimpo] = novaCertidao; 
+        if (data.finalizado) {
+          let statusForce: 'vencida' | 'indisponivel' | undefined = undefined;
+          
+          if (data.status === 'vencida' || data.status === 'irregular') statusForce = 'vencida';
+          if (data.status === 'indisponivel' || data.status === 'erro') statusForce = 'indisponivel';
 
-    } catch (err) {
-      const erroCertidao: CertidaoStatus = {
-        id: 'tst', nome: 'CND Trabalhista', orgao: 'TST',
-        vencimento: null, statusForcado: 'indisponivel',
-        icone: Briefcase, engine: 'Agente Falhou'
-      };
-      setCndTst(erroCertidao);
-    } finally {
-      if (isManualRefresh) setIsRefreshingTst(false);
-      else setLoadingTst(false);
-    }
-  }, [cnpj]);
+          const certPronta: CertidaoStatus = {
+            id: tipo,
+            nome: tipo === 'federal' ? 'CND Federal' : tipo === 'trabalhista' ? 'CND Trabalhista' : 'Regularidade FGTS',
+            orgao: tipo === 'federal' ? 'Receita Federal' : tipo === 'trabalhista' ? 'TST' : 'Caixa Econômica',
+            vencimento: data.data_validade,
+            statusForcado: statusForce,
+            icone: tipo === 'federal' ? Landmark : tipo === 'trabalhista' ? Briefcase : Building,
+            engine: data.dados?.engine || data.engine || 'Robô + IA'
+          };
+          
+          setCert(certPronta);
+          cacheLocal[cnpjLimpo] = certPronta;
+        } 
+        else if (data.status === 'indisponivel' || data.status === 'erro') {
+          setCert((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Erro no Agente' } : null);
+        }
+      } catch (e) {
+        console.error(`Erro no radar ${tipo}:`, e);
+      }
+    };
+
+    const radar = setInterval(() => {
+      if (cndFederal?.statusForcado === 'processando') verificarStatus('federal', setCndFederal, memoryCache.federal);
+      if (cndTst?.statusForcado === 'processando') verificarStatus('trabalhista', setCndTst, memoryCache.tst);
+      if (certFgts?.statusForcado === 'processando') verificarStatus('fgts', setCertFgts, memoryCache.fgts);
+    }, 4000);
+
+    return () => clearInterval(radar);
+  }, [cndFederal?.statusForcado, cndTst?.statusForcado, certFgts?.statusForcado, cnpj, API_URL, isLocked]);
 
   // ====================================================================
-  // 4. BUSCA MOCK COM CACHE (Apenas FGTS agora)
+  // TRIGGER INICIAL DA TELA
   // ====================================================================
-  const fetchMocks = useCallback((isManualRefresh = false) => {
-    if (!cnpj) return;
-    const cnpjLimpo = cnpj.replace(/\D/g, ''); 
-
-    if (!isManualRefresh && memoryCache.mocks[cnpjLimpo]) {
-      setOutrasCertidoes(memoryCache.mocks[cnpjLimpo]);
-      setLoadingMocks(false);
-      return;
-    }
-
-    if (!isManualRefresh) setLoadingMocks(true);
-    setTimeout(() => {
-      const hoje = new Date();
-      const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-
-      // Removemos o TST daqui pois agora ele é real!
-      const mocksData = [
-        { id: 'fgts', nome: 'Regularidade', orgao: 'FGTS (Caixa)', vencimento: ontem.toISOString(), statusForcado: 'vencida' as const, icone: Building },
-      ];
-
-      setOutrasCertidoes(mocksData);
-      memoryCache.mocks[cnpjLimpo] = mocksData; 
-      setLoadingMocks(false);
-    }, 1500);
-  }, [cnpj]);
-
-  // Cadeado de execução para evitar duplicação do React Strict Mode
   const fetchedCnpj = useRef<string | null>(null);
 
-  // Chama tudo no carregamento inicial (agora protegido)
   useEffect(() => {
-    // Se a consulta para este CNPJ já foi disparada, aborta a segunda chamada fantasma
+    if (!cnpj || isLocked) return; // 🛑 TRAVA DO GATILHO
+
     if (fetchedCnpj.current === cnpj) return;
     fetchedCnpj.current = cnpj;
+    const cnpjLimpo = cnpj.replace(/\D/g, '');
 
     fetchCompliance();
-    fetchAgenteFederal();
-    fetchAgenteTst(); 
-    fetchMocks();
-  }, [cnpj, fetchCompliance, fetchAgenteFederal, fetchAgenteTst, fetchMocks]);
+    
+    if (!memoryCache.federal[cnpjLimpo]) colocarNaFila('federal', setCndFederal);
+    if (!memoryCache.tst[cnpjLimpo]) colocarNaFila('trabalhista', setCndTst);
+    if (!memoryCache.fgts[cnpjLimpo]) colocarNaFila('fgts', setCertFgts);
+
+  }, [cnpj, fetchCompliance, colocarNaFila, isLocked]);
 
   const handleRefreshAll = () => {
+    if (isLocked) return; // 🛑 PROTEÇÃO DE CLIQUE FORÇADO
+
+    const cnpjLimpo = cnpj.replace(/\D/g, '');
+
+    memoryCache.federal[cnpjLimpo] = null;
+    memoryCache.tst[cnpjLimpo] = null;
+    memoryCache.fgts[cnpjLimpo] = null;
+    memoryCache.cgu[cnpjLimpo] = null;
+
     fetchCompliance(true);
-    fetchAgenteFederal(true);
-    fetchAgenteTst(true);
-    fetchMocks(true);
+    colocarNaFila('federal', setCndFederal);
+    colocarNaFila('trabalhista', setCndTst);
+    colocarNaFila('fgts', setCertFgts);
   };
 
   // ====================================================================
-  // MOTOR DE VENCIMENTO
+  // MOTOR VISUAL DE VENCIMENTO
   // ====================================================================
   const calcularStatusVencimento = (cert: CertidaoStatus) => {
+    if (cert.statusForcado === 'processando') {
+      return { texto: 'Na Fila / Extraindo...', cor: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', icon: <Bot size={14} className="animate-pulse" /> };
+    }
     if (cert.statusForcado === 'indisponivel') {
-      return { texto: 'Site em Baixo', cor: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', icon: <AlertTriangle size={14} /> };
+      return { texto: 'Governo Indisponível', cor: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', icon: <AlertTriangle size={14} /> };
     }
     if (cert.statusForcado === 'vencida' || !cert.vencimento) {
       return { texto: 'Irregular / Vencida', cor: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', icon: <XCircle size={14} /> };
@@ -267,19 +236,17 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
     return { texto: `Válida até ${vencimento.toLocaleDateString('pt-BR')}`, cor: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: <CheckCircle2 size={14} /> };
   };
 
-  // ====================================================================
-  // RENDERIZAÇÃO
-  // ====================================================================
   const isCguApproved = cguData?.vereditto === 'APROVADO';
   const hasCguSanctions = cguData?.vereditto === 'REPROVADO_COM_SANCÃO';
 
-  const RenderCertidaoCard = ({ cert, onRefresh, isRefreshing }: { cert: CertidaoStatus, onRefresh?: () => void, isRefreshing?: boolean }) => {
+  const RenderCertidaoCard = ({ cert, onRefresh }: { cert: CertidaoStatus, onRefresh?: () => void }) => {
     const visual = calcularStatusVencimento(cert);
     const Icon = cert.icone;
+    const isProcessing = cert.statusForcado === 'processando';
 
     return (
       <div className={`flex flex-col p-3 rounded-xl border transition-all duration-300 hover:shadow-sm relative overflow-hidden ${visual.bg} ${visual.border}`}>
-        {isRefreshing && (
+        {isProcessing && (
           <div className="absolute top-0 left-0 h-0.5 bg-indigo-500/20 w-full">
              <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
           </div>
@@ -296,20 +263,20 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
             {onRefresh && (
               <button 
                 onClick={(e) => { e.stopPropagation(); onRefresh(); }}
-                disabled={isRefreshing}
+                disabled={isProcessing || isLocked}
                 className="text-slate-400 hover:text-indigo-600 transition-colors"
                 title="Atualizar"
               >
-                <RotateCw size={12} className={isRefreshing ? "animate-spin text-indigo-500" : ""} />
+                <RotateCw size={12} className={isProcessing ? "animate-spin text-indigo-500" : ""} />
               </button>
             )}
           </div>
         </div>
         <div className="flex items-center justify-between">
-          <div className={`flex items-center gap-1.5 text-[11px] font-bold ${visual.cor} ${isRefreshing ? 'opacity-50' : ''}`}>
-            {visual.icon} {isRefreshing ? 'Consultando...' : visual.texto}
+          <div className={`flex items-center gap-1.5 text-[11px] font-bold ${visual.cor} ${isProcessing ? 'opacity-70' : ''}`}>
+            {visual.icon} {visual.texto}
           </div>
-          {cert.engine && !isRefreshing && (
+          {cert.engine && !isProcessing && (
              <span className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1" title="Lido por Inteligência Artificial">
                 <Bot size={10} /> IA
              </span>
@@ -320,9 +287,10 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
   };
 
   return (
-    <div className="w-full mt-2">
+    <div className="w-full mt-2 relative overflow-hidden rounded-xl bg-white p-1 pb-2">
       
-      <div className="flex items-center justify-between mb-3 px-1">
+      {/* CABEÇALHO */}
+      <div className="flex items-center justify-between mb-3 px-2 pt-2 relative z-20">
         <div className="flex items-center gap-2">
           <ShieldCheck size={16} className="text-slate-400" />
           <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -330,180 +298,127 @@ export default function CguCompliancePanel({ cnpj, companyName }: CompliancePane
             {companyName && <span className="font-bold text-slate-400 truncate max-w-[150px] lowercase capitalize">| {companyName}</span>}
           </h4>
         </div>
-        <button 
-          onClick={handleRefreshAll}
-          disabled={isRefreshingCgu || isRefreshingFederal || isRefreshingTst}
-          className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
-          title="Atualizar Tudo"
-        >
-          <RotateCw size={14} className={(isRefreshingCgu || isRefreshingFederal || isRefreshingTst) ? "animate-spin text-indigo-500" : ""} />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        
-        {/* 1. CGU */}
-        {loadingCgu ? (
-          <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100 animate-pulse"></div>
-        ) : cguError || !cguData ? (
-          <div className="flex flex-col justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 h-[76px] relative">
-             <div className="flex items-start justify-between">
-                <div className="flex items-center gap-1.5 mb-1.5"><AlertTriangle size={14} /><span className="text-[10px] font-black uppercase tracking-widest text-slate-700">CEIS / CNEP</span></div>
-                <button onClick={() => fetchCompliance(true)} className="text-slate-400 hover:text-indigo-600"><RotateCw size={12} className={isRefreshingCgu ? "animate-spin" : ""}/></button>
-             </div>
-             <span className="text-[11px] font-bold">Falha ao consultar CGU.</span>
-          </div>
-        ) : (
-          <div 
-            onClick={() => hasCguSanctions && setExpanded(!expanded)}
-            className={`flex flex-col p-3 rounded-xl border transition-all duration-300 relative ${hasCguSanctions ? 'cursor-pointer hover:shadow-md' : ''} ${isCguApproved ? 'bg-emerald-50 border-emerald-200' : hasCguSanctions ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}
+        {!isLocked && (
+          <button 
+            onClick={handleRefreshAll}
+            disabled={isRefreshingCgu || cndFederal?.statusForcado === 'processando' || cndTst?.statusForcado === 'processando' || certFgts?.statusForcado === 'processando'}
+            className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+            title="Atualizar Tudo"
           >
-            {isRefreshingCgu && (
-              <div className="absolute top-0 left-0 h-0.5 bg-indigo-500/20 w-full">
-                 <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
-              </div>
-            )}
-            <div className="flex items-start justify-between mb-2 mt-1">
-              <div className="flex items-center gap-1.5">
-                {isCguApproved ? <ShieldCheck size={14} className="text-emerald-600" /> : <ShieldAlert size={14} className="text-rose-600" />}
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">CEIS / CNEP</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-white border ${isCguApproved ? 'border-emerald-200 text-emerald-600' : 'border-rose-200 text-rose-600'}`}>CGU</span>
-                
-                <button 
-                  onClick={(e) => { e.stopPropagation(); fetchCompliance(true); }} 
-                  disabled={isRefreshingCgu}
-                  className="text-slate-400 hover:text-indigo-600 transition-colors z-10"
-                >
-                  <RotateCw size={12} className={isRefreshingCgu ? "animate-spin text-indigo-500" : ""} />
-                </button>
-
-                {hasCguSanctions && (
-                  <span className="text-rose-400 bg-white rounded shadow-sm p-0.5">
-                    {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : hasCguSanctions ? 'text-rose-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
-              {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />} 
-              {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Ficha Limpa (Nada Consta)' : hasCguSanctions ? 'Sanções Encontradas' : 'Análise Incompleta'}
-            </div>
-          </div>
-        )}
-
-        {/* 2. CND FEDERAL */}
-        {loadingFederal ? (
-          <div className="h-[76px] flex flex-col justify-center p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 animate-pulse relative overflow-hidden">
-             <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Bot size={14} className="text-indigo-400 animate-bounce" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700">CND Federal</span>
-                </div>
-             </div>
-             <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tight">Agente Bawzi a consultar...</span>
-             <div className="absolute bottom-0 left-0 h-1 bg-indigo-500/20 w-full">
-                <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
-             </div>
-          </div>
-        ) : cndFederal && (
-          <RenderCertidaoCard 
-            cert={cndFederal} 
-            onRefresh={() => fetchAgenteFederal(true)} 
-            isRefreshing={isRefreshingFederal}
-          />
-        )}
-
-        {/* 3. CND TRABALHISTA (TST) */}
-        {loadingTst ? (
-          <div className="h-[76px] flex flex-col justify-center p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 animate-pulse relative overflow-hidden">
-             <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  <Bot size={14} className="text-indigo-400 animate-bounce" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-700">CND Trabalhista</span>
-                </div>
-             </div>
-             <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tight">Agente Bawzi a consultar...</span>
-             <div className="absolute bottom-0 left-0 h-1 bg-indigo-500/20 w-full">
-                <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
-             </div>
-          </div>
-        ) : cndTst && (
-          <RenderCertidaoCard 
-            cert={cndTst} 
-            onRefresh={() => fetchAgenteTst(true)} 
-            isRefreshing={isRefreshingTst}
-          />
-        )}
-
-        {/* 4. MOCKS (Apenas FGTS) */}
-        {loadingMocks ? (
-          <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100 animate-pulse"></div>
-        ) : (
-          outrasCertidoes.map((cert) => (
-            <RenderCertidaoCard 
-              key={cert.id} 
-              cert={cert} 
-              onRefresh={() => fetchMocks(true)} 
-            />
-          ))
+            <RotateCw size={14} className={(isRefreshingCgu || cndFederal?.statusForcado === 'processando' || cndTst?.statusForcado === 'processando' || certFgts?.statusForcado === 'processando') ? "animate-spin text-indigo-500" : ""} />
+          </button>
         )}
       </div>
 
-      {expanded && hasCguSanctions && cguData && cguData.sancoes && cguData.sancoes.length > 0 && (
-        <div className="mt-3 px-3 pb-3 pt-3 border border-rose-200 bg-white rounded-xl shadow-sm animate-in slide-in-from-top-2 duration-300">
-           <p className="text-[10px] font-bold uppercase tracking-widest text-rose-800/60 mb-3 flex items-center gap-1.5 px-1">
-             <AlertTriangle size={12} className="text-rose-500" />
-             Dossiê de Irregularidades ({cguData.sancoes.length})
-           </p>
-           
-           <div className="flex flex-col gap-2">
-             {cguData.sancoes.map((sancao: any, idx: number) => (
-               <div key={idx} className="flex flex-col gap-2 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
-                 <div>
-                   <p className="text-[11px] font-black text-rose-900 leading-tight">
-                     {sancao.categoria_sancao || sancao.tipo_sancao || 'Sanção Registada'}
-                   </p>
-                   <p className="text-[9px] font-bold text-rose-700/70 mt-0.5 uppercase tracking-wide">
-                     {sancao.orgao_sancionador || 'Órgão não informado'}
-                   </p>
-                 </div>
-                 
-                 <div className="grid grid-cols-2 gap-2 text-[9px] font-medium text-rose-800 bg-white p-2 rounded border border-rose-50 shadow-sm">
-                   <div>
-                     <span className="block text-rose-400 font-bold uppercase tracking-wider text-[8px] mb-0.5">Início</span>
-                     {sancao.data_inicio || 'N/A'}
-                   </div>
-                   <div>
-                     <span className="block text-rose-400 font-bold uppercase tracking-wider text-[8px] mb-0.5">Fim / Validade</span>
-                     {sancao.data_fim || 'N/A'}
-                   </div>
-                 </div>
-
-                 {/* BOTÃO PARA O PORTAL DA TRANSPARÊNCIA */}
-                 {(sancao.link_portal || sancao.link_transparencia) && (
-                   <a 
-                     href={sancao.link_portal || sancao.link_transparencia}
-                     target="_blank"
-                     rel="noopener noreferrer"
-                     className="mt-1 flex items-center justify-center gap-1.5 py-1.5 bg-white border border-rose-200 hover:border-rose-400 hover:bg-rose-50 text-rose-600 rounded-md text-[9px] font-black uppercase tracking-widest transition-all shadow-sm"
-                   >
-                     Ver Processo na CGU <ExternalLink size={10} />
-                   </a>
-                 )}
+      {/* 🟢 O CONTAINER DOS DADOS (Com Blur) */}
+      <div className={`transition-all duration-300 ${isLocked ? 'blur-[5px] opacity-40 select-none pointer-events-none' : ''}`}>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-1">
+          {/* CGU */}
+          {loadingCgu && !isLocked ? (
+            <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100 animate-pulse"></div>
+          ) : cguError || !cguData ? (
+            <div className="flex flex-col justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 h-[76px] relative">
+               <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-1.5 mb-1.5"><AlertTriangle size={14} /><span className="text-[10px] font-black uppercase tracking-widest text-slate-700">CEIS / CNEP</span></div>
+                  <button onClick={() => fetchCompliance(true)} disabled={isLocked} className="text-slate-400 hover:text-indigo-600"><RotateCw size={12} className={isRefreshingCgu ? "animate-spin" : ""}/></button>
                </div>
-             ))}
-           </div>
+               <span className="text-[11px] font-bold">Falha ao consultar CGU.</span>
+            </div>
+          ) : (
+            <div 
+              onClick={() => hasCguSanctions && setExpanded(!expanded)}
+              className={`flex flex-col p-3 rounded-xl border transition-all duration-300 relative ${hasCguSanctions ? 'cursor-pointer hover:shadow-md' : ''} ${isCguApproved ? 'bg-emerald-50 border-emerald-200' : hasCguSanctions ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}
+            >
+              {isRefreshingCgu && (
+                <div className="absolute top-0 left-0 h-0.5 bg-indigo-500/20 w-full">
+                   <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
+                </div>
+              )}
+              <div className="flex items-start justify-between mb-2 mt-1">
+                <div className="flex items-center gap-1.5">
+                  {isCguApproved ? <ShieldCheck size={14} className="text-emerald-600" /> : <ShieldAlert size={14} className="text-rose-600" />}
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">CEIS / CNEP</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-white border ${isCguApproved ? 'border-emerald-200 text-emerald-600' : 'border-rose-200 text-rose-600'}`}>CGU</span>
+                  
+                  {!isLocked && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); fetchCompliance(true); }} 
+                      disabled={isRefreshingCgu}
+                      className="text-slate-400 hover:text-indigo-600 transition-colors z-10"
+                    >
+                      <RotateCw size={12} className={isRefreshingCgu ? "animate-spin text-indigo-500" : ""} />
+                    </button>
+                  )}
+
+                  {hasCguSanctions && (
+                    <span className="text-rose-400 bg-white rounded shadow-sm p-0.5">
+                      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : hasCguSanctions ? 'text-rose-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
+                {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />} 
+                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Ficha Limpa (Nada Consta)' : hasCguSanctions ? 'Sanções Encontradas' : 'Análise Incompleta'}
+              </div>
+            </div>
+          )}
+
+          {/* Renderização Condicional dos Cards Restantes (Usa dados ou o Mock se locked) */}
+          {cndFederal ? <RenderCertidaoCard cert={cndFederal} onRefresh={() => colocarNaFila('federal', setCndFederal)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
+          {cndTst ? <RenderCertidaoCard cert={cndTst} onRefresh={() => colocarNaFila('trabalhista', setCndTst)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
+          {certFgts ? <RenderCertidaoCard cert={certFgts} onRefresh={() => colocarNaFila('fgts', setCertFgts)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
+        </div>
+
+        {/* Dossiê CGU Oculto */}
+        {expanded && hasCguSanctions && cguData && cguData.sancoes && cguData.sancoes.length > 0 && (
+          <div className="mt-3 px-3 pb-3 pt-3 border border-rose-200 bg-white rounded-xl shadow-sm mx-1 animate-in slide-in-from-top-2 duration-300">
+             <p className="text-[10px] font-bold uppercase tracking-widest text-rose-800/60 mb-3 flex items-center gap-1.5 px-1">
+               <AlertTriangle size={12} className="text-rose-500" />
+               Dossiê de Irregularidades ({cguData.sancoes.length})
+             </p>
+             <div className="flex flex-col gap-2">
+               {cguData.sancoes.map((sancao: any, idx: number) => (
+                 <div key={idx} className="flex flex-col gap-2 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
+                   <div>
+                     <p className="text-[11px] font-black text-rose-900 leading-tight">{sancao.categoria_sancao || sancao.tipo_sancao}</p>
+                     <p className="text-[9px] font-bold text-rose-700/70 mt-0.5 uppercase tracking-wide">{sancao.orgao_sancionador}</p>
+                   </div>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+      </div>
+
+      {/* 🔴 O PAINEL DE BLOQUEIO (PAYWALL) */}
+      {isLocked && (
+        <div className="absolute inset-0 top-10 z-10 flex flex-col items-center justify-center p-2 bg-white/20">
+          <div className="flex flex-col items-center text-center p-6 bg-white/95 rounded-2xl shadow-xl border border-indigo-50 backdrop-blur-md animate-in zoom-in duration-300 max-w-[280px]">
+            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-3 ring-4 ring-white shadow-sm">
+              <Lock size={20} />
+            </div>
+            <h4 className="text-xs font-black text-slate-800 mb-1.5 flex items-center gap-1.5 justify-center uppercase tracking-tight">
+              <Crown size={14} className="text-amber-500" />
+              Radar de Habilitação
+            </h4>
+            <p className="text-[10px] text-slate-500 mb-5 font-medium leading-relaxed px-2">
+              Descubra se o concorrente tem certidões vencidas ou sanções ativas. Acesso exclusivo Nível 4.
+            </p>
+            
+            <button 
+              onClick={onUpgradeClick}
+              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+            >
+              Desbloquear Radar
+            </button>
+          </div>
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes slide {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(300%); }
-        }
-      `}} />
     </div>
   );
 }

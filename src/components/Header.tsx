@@ -37,37 +37,69 @@ export default function Header() {
   };
 
   useEffect(() => {
-    // 1. Função para carregar os dados iniciais do LocalStorage
-    const syncData = () => {
+    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+    // 1. ⚡ SINCRONISMO IMEDIATO (Lê o cache para a UI não piscar)
+    const syncFromCache = () => {
       const savedToken = localStorage.getItem('bawzi_token');
       const savedTier = localStorage.getItem('bawzi_tier');
-      const savedUser = localStorage.getItem('bawzi_user');
+      const savedName = localStorage.getItem('user_name') || localStorage.getItem('nome');
+      const savedEmail = localStorage.getItem('user_email');
 
       if (savedToken) setToken(savedToken);
       if (savedTier) setUserTier(savedTier);
-      if (savedUser) {
-        try { setUserData(JSON.parse(savedUser)); } catch (e) {}
+      if (savedName || savedEmail) {
+        setUserData({ name: savedName || '', email: savedEmail || '' });
+      }
+      return savedToken;
+    };
+
+    const tokenAtivo = syncFromCache();
+
+    // 2. 🌐 VALIDAÇÃO REAL (Vai ao servidor confirmar o nível atual sem o utilizador notar)
+    const validateTierSilently = async (token: string) => {
+      try {
+        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+        
+        // Fazemos as mesmas chamadas que o Perfil faz para garantir consistência
+        const [userRes, wsRes] = await Promise.all([
+          fetch(`${API_URL}/api/users/me`, { headers }),
+          fetch(`${API_URL}/api/workspace/details`, { headers })
+        ]);
+
+        if (userRes.ok && wsRes.ok) {
+          const uData = await userRes.json();
+          const wData = await wsRes.json();
+
+          // Lógica central da Bawzi: o maior nível entre utilizador e empresa vence
+          const nivelReal = Math.max(uData.tier || 1, wData.tier || 1);
+          const nivelString = String(nivelReal);
+
+          // Atualiza a interface se o que está no servidor for diferente do que está no ecrã
+          setUserTier(nivelString);
+          setUserData({ name: uData.name || uData.nome || '', email: uData.email });
+          
+          // Atualiza o cache para a próxima vez
+          localStorage.setItem('bawzi_tier', nivelString);
+          localStorage.setItem('user_name', uData.name || uData.nome || '');
+          localStorage.setItem('user_email', uData.email || '');
+        }
+      } catch (err) {
+        console.error("Erro na sincronização silenciosa do Header:", err);
       }
     };
 
-    syncData();
+    if (tokenAtivo) validateTierSilently(tokenAtivo);
 
-    // 2. Escuta mudanças feitas noutras abas do navegador
-    window.addEventListener('storage', syncData);
-
-    // 🟢 3. O SEGREDO: Escuta o evento Customizado disparado pelo Profile/Auto-Sync
-    const handleTierUpdate = (e: any) => {
-      if (e.detail && e.detail.tier) {
-        setUserTier(String(e.detail.tier));
-      }
+    // 3. 🟢 ESCUTAR ATUALIZAÇÕES (Caso o utilizador mude de nível noutra aba/página)
+    const handleGlobalUpdate = (e: any) => {
+      if (e.detail?.tier) setUserTier(String(e.detail.tier));
+      if (e.detail?.name) setUserData(prev => ({ ...prev, name: e.detail.name }));
     };
-    window.addEventListener('bawzi_update', handleTierUpdate);
 
-    return () => {
-      window.removeEventListener('storage', syncData);
-      window.removeEventListener('bawzi_update', handleTierUpdate);
-    };
-  }, [pathname]);
+    window.addEventListener('bawzi_update', handleGlobalUpdate);
+    return () => window.removeEventListener('bawzi_update', handleGlobalUpdate);
+  }, [pathname]); // Roda na montagem e sempre que mudares de página
 
   const handleLogout = () => {
     localStorage.removeItem('bawzi_token');
