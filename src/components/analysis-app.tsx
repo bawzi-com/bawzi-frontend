@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { BrainCircuit, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock, Crown } from 'lucide-react';
+import { BrainCircuit, ScanSearch, Radar, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock, Crown } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
 import Image from 'next/image'
 import UserProfileCard from './UserProfileCard';
@@ -19,6 +19,7 @@ import PremiumLock from '../components/PremiumLock';
 import CompliancePanel from '../components/CompliancePanel';
 import UpsellModal from './UpsellModal';
 import CompetitorWarRoom from '../components/CompetitorWarRoom';
+import TacticalSimulator from '../components/TacticalSimulator';
 
 const logout = () => {
   localStorage.clear();
@@ -1225,27 +1226,29 @@ export default function AnalysisApp() {
                         </div>
 
                         {/* BARRA DE ABAS (TABS) */}
-                        <div className="flex gap-4 mb-8 border-b-2 border-slate-100 pb-4 print:hidden">
+                        <div className="flex flex-wrap gap-3 mb-8 border-b border-slate-200 pb-4 print:hidden">
                           <button 
                             onClick={() => setActiveTab('analise')}
-                            className={`pb-4 px-2 -mb-[18px] font-black uppercase tracking-widest text-[11px] transition-all border-b-4 ${
-                              (activeTab as string) === 'analise' || (activeTab as string) === 'workspace'
-                                ? 'text-slate-900 border-slate-900' 
-                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                            className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
+                              activeTab === 'analise' 
+                                ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-1 ring-slate-900' 
+                                : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
                             }`}
                           >
-                            📋 Relatório Jurídico
+                            <ScanSearch size={18} className={activeTab === 'analise' ? 'text-indigo-400' : 'text-slate-400'} />
+                            Raio-X do Edital
                           </button>
 
                           <button 
                             onClick={() => setActiveTab('concorrentes')}
-                            className={`pb-4 px-2 -mb-[18px] font-black uppercase tracking-widest text-[11px] transition-all border-b-4 flex items-center gap-2 ${
-                              (activeTab as string) === 'concorrentes' 
-                                ? 'text-indigo-600 border-indigo-600' 
-                                : 'text-slate-400 border-transparent hover:text-slate-600'
+                            className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
+                              activeTab === 'concorrentes' 
+                                ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-1 ring-slate-900' 
+                                : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
                             }`}
                           >
-                            🔥 War Room (Ataque OSINT)
+                            <Radar size={18} className={activeTab === 'concorrentes' ? 'text-rose-400' : 'text-slate-400'} />
+                            Radar de Concorrentes
                           </button>
                         </div>
 
@@ -1335,56 +1338,16 @@ export default function AnalysisApp() {
                               </div>
                             </div>
 
-                            {/* SIMULADOR TÁTICO */}
-                            {(() => {
-                              const pricing = result.pricing_intelligence as Record<string, any>;
-                              const extrairMaiorDinheiro = (textoBase: any): number => {
-                                if (!textoBase) return 0;
-                                if (typeof textoBase === 'number' && textoBase > 0) return textoBase;
-                                const texto = String(textoBase);
-                                const matches = [...texto.matchAll(/R\$\s*([\d\.,]+)/g)];
-                                if (matches.length > 0) {
-                                  let maiorValor = 0;
-                                  matches.forEach(m => {
-                                    const num = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
-                                    if (num > maiorValor) maiorValor = num;
-                                  });
-                                  return maiorValor;
-                                }
-                                return 0;
-                              };
-
-                              let valorEstimado = extrairMaiorDinheiro(result?.summary) 
-                                              || extrairMaiorDinheiro(result?.estimated_value) 
-                                              || extrairMaiorDinheiro(pricing?.valor_estimado_raw) 
-                                              || 0;
-
-                              if (!pricing || pricing.desagioPreditivoOrgao === undefined) return null;
-
-                              return (
-                                <div className="space-y-4 print:hidden">
-                                  <PremiumLock 
-                                    isLocked={userTier < 2} 
-                                    featureTitle="Simulador Tático de Lances" 
-                                    requiredTierName="Nível 2 (Essencial)" 
-                                    onUpgradeClick={() => setShowUpgradeModal(true)}
-                                  >
-                                    <div className="relative border border-slate-200 rounded-2xl p-2 bg-white">
-                                      <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2 z-10">
-                                        <span className="text-lg">💰</span>
-                                        <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Simulador de Lances</h3>
-                                      </div>
-                                      <BawziShadowSimulator 
-                                        desagioPreditivo={result?.pricing_intelligence?.desagioPreditivoOrgao}
-                                        nivelAmeaca={result?.pricing_intelligence?.nivelAmeaca}
-                                        perfilVencedor={result?.pricing_intelligence?.perfilVencedor}
-                                        valorReferenciaInicial={valorEstimado} 
-                                      />
-                                    </div>
-                                  </PremiumLock>
+                            {/* SIMULADOR TÁTICO GLOBAL (METAS DA DIRETORIA) */}
+                            {result.pricing_intelligence && (
+                                <div className="space-y-4 print:hidden mb-12">
+                                  <TacticalSimulator 
+                                    pricing={result.pricing_intelligence} 
+                                    fullResult={result} 
+                                    userTier={userTier} 
+                                  />
                                 </div>
-                              );
-                            })()}
+                            )}
 
                             {/* SWOT & CARGA OPERACIONAL */}
                             {((result.exigencias_criticas && result.exigencias_criticas.length > 0) || (result.documentos_necessarios && result.documentos_necessarios.length > 0) || (result.vantagens && result.vantagens.length > 0) || (result.desvantagens && result.desvantagens.length > 0)) && (
