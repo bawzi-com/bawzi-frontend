@@ -225,9 +225,11 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
               {/* === LINHA 2: CGU COMPLIANCE EMBUTIDO === */}
               <div className="pt-2">
-                <CguCompliancePanel 
-                  cnpj={emp.cnpj} 
-                  companyName={emp.nome_fantasia || emp.razao_social || 'Consulta Ativa'} 
+                <CguCompliancePanel
+                  cnpj={emp.cnpj}
+                  companyName={emp.nome_fantasia || emp.razao_social || 'Consulta Ativa'}
+                  userTier={userTier ?? 1}
+                  onUpgradeClick={() => router.push('/pricing')}
                 />
               </div>
 
