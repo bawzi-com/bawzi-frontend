@@ -45,19 +45,46 @@ interface PricingIntelligence {
 
 interface HighlightItem { title: string; quote: string; }
 
+interface SemaforoSinal {
+  status: 'ok' | 'alerta' | 'risco';
+  motivo: string;
+}
+
+interface DataCritica {
+  label: string;
+  data_iso: string | null;
+  urgente: boolean;
+}
+
+interface RiskItem {
+  titulo: string;
+  descricao: string;
+  impacto?: 'alto' | 'medio' | 'baixo';
+}
+
 interface AnalysisResult {
   id?: string;
-  title: string; 
-  summary: string; 
-  score: number; 
+  title: string;
+  summary: string;
+  score: number;
   classification: string;
-  effort: string; 
-  estimated_value: string; 
+  effort: string;
+  estimated_value: string;
   recommendation: string;
-  rationale: string; 
+  rationale: string;
+  // New structured dates (replaces datas_criticas_extraidas)
+  datas_criticas?: DataCritica[];
+  // Legacy — kept for backwards compat with older saved analyses
   datas_criticas_extraidas?: {
     data_limite_propostas?: string;
     data_impugnacao?: string;
+  };
+  // Semáforo de Viabilidade
+  semaforo?: {
+    tecnica: SemaforoSinal;
+    financeira: SemaforoSinal;
+    juridica: SemaforoSinal;
+    documentacao: SemaforoSinal;
   };
   probabilidade_de_sucesso?: string;
   vantagens?: string[];
@@ -70,10 +97,10 @@ interface AnalysisResult {
   concorrentes_regionais?: any[];
   uf?: string;
   estado?: string;
-  risks?: any[]; 
-  checklist?: any[]; 
+  risks?: RiskItem[];
+  checklist?: any[];
   pricing_intelligence?: PricingIntelligence;
-  orgao_risk?: any; 
+  orgao_risk?: any;
   created_at?: string;
   parecer_especialista?: string;
   pegadinha?: PegadinhaData;
@@ -744,94 +771,162 @@ export default function AnalysisApp() {
           {/* CONTAINER PRINCIPAL */}
           <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
 
-            <div className="xl:w-2/3 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
+            {token && userData && !isCheckingAuth ? (
+              // ── HEADER COMPACTO (utilizador autenticado) ──
+              <div className="w-full bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 flex flex-col justify-center relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
+                <div className="relative z-10 flex flex-col gap-5">
 
-              <div className="flex-1 relative z-10">
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-                  </span>
-                  <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Orquestração Multi-Agentes</span>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-violet-200/60 shrink-0 select-none">
+                        {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Central de Inteligência Bawzi</p>
+                        <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight leading-none">
+                          Olá, {(userData.name || userData.nome || 'Estrategista').split(' ')[0]} 👋
+                        </h2>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <div className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest border ${
+                        currentTier >= 4 ? 'bg-violet-900 text-violet-200 border-violet-700' :
+                        currentTier >= 3 ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        currentTier >= 2 ? 'bg-sky-50 text-sky-700 border-sky-200' :
+                        'bg-slate-100 text-slate-600 border-slate-200'
+                      }`}>
+                        <span>{currentTier >= 4 ? '👑' : currentTier >= 3 ? '⚡' : currentTier >= 2 ? '🎯' : '🔎'}</span>
+                        {currentTier >= 4 ? 'Dominador' : currentTier >= 3 ? 'Estrategista' : currentTier >= 2 ? 'Explorador' : 'Gratuito'}
+                      </div>
+                      {userData?.company?.uf && (
+                        <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold border border-slate-200">
+                          <MapPin size={11} />
+                          {userData.company.uf}
+                        </div>
+                      )}
+                      <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black border border-emerald-100">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                        PNCP Ativo
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('history')}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-amber-300 hover:bg-amber-50 text-slate-500 hover:text-amber-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                      >
+                        📚 Histórico
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center gap-2.5 flex-wrap">
+                    <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Fluxo rápido:</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-indigo-50 text-indigo-700 border-indigo-100">
+                      🔍 ① Radar PNCP
+                    </span>
+                    <span className="text-slate-200 font-black text-base">›</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-violet-50 text-violet-700 border-violet-100">
+                      📋 ② Selecionar Edital
+                    </span>
+                    <span className="text-slate-200 font-black text-base">›</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-100">
+                      ⚡ ③ Analisar
+                    </span>
+                  </div>
+
                 </div>
-
-                <h2 className="text-4xl md:text-5xl lg:text-5xl font-black text-slate-900 leading-[1.1] mb-5 tracking-tight">
-                  Um esquadrão de IAs <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-sky-500">
-                    dissecando o seu edital.
-                  </span>
-                </h2>
-                <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
-                  Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico redige defesas, o Financeiro projeta margens, o Auditor cruza legislações em busca de armadilhas e o Compliance blinda a entrega.
-                </p>
               </div>
+            ) : (
+              <div className="xl:w-2/3 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
 
-              <div className="flex-1 w-full relative h-[380px] hidden lg:flex items-center justify-center z-10">
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-24 h-32 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center gap-2 z-20">
-                  <div className="w-12 h-1 bg-slate-200 rounded-full"></div>
-                  <div className="w-16 h-1 bg-slate-200 rounded-full"></div>
-                  <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
-                  <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
+                <div className="flex-1 relative z-10">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                    </span>
+                    <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Orquestração Multi-Agentes</span>
+                  </div>
+
+                  <h2 className="text-4xl md:text-5xl lg:text-5xl font-black text-slate-900 leading-[1.1] mb-5 tracking-tight">
+                    Um esquadrão de IAs <br />
+                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-sky-500">
+                      dissecando o seu edital.
+                    </span>
+                  </h2>
+                  <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
+                    Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico redige defesas, o Financeiro projeta margens, o Auditor cruza legislações em busca de armadilhas e o Compliance blinda a entrega.
+                  </p>
                 </div>
 
-                <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
-                  <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
-                  
-                  <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#8b5cf6" strokeWidth="2" className="path-routing" />
-
-                  <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
-
-                  <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-                  <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
-                </svg>
-
-                <div className="absolute right-0 top-[0%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
-                    <span className="text-indigo-500 text-sm">⚖️</span>
+                <div className="flex-1 w-full relative h-[380px] hidden lg:flex items-center justify-center z-10">
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-24 h-32 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.06)] flex flex-col items-center justify-center gap-2 z-20">
+                    <div className="w-12 h-1 bg-slate-200 rounded-full"></div>
+                    <div className="w-16 h-1 bg-slate-200 rounded-full"></div>
+                    <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
+                    <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
                   </div>
-                  <div>
-                    <span className="block text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">Agente Jurídico</span>
-                    <span className="block text-xs font-bold text-slate-700 leading-none">Claude 3.5 Sonnet</span>
+
+                  <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
+                    <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
+
+                    <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#8b5cf6" strokeWidth="2" className="path-routing" />
+
+                    <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
+
+                    <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+                    <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#f59e0b" strokeWidth="2" className="path-routing" />
+                  </svg>
+
+                  <div className="absolute right-0 top-[0%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
+                      <span className="text-indigo-500 text-sm">⚖️</span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">Agente Jurídico</span>
+                      <span className="block text-xs font-bold text-slate-700 leading-none">Claude 3.5 Sonnet</span>
+                    </div>
                   </div>
+
+                  <div className="absolute right-0 top-[26%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.2s infinite 0.2s' }}>
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
+                      <span className="text-violet-500 text-sm">🕵️</span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none mb-1">Agente Auditor</span>
+                      <span className="block text-xs font-bold text-slate-700 leading-none">OpenAI o3-mini</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute right-0 top-[52%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
+                      <span className="text-emerald-500 text-sm">💰</span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none mb-1">Agente Financeiro</span>
+                      <span className="block text-xs font-bold text-slate-700 leading-none">GPT-4o Omni</span>
+                    </div>
+                  </div>
+
+                  <div className="absolute right-0 top-[78%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
+                      <span className="text-amber-500 text-sm">🛡️</span>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none mb-1">Agente Compliance</span>
+                      <span className="block text-xs font-bold text-slate-700 leading-none">Llama 3 (Local)</span>
+                    </div>
+                  </div>
+
                 </div>
-
-                <div className="absolute right-0 top-[26%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.2s infinite 0.2s' }}>
-                  <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
-                    <span className="text-violet-500 text-sm">🕵️</span>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none mb-1">Agente Auditor</span>
-                    <span className="block text-xs font-bold text-slate-700 leading-none">OpenAI o3-mini</span>
-                  </div>
-                </div>
-                
-                <div className="absolute right-0 top-[52%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
-                    <span className="text-emerald-500 text-sm">💰</span>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none mb-1">Agente Financeiro</span>
-                    <span className="block text-xs font-bold text-slate-700 leading-none">GPT-4o Omni</span>
-                  </div>
-                </div>
-
-                <div className="absolute right-0 top-[78%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
-                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
-                    <span className="text-amber-500 text-sm">🛡️</span>
-                  </div>
-                  <div>
-                    <span className="block text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none mb-1">Agente Compliance</span>
-                    <span className="block text-xs font-bold text-slate-700 leading-none">Llama 3 (Local)</span>
-                  </div>
-                </div>
-
               </div>
-            </div>
+            )}
 
+            {(!token || !userData || isCheckingAuth) && (
             <div className="xl:w-1/3 flex flex-col gap-3">
               <div className="flex-1 bg-white rounded-3xl p-4 md:p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 relative overflow-hidden group hover:shadow-md transition-shadow">
                 <div className="relative w-[65px] h-[65px] shrink-0">
@@ -898,6 +993,7 @@ export default function AnalysisApp() {
                 </p>
               </div>
             </div>
+            )}
 
           </div>
         </div>
@@ -939,12 +1035,23 @@ export default function AnalysisApp() {
                         </div>
                       </div>
 
+                      {text && text.length > 100 && (
+                        <div className="flex items-center gap-4 animate-in fade-in duration-300">
+                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent"></div>
+                          <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 border border-violet-200 rounded-xl shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse"></span>
+                            <span className="text-[10px] font-black text-violet-700 uppercase tracking-widest">Edital Carregado</span>
+                          </div>
+                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent"></div>
+                        </div>
+                      )}
+
                       <div id="area-submissao" className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-6 md:p-10 relative z-20 w-full">
                         <div className="flex items-center gap-4 mb-8">
-                          <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-violet-100">📄</div>
+                          <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-indigo-500 text-white rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-md shadow-violet-200/60">⚡</div>
                           <div>
-                            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Nova Submissão Direta</h2>
-                            <p className="text-sm font-medium text-slate-400">Cole o texto do edital ou faça upload dos documentos</p>
+                            <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Analisar Edital</h2>
+                            <p className="text-sm font-medium text-slate-400">Cole o texto completo ou envie o PDF — os agentes cuidam do resto</p>
                           </div>
                         </div>
 
@@ -1116,16 +1223,20 @@ export default function AnalysisApp() {
                             </>
                           ) : (
                             <button
-                              type="button" 
+                              type="button"
                               disabled={isAnalyzing}
                               onClick={() => handleAnalyze("openai")}
-                              className="w-full bg-slate-900 hover:bg-slate-800 text-white py-4 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-sm border border-slate-700 disabled:opacity-50"
+                              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-violet-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] relative overflow-hidden group"
                             >
-                              <span className="text-xl">⚡</span>
-                              <div className="flex flex-col items-start text-left">
-                                <span className="block leading-tight text-base">Iniciar Análise Estratégica</span>
-                                <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">Processamento Neural Padrão</span>
+                              <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                              <span className="text-2xl relative z-10">⚡</span>
+                              <div className="flex flex-col items-start text-left relative z-10">
+                                <span className="block leading-tight text-base font-black">Iniciar Análise Estratégica</span>
+                                <span className="text-[10px] text-violet-200 font-bold uppercase tracking-widest">Multi-Agente · ~30 segundos</span>
                               </div>
+                              <svg className="w-5 h-5 ml-auto relative z-10 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                              </svg>
                             </button>
                           )}
                         </div>
@@ -1257,7 +1368,33 @@ export default function AnalysisApp() {
                         {/* ========================================================================= */}
                         {((activeTab as string) === 'analise' || (activeTab as string) === 'workspace') && (
                           <div className="space-y-8 animate-in fade-in duration-500">
-                            
+
+                            {/* ━━━ BANNER: EDITAL EXPIRADO ━━━ */}
+                            {(() => {
+                              if (!result.datas_criticas || result.datas_criticas.length === 0) return null;
+                              const agora = new Date();
+                              // Detecta se alguma data crítica principal está no passado
+                              const labelsChave = ['abertura', 'proposta', 'recebimento', 'encerramento'];
+                              const dataExpirada = result.datas_criticas.find(dc => {
+                                if (!dc.data_iso) return false;
+                                const isChave = labelsChave.some(k => dc.label.toLowerCase().includes(k));
+                                return isChave && new Date(dc.data_iso) < agora;
+                              });
+                              if (!dataExpirada) return null;
+                              const formatted = new Date(dataExpirada.data_iso!).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+                              return (
+                                <div className="flex items-start gap-4 bg-red-950 border border-red-800 rounded-2xl px-6 py-4">
+                                  <span className="text-2xl shrink-0 mt-0.5">🚫</span>
+                                  <div>
+                                    <p className="text-sm font-black text-red-300 uppercase tracking-widest mb-0.5">Prazo de Participação Encerrado</p>
+                                    <p className="text-xs font-medium text-red-400 leading-relaxed">
+                                      A <strong className="text-red-300">{dataExpirada.label}</strong> ocorreu em <strong className="text-red-300">{formatted}</strong>. Este edital já não aceita propostas — a análise serve apenas para referência histórica ou estudo de mercado.
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {/* SCORE E DATAS CRÍTICAS */}
                             <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-14 bg-slate-50 border border-slate-200 rounded-[1.5rem] p-8 print:border-none print:p-0">
                               <div className="flex items-center gap-6">
@@ -1293,38 +1430,170 @@ export default function AnalysisApp() {
                               </div>
                               
                               {(() => {
+                                // Prefer new datas_criticas array; fall back to legacy object
+                                if (result.datas_criticas && result.datas_criticas.length > 0) {
+                                  const visible = result.datas_criticas.filter(d => d.data_iso).slice(0, 3);
+                                  if (visible.length === 0) return null;
+                                  return (
+                                    <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
+                                      {visible.map((dc, i) => {
+                                        const date = dc.data_iso ? new Date(dc.data_iso) : null;
+                                        const fmt = date ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : dc.data_iso;
+                                        return (
+                                          <div key={i}>
+                                            <span className={`block text-[10px] font-black uppercase tracking-widest ${dc.urgente ? 'text-red-500' : 'text-slate-400'}`}>
+                                              {dc.urgente ? '⚡ ' : ''}{dc.label}
+                                            </span>
+                                            <span className="text-sm font-bold text-slate-900">{fmt}</span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                }
+
+                                // Legacy fallback
                                 const d = result?.datas_criticas_extraidas;
                                 const propostas = String(d?.data_limite_propostas || "").trim();
                                 const impugnacao = String(d?.data_impugnacao || "").trim();
-                                
-                                const isValida = (texto: string) => {
-                                  if (!texto) return false;
-                                  const t = texto.toLowerCase();
-                                  return !t.includes("não") && !t.includes("nao") && !t.includes("n/a") && !t.includes("informad") && !t.includes("localizad");
-                                };
-
+                                const isValida = (t: string) => !!t && !t.toLowerCase().includes("não") && !t.toLowerCase().includes("n/a") && !t.toLowerCase().includes("informad") && !t.toLowerCase().includes("localizad");
                                 const propValida = isValida(propostas) ? propostas : null;
                                 const impValida = isValida(impugnacao) ? impugnacao : null;
-
                                 if (!propValida && !impValida) return null;
-                                
                                 return (
                                   <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
-                                    {propValida && (
-                                      <div>
-                                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span>
-                                        <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-amber-500">📅</span> {propValida}</span>
-                                      </div>
-                                    )}
-                                    {impValida && (
-                                      <div>
-                                        <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span>
-                                        <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5"><span className="text-rose-500">🚨</span> {impValida}</span>
-                                      </div>
-                                    )}
+                                    {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className="text-sm font-bold text-slate-900">📅 {propValida}</span></div>}
+                                    {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className="text-sm font-bold text-slate-900">🚨 {impValida}</span></div>}
                                   </div>
                                 );
                               })()}
+                            </div>
+
+                            {/* ━━━ SEMÁFORO DE VIABILIDADE ━━━ */}
+                            <div className="relative border border-slate-200 rounded-2xl p-8 mb-8">
+                              <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
+                                <span className="text-lg">🚦</span>
+                                <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Semáforo de Viabilidade</h3>
+                              </div>
+                              {result.semaforo ? (
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                                  {([
+                                    { key: 'tecnica' as const, label: 'Técnica', icon: '⚙️' },
+                                    { key: 'financeira' as const, label: 'Financeira', icon: '💰' },
+                                    { key: 'juridica' as const, label: 'Jurídica', icon: '⚖️' },
+                                    { key: 'documentacao' as const, label: 'Documentação', icon: '📁' },
+                                  ]).map(({ key, label, icon }) => {
+                                    const sinal = result.semaforo![key];
+                                    if (!sinal) return null;
+                                    const cfg: Record<string, { bg: string; border: string; dot: string; txt: string; lbl: string }> = {
+                                      ok: { bg: 'bg-emerald-50', border: 'border-emerald-200', dot: 'bg-emerald-500', txt: 'text-emerald-700', lbl: 'OK' },
+                                      alerta: { bg: 'bg-amber-50', border: 'border-amber-200', dot: 'bg-amber-500', txt: 'text-amber-700', lbl: 'ALERTA' },
+                                      risco: { bg: 'bg-red-50', border: 'border-red-200', dot: 'bg-red-500', txt: 'text-red-700', lbl: 'RISCO' },
+                                    };
+                                    const s = cfg[sinal.status] ?? { bg: 'bg-slate-50', border: 'border-slate-200', dot: 'bg-slate-400', txt: 'text-slate-600', lbl: sinal.status };
+                                    return (
+                                      <div key={key} className={`${s.bg} ${s.border} border rounded-xl p-4 flex flex-col gap-2`}>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-xl">{icon}</span>
+                                          <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${s.txt}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                                            {s.lbl}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] font-black text-slate-700 uppercase tracking-wider">{label}</p>
+                                        <p className="text-xs text-slate-600 font-medium leading-snug">{sinal.motivo}</p>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
+                                  <span className="text-3xl shrink-0">✨</span>
+                                  <div>
+                                    <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ativar o Semáforo de Viabilidade — avaliação automática nos eixos <strong>Técnica · Financeira · Jurídica · Documentação</strong>.</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* ━━━ CRONOGRAMA CRÍTICO ━━━ */}
+                            <div className="relative border border-slate-200 rounded-2xl p-8 mb-8">
+                              <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
+                                <span className="text-lg">📅</span>
+                                <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Cronograma Crítico</h3>
+                              </div>
+                              {result.datas_criticas === undefined ? (
+                                // Campo ausente → análise antiga, anterior à actualização
+                                <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
+                                  <span className="text-3xl shrink-0">📆</span>
+                                  <div>
+                                    <p className="text-sm font-black text-slate-700">Análise desatualizada</p>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Esta análise foi gerada antes da atualização do cronograma. Execute uma nova análise para ativar os alertas de prazo automáticos.</p>
+                                  </div>
+                                </div>
+                              ) : result.datas_criticas.length === 0 ? (
+                                // LLM analisou mas não encontrou datas no documento
+                                <div className="mt-4 flex items-center gap-4 bg-amber-50 border border-dashed border-amber-200 rounded-xl p-5">
+                                  <span className="text-3xl shrink-0">🔍</span>
+                                  <div>
+                                    <p className="text-sm font-black text-amber-800">Datas não identificadas</p>
+                                    <p className="text-xs text-amber-700 font-medium mt-0.5 leading-relaxed">O documento não continha datas de prazo explícitas. Consulte diretamente o edital para verificar os prazos de proposta e impugnação.</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                // Tem entradas — mostrar todas, com ou sem data_iso
+                                <div className="relative mt-2">
+                                  <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
+                                  <div className="space-y-4">
+                                    {result.datas_criticas.map((dc, i) => {
+                                      const agora = new Date();
+                                      const date = dc.data_iso ? new Date(dc.data_iso) : null;
+                                      const expirado = date ? date < agora : false;
+                                      const urgenteFuturo = date ? (!expirado && dc.urgente) : false;
+                                      const formatted = date
+                                        ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+                                        : 'Data não informada no edital';
+                                      return (
+                                        <div key={i} className="relative flex items-start gap-4 pl-12">
+                                          <div className={`absolute left-0 w-10 h-10 rounded-full flex items-center justify-center text-sm shrink-0 z-10 border-2 ${
+                                            !date ? 'bg-slate-100 border-slate-200 text-slate-400' :
+                                            expirado ? 'bg-slate-300 border-slate-200 text-slate-500' :
+                                            urgenteFuturo ? 'bg-red-500 border-red-300 text-white' :
+                                            'bg-white border-slate-300 text-slate-500'
+                                          }`}>
+                                            {!date ? '❓' : expirado ? '⏰' : urgenteFuturo ? '🚨' : '📌'}
+                                          </div>
+                                          <div className={`flex-1 p-4 rounded-xl border transition-all ${
+                                            !date ? 'bg-slate-50 border-dashed border-slate-200' :
+                                            expirado ? 'bg-slate-50 border-slate-200 opacity-60' :
+                                            urgenteFuturo ? 'bg-red-50 border-red-200' :
+                                            'bg-slate-50 border-slate-100'
+                                          }`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                              <p className={`text-[10px] font-black uppercase tracking-widest ${
+                                                !date ? 'text-slate-400' :
+                                                expirado ? 'text-slate-400 line-through' :
+                                                urgenteFuturo ? 'text-red-600' : 'text-slate-500'
+                                              }`}>{dc.label}</p>
+                                              {expirado && (
+                                                <span className="text-[9px] font-black uppercase tracking-widest bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">EXPIRADO</span>
+                                              )}
+                                              {urgenteFuturo && (
+                                                <span className="text-[9px] font-black uppercase tracking-widest bg-red-500 text-white px-2 py-0.5 rounded-full">URGENTE</span>
+                                              )}
+                                            </div>
+                                            <p className={`text-sm font-bold mt-0.5 ${
+                                              !date ? 'text-slate-400 italic' :
+                                              expirado ? 'text-slate-400 line-through' : 'text-slate-900'
+                                            }`}>{formatted}</p>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* RESUMO EXECUTIVO */}
@@ -1395,8 +1664,53 @@ export default function AnalysisApp() {
                               </div>
                             )}
 
+                            {/* ━━━ MATRIZ DE RISCOS (RANQUEADOS POR IMPACTO) ━━━ */}
+                            <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
+                              <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
+                                <span className="text-lg">⚠️</span>
+                                <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Matriz de Riscos</h3>
+                              </div>
+                              {result.risks && result.risks.length > 0 ? (
+                                <div className="space-y-3 mt-2">
+                                  {[...result.risks]
+                                    .sort((a, b) => {
+                                      const order: Record<string, number> = { alto: 0, medio: 1, baixo: 2 };
+                                      return (order[a.impacto ?? 'medio'] ?? 1) - (order[b.impacto ?? 'medio'] ?? 1);
+                                    })
+                                    .map((risk, idx) => {
+                                      const impactoCfg: Record<string, { bg: string; border: string; badge: string }> = {
+                                        alto: { bg: 'bg-red-50', border: 'border-red-200', badge: 'bg-red-100 text-red-700' },
+                                        medio: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700' },
+                                        baixo: { bg: 'bg-slate-50', border: 'border-slate-100', badge: 'bg-slate-100 text-slate-500' },
+                                      };
+                                      const ic = impactoCfg[risk.impacto ?? 'medio'] ?? impactoCfg['medio'];
+                                      const impactoLabel: Record<string, string> = { alto: 'ALTO', medio: 'MÉDIO', baixo: 'BAIXO' };
+                                      return (
+                                        <div key={idx} className={`${ic.bg} ${ic.border} border rounded-xl p-4`}>
+                                          <div className="flex items-start justify-between gap-3 mb-1.5">
+                                            <span className="text-sm font-black text-slate-800">{risk.titulo}</span>
+                                            <span className={`shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${ic.badge}`}>
+                                              {impactoLabel[risk.impacto ?? 'medio'] ?? (risk.impacto || '—')}
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-slate-600 font-medium leading-relaxed">{risk.descricao}</p>
+                                        </div>
+                                      );
+                                    })}
+                                </div>
+                              ) : (
+                                <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
+                                  <span className="text-3xl shrink-0">🛡️</span>
+                                  <div>
+                                    <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ver a matriz de riscos ranqueada por impacto — <strong>Alto · Médio · Baixo</strong> com fundamentação jurídica.</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
                             {/* PARECER TÉCNICO-JURÍDICO BAWZI */}
-                            {result && (  
+                            {result && (
                               <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
                                 <div className="bg-indigo-900 p-4 border-b border-indigo-800 flex items-center justify-between">
                                   <h3 className="text-white font-bold flex items-center gap-2 text-sm">
@@ -1496,33 +1810,45 @@ export default function AnalysisApp() {
                             )}
 
                             {/* EXPORTAR PARECER PDF */}
-                            <PremiumLock 
-                              isLocked={currentTier < 4} 
-                              featureTitle="Parecer Técnico-Jurídico (PDF)" 
-                              requiredTierName="Nível 4 (Dominador)" 
+                            <PremiumLock
+                              isLocked={currentTier < 4}
+                              featureTitle="Minuta de Parecer Técnico-Jurídico (PDF)"
+                              requiredTierName="Nível 4 (Dominador)"
                               onUpgradeClick={() => setShowUpgradeModal(true)}
                             >
-                              <div className="bg-white rounded-[2rem] border-2 border-slate-100 p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm mt-4">
-                                <div className="flex items-start gap-5 flex-1">
-                                  <div className="w-14 h-14 rounded-2xl bg-slate-950 flex items-center justify-center shrink-0 shadow-xl text-2xl border border-slate-800">
+                              <div className="relative bg-slate-950 rounded-[2rem] p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mt-4 overflow-hidden">
+                                {/* Fundo decorativo */}
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(124,58,237,0.15),_transparent_60%)] pointer-events-none" />
+
+                                <div className="flex items-start gap-5 flex-1 relative z-10">
+                                  <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 text-2xl">
                                     ⚖️
                                   </div>
                                   <div>
-                                    <h3 className="font-black text-slate-900 text-xl tracking-tight mb-1">Exportar Parecer Técnico-Jurídico</h3>
-                                    <p className="text-sm font-medium text-slate-500 leading-relaxed mb-4 max-w-xl">
-                                      Gere uma minuta formal em PDF baseada na análise neural da Bawzi. Ideal para anexar a impugnações ou recursos administrativos.
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-md">Exclusivo Dominador</span>
+                                    </div>
+                                    <h3 className="font-black text-white text-xl tracking-tight mb-2 leading-tight">Minuta de Parecer Técnico-Jurídico</h3>
+                                    <p className="text-sm font-medium text-slate-400 leading-relaxed mb-4 max-w-lg">
+                                      Documento formal gerado pela IA Bawzi com fundamentação na <strong className="text-slate-300">Lei 14.133/2021</strong>. Pronto para anexar a impugnações, recursos administrativos ou dossiês internos.
                                     </p>
-                                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200/60 rounded-lg">
-                                      <span className="text-amber-500 text-sm">⚠️</span>
-                                      <span className="text-[10px] font-black text-amber-800 uppercase tracking-widest">Requer validação final de um advogado</span>
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                      {["Semáforo de Viabilidade", "Matriz de Riscos", "Cronograma Crítico", "Parecer Especialista", "Recomendação Final"].map(item => (
+                                        <span key={item} className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded-lg">✓ {item}</span>
+                                      ))}
+                                    </div>
+                                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                      <span className="text-amber-400 text-sm">⚠️</span>
+                                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Minuta — requer validação por advogado habilitado</span>
                                     </div>
                                   </div>
                                 </div>
-                                <button 
-                                  onClick={handleExportPDF} 
-                                  className="w-full md:w-auto px-8 py-4 bg-slate-900 hover:bg-violet-600 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
+
+                                <button
+                                  onClick={handleExportPDF}
+                                  className="relative z-10 w-full md:w-auto px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-violet-900/40 active:scale-95 flex items-center justify-center gap-3 shrink-0"
                                 >
-                                  <span className="text-lg">📄</span> GERAR PARECER (PDF)
+                                  <span className="text-lg">📄</span> Gerar Minuta (PDF)
                                 </button>
                               </div>
                             </PremiumLock>
@@ -1698,6 +2024,7 @@ export default function AnalysisApp() {
                 </div>
               )}
               
+              {currentTier < 3 && (
               <div className="bg-slate-950 rounded-[2.5rem] p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden group">
                 <div className="absolute -right-12 -top-12 w-48 h-48 bg-violet-600/20 blur-[50px] rounded-full pointer-events-none group-hover:bg-violet-600/30 transition-colors duration-700"></div>
                 <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-emerald-600/10 blur-[50px] rounded-full pointer-events-none group-hover:bg-emerald-600/20 transition-colors duration-700"></div>
@@ -1740,6 +2067,7 @@ export default function AnalysisApp() {
                   </p>
                 </div>
               </div>
+              )}
             </div>
           </div>
         </section>

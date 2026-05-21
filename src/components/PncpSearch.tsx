@@ -203,8 +203,43 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
         });
       }
 
-      setResults([...encontrados]); // Os [...] forçam o React a re-renderizar a lista atualizada
-      if (encontrados.length === 0) setError('Nenhuma licitação encontrada para este termo.');
+      // ──────────────────────────────────────────────────────────────
+      // 🛡️ FILTRO FINAL CLIENTE: elimina editais com prazo vencido
+      // Garante que nenhum edital expirado chega ao utilizador,
+      // independentemente do que o backend eventualmente deixe passar.
+      // ──────────────────────────────────────────────────────────────
+      const agora = new Date();
+
+      const parsearData = (str: string | undefined | null): Date | null => {
+        if (!str) return null;
+        const s = str.replace('\xa0', ' ').trim();
+        // Formato BR: DD/MM/YYYY [HH:MM[:SS]]
+        const matchBR = s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
+        if (matchBR) {
+          const [, d, m, y, t] = matchBR;
+          return new Date(`${y}-${m}-${d}T${t || '23:59:59'}`);
+        }
+        // Formato ISO ou qualquer coisa que o Date consiga
+        const tentativa = new Date(s);
+        return isNaN(tentativa.getTime()) ? null : tentativa;
+      };
+
+      const vivos = encontrados.filter(edital => {
+        const dataFim = parsearData(
+          edital.data_fim ||
+          edital.dataFimRecebimentoProposta ||
+          edital.dataEncerramentoProposta ||
+          edital.dataEncerramento ||
+          edital.dataRecebimentoProposta ||
+          edital.dataAberturaProposta
+        );
+        // Se não temos data fiável, mantemos (pode ser edital permanente ou sigiloso)
+        if (!dataFim) return true;
+        return dataFim >= agora;
+      });
+
+      setResults([...vivos]);
+      if (vivos.length === 0) setError('Nenhuma licitação ativa encontrada para este termo. Os editais encontrados já encerraram o prazo de propostas.');
 
       if (resMarket && resMarket.ok) {
          const marketJson = await resMarket.json();
@@ -332,9 +367,11 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             <PncpStatusBadge />
 
           </div>
-          <p className="text-slate-500 text-sm md:text-base leading-relaxed font-medium max-w-2xl">
-            Visão panorâmica do mercado público. Varredura em tempo real na base oficial do <strong className="text-slate-800 font-bold">PNCP</strong>. Encontre licitações e extraia o edital completo para a IA analisar com apenas um clique.
-          </p>
+          {!token && (
+            <p className="text-slate-500 text-sm md:text-base leading-relaxed font-medium max-w-2xl">
+              Visão panorâmica do mercado público. Varredura em tempo real na base oficial do <strong className="text-slate-800 font-bold">PNCP</strong>. Encontre licitações e extraia o edital completo para a IA analisar com apenas um clique.
+            </p>
+          )}
         </div>
       </div>
 
@@ -471,10 +508,10 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               <BrainCircuit className="w-4 h-4 text-indigo-600" strokeWidth={2.5} />
               Inteligência de Mercado
             </h3>
-            <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-violet-100 text-violet-800 border-violet-200'}`}>
-              <span className="text-sm">{uf ? '📍' : '🔍'}</span>
+            <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+              <span className="text-sm">🗂️</span>
               <span className="text-[9px] font-black uppercase tracking-widest">
-                {uf ? `Universo Restrito: ${marketData.previsaoVolume} contratos` : `Universo Amplo: ${marketData.previsaoVolume} contratos`}
+                Base Histórica: {marketData.previsaoVolume} contrato{marketData.previsaoVolume === '1' ? '' : 's'} assinado{marketData.previsaoVolume === '1' ? '' : 's'} {uf ? `em ${uf}` : 'no PNCP'}
               </span>
             </div>
           </div>
@@ -482,9 +519,9 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-16 h-16 bg-violet-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Teto Faturamento</span>
-              <span className="text-xl md:text-2xl font-black text-white">R$ {marketData.tamanhoMercado}</span>
-              <span className="text-[10px] text-emerald-400 font-bold block mt-1">Estimativa Histórica</span>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume do Mercado</span>
+              <span className="text-xl md:text-2xl font-black text-white">~R$ {marketData.tamanhoMercado}</span>
+              <span className="text-[10px] text-emerald-400 font-bold block mt-1">Base: {marketData.previsaoVolume} contrato{marketData.previsaoVolume === '1' ? '' : 's'} hist.</span>
             </div>
             <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
@@ -502,22 +539,22 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{marketData.taxaSucesso}%</span>
               </div>
             </div>
-            {/* 4. VOLUME DE NEGÓCIOS (Estilo Premium Restaurado) */}
+            {/* 4. EDITAIS ABERTOS (licitações ativas na busca atual) */}
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-center relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-16 h-16 bg-sky-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
-              
+
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 relative z-10">
-                Volume de Negócios
+                Editais Abertos
               </span>
-              
+
               <div className="flex items-baseline gap-1 relative z-10">
                 <span className="text-2xl md:text-3xl font-black text-white">
                   {results ? results.length : 0}
                 </span>
               </div>
-              
+
               <span className="text-[10px] text-sky-400 font-bold block mt-1 relative z-10">
-                Contratos Ativos
+                Licitações ativas agora
               </span>
             </div>
           </div>
@@ -530,8 +567,12 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       {results.length > 0 && (
         <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pr-3 pb-8 custom-scrollbar relative z-10">
           {results.map((edital, index) => {
-            const isRecorrente = index % 3 === 0; 
-            const diasPredicao = 30 + (index * 12); 
+            const isRecorrente = index % 3 === 0;
+            const diasPredicao = 30 + (index * 12);
+
+            // Detecta se data_fim não é uma data real (metadata noise do PNCP)
+            const dataFimRaw = edital.data_fim || '';
+            const dataFimIlegivel = dataFimRaw && !/\d{2}\/\d{2}\/\d{4}/.test(dataFimRaw) && !/\d{4}-\d{2}-\d{2}/.test(dataFimRaw);
 
             return (
               <div key={edital.id || index} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-indigo-300 transition-all shadow-sm hover:shadow-md group">
@@ -586,14 +627,28 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       <p className="text-xs text-slate-700 font-semibold truncate">{edital.data_inicio || 'A definir'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 border-l-2 border-amber-400 pl-2 bg-amber-50 rounded-r py-1">
-                    <Timer className="w-4 h-4 text-amber-600 shrink-0" />
+                  <div className={`flex items-center gap-2 border-l-2 pl-2 rounded-r py-1 ${dataFimIlegivel ? 'border-orange-400 bg-orange-50' : 'border-amber-400 bg-amber-50'}`}>
+                    <Timer className={`w-4 h-4 shrink-0 ${dataFimIlegivel ? 'text-orange-500' : 'text-amber-600'}`} />
                     <div>
-                      <p className="text-[9px] text-amber-600/80 uppercase font-black tracking-widest">Fim</p>
-                      <p className="text-xs text-amber-900 font-black truncate">{edital.data_fim || 'Sem limite'}</p>
+                      <p className={`text-[9px] uppercase font-black tracking-widest ${dataFimIlegivel ? 'text-orange-600' : 'text-amber-600/80'}`}>Fim</p>
+                      {dataFimIlegivel ? (
+                        <p className="text-[10px] text-orange-700 font-black truncate">⚠️ Verificar no edital</p>
+                      ) : (
+                        <p className="text-xs text-amber-900 font-black truncate">{edital.data_fim || 'Sem limite'}</p>
+                      )}
                     </div>
                   </div>
                 </div>
+
+                {/* AVISO: prazo não verificável automaticamente */}
+                {dataFimIlegivel && (
+                  <div className="mb-4 flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+                    <span className="text-amber-500 text-base shrink-0">⚠️</span>
+                    <p className="text-[11px] font-bold text-amber-800 leading-snug">
+                      Prazo de encerramento não disponível nos metadados do PNCP. Verifique o edital original antes de analisar — pode estar vencido.
+                    </p>
+                  </div>
+                )}
 
                 {/* PREDICTIVE RADAR */}
                 {isRecorrente && (

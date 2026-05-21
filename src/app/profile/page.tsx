@@ -77,21 +77,21 @@ function ProfileContent() {
         // 🟢 2. DISPARA EVENTO GLOBAL: Avisa o Menu Lateral/Cabeçalho para mudar na hora!
         window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: nivelAtualizado } }));
 
-        // 🟢 3. AUTO-SYNC À PROVA DE FALHAS: 
-        // 1. Manda o backend verificar o Stripe
+        // 🟢 3. AUTO-SYNC À PROVA DE FALHAS:
+        // 1. Manda o backend verificar o Stripe e actualizar workspace + user
         fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, { headers })
           .then(async (res) => {
             if (!res.ok) return;
-            
+
             // 2. Pergunta ao banco de dados qual é o nível real agora
             const checkRes = await fetch(`${API_URL}/api/workspace/details`, { headers });
             const checkData = await checkRes.json();
-            
-            // 3. Pega no nível atualizado
+
+            // 3. Workspace é a fonte de verdade após o sync
             const tierReal = checkData.tier || 1;
 
-            // 4. Se o Stripe atualizou o banco e o nível é maior, forçamos a tela a mudar!
-            if (tierReal > nivelAtualizado) {
+            // 4. Actualiza UI se o tier mudou (upgrade OU downgrade)
+            if (tierReal !== nivelAtualizado) {
               setUserTier(tierReal);
               localStorage.setItem('bawzi_tier', String(tierReal));
               window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: tierReal } }));
@@ -119,9 +119,13 @@ function ProfileContent() {
         attempts++;
         const token = localStorage.getItem('bawzi_token');
         if (!token) return;
-        
+
         try {
           const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+          // Força o sync com Stripe antes de ler os dados
+          await fetch(`${API_URL}/api/billing/sync`, { headers }).catch(() => {});
+
           const [userRes, wsRes] = await Promise.all([
             fetch(`${API_URL}/api/users/me`, { headers }),
             fetch(`${API_URL}/api/workspace/details`, { headers })
@@ -130,12 +134,14 @@ function ProfileContent() {
           if (userRes.ok && wsRes.ok) {
             const uData = await userRes.json();
             const wData = await wsRes.json();
-            const nivelAtualizado = Math.max(uData.tier || 1, wData.tier || 1);
+            // Workspace é a fonte de verdade — user.tier pode estar stale
+            const nivelAtualizado = wData.tier || uData.tier || 1;
             const nivelAntigo = Number(localStorage.getItem('bawzi_tier') || 1);
 
-            if (nivelAtualizado > nivelAntigo || attempts >= maxAttempts) {
+            // Recarrega se o tier mudou (upgrade OU downgrade) ou se esgotaram as tentativas
+            if (nivelAtualizado !== nivelAntigo || attempts >= maxAttempts) {
               localStorage.setItem('bawzi_tier', String(nivelAtualizado));
-              window.location.href = '/profile'; 
+              window.location.href = '/profile';
             } else {
               setTimeout(waitForWebhookAndReload, 2000);
             }

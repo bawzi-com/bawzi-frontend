@@ -402,38 +402,156 @@ export default function CompetitorWarRoom({
             </div>
           </div>
 
+          {/* ━━━ BARRA DE INTELIGÊNCIA DE PREÇO ━━━ */}
+          {pricing && (pricing.nivelAmeaca || pricing.desagioPreditivoOrgao || pricing.perfilVencedor) && (() => {
+            const nivel = String(pricing.nivelAmeaca || "").toUpperCase();
+            const nivelCfg: Record<string, { bg: string; badge: string; label: string; emoji: string }> = {
+              ALTO: { bg: 'bg-red-50 border-red-200', badge: 'bg-red-100 text-red-700', label: 'ALTO', emoji: '🔴' },
+              MODERADO: { bg: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', label: 'MODERADO', emoji: '🟡' },
+              BAIXO: { bg: 'bg-emerald-50 border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', label: 'BAIXO', emoji: '🟢' },
+            };
+            const nc = nivelCfg[nivel] ?? { bg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-600', label: nivel || '—', emoji: '⚪' };
+            const desagio = Number(pricing.desagioPreditivoOrgao) || 0;
+            const perfilMap: Record<string, string> = { Tubarão: '🦈', Agressivo: '🎯', Conservador: '🛡️', Iniciante: '🌱' };
+            const perfilEmoji = perfilMap[pricing.perfilVencedor] || '🤖';
+            return (
+              <div className={`border rounded-[2rem] p-6 md:p-8 shadow-sm ${nc.bg}`}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">💡</span>
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência de Preço do Órgão</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  {/* Nível de Ameaça */}
+                  <div className="bg-white/80 rounded-xl p-4 border border-white/60">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nível de Ameaça</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{nc.emoji}</span>
+                      <span className={`text-sm font-black px-2 py-0.5 rounded-lg ${nc.badge}`}>{nc.label}</span>
+                    </div>
+                  </div>
+                  {/* Deságio Preditivo */}
+                  <div className="bg-white/80 rounded-xl p-4 border border-white/60">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Deságio Preditivo do Órgão</p>
+                    <div>
+                      <span className="text-2xl font-black text-slate-900">{desagio > 0 ? `${desagio.toFixed(1)}%` : '—'}</span>
+                      {desagio > 0 && (
+                        <div className="mt-2 h-2 bg-slate-200 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${desagio > 25 ? 'bg-red-500' : desagio > 15 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, desagio * 2.5)}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Perfil do Vencedor */}
+                  <div className="bg-white/80 rounded-xl p-4 border border-white/60">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Perfil do Vencedor Típico</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{perfilEmoji}</span>
+                      <span className="text-sm font-black text-slate-900">{pricing.perfilVencedor || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ━━━ MAPA DE TERRITÓRIO (UF) ━━━ */}
+          {(() => {
+            const todas = [...listaNacional, ...listaRegional];
+            const ufMap: Record<string, number> = {};
+            todas.forEach(c => { const u = c.uf || 'BR'; ufMap[u] = (ufMap[u] || 0) + 1; });
+            const ufEntries = Object.entries(ufMap).sort((a, b) => b[1] - a[1]);
+            if (ufEntries.length < 2) return null;
+            const maxVal = ufEntries[0][1];
+            return (
+              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
+                <div className="flex items-center gap-2 mb-5">
+                  <span className="text-lg">🗺️</span>
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Mapa de Território por UF</h3>
+                </div>
+                <div className="space-y-3">
+                  {ufEntries.map(([estado, count]) => (
+                    <div key={estado} className="flex items-center gap-4">
+                      <span className="w-8 text-xs font-black text-slate-500 uppercase shrink-0">{estado}</span>
+                      <div className="flex-1 h-7 bg-slate-100 rounded-lg overflow-hidden">
+                        <div
+                          className={`h-full rounded-lg flex items-center px-3 transition-all ${estado === uf ? 'bg-rose-500' : 'bg-indigo-500'}`}
+                          style={{ width: `${Math.round((count / maxVal) * 100)}%` }}
+                        >
+                          <span className="text-[10px] font-black text-white">{count} rival{count > 1 ? 'is' : ''}</span>
+                        </div>
+                      </div>
+                      {estado === uf && <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest shrink-0">← SEU ESTADO</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm flex flex-col gap-6">
-            
+
             <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 flex w-full md:max-w-sm">
               <button onClick={() => setAbaConcorrentes('nacional')} className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${abaConcorrentes === 'nacional' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>Nacionais</button>
               <button onClick={() => setAbaConcorrentes('regional')} className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${abaConcorrentes === 'regional' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>Regionais</button>
             </div>
 
-            {listaAtiva.length === 0 ? (
+            {/* ━━━ MATRIZ DE AMEAÇAS ━━━ */}
+            {listaAtiva.length > 0 && (() => {
+              const probOrder: Record<string, number> = { Alta: 3, Média: 2, Media: 2, Baixa: 1 };
+              const forcaOrder: Record<string, number> = { Tubarão: 4, Agressivo: 3, Conservador: 2, Iniciante: 1 };
+              const forcaEmoji: Record<string, string> = { Tubarão: '🦈', Agressivo: '🎯', Conservador: '🛡️', Iniciante: '🌱' };
+              const ranked = [...listaAtiva]
+                .map(c => ({ ...c, threatScore: ((probOrder[c.probabilidade] ?? 2) * 10) + (forcaOrder[c.forca] ?? 2) + Math.min(c.vitorias, 20) }))
+                .sort((a, b) => b.threatScore - a.threatScore);
+              const maxScore = ranked[0]?.threatScore || 1;
+              return (
+                <div className="border border-slate-100 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
+                    <span className="text-sm">🎯</span>
+                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Matriz de Ameaças — Ranqueado</span>
+                  </div>
+                  <div className="divide-y divide-slate-50">
+                    {ranked.slice(0, 6).map((item, idx) => {
+                      const threatPct = Math.round((item.threatScore / maxScore) * 100);
+                      const isTop = idx === 0;
+                      return (
+                        <div key={idx} className={`flex items-center gap-3 px-4 py-3 ${isTop ? 'bg-red-50' : 'bg-white'}`}>
+                          <span className={`text-xs font-black w-5 text-center shrink-0 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>#{idx + 1}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-black text-slate-800 truncate">{item.nome}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[9px] font-bold text-slate-400">{item.uf}</span>
+                              <span className="text-[9px] font-bold text-slate-400">·</span>
+                              <span className="text-[9px] font-bold text-slate-400">{item.vitorias} vitórias</span>
+                              <span className="text-sm">{forcaEmoji[item.forca] || '🤖'}</span>
+                              {item.cnpj && <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>}
+                            </div>
+                          </div>
+                          <div className="w-20 shrink-0">
+                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${isTop ? 'bg-red-500' : threatPct > 65 ? 'bg-orange-400' : 'bg-slate-300'}`} style={{ width: `${threatPct}%` }} />
+                            </div>
+                            <p className={`text-[9px] font-black text-right mt-0.5 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>{threatPct}%</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button onClick={() => handleOpenDossie(item)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white border border-indigo-200 transition-colors" title="Ver Dossiê">
+                              <Eye size={13} />
+                            </button>
+                            <button onClick={() => handleLockTarget(item)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-900 hover:bg-rose-600 text-white transition-colors" title="Travar Alvo">
+                              <Crosshair size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {listaAtiva.length === 0 && (
               <div className="py-20 text-center text-slate-400 bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.5rem]">
                 <p className="font-bold text-sm">Nenhum rival ativo mapeado.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {listaAtiva.map((item, idx) => (
-                  <div key={idx} className="bg-slate-50 border border-slate-200 rounded-[1.5rem] p-6 flex flex-col hover:border-indigo-300 hover:shadow-md transition-all">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                      <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm"><Award size={24} /></div>
-                      <div className="text-right">
-                        <span className="block text-2xl font-black text-slate-800 leading-none">{item.vitorias}</span>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Vitórias</span>
-                      </div>
-                    </div>
-                    <div className="mb-6 flex-1">
-                      <h4 className="text-sm font-black text-slate-900 uppercase mb-2">{item.nome}</h4>
-                      <span className="inline-block text-[10px] font-bold text-slate-500 border border-slate-200 bg-white px-2 py-1 rounded shadow-sm">CNPJ: {item.cnpj || 'Desconhecido'}</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-auto">
-                      <button onClick={() => handleLockTarget(item)} className="w-full py-3 bg-slate-900 hover:bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors"><Crosshair size={14} /> Travar Alvo</button>
-                      <button onClick={() => handleOpenDossie(item)} className="w-full py-3 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-1.5 transition-colors shadow-sm"><Eye size={14} /> Ver Dossiê</button>
-                    </div>
-                  </div>
-                ))}
               </div>
             )}
           </div>

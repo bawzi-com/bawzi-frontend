@@ -147,21 +147,26 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
       if (res.ok) {
         if (data.url) {
-          // Se for checkout hosted, também marca o retorno
+          // Checkout hosted: redireciona para a página do Stripe
           sessionStorage.setItem('returning_from_portal', 'true');
           window.location.href = data.url;
+          // Nota: isCheckoutLoading permanece true propositadamente até a página mudar
         } else if (data.client_secret) {
+          // Embedded checkout: abre o modal com o formulário do Stripe
           setStripeSecret(data.client_secret);
           setShowUpgradeModal(true);
-          setIsCheckoutLoading(false); 
+          setIsCheckoutLoading(false);
+        } else {
+          // Resposta inesperada do backend (sem url nem client_secret)
+          setIsCheckoutLoading(false);
+          alert(data.detail || "Erro inesperado ao processar o pagamento. Tente novamente.");
         }
       } else {
         throw new Error(data.detail || "Erro no processamento");
       }
     } catch (error) {
       setIsCheckoutLoading(false);
-      alert("Sessão expirada. Por favor realize o login novamente.");
-      router.push('/login');
+      alert("Erro de ligação ao servidor. Por favor tente novamente.");
     }
   };
 
