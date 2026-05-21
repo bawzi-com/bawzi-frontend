@@ -12,30 +12,6 @@ export default function Header() {
   const [userTier, setUserTier] = useState<string>('1');
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
 
-  const [showNotifMenu, setShowNotifMenu] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { 
-      id: 1, 
-      type: 'critical', 
-      title: 'Risco de Desclassificação', 
-      message: 'Sua Certidão Federal (CND) expira em 48 horas.', 
-      isRead: false,
-    },
-    { 
-      id: 2, 
-      type: 'success', 
-      title: 'Neural Matchmaker', 
-      message: 'Encontramos 2 novos editais compatíveis com o seu CNAE.', 
-      isRead: false,
-    }
-  ]);
-
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-  };
-
   useEffect(() => {
     const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -139,45 +115,6 @@ export default function Header() {
           {token ? (
             <div className="flex items-center gap-3 sm:gap-4">
               
-              {/* SINO DE NOTIFICAÇÕES */}
-              <div className="relative">
-                <button onClick={() => setShowNotifMenu(!showNotifMenu)} className="relative flex items-center justify-center h-9 w-9 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors border border-slate-200">
-                  <span className="text-base">🔔</span>
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-in zoom-in">
-                      {unreadCount}
-                    </span>
-                  )}
-                </button>
-
-                {showNotifMenu && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifMenu(false)}></div>
-                    <div className="absolute right-0 mt-3 w-80 sm:w-[350px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                      <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                        <h3 className="font-black text-slate-900 text-sm uppercase tracking-widest">Radar Estratégico</h3>
-                        {unreadCount > 0 && (
-                          <button onClick={markAllAsRead} className="text-[10px] font-bold text-violet-600 hover:text-violet-800 uppercase">
-                            Marcar lidas
-                          </button>
-                        )}
-                      </div>
-                      <div className="max-h-[350px] overflow-y-auto">
-                        {notifications.map(notif => (
-                          <div key={notif.id} className={`p-4 flex gap-4 ${notif.isRead ? 'opacity-60' : 'bg-violet-50/30'}`}>
-                            <div className="mt-1">{notif.type === 'critical' ? '🚨' : '🎯'}</div>
-                            <div className="flex-1">
-                              <h4 className="text-sm font-bold mb-1">{notif.title}</h4>
-                              <p className="text-xs text-slate-500 leading-relaxed">{notif.message}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-
               {/* 🟢 AVATAR COM TOAST DINÂMICO */}
               <div className="relative group cursor-pointer">
                 <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-violet-500/20">

@@ -18,6 +18,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
   const [formData, setFormData] = useState({
     _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
+    cnae_principal: '', cnae_descricao: '',
   });
 
   const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
@@ -30,13 +31,14 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   }, [companyData]);
 
   const handleAddNew = () => {
-    setFormData({ _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '' });
+    setFormData({ _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '', cnae_principal: '', cnae_descricao: '' });
     setView('form');
   };
 
   const handleEdit = (emp: any) => {
     setFormData({
-      _id: emp._id || '', cnpj: emp.cnpj || '', razao_social: emp.razao_social || '', enquadramento: emp.enquadramento || '', capital_social: emp.capital_social || ''
+      _id: emp._id || '', cnpj: emp.cnpj || '', razao_social: emp.razao_social || '', enquadramento: emp.enquadramento || '', capital_social: emp.capital_social || '',
+      cnae_principal: emp.cnae_principal || '', cnae_descricao: emp.cnae_descricao || '',
     });
     setView('form');
   };
@@ -61,11 +63,13 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Erro ao buscar CNPJ');
       
-      setFormData({ 
-        ...formData, 
-        razao_social: data.razao_social || '', 
-        enquadramento: data.porte || '', 
-        capital_social: data.capital_social || '' 
+      setFormData({
+        ...formData,
+        razao_social: data.razao_social || '',
+        enquadramento: data.porte || '',
+        capital_social: data.capital_social || '',
+        cnae_principal: data.cnae_principal || '',
+        cnae_descricao: data.cnae_descricao || '',
       });
             
     } catch (error: any) {
@@ -229,7 +233,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                   cnpj={emp.cnpj}
                   companyName={emp.nome_fantasia || emp.razao_social || 'Consulta Ativa'}
                   userTier={userTier ?? 1}
-                  onUpgradeClick={() => router.push('/pricing')}
+                  onUpgradeClick={() => router.push('/plans')}
                 />
               </div>
 

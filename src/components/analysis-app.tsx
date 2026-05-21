@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
+import ContratosVencendo from '../components/ContratosVencendo';
 import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
 import AuthModal from './AuthModal';
@@ -20,6 +21,7 @@ import CompliancePanel from '../components/CompliancePanel';
 import UpsellModal from './UpsellModal';
 import CompetitorWarRoom from '../components/CompetitorWarRoom';
 import TacticalSimulator from '../components/TacticalSimulator';
+import NotificationPanel, { useNotificacoes } from '../components/NotificationPanel';
 
 const logout = () => {
   localStorage.clear();
@@ -167,6 +169,7 @@ export default function AnalysisApp() {
   const [userData, setUserData] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState<string>('workspace');
+  const [notifCount, setNotifCount] = useState(0);
   const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
   const [isCachedResult, setIsCachedResult] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -1933,6 +1936,19 @@ export default function AnalysisApp() {
               {/* ========================================================================= */}
               {/* 🟢 O SEU TRECHO ENTRA DAQUI PARA BAIXO (EXATAMENTE COMO VOCÊ MANDOU)        */}
               {/* ========================================================================= */}
+              {/* ABA DE RENOVAÇÕES */}
+              {activeTab === 'renovacoes' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <ContratosVencendo
+                    token={token ?? ''}
+                    companies={userData?.companies?.length > 0
+                      ? userData.companies
+                      : userData?.company ? [userData.company] : []}
+                    defaultUf={userData?.company?.uf || ''}
+                  />
+                </div>
+              )}
+
               {/* ABA DE HISTÓRICO */}
               {activeTab === 'history' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1989,6 +2005,26 @@ export default function AnalysisApp() {
             {/* SIDEBAR DIREITA */}
             <div className="flex flex-col gap-6 sticky top-28 print:hidden">
               <div className="flex flex-col gap-3 mb-2 p-2 bg-slate-100/50 rounded-[2rem] border border-slate-200/50">
+
+                {/* ── Cabeçalho sidebar: perfil + sino ─────────────────── */}
+                {token && userData && (
+                  <div className="flex items-center justify-between px-3 pt-1 pb-0">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-[10px] font-black shrink-0 shadow-sm">
+                        {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-[11px] font-black text-slate-700 truncate max-w-[90px]">
+                        {(userData.name || userData.nome || '').split(' ')[0]}
+                      </span>
+                    </div>
+                    <NotificationPanel
+                      token={token ?? ''}
+                      onNavigate={(tab) => setActiveTab(tab)}
+                      onCountChange={setNotifCount}
+                    />
+                  </div>
+                )}
+
                 <button onClick={() => setActiveTab('workspace')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
                   <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">⚡</span> Nova Análise</span>
                   {(activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes') && <span className="w-2 h-2 rounded-full bg-violet-500"></span>}
@@ -1997,6 +2033,12 @@ export default function AnalysisApp() {
                   <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">📚</span> O Meu Histórico</span>
                   {activeTab === 'history' && <span className="w-2 h-2 rounded-full bg-violet-500"></span>}
                 </button>
+                {token && userData && (userData.companies?.length > 0 || userData.company) && (
+                  <button onClick={() => setActiveTab('renovacoes')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'renovacoes' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
+                    <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">🔔</span> Renovações</span>
+                    {activeTab === 'renovacoes' && <span className="w-2 h-2 rounded-full bg-amber-500"></span>}
+                  </button>
+                )}
               </div>
 
               {token && userData ? (
