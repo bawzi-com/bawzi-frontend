@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
+import MunicipioAutocomplete from './MunicipioAutocomplete';
 
 interface PncpItem {
   id: string;
@@ -39,6 +40,8 @@ interface PncpSearchProps {
 export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
+  const [municipioId, setMunicipioId]   = useState('');
+  const [municipioNome, setMunicipioNome] = useState('');
   const [forceExact, setForceExact] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -146,20 +149,21 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
     try {
       const ufParam = uf ? `&uf=${encodeURIComponent(uf)}` : '';
       const exactParam = forceExact ? `&force_exact=true` : '';
-      
+      const munParam = municipioId ? `&municipio_id=${encodeURIComponent(municipioId)}` : '';
+
       // Limpeza de segurança da UF detetada
-      const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : ''; 
+      const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
 
       const fetchHeaders = new Headers();
       if (token) fetchHeaders.append('Authorization', `Bearer ${token}`);
-      
-      // 1. Busca Nacional
-      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}${exactParam}`, { headers: fetchHeaders });
+
+      // 1. Busca principal (com municipio_id se selecionado)
+      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
       const reqMarket = fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(searchTerm)}${ufParam}`).catch(() => null);
-      
-      // 2. A PINÇA: Se busca for no Brasil e tivermos UF detetada, forçamos uma busca paralela só nesse estado!
+
+      // 2. A PINÇA: só ativa se não há filtro de cidade (município já é mais específico)
       let reqRegional = null;
-      if ((!uf || uf === '') && ufAtivo) {
+      if ((!uf || uf === '') && ufAtivo && !municipioId) {
         reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
       }
 
@@ -394,11 +398,14 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             />
           </div>
 
-          <div className="w-full md:w-48 h-14 bg-white rounded-xl border border-slate-200 shadow-sm relative focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
-            <select 
+          <div className="w-full md:w-40 h-14 bg-white rounded-xl border border-slate-200 shadow-sm relative focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+            <select
               value={uf}
               onChange={(e) => {
                 setUf(e.target.value);
+                // Limpa cidade ao trocar estado
+                setMunicipioId('');
+                setMunicipioNome('');
                 if (onUfChange) onUfChange(e.target.value);
               }}
               className="appearance-none block w-full h-full pl-4 pr-10 bg-transparent border-none text-slate-700 font-medium focus:outline-none focus:ring-0 sm:text-sm cursor-pointer"
@@ -435,6 +442,24 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
               <span className="text-slate-400 text-xs">▼</span>
             </div>
+          </div>
+
+          {/* Filtro de cidade — só aparece após selecionar UF */}
+          <div className={`transition-all duration-200 overflow-visible ${uf ? 'w-full md:w-52 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+            {uf && (
+              <div className="h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all overflow-visible">
+                <MunicipioAutocomplete
+                  value={municipioNome}
+                  uf={uf}
+                  apiUrl={API_URL}
+                  onSelect={(id, nome) => { setMunicipioId(id); setMunicipioNome(nome); }}
+                  onClear={() => { setMunicipioId(''); setMunicipioNome(''); }}
+                  placeholder="Filtrar por cidade..."
+                  className="h-full"
+                  variant="light"
+                />
+              </div>
+            )}
           </div>
 
           <button 
@@ -491,13 +516,16 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       {/* ========================================== */}
       {results.length > 0 && marketData && (
         <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 relative z-10">
-          {uf && (
+          {(uf || municipioNome) && (
             <div className="mb-5 bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-3 shadow-sm">
               <span className="text-amber-500 text-lg">🎯</span>
               <div>
-                <p className="text-[11px] font-black text-amber-900 uppercase tracking-wider">Filtro Regional Ativo: ({uf})</p>
+                <p className="text-[11px] font-black text-amber-900 uppercase tracking-wider">
+                  Filtro Regional Ativo: {municipioNome ? `${municipioNome}${uf ? ` · ${uf}` : ''}` : uf}
+                </p>
                 <p className="text-[11px] text-amber-800/80 font-medium mt-0.5 leading-relaxed">
-                  Todos os indicadores refletem <strong>exclusiva e estritamente</strong> a realidade de contratações de <strong>{uf}</strong>.
+                  Todos os indicadores refletem <strong>exclusiva e estritamente</strong> a realidade de contratações{' '}
+                  {municipioNome ? <>de <strong>{municipioNome}</strong></> : <>de <strong>{uf}</strong></>}.
                 </p>
               </div>
             </div>

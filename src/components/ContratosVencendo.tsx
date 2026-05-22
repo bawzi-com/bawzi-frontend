@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
+import MunicipioAutocomplete from './MunicipioAutocomplete';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -132,7 +133,9 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
 
   // UF selector = filtro manual; homeUf = UF da empresa (para flag, não filtra)
   const homeUf = (defaultUf || '').toUpperCase();
-  const [uf, setUf]       = useState(''); // default: Brasil todo
+  const [uf, setUf]                     = useState(''); // default: Brasil todo
+  const [municipioId, setMunicipioId]   = useState('');
+  const [municipioNome, setMunicipioNome] = useState('');
   const [dias, setDias]   = useState<30 | 60 | 90 | 180>(90);
   const [loading, setLoading]           = useState(false);
   const [contratos, setContratos]       = useState<ContratoVencendo[]>([]);
@@ -182,6 +185,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
       const params = new URLSearchParams({ q: termo.trim(), dias: String(dias) });
       if (uf && uf !== 'BR') params.set('uf', uf);
       if (homeUf) params.set('home_uf', homeUf);
+      if (municipioId) params.set('municipio_id', municipioId);
 
       const res = await fetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -198,7 +202,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
     } finally {
       setLoading(false);
     }
-  }, [termo, uf, dias, token]);
+  }, [termo, uf, municipioId, dias, token]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') buscar();
@@ -274,7 +278,12 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
         {/* UF */}
         <select
           value={uf}
-          onChange={(e) => setUf(e.target.value)}
+          onChange={(e) => {
+            setUf(e.target.value);
+            // Limpa cidade ao trocar estado
+            setMunicipioId('');
+            setMunicipioNome('');
+          }}
           className="w-28 px-3 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all cursor-pointer"
         >
           <option value="">Todos UFs</option>
@@ -282,6 +291,21 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+
+        {/* Cidade — só aparece após selecionar UF */}
+        {uf && (
+          <MunicipioAutocomplete
+            value={municipioNome}
+            uf={uf}
+            apiUrl={API_URL}
+            onSelect={(id, nome) => { setMunicipioId(id); setMunicipioNome(nome); }}
+            onClear={() => { setMunicipioId(''); setMunicipioNome(''); }}
+            placeholder="Filtrar por cidade..."
+            className="w-44"
+            inputClassName="w-full pl-9 pr-8 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all placeholder:font-normal placeholder:text-slate-400"
+            variant="slate"
+          />
+        )}
 
         {/* Botão buscar */}
         <button
