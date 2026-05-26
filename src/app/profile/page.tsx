@@ -83,14 +83,21 @@ function ProfileContent() {
           .then(async (res) => {
             if (!res.ok) return;
 
-            // 2. Pergunta ao banco de dados qual é o nível real agora
-            const checkRes = await fetch(`${API_URL}/api/workspace/details`, { headers });
-            const checkData = await checkRes.json();
+            // 2. Re-busca TANTO workspace COMO user — igual à lógica inicial.
+            //    Só workspace.tier causava regressão: se ws=1 mas user=4, ficava em 1.
+            const [checkWsRes, checkUserRes] = await Promise.all([
+              fetch(`${API_URL}/api/workspace/details`, { headers }),
+              fetch(`${API_URL}/api/users/me`, { headers }),
+            ]);
+            if (!checkWsRes.ok || !checkUserRes.ok) return;
 
-            // 3. Workspace é a fonte de verdade após o sync
-            const tierReal = checkData.tier || 1;
+            const checkWs   = await checkWsRes.json();
+            const checkUser = await checkUserRes.json();
 
-            // 4. Actualiza UI se o tier mudou (upgrade OU downgrade)
+            // 3. Mesma lógica que o fetch inicial: o maior dos dois vence
+            const tierReal = Math.max(checkWs.tier || 1, checkUser.tier || 1);
+
+            // 4. Actualiza UI só se o tier mudou (upgrade OU downgrade)
             if (tierReal !== nivelAtualizado) {
               setUserTier(tierReal);
               localStorage.setItem('bawzi_tier', String(tierReal));

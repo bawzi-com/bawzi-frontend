@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { BrainCircuit, ScanSearch, Radar, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock, Crown } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { BrainCircuit, ScanSearch, Radar, Award, Globe, MapPin, SearchX, MapPinOff, FileText, Lock, Crown, Zap, BookOpen, RefreshCw, ChevronRight, Sparkles, Target, CircleDot, CheckCircle2, DollarSign, Scale, TrendingDown, ShieldCheck, Cpu, Gauge, Settings2, Banknote, FolderOpen, CalendarDays, CircleHelp, Clock, AlertCircle, Pin, ClipboardList, ThumbsUp, ThumbsDown, AlertTriangle, Shield, Printer, Mail, Bot, CalendarX, Lightbulb, XCircle } from 'lucide-react';
 import { fetchUserProfile } from '../services/api';
 import Image from 'next/image'
 import UserProfileCard from './UserProfileCard';
@@ -13,6 +13,7 @@ import Link from 'next/link';
 import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import ContratosVencendo from '../components/ContratosVencendo';
+import CapitalIntelligence from '../components/CapitalIntelligence';
 import UpgradeModal from './UpgradeModal';
 import { useTierConfig } from '../Contexts/TierContext';
 import AuthModal from './AuthModal';
@@ -206,6 +207,7 @@ export default function AnalysisApp() {
   const [isLoadingCnd, setIsLoadingCnd] = useState(false);
   const [loadingStep, setLoadingStep] = useState(0);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [renovacoesCount, setRenovacoesCount] = useState<number | null>(null);
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
   const [provider, setProvider] = useState<string>('openai');
   const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
@@ -308,6 +310,23 @@ export default function AnalysisApp() {
 
             setUserData(blendedUserData);
             window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: nivelFinal } }));
+
+            // Busca silenciosa da contagem de contratos a vencer (só tier 4 com empresas)
+            if (nivelFinal >= 4 && (wData.companies?.length > 0 || uData.company)) {
+              const companies = wData.companies?.length > 0 ? wData.companies : (uData.company ? [uData.company] : []);
+              const cnpjs = companies.map((c: any) => c.cnpj).filter(Boolean);
+              if (cnpjs.length > 0) {
+                try {
+                  const params = new URLSearchParams({ cnpj: cnpjs[0], dias: '90' });
+                  const r = await fetch(`${API_URL}/api/contratos-vencendo?${params}`, { headers });
+                  if (r.ok) {
+                    const data = await r.json();
+                    const contratos = data.contratos || data.results || data || [];
+                    setRenovacoesCount(Array.isArray(contratos) ? contratos.length : 0);
+                  }
+                } catch { /* silencioso */ }
+              }
+            }
 
             if (isSuccessReturn && nivelFinal > 1) {
               window.history.replaceState({}, document.title, window.location.pathname);
@@ -592,7 +611,7 @@ export default function AnalysisApp() {
       if (err.message.includes("NoneType") || err.message.includes("401")) {
         mensagemParaExibir = "Parece que a sua sessão expirou. Por favor, faça login novamente.";
       } else if (err.message.includes("500")) {
-        mensagemParaExibir = "O nosso motor de IA está sobrecarregado. Tente novamente em instantes. ⚙️";
+        mensagemParaExibir = "O nosso motor de IA está sobrecarregado. Tente novamente em instantes.";
       } else {
         mensagemParaExibir = err.message;
       }
@@ -739,7 +758,7 @@ export default function AnalysisApp() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
       <div className="absolute top-0 left-0 w-full h-[600px] overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-violet-200/50 to-transparent rounded-full blur-[100px]"></div>
+        <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-slate-200/40 to-transparent rounded-full blur-[100px]"></div>
       </div>
 
       <main>  
@@ -775,66 +794,196 @@ export default function AnalysisApp() {
           <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
 
             {token && userData && !isCheckingAuth ? (
-              // ── HEADER COMPACTO (utilizador autenticado) ──
-              <div className="w-full bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 flex flex-col justify-center relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
-                <div className="relative z-10 flex flex-col gap-5">
+              // ── HERO COMERCIAL ──
+              <div className="w-full rounded-[2rem] overflow-hidden shadow-[0_12px_48px_-8px_rgba(0,0,0,0.18)]">
 
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-violet-200/60 shrink-0 select-none">
+                {/* ══ SECÇÃO ESCURA — nav + headline + agentes ══ */}
+                <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 relative overflow-hidden">
+
+                  {/* Glows decorativos */}
+                  <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/8 blur-[120px] rounded-full pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-amber-500/6 blur-[100px] rounded-full pointer-events-none" />
+
+                  {/* ── Nav bar ── */}
+                  <div className="flex items-center justify-between px-6 py-3.5 border-b border-white/5 relative z-10">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-white/10 border border-white/10 flex items-center justify-center text-white text-[11px] font-black shrink-0 select-none">
                         {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Central de Inteligência Bawzi</p>
-                        <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight leading-none">
-                          Olá, {(userData.name || userData.nome || 'Estrategista').split(' ')[0]} 👋
-                        </h2>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <div className={`flex items-center gap-2 px-3.5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest border ${
-                        currentTier >= 4 ? 'bg-violet-900 text-violet-200 border-violet-700' :
-                        currentTier >= 3 ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                        currentTier >= 2 ? 'bg-sky-50 text-sky-700 border-sky-200' :
-                        'bg-slate-100 text-slate-600 border-slate-200'
+                      <span className="text-sm font-semibold text-white/80">
+                        {(userData.name || userData.nome || 'Estrategista').split(' ')[0]}
+                      </span>
+                      <span className="text-white/20 text-sm">·</span>
+                      <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                        currentTier >= 4 ? 'bg-amber-400/15 text-amber-300 border border-amber-400/30' :
+                        currentTier >= 3 ? 'bg-white/10 text-white/70 border border-white/10' :
+                        'bg-white/5 text-white/40 border border-white/10'
                       }`}>
-                        <span>{currentTier >= 4 ? '👑' : currentTier >= 3 ? '⚡' : currentTier >= 2 ? '🎯' : '🔎'}</span>
-                        {currentTier >= 4 ? 'Dominador' : currentTier >= 3 ? 'Estrategista' : currentTier >= 2 ? 'Explorador' : 'Gratuito'}
+                        {currentTier >= 4 ? <Crown size={9} className="text-amber-400" /> : <Sparkles size={9} />}
+                        {currentTier >= 4 ? 'Dominador' : currentTier >= 3 ? 'Especialista' : currentTier >= 2 ? 'Essencial' : 'Gratuito'}
                       </div>
                       {userData?.company?.uf && (
-                        <div className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-bold border border-slate-200">
-                          <MapPin size={11} />
-                          {userData.company.uf}
-                        </div>
+                        <span className="hidden sm:flex items-center gap-1 text-[10px] text-white/30 font-medium">
+                          <MapPin size={9} /> {userData.company.uf}
+                        </span>
                       )}
-                      <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-black border border-emerald-100">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
-                        PNCP Ativo
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400"></span>
+                        </span>
+                        PNCP ativo
                       </div>
                       <button
                         onClick={() => setActiveTab('history')}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-amber-300 hover:bg-amber-50 text-slate-500 hover:text-amber-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 text-white/50 hover:text-white/80 text-[11px] font-medium transition-all"
                       >
-                        📚 Histórico
+                        <BookOpen size={11} /> Histórico
                       </button>
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center gap-2.5 flex-wrap">
-                    <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Fluxo rápido:</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-indigo-50 text-indigo-700 border-indigo-100">
-                      🔍 ① Radar PNCP
-                    </span>
-                    <span className="text-slate-200 font-black text-base">›</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-violet-50 text-violet-700 border-violet-100">
-                      📋 ② Selecionar Edital
-                    </span>
-                    <span className="text-slate-200 font-black text-base">›</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider border bg-emerald-50 text-emerald-700 border-emerald-100">
-                      ⚡ ③ Analisar
-                    </span>
+                  {/* ── Headline + agentes ── */}
+                  <div className="px-6 sm:px-10 pt-10 pb-10 relative z-10">
+                    <div className="flex flex-col lg:flex-row lg:items-center gap-10 lg:gap-14">
+
+                      {/* Col esquerda — copy */}
+                      <div className="flex-1 min-w-0">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 mb-5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
+                            Inteligência para licitações públicas
+                          </span>
+                        </div>
+
+                        <h2 className="text-[2.2rem] sm:text-[2.8rem] font-black text-white leading-[1.06] tracking-tight">
+                          Analise editais.<br />
+                          <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">
+                            Vença mais contratos.
+                          </span>
+                        </h2>
+
+                        <p className="text-[13px] text-slate-400 mt-4 leading-relaxed max-w-md">
+                          Do radar ao veredito <strong className="text-white/80 font-semibold">Go/No-Go</strong> — análise jurídica, score de deságio e radar de concorrentes em menos de <strong className="text-white/80 font-semibold">60 segundos</strong>.
+                        </p>
+
+                        <div className="mt-8 flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => {
+                              setActiveTab('workspace');
+                              setTimeout(() => {
+                                const target = document.getElementById('radar-pncp-section');
+                                if (target) {
+                                  const y = target.getBoundingClientRect().top + window.scrollY - 80;
+                                  window.scrollTo({ top: y, behavior: 'smooth' });
+                                  // Foca o input de busca dentro da secção
+                                  const input = target.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
+                                  input?.focus();
+                                }
+                              }, 80);
+                            }}
+                            className="inline-flex items-center gap-2.5 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-emerald-900/40 active:scale-[0.98]"
+                          >
+                            <ScanSearch size={15} />
+                            Buscar editais agora
+                            <ChevronRight size={14} className="opacity-70" />
+                          </button>
+                          <span className="text-[11px] text-slate-500 font-medium hidden sm:block">
+                            ou arraste um PDF abaixo ↓
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Col direita — 4 agentes em glass */}
+                      <div className="lg:w-[248px] shrink-0 grid grid-cols-2 gap-2">
+
+                        <div className="bg-amber-500/15 border border-amber-400/30 rounded-2xl p-4 flex flex-col gap-2.5 hover:bg-amber-500/22 transition-colors">
+                          <Scale size={20} className="text-amber-300" strokeWidth={2} />
+                          <div>
+                            <p className="text-[12px] font-black text-amber-200 leading-tight">Agente Jurídico</p>
+                            <p className="text-[10px] text-white/45 mt-1 leading-relaxed">Lei 14.133/21 · Impugnações</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-emerald-500/15 border border-emerald-400/30 rounded-2xl p-4 flex flex-col gap-2.5 hover:bg-emerald-500/22 transition-colors">
+                          <TrendingDown size={20} className="text-emerald-300" strokeWidth={2} />
+                          <div>
+                            <p className="text-[12px] font-black text-emerald-200 leading-tight">Agente Financeiro</p>
+                            <p className="text-[10px] text-white/45 mt-1 leading-relaxed">Score deságio · Margens</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-sky-500/15 border border-sky-400/30 rounded-2xl p-4 flex flex-col gap-2.5 hover:bg-sky-500/22 transition-colors">
+                          <ShieldCheck size={20} className="text-sky-300" strokeWidth={2} />
+                          <div>
+                            <p className="text-[12px] font-black text-sky-200 leading-tight">Agente Auditor</p>
+                            <p className="text-[10px] text-white/45 mt-1 leading-relaxed">Armadilhas · Compliance</p>
+                          </div>
+                        </div>
+
+                        <div className="bg-white/8 border border-white/15 rounded-2xl p-4 flex flex-col gap-2.5 hover:bg-white/12 transition-colors">
+                          <Cpu size={20} className="text-white/70" strokeWidth={2} />
+                          <div>
+                            <p className="text-[12px] font-black text-white/90 leading-tight">Neural Matchmaker</p>
+                            <p className="text-[10px] text-white/45 mt-1 leading-relaxed">CNAE vs. edital · Fit</p>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ══ SECÇÃO CLARA — passos + proof bar ══ */}
+                <div className="bg-white">
+
+                  {/* Fluxo em 3 passos */}
+                  <div className="grid grid-cols-3 gap-px bg-slate-100">
+
+                    <button
+                      onClick={() => setActiveTab('workspace')}
+                      className="group bg-white hover:bg-slate-50 transition-colors p-5 text-left relative"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-5 h-5 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center shrink-0">1</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Radar PNCP</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">Busca em tempo real por palavra-chave, UF ou segmento.</p>
+                      <ChevronRight size={13} className="absolute bottom-4 right-4 text-slate-200 group-hover:text-emerald-400 transition-colors" />
+                    </button>
+
+                    <div className="bg-white p-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[9px] font-black flex items-center justify-center shrink-0">2</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enviar Edital</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">Cole o texto ou envie o PDF — qualquer formato aceite.</p>
+                    </div>
+
+                    <div className="bg-white p-5">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-600 text-[9px] font-black flex items-center justify-center shrink-0">3</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Análise com IA</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">4 agentes especializados. Veredito Go/No-Go em ~30 segundos.</p>
+                    </div>
+                  </div>
+
+                  {/* Proof bar */}
+                  <div className="border-t border-slate-100 px-6 sm:px-10 py-3 flex items-center gap-5 flex-wrap bg-slate-50">
+                    {[
+                      { label: 'Score preditivo de deságio', color: 'text-emerald-500' },
+                      { label: 'Radar de concorrentes',      color: 'text-sky-500' },
+                      { label: 'Análise jurídica e fiscal',  color: 'text-amber-500' },
+                      { label: 'Capital de giro integrado',  color: 'text-teal-500' },
+                    ].map(({ label, color }) => (
+                      <div key={label} className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-black ${color}`}>✓</span>
+                        <span className="text-[10px] text-slate-500 font-medium">{label}</span>
+                      </div>
+                    ))}
                   </div>
 
                 </div>
@@ -887,7 +1036,7 @@ export default function AnalysisApp() {
 
                   <div className="absolute right-0 top-[0%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4s infinite' }}>
                     <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
-                      <span className="text-indigo-500 text-sm">⚖️</span>
+                      <Scale size={14} className="text-indigo-500" />
                     </div>
                     <div>
                       <span className="block text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">Agente Jurídico</span>
@@ -897,7 +1046,7 @@ export default function AnalysisApp() {
 
                   <div className="absolute right-0 top-[26%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.2s infinite 0.2s' }}>
                     <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center border border-violet-100 shrink-0">
-                      <span className="text-violet-500 text-sm">🕵️</span>
+                      <ScanSearch size={14} className="text-violet-500" />
                     </div>
                     <div>
                       <span className="block text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none mb-1">Agente Auditor</span>
@@ -907,7 +1056,7 @@ export default function AnalysisApp() {
 
                   <div className="absolute right-0 top-[52%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 4.5s infinite 0.5s' }}>
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center border border-emerald-100 shrink-0">
-                      <span className="text-emerald-500 text-sm">💰</span>
+                      <Banknote size={14} className="text-emerald-500" />
                     </div>
                     <div>
                       <span className="block text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none mb-1">Agente Financeiro</span>
@@ -917,7 +1066,7 @@ export default function AnalysisApp() {
 
                   <div className="absolute right-0 top-[78%] flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20" style={{ animation: 'float-agent 5s infinite 1s' }}>
                     <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center border border-amber-100 shrink-0">
-                      <span className="text-amber-500 text-sm">🛡️</span>
+                      <Shield size={14} className="text-amber-500" />
                     </div>
                     <div>
                       <span className="block text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none mb-1">Agente Compliance</span>
@@ -948,7 +1097,7 @@ export default function AnalysisApp() {
                       Pronto para Assinar
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm">🤖</span>
+                      <Bot size={14} className="text-slate-400" />
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Consenso dos 4 Agentes</span>
                     </div>
                 </div>
@@ -958,10 +1107,10 @@ export default function AnalysisApp() {
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-violet-400"></div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-violet-600 text-sm">🔎</span>
+                    <ScanSearch size={14} className="text-violet-600" />
                     <h5 className="text-violet-800 font-black text-[9px] uppercase tracking-widest">Armadilha Legal Detetada</h5>
                   </div>
-                  <span className="text-[7px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-violet-200">🕵️ Agente Auditor</span>
+                  <span className="text-[7px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-violet-200 inline-flex items-center gap-0.5"><ScanSearch size={8} /> Agente Auditor</span>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed font-medium">
                   Exigência do Item 9.2 em conflito com o Art. 14 (14.133/21). Risco de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">direcionamento de edital</span>.
@@ -972,10 +1121,10 @@ export default function AnalysisApp() {
                 <div className="absolute left-0 top-0 w-1.5 h-full bg-sky-400"></div>
                 <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sky-600 text-sm">💡</span>
+                    <Lightbulb size={14} className="text-sky-600" />
                     <h5 className="text-sky-800 font-black text-[9px] uppercase tracking-widest">Oportunidade (Alpha)</h5>
                   </div>
-                  <span className="text-[7px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-sky-200">💰 Agente Financeiro</span>
+                  <span className="text-[7px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-sky-200 inline-flex items-center gap-0.5"><Banknote size={8} /> Agente Financeiro</span>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed font-medium">
                   A cláusula de reajuste omite o índice base. Indexar ao <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">IPCA</span> blindará a sua margem.
@@ -989,7 +1138,7 @@ export default function AnalysisApp() {
                     <span className="text-rose-600 text-sm font-black">!</span>
                     <h5 className="text-rose-800 font-black text-[9px] uppercase tracking-widest">Risco Contratual Oculto</h5>
                   </div>
-                  <span className="text-[7px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-rose-200">⚖️ Agente Jurídico</span>
+                  <span className="text-[7px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase font-black tracking-widest border border-rose-200 inline-flex items-center gap-0.5"><Scale size={8} /> Agente Jurídico</span>
                 </div>
                 <p className="text-slate-600 text-xs leading-relaxed font-medium">
                   Multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Defesa técnica já anexada.
@@ -1040,18 +1189,18 @@ export default function AnalysisApp() {
 
                       {text && text.length > 100 && (
                         <div className="flex items-center gap-4 animate-in fade-in duration-300">
-                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent"></div>
-                          <div className="flex items-center gap-2 px-4 py-2 bg-violet-50 border border-violet-200 rounded-xl shadow-sm">
-                            <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse"></span>
-                            <span className="text-[10px] font-black text-violet-700 uppercase tracking-widest">Edital Carregado</span>
+                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
+                          <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Edital Carregado</span>
                           </div>
-                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent"></div>
+                          <div className="flex-1 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent"></div>
                         </div>
                       )}
 
                       <div id="area-submissao" className="bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 p-6 md:p-10 relative z-20 w-full">
                         <div className="flex items-center gap-4 mb-8">
-                          <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-indigo-500 text-white rounded-2xl flex items-center justify-center text-xl shrink-0 shadow-md shadow-violet-200/60">⚡</div>
+                          <div className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-md"><Zap size={22} /></div>
                           <div>
                             <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Analisar Edital</h2>
                             <p className="text-sm font-medium text-slate-400">Cole o texto completo ou envie o PDF — os agentes cuidam do resto</p>
@@ -1061,7 +1210,7 @@ export default function AnalysisApp() {
                         {!token && (
                           <div className="mb-8 p-5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-white border border-slate-200 text-slate-500 rounded-full flex items-center justify-center text-xl shrink-0 shadow-sm">🕵️</div>
+                              <div className="w-12 h-12 bg-white border border-slate-200 text-slate-500 rounded-full flex items-center justify-center shrink-0 shadow-sm"><ScanSearch size={22} /></div>
                               <div>
                                 <h4 className="text-sm font-black text-slate-900">Modo Anónimo Ativo</h4>
                                 <p className="text-xs text-slate-500 font-medium mt-1">Inicie sessão para guardar histórico e ativar o Matchmaker.</p>
@@ -1075,7 +1224,7 @@ export default function AnalysisApp() {
 
                         {error && (
                           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
-                            <span className="text-xl leading-none mt-0.5">⚠️</span>
+                            <AlertTriangle size={20} className="shrink-0 mt-0.5" />
                             <p className="text-sm font-medium leading-relaxed">{error}</p>
                           </div>
                         )}
@@ -1085,7 +1234,7 @@ export default function AnalysisApp() {
                             <textarea 
                               value={text} 
                               onChange={handleTextChange}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-6 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-400 transition-all resize-none min-h-[180px] text-slate-700 font-medium placeholder:text-slate-400/70 outline-none leading-relaxed" 
+                              className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-6 focus:ring-4 focus:ring-slate-400/10 focus:border-slate-300 transition-all resize-none min-h-[180px] text-slate-700 font-medium placeholder:text-slate-400/70 outline-none leading-relaxed"
                               placeholder="Cole o texto do edital aqui para uma análise profunda..."
                             ></textarea>
                             <div className="absolute bottom-4 right-4 flex items-center gap-2">
@@ -1096,11 +1245,11 @@ export default function AnalysisApp() {
                             </div>
                           </div>
 
-                          <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-violet-400 hover:bg-violet-50/50 transition-all group flex flex-col items-center justify-center gap-3 overflow-hidden w-full bg-slate-50/50">
+                          <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center hover:border-slate-300 hover:bg-slate-50 transition-all group flex flex-col items-center justify-center gap-3 overflow-hidden w-full bg-slate-50/50">
                             <input type="file" multiple accept=".pdf,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                            <div className="w-14 h-14 bg-white shadow-sm border border-slate-100 group-hover:border-violet-200 group-hover:bg-violet-100 group-hover:text-violet-600 text-slate-400 rounded-full flex items-center justify-center text-2xl transition-colors">📂</div>
+                            <div className="w-14 h-14 bg-white shadow-sm border border-slate-100 group-hover:border-slate-200 group-hover:bg-slate-100 group-hover:text-slate-700 text-slate-400 rounded-full flex items-center justify-center transition-colors"><FolderOpen size={24} /></div>
                             <div>
-                                <h4 className="text-sm font-black text-slate-700 group-hover:text-violet-700">Arraste documentos ou clique aqui</h4>
+                                <h4 className="text-sm font-black text-slate-700 group-hover:text-slate-800">Arraste documentos ou clique aqui</h4>
                                 <p className="text-xs text-slate-400 font-medium mt-1">Suporta PDF ou TXT até {currentFileLimitMB}MB.</p>
                             </div>
                           </div>
@@ -1109,9 +1258,9 @@ export default function AnalysisApp() {
                             <div className="space-y-2 w-full bg-slate-50 p-4 rounded-2xl border border-slate-100">
                               <h5 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Documentos Anexos</h5>
                               {files.map((file, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-3 bg-white text-slate-700 text-sm font-bold border border-slate-200 rounded-xl w-full hover:border-violet-200 transition-colors shadow-sm">
+                                <div key={idx} className="flex items-center justify-between p-3 bg-white text-slate-700 text-sm font-bold border border-slate-200 rounded-xl w-full hover:border-slate-300 transition-colors shadow-sm">
                                   <span className="truncate flex-1 pr-2 flex items-center gap-2">
-                                    <span className="text-violet-500">📄</span> {file.name}
+                                    <FileText size={14} className="text-slate-500 shrink-0" /> {file.name}
                                   </span>
                                   <div className="flex items-center gap-4 shrink-0">
                                     <span className="text-slate-400 text-xs font-medium whitespace-nowrap bg-slate-100 px-2 py-1 rounded-md">{formatMB(file.size)} MB</span>
@@ -1127,7 +1276,7 @@ export default function AnalysisApp() {
                             <>
                               {error && (
                                 <div className="mb-2 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-xl shadow-sm flex items-center gap-3 transition-all duration-500 animate-in fade-in slide-in-from-top-4">
-                                  <span className="text-xl shrink-0">⚠️</span>
+                                  <AlertTriangle size={20} className="shrink-0" />
                                   <p className="text-sm font-bold">{error}</p>
                                 </div>
                               )}
@@ -1137,17 +1286,17 @@ export default function AnalysisApp() {
                                   onClick={() => setProvider('openai')}
                                   className={`relative p-6 rounded-2xl border-2 transition-all duration-300 text-left flex flex-col gap-3 group cursor-pointer ${
                                     provider === 'openai'
-                                      ? 'border-violet-500 bg-violet-50/50 shadow-[0_0_20px_rgba(139,92,246,0.15)]'
-                                      : 'border-slate-200 bg-white hover:border-violet-300 hover:bg-slate-50'
+                                      ? 'border-slate-900 bg-slate-50 shadow-[0_0_20px_rgba(0,0,0,0.08)]'
+                                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                                   }`}
                                 >
                                   <div className="flex items-center justify-between w-full">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-2xl">⚡</span>
+                                      <Zap size={22} className="text-slate-900" />
                                       <span className="text-xl font-black text-slate-900 tracking-tight">Análise Rápida</span>
                                     </div>
                                     {provider === 'openai' && (
-                                      <span className="w-3 h-3 rounded-full bg-violet-500 animate-pulse shadow-[0_0_10px_rgba(139,92,246,0.8)]"></span>
+                                      <span className="w-3 h-3 rounded-full bg-slate-900 animate-pulse"></span>
                                     )}
                                   </div>
                                   
@@ -1157,11 +1306,11 @@ export default function AnalysisApp() {
 
                                   <div className="flex flex-wrap items-center gap-2 mt-1">
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-slate-200">
-                                      🔎 GPT-4o
+                                      <ScanSearch size={10} /> GPT-4o
                                     </span>
                                     <span className="text-slate-300 font-bold">+</span>
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-slate-200">
-                                      ✍️ GPT-4o
+                                      <BrainCircuit size={10} /> GPT-4o
                                     </span>
                                   </div>
 
@@ -1169,7 +1318,7 @@ export default function AnalysisApp() {
                                     <button
                                       type="button"
                                       onClick={() => handleAnalyze("openai")}
-                                      className="mt-4 w-full py-3 px-4 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl transition-colors shadow-md flex justify-center items-center gap-2 animate-fade-in-up"
+                                      className="mt-4 w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors shadow-md flex justify-center items-center gap-2 animate-fade-in-up"
                                     >
                                       <span>Iniciar Análise Rápida</span>
                                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
@@ -1189,7 +1338,7 @@ export default function AnalysisApp() {
 
                                   <div className="flex items-center justify-between w-full relative z-10">
                                     <div className="flex items-center gap-2">
-                                      <span className="text-2xl">🧠</span>
+                                      <BrainCircuit size={22} className="text-indigo-300" />
                                       <span className="text-xl font-black text-white tracking-tight">Auditoria Profunda</span>
                                     </div>
                                     {provider === 'claude' && (
@@ -1203,11 +1352,11 @@ export default function AnalysisApp() {
 
                                   <div className="flex flex-wrap items-center gap-2 mt-1 relative z-10">
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider shadow-inner">
-                                      🔎 O3-MINI
+                                      <ScanSearch size={10} /> O3-MINI
                                     </span>
                                     <span className="text-indigo-500/50 font-bold">+</span>
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-[10px] font-black text-indigo-300 uppercase tracking-wider shadow-inner">
-                                      ✍️ CLAUDE 3.5
+                                      <BrainCircuit size={10} /> CLAUDE 3.5
                                     </span>
                                   </div>
 
@@ -1215,7 +1364,7 @@ export default function AnalysisApp() {
                                     <button
                                       type="button"
                                       onClick={() => handleAnalyze("claude")}
-                                      className="mt-4 w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)] flex justify-center items-center gap-2 relative z-10 animate-fade-in-up"
+                                      className="mt-4 w-full py-3 px-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-all border border-white/20 flex justify-center items-center gap-2 relative z-10 animate-fade-in-up"
                                     >
                                       <span>Executar Auditoria Profunda</span>
                                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -1229,13 +1378,13 @@ export default function AnalysisApp() {
                               type="button"
                               disabled={isAnalyzing}
                               onClick={() => handleAnalyze("openai")}
-                              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white py-5 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-violet-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] relative overflow-hidden group"
+                              className="w-full bg-slate-900 hover:bg-slate-800 text-white py-5 px-6 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-lg shadow-slate-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] relative overflow-hidden group"
                             >
                               <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
-                              <span className="text-2xl relative z-10">⚡</span>
+                              <Zap size={24} className="relative z-10" />
                               <div className="flex flex-col items-start text-left relative z-10">
                                 <span className="block leading-tight text-base font-black">Iniciar Análise Estratégica</span>
-                                <span className="text-[10px] text-violet-200 font-bold uppercase tracking-widest">Multi-Agente · ~30 segundos</span>
+                                <span className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Multi-Agente · ~30 segundos</span>
                               </div>
                               <svg className="w-5 h-5 ml-auto relative z-10 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
@@ -1249,7 +1398,7 @@ export default function AnalysisApp() {
 
                     ) : isAnalyzing ? (
                     <div id="area-loading" className="flex flex-col items-center justify-center min-h-[500px] bg-white rounded-[2.5rem] shadow-sm border border-slate-200 p-12 animate-in fade-in duration-700 relative overflow-hidden">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-violet-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-slate-100/50 blur-[80px] rounded-full pointer-events-none"></div>
                       
                       <div className="relative flex flex-col items-center z-10 text-center space-y-8">
                         <div className="animate-pulse transform hover:scale-105 transition-transform duration-500">
@@ -1264,8 +1413,8 @@ export default function AnalysisApp() {
                         </div>
 
                         <div className="relative w-16 h-16">
-                          <div className="absolute inset-0 border-4 border-violet-50 rounded-full"></div>
-                          <div className="absolute inset-0 border-4 border-t-violet-600 rounded-full animate-spin shadow-sm"></div>
+                          <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+                          <div className="absolute inset-0 border-4 border-t-slate-900 rounded-full animate-spin shadow-sm"></div>
                         </div>
 
                         <div className="relative h-20 max-w-sm w-full">
@@ -1326,11 +1475,11 @@ export default function AnalysisApp() {
                           </div>
                           <div className="flex flex-wrap gap-3 w-full md:w-auto"> 
                             <button onClick={() => window.print()} className="px-4 py-2 hover:bg-slate-50 text-slate-600 font-bold rounded-lg border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2">
-                              🖨️ <span className="hidden sm:inline">Imprimir</span>
+                              <Printer size={14} /> <span className="hidden sm:inline">Imprimir</span>
                             </button>
                             {token && analysisId && (
-                                <button onClick={handleShare} disabled={isSharing} className="px-4 py-2 hover:bg-violet-50 text-violet-700 font-bold rounded-lg border border-violet-200 transition-colors text-sm flex items-center justify-center gap-2">
-                                  {isSharing ? 'A Enviar...' : '📧 Partilhar'}
+                                <button onClick={handleShare} disabled={isSharing} className="px-4 py-2 hover:bg-slate-50 text-slate-700 font-bold rounded-lg border border-slate-200 transition-colors text-sm flex items-center justify-center gap-2">
+                                  {isSharing ? 'A Enviar...' : <><Mail size={14} /> Partilhar</>}
                                 </button>
                             )}
                             <button onClick={handleResetAnalysis} className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition-colors text-sm flex items-center justify-center gap-2">
@@ -1349,7 +1498,7 @@ export default function AnalysisApp() {
                                 : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
                             }`}
                           >
-                            <ScanSearch size={18} className={activeTab === 'analise' ? 'text-indigo-400' : 'text-slate-400'} />
+                            <ScanSearch size={18} className={activeTab === 'analise' ? 'text-white/70' : 'text-slate-400'} />
                             Raio-X do Edital
                           </button>
 
@@ -1387,7 +1536,7 @@ export default function AnalysisApp() {
                               const formatted = new Date(dataExpirada.data_iso!).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
                               return (
                                 <div className="flex items-start gap-4 bg-red-950 border border-red-800 rounded-2xl px-6 py-4">
-                                  <span className="text-2xl shrink-0 mt-0.5">🚫</span>
+                                  <XCircle size={24} className="shrink-0 mt-0.5 text-red-300" />
                                   <div>
                                     <p className="text-sm font-black text-red-300 uppercase tracking-widest mb-0.5">Prazo de Participação Encerrado</p>
                                     <p className="text-xs font-medium text-red-400 leading-relaxed">
@@ -1444,8 +1593,8 @@ export default function AnalysisApp() {
                                         const fmt = date ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : dc.data_iso;
                                         return (
                                           <div key={i}>
-                                            <span className={`block text-[10px] font-black uppercase tracking-widest ${dc.urgente ? 'text-red-500' : 'text-slate-400'}`}>
-                                              {dc.urgente ? '⚡ ' : ''}{dc.label}
+                                            <span className={`block text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${dc.urgente ? 'text-red-500' : 'text-slate-400'}`}>
+                                              {dc.urgente && <Zap size={10} />}{dc.label}
                                             </span>
                                             <span className="text-sm font-bold text-slate-900">{fmt}</span>
                                           </div>
@@ -1465,8 +1614,8 @@ export default function AnalysisApp() {
                                 if (!propValida && !impValida) return null;
                                 return (
                                   <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
-                                    {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className="text-sm font-bold text-slate-900">📅 {propValida}</span></div>}
-                                    {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className="text-sm font-bold text-slate-900">🚨 {impValida}</span></div>}
+                                    {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className="text-sm font-bold text-slate-900 flex items-center gap-1"><CalendarDays size={14} className="text-slate-500" /> {propValida}</span></div>}
+                                    {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className="text-sm font-bold text-slate-900 flex items-center gap-1"><AlertCircle size={14} className="text-red-500" /> {impValida}</span></div>}
                                   </div>
                                 );
                               })()}
@@ -1475,17 +1624,17 @@ export default function AnalysisApp() {
                             {/* ━━━ SEMÁFORO DE VIABILIDADE ━━━ */}
                             <div className="relative border border-slate-200 rounded-2xl p-8 mb-8">
                               <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                                <span className="text-lg">🚦</span>
+                                <Gauge size={18} className="text-slate-700" />
                                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Semáforo de Viabilidade</h3>
                               </div>
                               {result.semaforo ? (
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
                                   {([
-                                    { key: 'tecnica' as const, label: 'Técnica', icon: '⚙️' },
-                                    { key: 'financeira' as const, label: 'Financeira', icon: '💰' },
-                                    { key: 'juridica' as const, label: 'Jurídica', icon: '⚖️' },
-                                    { key: 'documentacao' as const, label: 'Documentação', icon: '📁' },
-                                  ]).map(({ key, label, icon }) => {
+                                    { key: 'tecnica' as const, label: 'Técnica', icon: <Settings2 size={20} /> },
+                                    { key: 'financeira' as const, label: 'Financeira', icon: <Banknote size={20} /> },
+                                    { key: 'juridica' as const, label: 'Jurídica', icon: <Scale size={20} /> },
+                                    { key: 'documentacao' as const, label: 'Documentação', icon: <FolderOpen size={20} /> },
+                                  ] as { key: 'tecnica' | 'financeira' | 'juridica' | 'documentacao'; label: string; icon: React.ReactNode }[]).map(({ key, label, icon }) => {
                                     const sinal = result.semaforo![key];
                                     if (!sinal) return null;
                                     const cfg: Record<string, { bg: string; border: string; dot: string; txt: string; lbl: string }> = {
@@ -1497,7 +1646,7 @@ export default function AnalysisApp() {
                                     return (
                                       <div key={key} className={`${s.bg} ${s.border} border rounded-xl p-4 flex flex-col gap-2`}>
                                         <div className="flex items-center justify-between">
-                                          <span className="text-xl">{icon}</span>
+                                          <span className="text-slate-600">{icon}</span>
                                           <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${s.txt}`}>
                                             <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
                                             {s.lbl}
@@ -1511,7 +1660,7 @@ export default function AnalysisApp() {
                                 </div>
                               ) : (
                                 <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
-                                  <span className="text-3xl shrink-0">✨</span>
+                                  <Sparkles size={28} className="shrink-0 text-slate-400" />
                                   <div>
                                     <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
                                     <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ativar o Semáforo de Viabilidade — avaliação automática nos eixos <strong>Técnica · Financeira · Jurídica · Documentação</strong>.</p>
@@ -1523,13 +1672,13 @@ export default function AnalysisApp() {
                             {/* ━━━ CRONOGRAMA CRÍTICO ━━━ */}
                             <div className="relative border border-slate-200 rounded-2xl p-8 mb-8">
                               <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                                <span className="text-lg">📅</span>
+                                <CalendarDays size={18} className="text-slate-700" />
                                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Cronograma Crítico</h3>
                               </div>
                               {result.datas_criticas === undefined ? (
                                 // Campo ausente → análise antiga, anterior à actualização
                                 <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
-                                  <span className="text-3xl shrink-0">📆</span>
+                                  <CalendarX size={28} className="shrink-0 text-slate-500" />
                                   <div>
                                     <p className="text-sm font-black text-slate-700">Análise desatualizada</p>
                                     <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Esta análise foi gerada antes da atualização do cronograma. Execute uma nova análise para ativar os alertas de prazo automáticos.</p>
@@ -1538,7 +1687,7 @@ export default function AnalysisApp() {
                               ) : result.datas_criticas.length === 0 ? (
                                 // LLM analisou mas não encontrou datas no documento
                                 <div className="mt-4 flex items-center gap-4 bg-amber-50 border border-dashed border-amber-200 rounded-xl p-5">
-                                  <span className="text-3xl shrink-0">🔍</span>
+                                  <SearchX size={28} className="shrink-0 text-amber-600" />
                                   <div>
                                     <p className="text-sm font-black text-amber-800">Datas não identificadas</p>
                                     <p className="text-xs text-amber-700 font-medium mt-0.5 leading-relaxed">O documento não continha datas de prazo explícitas. Consulte diretamente o edital para verificar os prazos de proposta e impugnação.</p>
@@ -1565,7 +1714,7 @@ export default function AnalysisApp() {
                                             urgenteFuturo ? 'bg-red-500 border-red-300 text-white' :
                                             'bg-white border-slate-300 text-slate-500'
                                           }`}>
-                                            {!date ? '❓' : expirado ? '⏰' : urgenteFuturo ? '🚨' : '📌'}
+                                            {!date ? <CircleHelp size={16} /> : expirado ? <Clock size={16} /> : urgenteFuturo ? <AlertCircle size={16} /> : <Pin size={16} />}
                                           </div>
                                           <div className={`flex-1 p-4 rounded-xl border transition-all ${
                                             !date ? 'bg-slate-50 border-dashed border-slate-200' :
@@ -1602,7 +1751,7 @@ export default function AnalysisApp() {
                             {/* RESUMO EXECUTIVO */}
                             <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
                               <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                                <span className="text-lg">🎯</span>
+                                <Target size={18} className="text-slate-700" />
                                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Resumo Executivo</h3>
                               </div>
                               <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
@@ -1625,14 +1774,14 @@ export default function AnalysisApp() {
                             {((result.exigencias_criticas && result.exigencias_criticas.length > 0) || (result.documentos_necessarios && result.documentos_necessarios.length > 0) || (result.vantagens && result.vantagens.length > 0) || (result.desvantagens && result.desvantagens.length > 0)) && (
                               <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
                                 <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                                  <span className="text-lg">📋</span>
+                                  <ClipboardList size={18} className="text-slate-700" />
                                   <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Carga Operacional & SWOT</h3>
                                 </div>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 mt-2">
                                   {result.vantagens && result.vantagens.length > 0 && (
                                     <div>
-                                      <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4">👍 Vantagens (Por que avançar?)</h4>
+                                      <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsUp size={11} /> Vantagens (Por que avançar?)</h4>
                                       <ul className="space-y-3">
                                           {result.vantagens.map((v: string, i: number) => <li key={i} className="text-sm text-slate-700 font-medium flex gap-2"><span className="text-emerald-500">＋</span> {v}</li>)}
                                       </ul>
@@ -1640,7 +1789,7 @@ export default function AnalysisApp() {
                                   )}
                                   {result.desvantagens && result.desvantagens.length > 0 && (
                                     <div>
-                                      <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4">👎 Barreiras (Por que recuar?)</h4>
+                                      <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsDown size={11} /> Barreiras (Por que recuar?)</h4>
                                       <ul className="space-y-3">
                                           {result.desvantagens.map((d: string, i: number) => <li key={i} className="text-sm text-slate-700 font-medium flex gap-2"><span className="text-orange-500">−</span> {d}</li>)}
                                       </ul>
@@ -1649,7 +1798,7 @@ export default function AnalysisApp() {
                                   
                                   {result.exigencias_criticas && result.exigencias_criticas.length > 0 && (
                                     <div>
-                                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">📌 Exigências Críticas</h4>
+                                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><Pin size={11} /> Exigências Críticas</h4>
                                       <ul className="space-y-3">
                                           {result.exigencias_criticas.map((e: string, i: number) => <li key={i} className="text-sm text-slate-700 font-medium flex items-center gap-2"><div className="w-1 h-1 bg-slate-400 rounded-full shrink-0"></div> {e}</li>)}
                                       </ul>
@@ -1657,7 +1806,7 @@ export default function AnalysisApp() {
                                   )}
                                   {result.documentos_necessarios && result.documentos_necessarios.length > 0 && (
                                     <div>
-                                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">📁 Documentação Necessária</h4>
+                                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><FolderOpen size={11} /> Documentação Necessária</h4>
                                       <ul className="space-y-3">
                                           {result.documentos_necessarios.map((doc: string, i: number) => <li key={i} className="text-sm text-slate-700 font-medium flex items-center gap-2"><div className="w-1 h-1 bg-slate-400 rounded-full shrink-0"></div> {doc}</li>)}
                                       </ul>
@@ -1670,7 +1819,7 @@ export default function AnalysisApp() {
                             {/* ━━━ MATRIZ DE RISCOS (RANQUEADOS POR IMPACTO) ━━━ */}
                             <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
                               <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
-                                <span className="text-lg">⚠️</span>
+                                <AlertTriangle size={18} className="text-slate-700" />
                                 <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Matriz de Riscos</h3>
                               </div>
                               {result.risks && result.risks.length > 0 ? (
@@ -1703,7 +1852,7 @@ export default function AnalysisApp() {
                                 </div>
                               ) : (
                                 <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
-                                  <span className="text-3xl shrink-0">🛡️</span>
+                                  <Shield size={28} className="shrink-0 text-slate-400" />
                                   <div>
                                     <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
                                     <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ver a matriz de riscos ranqueada por impacto — <strong>Alto · Médio · Baixo</strong> com fundamentação jurídica.</p>
@@ -1715,9 +1864,9 @@ export default function AnalysisApp() {
                             {/* PARECER TÉCNICO-JURÍDICO BAWZI */}
                             {result && (
                               <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
-                                <div className="bg-indigo-900 p-4 border-b border-indigo-800 flex items-center justify-between">
+                                <div className="bg-slate-900 p-4 border-b border-slate-800 flex items-center justify-between">
                                   <h3 className="text-white font-bold flex items-center gap-2 text-sm">
-                                    <span className="text-xl">⚖️</span> PARECER TÉCNICO-JURÍDICO BAWZI
+                                    <Scale size={18} /> PARECER TÉCNICO-JURÍDICO BAWZI
                                   </h3>
                                   <span className="text-[10px] uppercase tracking-widest text-amber-400 font-black px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
                                     Agente IA Especialista
@@ -1736,17 +1885,17 @@ export default function AnalysisApp() {
                                     <div className="absolute inset-0 top-[50px] z-20 flex flex-col items-center justify-center bg-white/50 backdrop-blur-md rounded-b-2xl pb-2">
                                       <div className="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-xl max-w-sm text-center border border-slate-700 mx-4">
                                         <div className="w-12 h-12 bg-amber-400/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-400/20">
-                                          <span className="text-2xl">🔒</span>
+                                          <Lock size={24} />
                                         </div>
                                         <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
                                         <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-                                          O Parecer Jurídico detalhado (SWOT, risco e fundamentação legal) está disponível apenas para membros <strong className="text-indigo-400 uppercase">Especialistas</strong> e <strong className="text-amber-400 uppercase">Dominadores</strong>.
+                                          O Parecer Jurídico detalhado (SWOT, risco e fundamentação legal) está disponível apenas para membros <strong className="text-white/80 uppercase">Especialistas</strong> e <strong className="text-amber-400 uppercase">Dominadores</strong>.
                                         </p>
                                         <button 
                                           onClick={() => setShowUpgradeModal(true)} 
-                                          className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95"
+                                          className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 border border-slate-200"
                                         >
-                                          Fazer Upgrade Agora ⚡
+                                          Fazer Upgrade Agora
                                         </button>
                                       </div>
                                     </div>
@@ -1755,12 +1904,12 @@ export default function AnalysisApp() {
                                       <div className="h-3 w-full bg-slate-300 rounded"></div>
                                       <div className="h-3 w-5/6 bg-slate-300 rounded"></div>
                                       <div className="h-3 w-4/6 bg-slate-300 rounded"></div>
-                                      <div className="h-16 w-full bg-indigo-50 rounded-xl mt-4"></div>
+                                      <div className="h-16 w-full bg-slate-100 rounded-xl mt-4"></div>
                                     </div>
                                   </div>
                                 ) : (
                                   result.parecer_especialista && (
-                                    <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-indigo-600">
+                                    <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-slate-900">
                                       <div className="whitespace-pre-wrap font-sans leading-relaxed text-sm">
                                         {result.parecer_especialista}
                                       </div>
@@ -1773,7 +1922,7 @@ export default function AnalysisApp() {
                             {/* RACIOCÍNIO ESTRATÉGICO */}
                             <div className="mt-8 pt-6 border-t border-slate-100 print:hidden">
                               <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <BrainCircuit className="w-4 h-4 text-indigo-400" strokeWidth={2} />
+                                <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
                                 Raciocínio Estratégico da IA
                               </h4>
                               <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
@@ -1821,15 +1970,15 @@ export default function AnalysisApp() {
                             >
                               <div className="relative bg-slate-950 rounded-[2rem] p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mt-4 overflow-hidden">
                                 {/* Fundo decorativo */}
-                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(124,58,237,0.15),_transparent_60%)] pointer-events-none" />
+                                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(255,255,255,0.04),_transparent_60%)] pointer-events-none" />
 
                                 <div className="flex items-start gap-5 flex-1 relative z-10">
-                                  <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 text-2xl">
-                                    ⚖️
+                                  <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0 text-white">
+                                    <Scale size={26} />
                                   </div>
                                   <div>
                                     <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-[9px] font-black uppercase tracking-widest text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-md">Exclusivo Dominador</span>
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">Exclusivo Dominador</span>
                                     </div>
                                     <h3 className="font-black text-white text-xl tracking-tight mb-2 leading-tight">Minuta de Parecer Técnico-Jurídico</h3>
                                     <p className="text-sm font-medium text-slate-400 leading-relaxed mb-4 max-w-lg">
@@ -1841,7 +1990,7 @@ export default function AnalysisApp() {
                                       ))}
                                     </div>
                                     <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                                      <span className="text-amber-400 text-sm">⚠️</span>
+                                      <AlertTriangle size={14} className="text-amber-400" />
                                       <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Minuta — requer validação por advogado habilitado</span>
                                     </div>
                                   </div>
@@ -1849,9 +1998,9 @@ export default function AnalysisApp() {
 
                                 <button
                                   onClick={handleExportPDF}
-                                  className="relative z-10 w-full md:w-auto px-8 py-4 bg-violet-600 hover:bg-violet-500 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-violet-900/40 active:scale-95 flex items-center justify-center gap-3 shrink-0"
+                                  className="relative z-10 w-full md:w-auto px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
                                 >
-                                  <span className="text-lg">📄</span> Gerar Minuta (PDF)
+                                  <FileText size={16} /> Gerar Minuta (PDF)
                                 </button>
                               </div>
                             </PremiumLock>
@@ -1863,7 +2012,7 @@ export default function AnalysisApp() {
                                 <p className="font-bold text-slate-500 uppercase">Parecer Técnico-Jurídico Preliminar</p>
                               </div>
                               <div className="bg-slate-100 p-4 mb-6 border-l-4 border-slate-900">
-                                <p className="font-bold text-xs">⚠️ Nota de Responsabilidade: Este rascunho foi gerado por IA para facilitar a triagem. A revisão e validação por um profissional da área jurídica é indispensável.</p>
+                                <p className="font-bold text-xs flex items-start gap-1"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> Nota de Responsabilidade: Este rascunho foi gerado por IA para facilitar a triagem. A revisão e validação por um profissional da área jurídica é indispensável.</p>
                               </div>
                               <div className="space-y-6">
                                 <section>
@@ -1894,7 +2043,7 @@ export default function AnalysisApp() {
                               </div>
                               {isCachedResult && (
                                 <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
-                                  <span className="text-sm">⚡</span>
+                                  <Zap size={14} />
                                   <span className="font-bold uppercase tracking-widest text-[10px]">Recuperado do Cache</span>
                                 </div>
                               )}
@@ -1949,12 +2098,53 @@ export default function AnalysisApp() {
                 </div>
               )}
 
+              {/* ABA DE CAPITAL INTELIGENTE */}
+              {activeTab === 'capital' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {currentTier < 3 ? (
+                    <PremiumLock
+                      isLocked={true}
+                      featureTitle="Capital Intelligence"
+                      requiredTierName="Especialista (Nível 3)"
+                      onUpgradeClick={() => {
+                        const el = document.getElementById('planos');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                    >
+                      <div />
+                    </PremiumLock>
+                  ) : (
+                    <CapitalIntelligence
+                      token={token ?? ''}
+                      tier={currentTier}
+                      companies={
+                        userData?.companies?.length
+                          ? userData.companies
+                          : userData?.company
+                            ? [userData.company]
+                            : []
+                      }
+                      defaultCnpj={
+                        userData?.companies?.[0]?.cnpj ||
+                        userData?.company?.cnpj ||
+                        ''
+                      }
+                      defaultUf={
+                        userData?.companies?.[0]?.uf ||
+                        userData?.company?.uf ||
+                        ''
+                      }
+                    />
+                  )}
+                </div>
+              )}
+
               {/* ABA DE HISTÓRICO */}
               {activeTab === 'history' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   <div className="mb-8">
                     <div className="flex items-center gap-4 mb-2">
-                      <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-amber-100">📚</div>
+                      <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center shrink-0 border border-amber-100"><BookOpen size={22} /></div>
                       <h2 className="text-2xl font-black text-slate-900 tracking-tight">O Teu Histórico</h2>
                     </div>
                     <p className="text-slate-500 text-sm font-medium ml-16">Recupera estratégias de editais que já analisaste.</p>
@@ -1980,8 +2170,8 @@ export default function AnalysisApp() {
                     />
                   ) : (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
-                      <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center text-3xl mx-auto mb-4 border border-slate-100 shadow-inner">
-                        🕵️
+                      <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100 shadow-inner">
+                        <ScanSearch size={28} />
                       </div>
                       <h3 className="text-lg font-black text-slate-800 mb-2">Modo Anónimo</h3>
                       <p className="text-slate-500 font-medium mb-6">
@@ -2010,7 +2200,7 @@ export default function AnalysisApp() {
                 {token && userData && (
                   <div className="flex items-center justify-between px-3 pt-1 pb-0">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-[10px] font-black shrink-0 shadow-sm">
+                      <div className="w-6 h-6 rounded-full bg-slate-900 flex items-center justify-center text-white text-[10px] font-black shrink-0 shadow-sm">
                         {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
                       </div>
                       <span className="text-[11px] font-black text-slate-700 truncate max-w-[90px]">
@@ -2025,26 +2215,166 @@ export default function AnalysisApp() {
                   </div>
                 )}
 
-                <button onClick={() => setActiveTab('workspace')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
-                  <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">⚡</span> Nova Análise</span>
-                  {(activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes') && <span className="w-2 h-2 rounded-full bg-violet-500"></span>}
-                </button>
+                {/* ── NOVA ANÁLISE — CTA principal ── */}
+                {(() => {
+                  const isActive = activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes';
+                  return (
+                    <button
+                      onClick={() => setActiveTab('workspace')}
+                      className={`relative overflow-hidden py-4 px-6 rounded-2xl font-black transition-all duration-200 flex items-center justify-between group
+                        ${isActive
+                          ? 'bg-slate-900 text-white shadow-lg shadow-slate-200'
+                          : 'bg-slate-800 text-white shadow-md shadow-slate-200 hover:shadow-lg hover:bg-slate-900 hover:scale-[1.02]'
+                        }`}
+                    >
+                      {/* brilho animado no hover */}
+                      <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
+                      <span className="relative flex items-center gap-3">
+                        <Zap size={18} className={`shrink-0 ${isActive ? 'fill-white' : ''}`} />
+                        <span className="text-[15px]">Nova Análise</span>
+                      </span>
+                      <span className="relative flex items-center gap-1 bg-white/20 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg">
+                        {isActive ? '●' : 'START'}
+                      </span>
+                    </button>
+                  );
+                })()}
+
+                {/* ── O MEU HISTÓRICO — secundário ── */}
                 <button onClick={() => setActiveTab('history')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'history' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
-                  <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">📚</span> O Meu Histórico</span>
-                  {activeTab === 'history' && <span className="w-2 h-2 rounded-full bg-violet-500"></span>}
+                  <span className="flex items-center gap-3"><BookOpen size={18} className="text-slate-400 group-hover:text-slate-700 transition-colors shrink-0" /> O Meu Histórico</span>
+                  {activeTab === 'history' && <span className="w-2 h-2 rounded-full bg-slate-900"></span>}
                 </button>
-                {token && userData && (userData.companies?.length > 0 || userData.company) && (
-                  <button onClick={() => setActiveTab('renovacoes')} className={`py-4 px-6 rounded-2xl font-black transition-all flex items-center justify-between group ${activeTab === 'renovacoes' ? 'bg-white text-slate-900 shadow-md border border-slate-200/60' : 'text-slate-500 hover:bg-white/60'}`}>
-                    <span className="flex items-center gap-3"><span className="text-xl grayscale group-hover:grayscale-0 transition-all">🔔</span> Renovações</span>
-                    {activeTab === 'renovacoes' && <span className="w-2 h-2 rounded-full bg-amber-500"></span>}
-                  </button>
+
+                {/* ── RENOVAÇÕES — CTA secundário ── */}
+                {token && userData && (
+                  currentTier < 4 ? (
+                    /* Locked: gradiente ambar apagado + badge Nível 4 */
+                    <button
+                      onClick={() => router.push('/plans')}
+                      className="relative overflow-hidden rounded-2xl font-black transition-all duration-200 flex flex-col group opacity-70 hover:opacity-90 hover:scale-[1.01]"
+                      style={{ background: 'linear-gradient(to right, #f59e0b, #f97316)' }}
+                    >
+                      <span className="absolute inset-0 bg-black/15 rounded-2xl" />
+                      <span className="relative flex items-center justify-between w-full px-6 pt-4 pb-1">
+                        <span className="flex items-center gap-3 text-white">
+                          <Lock size={16} className="shrink-0" />
+                          <span className="text-[15px]">Renovações</span>
+                        </span>
+                        <span className="flex items-center gap-1 bg-white/20 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg whitespace-nowrap">
+                          Nível 4
+                        </span>
+                      </span>
+                      <span className="relative px-6 pb-3 text-[11px] text-white/80 font-medium text-left">
+                        Contratos a vencer · Oportunidades de renovação
+                      </span>
+                    </button>
+                  ) : (userData.companies?.length > 0 || userData.company) ? (
+                    /* Desbloqueado e tem empresa */
+                    <button
+                      onClick={() => setActiveTab('renovacoes')}
+                      className={`relative overflow-hidden rounded-2xl font-black transition-all duration-200 flex flex-col group
+                        ${activeTab === 'renovacoes'
+                          ? 'text-white shadow-lg shadow-amber-200'
+                          : 'text-white shadow-md shadow-amber-100 hover:shadow-lg hover:shadow-amber-200 hover:scale-[1.02]'
+                        }`}
+                      style={{ background: 'linear-gradient(to right, #f59e0b, #f97316)' }}
+                    >
+                      <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
+                      {/* linha principal */}
+                      <span className="relative flex items-center justify-between w-full px-6 pt-4 pb-1">
+                        <span className="flex items-center gap-3">
+                          <RefreshCw size={18} className="shrink-0" />
+                          <span className="text-[15px]">Renovações</span>
+                        </span>
+                        {renovacoesCount !== null && renovacoesCount > 0 ? (
+                          <span className="flex items-center gap-1 bg-white text-amber-600 text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                            {renovacoesCount}
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 bg-white/20 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg">
+                            {activeTab === 'renovacoes' ? '●' : 'ATIVO'}
+                          </span>
+                        )}
+                      </span>
+                      {/* subtítulo de urgência */}
+                      <span className="relative px-6 pb-3 text-[11px] text-white/80 font-medium text-left">
+                        {renovacoesCount !== null && renovacoesCount > 0
+                          ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} a vencer nos próximos 90 dias`
+                          : 'Contratos a vencer · Oportunidades de renovação'}
+                      </span>
+                    </button>
+                  ) : (
+                    /* Tier 4 mas sem empresa configurada */
+                    <button
+                      onClick={() => router.push('/profile')}
+                      className="relative overflow-hidden py-4 px-6 rounded-2xl font-black transition-all duration-200 flex items-center justify-between group hover:scale-[1.02]"
+                      style={{ background: 'linear-gradient(to right, #f59e0b, #f97316)' }}
+                    >
+                      <span className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl" />
+                      <span className="relative flex items-center gap-3 text-white">
+                        <RefreshCw size={18} className="shrink-0" />
+                        <span className="text-[15px]">Renovações</span>
+                      </span>
+                      <span className="relative flex items-center gap-1 bg-white/25 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg whitespace-nowrap">
+                        Configurar
+                      </span>
+                    </button>
+                  )
+                )}
+
+                {/* ── CAPITAL INTELIGENTE ── */}
+                {token && (
+                  currentTier < 3 ? (
+                    /* Locked: gradiente esmeralda apagado + badge Nível 3 */
+                    <button
+                      onClick={() => {
+                        const el = document.getElementById('planos');
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
+                      className="relative overflow-hidden rounded-2xl font-black transition-all duration-200 flex flex-col group opacity-70 hover:opacity-90 hover:scale-[1.01]"
+                      style={{ background: 'linear-gradient(to right, #10b981, #0d9488)' }}
+                    >
+                      <span className="absolute inset-0 bg-black/15 rounded-2xl" />
+                      <span className="relative flex items-center justify-between w-full px-6 pt-4 pb-1">
+                        <span className="flex items-center gap-3 text-white">
+                          <Lock size={16} className="shrink-0" />
+                          <span className="text-[15px]">Capital</span>
+                        </span>
+                        <span className="flex items-center gap-1 bg-white/20 text-white text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg whitespace-nowrap">
+                          Nível 3
+                        </span>
+                      </span>
+                      <span className="relative px-6 pb-3 text-[11px] text-white/80 font-medium text-left">
+                        Crédito inteligente · Pré-qualificação bancária
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setActiveTab('capital')}
+                      className={`relative overflow-hidden py-4 px-6 rounded-2xl font-black transition-all duration-200 flex items-center justify-between group
+                        ${activeTab === 'capital'
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200'
+                          : 'text-slate-500 hover:bg-white/60'
+                        }`}
+                    >
+                      <span className="flex items-center gap-3">
+                        <DollarSign size={18} className={`shrink-0 ${activeTab === 'capital' ? 'text-white' : 'text-emerald-500'}`} />
+                        <span className="text-[15px]">Capital</span>
+                      </span>
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg
+                        ${activeTab === 'capital' ? 'bg-white/20 text-white' : 'bg-emerald-50 border border-emerald-200 text-emerald-600'}`}>
+                        {activeTab === 'capital' ? '●' : 'NOVO'}
+                      </span>
+                    </button>
+                  )
                 )}
               </div>
 
               {token && userData ? (
                 <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span> 
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
                     Identidade Estratégica
                   </h3>
                   <div className="space-y-4">
@@ -2057,7 +2387,7 @@ export default function AnalysisApp() {
               ) : (
                 <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center relative overflow-hidden group">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-200 to-slate-300"></div>
-                  <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-3xl group-hover:scale-110 transition-transform shadow-inner">🕵️</div>
+                  <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center border border-slate-100 group-hover:scale-110 transition-transform shadow-inner"><ScanSearch size={28} /></div>
                   <h3 className="text-lg font-black text-slate-900 mb-2">Modo Anónimo</h3>
                   <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">Inicie sessão para ativar o Matchmaker de CNAE e salvar análises.</p>
                   <button onClick={() => { setAuthMode('login'); setShowAuthModal(true); }} className="w-full py-3.5 bg-slate-100 text-slate-900 font-black rounded-xl hover:bg-slate-200 transition-colors active:scale-95 border border-slate-200">
@@ -2066,50 +2396,78 @@ export default function AnalysisApp() {
                 </div>
               )}
               
-              {currentTier < 3 && (
-              <div className="bg-slate-950 rounded-[2.5rem] p-8 text-white shadow-2xl border border-slate-800 relative overflow-hidden group">
-                <div className="absolute -right-12 -top-12 w-48 h-48 bg-violet-600/20 blur-[50px] rounded-full pointer-events-none group-hover:bg-violet-600/30 transition-colors duration-700"></div>
-                <div className="absolute -left-12 -bottom-12 w-48 h-48 bg-emerald-600/10 blur-[50px] rounded-full pointer-events-none group-hover:bg-emerald-600/20 transition-colors duration-700"></div>
-                
-                <h4 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-8 relative z-10 flex items-center gap-3">
-                  <span className="flex h-3 w-3 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-violet-500"></span>
-                  </span>
-                  Metodologia Neural Bawzi
-                </h4>
-                
-                <ul className="space-y-8 relative z-10">
-                  <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-violet-400 group-hover/item:border-violet-500 group-hover/item:bg-violet-500/10 transition-all duration-300">01</div>
-                    <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-violet-300 transition-colors">Veredito Go/No-Go</strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Cálculo probabilístico de lucro e viabilidade real para evitar "barcas furadas".</p>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-amber-400 group-hover/item:border-amber-500 group-hover/item:bg-amber-500/10 transition-all duration-300">02</div>
-                    <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-amber-300 transition-colors">Blindagem Jurídico-Financeira</strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Identificação imediata de multas abusivas, prazos irreais e armadilhas contratuais.</p>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-5 group/item">
-                    <div className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-xs font-black text-emerald-400 group-hover/item:border-emerald-500 group-hover/item:bg-emerald-500/10 transition-all duration-300">03</div>
-                    <div className="space-y-1">
-                      <strong className="text-white block text-sm font-black tracking-tight group-hover/item:text-emerald-300 transition-colors">Neural Matchmaker</strong> 
-                      <p className="text-slate-400 text-xs leading-relaxed font-medium">Cruzamento semântico entre o objeto do edital e o seu CNAE/Capacidade Técnica.</p>
-                    </div>
-                  </li>
-                </ul>
+              {/* ── PILARES DA PLATAFORMA — sempre visível ── */}
+              <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] overflow-hidden">
 
-                <div className="mt-10 pt-6 border-t border-slate-800/50">
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter italic">
-                    * Análise processada via Multi-LLM Routing (GPT-4o / Claude 3.5)
-                  </p>
+                {/* Cabeçalho */}
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Motor de Análise</span>
+                  <span className="ml-auto text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold border border-slate-200">4 Agentes IA</span>
                 </div>
+
+                {/* Lista de agentes */}
+                <div className="divide-y divide-slate-50">
+
+                  {/* Agente Jurídico */}
+                  <div className="flex items-start gap-3 px-5 py-4">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
+                      <Scale size={18} className="text-amber-500" strokeWidth={2} />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <p className="text-[13px] font-black text-slate-800 leading-none mb-1.5">Agente Jurídico</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">Fundamentação legal · Impugnações · Lei 14.133/21</p>
+                    </div>
+                  </div>
+
+                  {/* Agente Financeiro */}
+                  <div className="flex items-start gap-3 px-5 py-4">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+                      <TrendingDown size={18} className="text-emerald-500" strokeWidth={2} />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <p className="text-[13px] font-black text-slate-800 leading-none mb-1.5">Agente Financeiro</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">Score de deságio · Margens · Viabilidade real</p>
+                    </div>
+                  </div>
+
+                  {/* Agente Auditor */}
+                  <div className="flex items-start gap-3 px-5 py-4">
+                    <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center shrink-0">
+                      <ShieldCheck size={18} className="text-sky-500" strokeWidth={2} />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <p className="text-[13px] font-black text-slate-800 leading-none mb-1.5">Agente Auditor</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">Armadilhas contratuais · Compliance · Riscos</p>
+                    </div>
+                  </div>
+
+                  {/* Neural Matchmaker */}
+                  <div className="flex items-start gap-3 px-5 py-4">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shrink-0">
+                      <Cpu size={18} className="text-white" strokeWidth={2} />
+                    </div>
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <p className="text-[13px] font-black text-slate-800 leading-none mb-1.5">Neural Matchmaker</p>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">CNAE vs. edital · Capacidade técnica · Fit</p>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Entregáveis */}
+                <div className="px-5 py-3.5 bg-slate-50/80 border-t border-slate-100 flex flex-wrap gap-1.5">
+                  {['Go/No-Go', 'Score Deságio', 'Radar Concorrentes', 'Parecer Jurídico', 'Capital de Giro'].map(item => (
+                    <span key={item} className="text-[9px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded-lg shadow-sm">
+                      ✓ {item}
+                    </span>
+                  ))}
+                </div>
+
               </div>
-              )}
             </div>
           </div>
         </section>
@@ -2117,7 +2475,7 @@ export default function AnalysisApp() {
         <section id="planos" className="bg-white py-24 px-6 border-t border-slate-100 print:hidden">
           <div className="max-w-[1400px] mx-auto">
             <div className="text-center mb-16">
-              <span className="text-violet-700 bg-violet-50 px-5 py-2 rounded-full font-black uppercase text-xs tracking-widest">Transparência e Escala</span>
+              <span className="text-slate-700 bg-slate-100 px-5 py-2 rounded-full font-black uppercase text-xs tracking-widest">Transparência e Escala</span>
               <h2 className="text-4xl md:text-5xl font-black text-slate-900 mt-6 mb-4 tracking-tight">A IA certa para o desafio certo</h2>
               <p className="text-slate-500 text-lg max-w-2xl mx-auto font-medium">Otimizamos o custo e a precisão roteando a sua análise automaticamente para os melhores modelos LLM do mundo.</p>
             </div>
@@ -2145,18 +2503,18 @@ export default function AnalysisApp() {
       {showShareModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600"></div>
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-slate-900"></div>
             <button onClick={() => setShowShareModal(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors text-2xl font-bold bg-slate-50 w-8 h-8 rounded-full flex items-center justify-center">&times;</button>
             
             <div className="flex flex-col items-center text-center mb-8">
-              <div className="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center text-3xl mb-6 border border-violet-100">📧</div>
+              <div className="w-16 h-16 bg-slate-100 text-slate-700 rounded-2xl flex items-center justify-center mb-6 border border-slate-200"><Mail size={28} /></div>
               <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Enviar para C-Level</h2>
               <p className="text-slate-500 text-sm mt-2 px-4 font-medium leading-relaxed">Partilhe esta análise estratégica diretamente com os tomadores de decisão da sua empresa.</p>
             </div>
 
             <div className="space-y-4">
-              <input type="email" placeholder="E-mail do destinatário..." value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none bg-slate-50 transition-all font-bold text-slate-700" />
-              <button onClick={confirmShare} disabled={isSharing} className="w-full py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-violet-600 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
+              <input type="email" placeholder="E-mail do destinatário..." value={shareEmail} onChange={(e) => setShareEmail(e.target.value)} className="w-full p-4 rounded-xl border border-slate-200 focus:border-slate-400 focus:ring-4 focus:ring-slate-400/10 outline-none bg-slate-50 transition-all font-bold text-slate-700" />
+              <button onClick={confirmShare} disabled={isSharing} className="w-full py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50">
                 {isSharing ? 'A enviar...' : 'Enviar Relatório Estratégico 🚀'}
               </button>
             </div>
@@ -2170,7 +2528,7 @@ export default function AnalysisApp() {
             
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center text-xl shadow-inner">⚖️</div>
+                <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-inner"><Scale size={18} /></div>
                 <div>
                   <h3 className="text-lg font-black text-slate-900 leading-none">Peça de Impugnação</h3>
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Gerado pela Bawzi Legal AI</p>
@@ -2184,7 +2542,7 @@ export default function AnalysisApp() {
                   }} 
                   className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-lg text-xs transition-colors border border-slate-200 shadow-sm"
                 >
-                  📋 Copiar Texto
+                  <ClipboardList size={13} className="inline mr-1" /> Copiar Texto
                 </button>
                 <button onClick={() => setShowImpugnacaoModal(false)} className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-colors">
                   ✖
@@ -2238,9 +2596,9 @@ export default function AnalysisApp() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm transition-all duration-300">
           <div className="bg-white p-8 md:p-10 rounded-3xl shadow-2xl flex flex-col items-center max-w-sm w-[90%] mx-auto text-center">
             <div className="relative w-20 h-20 mb-6">
-              <div className="absolute inset-0 border-4 border-violet-100 rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-violet-600 rounded-full border-t-transparent animate-spin"></div>
-              <Lock className="absolute inset-0 m-auto text-violet-600" size={24} />
+              <div className="absolute inset-0 border-4 border-slate-100 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-slate-900 rounded-full border-t-transparent animate-spin"></div>
+              <Lock className="absolute inset-0 m-auto text-slate-900" size={24} />
             </div>
             <h3 className="text-2xl font-black text-slate-900 mb-3 tracking-tight">Ambiente Seguro</h3>
             <p className="text-slate-500 font-medium leading-relaxed">Sincronizando com o Stripe...</p>

@@ -172,6 +172,9 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
       const dataEditais = await resEditais.json();
       if (!resEditais.ok) throw new Error(dataEditais.detail || 'Falha na busca.');
+      if (dataEditais.status === 'error') {
+        throw new Error(dataEditais.message || 'O portal do Governo está instável. Tente novamente em instantes.');
+      }
       
       let encontrados: PncpItem[] = dataEditais.data || dataEditais.items || dataEditais.oportunidades || [];
 
@@ -233,9 +236,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           edital.data_fim ||
           edital.dataFimRecebimentoProposta ||
           edital.dataEncerramentoProposta ||
-          edital.dataEncerramento ||
-          edital.dataRecebimentoProposta ||
-          edital.dataAberturaProposta
+          edital.dataEncerramento
         );
         // Se não temos data fiável, mantemos (pode ser edital permanente ou sigiloso)
         if (!dataFim) return true;
@@ -243,7 +244,13 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       });
 
       setResults([...vivos]);
-      if (vivos.length === 0) setError('Nenhuma licitação ativa encontrada para este termo. Os editais encontrados já encerraram o prazo de propostas.');
+      if (vivos.length === 0) {
+        setError(
+          encontrados.length > 0
+            ? 'Nenhuma licitação ativa encontrada para este termo. Os editais encontrados já encerraram o prazo de propostas.'
+            : 'Nenhuma licitação encontrada para este termo. Tente um termo mais amplo ou ative a busca exata.'
+        );
+      }
 
       if (resMarket && resMarket.ok) {
          const marketJson = await resMarket.json();
@@ -350,7 +357,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
     <div className="w-full max-w-5xl mx-auto p-6 md:p-8 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 font-sans relative overflow-hidden group">
       
       {/* Efeito de luz sutil no fundo */}
-      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-indigo-50/50 blur-[80px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-slate-100/30 blur-[80px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
 
       {/* ========================================== */}
       {/* 1. CABEÇALHO RADAR 360                     */}
@@ -359,8 +366,8 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-3">
             <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-              <div className="p-2 bg-indigo-50 rounded-lg">
-                <Radar className="w-6 h-6 text-indigo-600" strokeWidth={2.5} />
+              <div className="p-2 bg-slate-100 rounded-lg">
+                <Radar className="w-6 h-6 text-slate-700" strokeWidth={2.5} />
               </div>
               <div className="uppercase">
                 Radar 360
@@ -385,7 +392,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       <form onSubmit={handleSearch} className="relative z-10 bg-slate-50 p-3 rounded-2xl border border-slate-200/60 shadow-inner mb-8">
         <div className="flex flex-col md:flex-row items-center gap-3">
           
-          <div className="relative flex-1 w-full h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+          <div className="relative flex-1 w-full h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
               <span className="text-slate-400">🔍</span>
             </div>
@@ -398,7 +405,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             />
           </div>
 
-          <div className="w-full md:w-40 h-14 bg-white rounded-xl border border-slate-200 shadow-sm relative focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all">
+          <div className="w-full md:w-40 h-14 bg-white rounded-xl border border-slate-200 shadow-sm relative focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all">
             <select
               value={uf}
               onChange={(e) => {
@@ -447,7 +454,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           {/* Filtro de cidade — só aparece após selecionar UF */}
           <div className={`transition-all duration-200 overflow-visible ${uf ? 'w-full md:w-52 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
             {uf && (
-              <div className="h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500 transition-all overflow-visible">
+              <div className="h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all overflow-visible">
                 <MunicipioAutocomplete
                   value={municipioNome}
                   uf={uf}
@@ -465,7 +472,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           <button 
             onClick={handleSearch}
             disabled={isSearching}
-            className="w-full md:w-auto px-6 py-4 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-700 transition-all shadow-md active:scale-95 disabled:bg-indigo-400 disabled:cursor-not-allowed shrink-0"
+            className="w-full md:w-auto px-6 py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-slate-800 transition-all shadow-md active:scale-95 disabled:bg-slate-500 disabled:cursor-not-allowed shrink-0"
           >
             {isSearching ? (
               <span className="flex items-center gap-2">
@@ -479,7 +486,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                <Radar className="w-5 h-5 text-indigo-200" strokeWidth={2.5} /> 
+                <Radar className="w-5 h-5 text-white/60" strokeWidth={2.5} />
                 <span className="font-bold tracking-wide">Buscar Radar 360º</span>
               </span>
             )}
@@ -533,7 +540,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 px-2">
             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
-              <BrainCircuit className="w-4 h-4 text-indigo-600" strokeWidth={2.5} />
+              <BrainCircuit className="w-4 h-4 text-slate-500" strokeWidth={2.5} />
               Inteligência de Mercado
             </h3>
             <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
@@ -546,16 +553,16 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-16 h-16 bg-violet-500/20 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+              <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Volume do Mercado</span>
               <span className="text-xl md:text-2xl font-black text-white">~R$ {marketData.tamanhoMercado}</span>
               <span className="text-[10px] text-emerald-400 font-bold block mt-1">Base: {marketData.previsaoVolume} contrato{marketData.previsaoVolume === '1' ? '' : 's'} hist.</span>
             </div>
-            <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
-              <span className="text-[9px] font-black text-violet-200 uppercase tracking-widest block mb-1 relative z-10">Preço Alvo Sugerido</span>
+            <div className="bg-slate-800 p-5 rounded-2xl shadow-xl relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 blur-[20px] rounded-full -translate-y-1/2 translate-x-1/2"></div>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1 relative z-10">Preço Alvo Sugerido</span>
               <span className="text-xl md:text-2xl font-black text-white relative z-10">{formatCurrency(marketData.ticketMedio)}</span>
-              <span className="text-[10px] text-violet-300 font-bold uppercase block mt-1 relative z-10">Média Vencedores</span>
+              <span className="text-[10px] text-slate-400 font-bold uppercase block mt-1 relative z-10">Média Vencedores</span>
             </div>
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
               <div>
@@ -603,10 +610,10 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             const dataFimIlegivel = dataFimRaw && !/\d{2}\/\d{2}\/\d{4}/.test(dataFimRaw) && !/\d{4}-\d{2}-\d{2}/.test(dataFimRaw);
 
             return (
-              <div key={edital.id || index} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-indigo-300 transition-all shadow-sm hover:shadow-md group">
+              <div key={edital.id || index} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-slate-300 transition-all shadow-sm hover:shadow-md group">
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex gap-2 items-center">
-                    <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md uppercase border border-indigo-100">
+                    <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200">
                       {edital.uf} • {edital.ano}
                     </span>
                     {/* ========================================== */}
@@ -635,7 +642,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 {/* TIMELINE */}
                 <div className="mt-4 mb-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 border-t border-slate-100 pt-4">
                   <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
                     <div>
                       <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Divulgação</p>
                       <p className="text-xs text-slate-700 font-semibold truncate">{edital.data_divulgacao || 'N/A'}</p>
@@ -715,7 +722,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       handleDeepAnalyze(edital);
                     }}
                     disabled={loadingId !== null}
-                    className="flex-1 bg-indigo-600 text-white font-black py-3 px-4 rounded-xl text-xs hover:bg-indigo-700 transition-all disabled:bg-indigo-400 disabled:cursor-not-allowed shadow-md flex items-center justify-center gap-2"
+                    className="flex-1 bg-slate-900 text-white font-black py-3 px-4 rounded-xl text-xs hover:bg-slate-800 transition-all disabled:bg-slate-500 disabled:cursor-not-allowed shadow-md flex items-center justify-center gap-2"
                   >
                     {loadingId === edital.id ? (
                       <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> A Extrair PDF (Aguarde)...</>

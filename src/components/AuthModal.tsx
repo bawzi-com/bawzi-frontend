@@ -14,12 +14,13 @@ interface AuthModalProps {
 // 1. O COMPONENTE DE CONTEÚDO (Lógica e Visual do Modal)
 // ============================================================================
 function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }: AuthModalProps) {
-  const [view, setView] = useState<'login' | 'register'>(defaultView);
+  const [view, setView] = useState<'login' | 'register' | 'forgot-password'>(defaultView);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -28,8 +29,32 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       setPassword('');
       setNome('');
       setError('');
+      setForgotSuccess(false);
     }
   }, [isOpen, defaultView]);
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Erro ao enviar e-mail de recuperação.');
+      }
+      setForgotSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao comunicar com o servidor.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Função mágica que lida com o Popup do Google e avisa o nosso backend
   const loginGoogle = useGoogleLogin({
@@ -114,14 +139,89 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
   if (!isOpen) return null;
 
+  // ---- VIEW: ESQUECEU A SENHA ----
+  if (view === 'forgot-password') {
+    return (
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
+          <button
+            onClick={onClose}
+            className="absolute top-6 right-6 z-10 w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors text-xl font-bold"
+          >
+            &times;
+          </button>
+          <div className="p-8 md:p-10">
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="mb-6 transform hover:scale-105 transition-transform">
+                <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
+              </div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Recuperar Senha</h2>
+              <p className="text-sm text-slate-500 font-medium mt-1">Enviaremos um link de redefinição para o seu e-mail</p>
+            </div>
+
+            {forgotSuccess ? (
+              <div className="text-center space-y-4">
+                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+                  <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-slate-700 font-semibold text-sm">E-mail enviado!</p>
+                <p className="text-slate-500 text-xs">Se este e-mail estiver registado, receberás um link de recuperação em instantes. Verifica também a pasta de spam.</p>
+                <button
+                  onClick={() => { setView('login'); setForgotSuccess(false); setEmail(''); }}
+                  className="mt-4 w-full py-3 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all"
+                >
+                  Voltar ao Login
+                </button>
+              </div>
+            ) : (
+              <>
+                {error && (
+                  <div className="mb-4 p-3 bg-rose-50 text-rose-600 text-xs font-bold rounded-lg border border-rose-200 text-center">
+                    {error}
+                  </div>
+                )}
+                <form onSubmit={handleForgotPassword} className="space-y-4">
+                  <input
+                    type="email"
+                    placeholder="O teu e-mail de acesso"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
+                    required
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                  >
+                    {loading ? 'A enviar...' : 'Enviar Link de Recuperação'}
+                  </button>
+                </form>
+                <div className="mt-6 text-center text-sm font-medium text-slate-500">
+                  <button onClick={() => setView('login')} className="text-violet-600 hover:text-violet-700 font-bold underline underline-offset-4">
+                    ← Voltar ao Login
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- VIEW: LOGIN / REGISTER ----
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
-        
+
         <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
-        
-        <button 
-          onClick={onClose} 
+
+        <button
+          onClick={onClose}
           className="absolute top-6 right-6 z-10 w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors text-xl font-bold"
         >
           &times;
@@ -132,7 +232,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             <div className="mb-6 transform hover:scale-105 transition-transform">
               <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
             </div>
-            
+
             <h2 className="text-2xl font-black text-slate-900 tracking-tighter">
               {view === 'login' ? 'Bem-vindo de volta' : 'Crie sua Conta'}
             </h2>
@@ -150,41 +250,53 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           <form onSubmit={handleSubmit} className="space-y-4">
             {view === 'register' && (
               <div>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="Nome Completo"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
-                  required 
+                  required
                 />
               </div>
             )}
-            
+
             <div>
-              <input 
-                type="email" 
+              <input
+                type="email"
                 placeholder="E-mail Profissional"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
-                required 
+                required
               />
             </div>
 
             <div>
-              <input 
-                type="password" 
+              <input
+                type="password"
                 placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
-                required 
+                required
               />
             </div>
 
-            <button 
-              type="submit" 
+            {view === 'login' && (
+              <div className="text-right -mt-1">
+                <button
+                  type="button"
+                  onClick={() => { setError(''); setView('forgot-password'); }}
+                  className="text-xs text-slate-400 hover:text-violet-600 font-semibold transition-colors"
+                >
+                  Esqueceu a senha?
+                </button>
+              </div>
+            )}
+
+            <button
+              type="submit"
               disabled={loading}
               className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
             >

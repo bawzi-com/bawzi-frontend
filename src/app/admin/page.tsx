@@ -2,26 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  Users, 
-  FileText, 
-  Zap, 
-  ShieldAlert, 
-  BarChart3, 
-  TrendingUp, 
+import {
+  Users,
+  FileText,
+  Zap,
+  ShieldAlert,
+  BarChart3,
+  TrendingUp,
   AlertCircle,
   ArrowLeft,
   Settings,
   Briefcase,
   Search,
   Edit2,
-  Mail, 
+  Mail,
   Server,
   LayoutDashboard,
   Save,
   Lock,
   LayoutTemplate,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Database,
+  RefreshCw,
+  MapPin,
+  Play,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -35,13 +43,21 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'templates' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings'>('overview');
 
   // Estados do Formulário SMTP
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpName, setSmtpName] = useState('Bawzi');
   const [savingSmtp, setSavingSmtp] = useState(false);
+
+  // Estados PNCP
+  const [pncpStats, setPncpStats] = useState<any>(null);
+  const [workersStatus, setWorkersStatus] = useState<any>(null);
+  const [pncpLoading, setPncpLoading] = useState(false);
+  const [workerAction, setWorkerAction] = useState<string | null>(null);
+  const [municipiosUfs, setMunicipiosUfs] = useState('');
+  const [fornecedoresUfs, setFornecedoresUfs] = useState('');
 
   // Estados dos Templates de E-mail
   const [templates, setTemplates] = useState<any[]>([]);
@@ -207,6 +223,96 @@ export default function AdminDashboard() {
   };
 
   // ==========================================
+  // FUNÇÕES PNCP / WORKERS
+  // ==========================================
+  const loadPncpData = async () => {
+    setPncpLoading(true);
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const [statsRes, statusRes] = await Promise.all([
+        fetch(`${baseUrl}/api/admin/pncp/stats`, { headers }),
+        fetch(`${baseUrl}/api/admin/workers/status`, { headers }),
+      ]);
+      if (statsRes.ok)  setPncpStats(await statsRes.json());
+      if (statusRes.ok) setWorkersStatus(await statusRes.json());
+    } finally {
+      setPncpLoading(false);
+    }
+  };
+
+  const triggerWorkerContratos = async (modo: string) => {
+    if (!confirm(`Iniciar worker de contratos em modo "${modo}"?\n\nTempo estimado:\n• sem_termo: ~3 min\n• rapido: ~30s\n• medio: ~10 min\n• maximo: ~45 min\n• completo: ~50 min`)) return;
+    setWorkerAction(`contratos-${modo}`);
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const res = await fetch(`${baseUrl}/api/admin/workers/contratos?modo=${modo}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        setTimeout(loadPncpData, 1500);
+      } else {
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerFornecedores = async () => {
+    const ufsLabel = fornecedoresUfs.trim() || 'todas as 27 UFs';
+    if (!confirm(`Enriquecer fornecedores para: ${ufsLabel}?\n\nEste worker usa /api/consulta (tem nomeRazaoSocialFornecedor)\ne actualiza os contratos já indexados sem re-indexar.\n\nTempo: ~2-5 min por UF · ~1-2h completo`)) return;
+    setWorkerAction('fornecedores');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = fornecedoresUfs.trim() ? `?ufs=${encodeURIComponent(fornecedoresUfs.trim())}` : '';
+      const res = await fetch(`${baseUrl}/api/admin/workers/fornecedores${qs}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        setTimeout(loadPncpData, 1500);
+      } else {
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerMunicipios = async () => {
+    const ufsLabel = municipiosUfs.trim() || 'todas as 27 UFs';
+    if (!confirm(`Iniciar worker de municípios para: ${ufsLabel}?\n\nTempo estimado: ~2-4h para todas as UFs.`)) return;
+    setWorkerAction('municipios');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = municipiosUfs.trim() ? `?ufs=${encodeURIComponent(municipiosUfs.trim())}` : '';
+      const res = await fetch(`${baseUrl}/api/admin/workers/municipios${qs}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        setTimeout(loadPncpData, 1500);
+      } else {
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  // ==========================================
   // FUNÇÕES DOS TEMPLATES DE E-MAIL
   // ==========================================
   const handleSelectTemplate = (template: any) => {
@@ -345,8 +451,14 @@ export default function AdminDashboard() {
         >
           <Users size={18} /> Contas & Acessos
         </button>
-        <button 
-          onClick={() => setActiveTab('templates')} 
+        <button
+          onClick={() => { setActiveTab('pncp'); if (!pncpStats) loadPncpData(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'pncp' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+        >
+          <Database size={18} /> Base PNCP
+        </button>
+        <button
+          onClick={() => setActiveTab('templates')}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'templates' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
           <LayoutTemplate size={18} /> Templates de E-mail
@@ -528,7 +640,259 @@ export default function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* ABA 3: TEMPLATES DE E-MAIL */}
+      {/* ABA 3: BASE PNCP                         */}
+      {/* ========================================== */}
+      {activeTab === 'pncp' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+
+          {/* Header + Refresh */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-black tracking-tight text-white">Base de Dados PNCP</h2>
+              <p className="text-slate-500 text-sm mt-1">Gerir a indexação local de contratos e municípios.</p>
+            </div>
+            <button
+              onClick={loadPncpData}
+              disabled={pncpLoading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold transition-all border border-slate-700 disabled:opacity-50"
+            >
+              {pncpLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+              Atualizar
+            </button>
+          </div>
+
+          {/* Stats Cards */}
+          {pncpStats && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Contratos Total</p>
+                <p className="text-3xl font-black text-white">{(pncpStats.contratos?.total || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Contratos Ativos</p>
+                <p className="text-3xl font-black text-emerald-400">{(pncpStats.contratos?.ativos || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sem Fornecedor</p>
+                <p className="text-3xl font-black text-amber-400">{(pncpStats.contratos?.sem_fornecedor || 0).toLocaleString()}</p>
+              </div>
+              <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Municípios</p>
+                <p className="text-3xl font-black text-blue-400">{(pncpStats.municipios?.total || 0).toLocaleString()}</p>
+                <p className="text-[10px] text-slate-600 mt-1">de ~5.569</p>
+              </div>
+            </div>
+          )}
+          {pncpStats?.ultima_indexacao && (
+            <p className="text-xs text-slate-600 flex items-center gap-1.5">
+              <Clock size={11} />
+              Última indexação: {new Date(pncpStats.ultima_indexacao).toLocaleString('pt-BR')}
+            </p>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            {/* WORKER CONTRATOS */}
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-violet-500/10 rounded-xl"><RefreshCw size={20} className="text-violet-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Contratos</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Indexa contratos do PNCP via /api/search</p>
+                </div>
+              </div>
+
+              {/* Status */}
+              {workersStatus?.contratos && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.contratos.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.contratos.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.contratos.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.contratos.running
+                    ? <><Loader2 size={13} className="animate-spin" /> A correr (modo: {workersStatus.contratos.modo})...</>
+                    : workersStatus.contratos.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.contratos.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.contratos.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> Concluído · {workersStatus.contratos.ultimo_resultado.total_inseridos?.toLocaleString()} contratos inseridos</>
+                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                  }
+                </div>
+              )}
+
+              {/* Modo buttons */}
+              <div className="space-y-2.5">
+                {[
+                  { modo: 'sem_termo',  label: 'Sem Termo',  desc: '10k contratos · ~3 min',    color: 'emerald' },
+                  { modo: 'rapido',     label: 'Rápido',     desc: '~900 contratos · ~30s',     color: 'blue' },
+                  { modo: 'medio',      label: 'Médio',      desc: '~30k contratos · ~10 min',  color: 'violet' },
+                  { modo: 'maximo',     label: 'Máximo',     desc: '~150k contratos · ~45 min', color: 'amber' },
+                  { modo: 'completo',   label: 'Completo',   desc: '~160k contratos · ~50 min', color: 'red' },
+                ].map(({ modo, label, desc, color }) => (
+                  <button
+                    key={modo}
+                    onClick={() => triggerWorkerContratos(modo)}
+                    disabled={!!workerAction || workersStatus?.contratos?.running}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                      bg-slate-800/40 border-slate-700/50 hover:border-${color}-500/40 hover:bg-${color}-500/5 group`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {workerAction === `contratos-${modo}`
+                        ? <Loader2 size={15} className="animate-spin text-slate-400" />
+                        : <Play size={13} className={`text-${color}-400 group-hover:scale-110 transition-transform`} />
+                      }
+                      <span className="font-black text-slate-200 text-sm">{label}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-medium">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* WORKER FORNECEDORES */}
+            <div className="bg-slate-900/40 border border-amber-500/10 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-amber-500/10 rounded-xl"><Users size={20} className="text-amber-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Fornecedores</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Enriquece fornecedor_nome via /api/consulta</p>
+                </div>
+              </div>
+
+              {/* Alerta de contexto */}
+              <div className="mb-5 px-3 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-300/80">
+                <span className="font-black text-amber-400">Por quê?</span> O /api/search não devolve dados de fornecedor.
+                Este worker usa o /api/consulta (que tem) e faz UPDATE nos {(pncpStats?.contratos?.sem_fornecedor || 0).toLocaleString()} contratos sem fornecedor.
+              </div>
+
+              {/* Status */}
+              {workersStatus?.fornecedores && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.fornecedores.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.fornecedores.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.fornecedores.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.fornecedores.running
+                    ? <><Loader2 size={13} className="animate-spin" /> A correr (UFs: {typeof workersStatus.fornecedores.ufs === 'string' ? workersStatus.fornecedores.ufs : workersStatus.fornecedores.ufs?.join(', ')})...</>
+                    : workersStatus.fornecedores.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.fornecedores.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.fornecedores.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> {workersStatus.fornecedores.ultimo_resultado.atualizados?.toLocaleString()} atualizados · {workersStatus.fornecedores.ultimo_resultado.sem_restantes?.toLocaleString()} restantes</>
+                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                  }
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                    UFs a enriquecer (vazio = todas as 27)
+                  </label>
+                  <input
+                    type="text"
+                    value={fornecedoresUfs}
+                    onChange={e => setFornecedoresUfs(e.target.value.toUpperCase())}
+                    placeholder="Ex: GO,SP,MG"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-mono text-sm"
+                  />
+                  <p className="text-[10px] text-slate-600 mt-1.5">Só GO → ~2-5 min · Todas → ~1-2h</p>
+                </div>
+
+                <button
+                  onClick={triggerWorkerFornecedores}
+                  disabled={!!workerAction || workersStatus?.fornecedores?.running}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
+                    bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {workerAction === 'fornecedores'
+                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
+                    : <><Play size={14} /> Enriquecer Fornecedores</>
+                  }
+                </button>
+              </div>
+            </div>
+
+            {/* WORKER MUNICÍPIOS */}
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2.5 bg-blue-500/10 rounded-xl"><MapPin size={20} className="text-blue-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Municípios</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Indexa municipio_id via IBGE + PNCP</p>
+                </div>
+              </div>
+
+              {/* Status */}
+              {workersStatus?.municipios && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.municipios.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.municipios.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.municipios.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.municipios.running
+                    ? <><Loader2 size={13} className="animate-spin" /> A correr (UFs: {typeof workersStatus.municipios.ufs === 'string' ? workersStatus.municipios.ufs : workersStatus.municipios.ufs?.join(', ')})...</>
+                    : workersStatus.municipios.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.municipios.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.municipios.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> Concluído · {workersStatus.municipios.ultimo_resultado.novos} novos · {workersStatus.municipios.ultimo_resultado.total_collection?.toLocaleString()} total</>
+                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                  }
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                    UFs a processar (vazio = todas as 27)
+                  </label>
+                  <input
+                    type="text"
+                    value={municipiosUfs}
+                    onChange={e => setMunicipiosUfs(e.target.value.toUpperCase())}
+                    placeholder="Ex: GO,SP,MG"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono text-sm"
+                  />
+                  <p className="text-[10px] text-slate-600 mt-1.5">Separe com vírgula. Ex: GO executa só Goiás (~5 min).</p>
+                </div>
+
+                <button
+                  onClick={triggerWorkerMunicipios}
+                  disabled={!!workerAction || workersStatus?.municipios?.running}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
+                    bg-blue-600 hover:bg-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {workerAction === 'municipios'
+                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
+                    : <><Play size={14} /> Iniciar Worker de Municípios</>
+                  }
+                </button>
+
+                <div className="bg-slate-800/30 border border-slate-700/40 rounded-xl p-4 text-xs text-slate-500 space-y-1">
+                  <p className="font-bold text-slate-400">Para que serve?</p>
+                  <p>Necessário para o filtro de cidade no Radar de Renovações. Cada município precisa ter o seu <code className="text-slate-300">municipio_id</code> PNCP registado.</p>
+                  <p className="text-slate-600">Tempo: ~5 min por UF · ~2-4h completo</p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* ABA 4 (antiga 3): TEMPLATES DE E-MAIL   */}
       {/* ========================================== */}
       {activeTab === 'templates' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-5xl">
@@ -658,7 +1022,7 @@ export default function AdminDashboard() {
       )}
 
       {/* ========================================== */}
-      {/* ABA 4: CONFIGURAÇÕES GERAIS */}
+      {/* ABA 5 (antiga 4): CONFIGURAÇÕES GERAIS  */}
       {/* ========================================== */}
       {activeTab === 'settings' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-3xl">

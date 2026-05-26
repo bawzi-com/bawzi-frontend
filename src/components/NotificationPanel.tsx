@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, BellRing, CheckCheck, ExternalLink } from 'lucide-react';
+import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -20,9 +20,7 @@ export interface Notificacao {
 
 interface NotificationPanelProps {
   token: string;
-  /** Callback para navegar para uma tab interna (ex: "radar", "renovacoes") */
   onNavigate?: (tab: string) => void;
-  /** Callback quando a contagem de não-lidas muda */
   onCountChange?: (count: number) => void;
 }
 
@@ -36,31 +34,81 @@ function timeAgo(iso?: string): string {
   try {
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60000);
-    if (m < 1) return 'agora mesmo';
-    if (m < 60) return `há ${m} min`;
+    if (m < 1) return 'agora';
+    if (m < 60) return `${m}min`;
     const h = Math.floor(m / 60);
-    if (h < 24) return `há ${h}h`;
-    return `há ${Math.floor(h / 24)}d`;
-  } catch {
-    return '';
-  }
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  } catch { return ''; }
 }
 
-const TIPO_STYLE: Record<string, { border: string; bg: string; dot: string }> = {
-  compliance:  { border: 'border-l-red-500',    bg: 'bg-red-50/60',    dot: 'bg-red-500'    },
-  matchmaker:  { border: 'border-l-indigo-500', bg: 'bg-indigo-50/60', dot: 'bg-indigo-500' },
-  renovacao:   { border: 'border-l-amber-500',  bg: 'bg-amber-50/60',  dot: 'bg-amber-500'  },
-  oportunidade:{ border: 'border-l-emerald-500',bg: 'bg-emerald-50/60',dot: 'bg-emerald-500'},
+const TIPO_CONFIG: Record<string, {
+  accent: string;
+  badge: string;
+  iconBg: string;
+  cta: string;
+  ctaHover: string;
+  label: string;
+}> = {
+  compliance:   {
+    accent:   'border-red-400',
+    badge:    'bg-red-100 text-red-700',
+    iconBg:   'bg-red-500',
+    cta:      'bg-red-50 border-red-200 text-red-700',
+    ctaHover: 'hover:bg-red-100 hover:border-red-400',
+    label:    'Compliance',
+  },
+  matchmaker:   {
+    accent:   'border-indigo-400',
+    badge:    'bg-indigo-100 text-indigo-700',
+    iconBg:   'bg-indigo-500',
+    cta:      'bg-indigo-50 border-indigo-200 text-indigo-700',
+    ctaHover: 'hover:bg-indigo-100 hover:border-indigo-400',
+    label:    'Match',
+  },
+  renovacao:    {
+    accent:   'border-amber-400',
+    badge:    'bg-amber-100 text-amber-700',
+    iconBg:   'bg-amber-500',
+    cta:      'bg-amber-50 border-amber-200 text-amber-700',
+    ctaHover: 'hover:bg-amber-100 hover:border-amber-400',
+    label:    'Renovação',
+  },
+  oportunidade: {
+    accent:   'border-emerald-400',
+    badge:    'bg-emerald-100 text-emerald-700',
+    iconBg:   'bg-emerald-500',
+    cta:      'bg-emerald-50 border-emerald-200 text-emerald-700',
+    ctaHover: 'hover:bg-emerald-100 hover:border-emerald-400',
+    label:    'Oportunidade',
+  },
+};
+
+function TipoIcon({ tipo }: { tipo: string }) {
+  const cls = 'text-white';
+  const sz  = 17;
+  if (tipo === 'compliance')   return <ShieldAlert size={sz} className={cls} />;
+  if (tipo === 'matchmaker')   return <Zap         size={sz} className={cls} />;
+  if (tipo === 'renovacao')    return <RefreshCw   size={sz} className={cls} />;
+  if (tipo === 'oportunidade') return <Sparkles    size={sz} className={cls} />;
+  return <ShieldAlert size={sz} className={cls} />;
+}
+
+const CTA_LABEL: Record<string, string> = {
+  compliance:   'Verificar certidões',
+  matchmaker:   'Ver editais',
+  renovacao:    'Ver contratos',
+  oportunidade: 'Ver oportunidade',
 };
 
 // ─────────────────────────────────────────────
 // Hook reutilizável
 // ─────────────────────────────────────────────
 export function useNotificacoes(token: string, onCountChange?: (n: number) => void) {
-  const [notifs, setNotifs]     = useState<Notificacao[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [checked, setChecked]   = useState(false);
-  const intervalRef             = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [notifs, setNotifs]   = useState<Notificacao[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const intervalRef           = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const check = useCallback(async (silent = false) => {
     if (!token) return;
@@ -74,15 +122,12 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
       const data: Notificacao[] = await res.json();
       setNotifs(data);
       onCountChange?.(data.filter(n => !n.lida).length);
-    } catch {
-      // silencioso — não bloquear a UI por falha de notificação
-    } finally {
+    } catch { /* silencioso */ } finally {
       if (!silent) setLoading(false);
       setChecked(true);
     }
   }, [token, onCountChange]);
 
-  // Primeiro check ao montar + polling a cada 2 minutos
   useEffect(() => {
     if (!token) return;
     check();
@@ -121,11 +166,7 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
 // ─────────────────────────────────────────────
 // Painel principal
 // ─────────────────────────────────────────────
-export default function NotificationPanel({
-  token,
-  onNavigate,
-  onCountChange,
-}: NotificationPanelProps) {
+export default function NotificationPanel({ token, onNavigate, onCountChange }: NotificationPanelProps) {
   const [open, setOpen] = useState(false);
   const { notifs, loading, checked, marcarLida, marcarTodasLidas } =
     useNotificacoes(token, onCountChange);
@@ -134,7 +175,6 @@ export default function NotificationPanel({
 
   function handleClick(n: Notificacao) {
     marcarLida(n._id);
-    // URL relativa → tab interna (ex: "?tab=radar" → "radar")
     if (n.url.startsWith('?tab=')) {
       onNavigate?.(n.url.replace('?tab=', ''));
       setOpen(false);
@@ -162,7 +202,7 @@ export default function NotificationPanel({
       {/* ── Overlay ────────────────────────────────────────────────────────── */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
           onClick={() => setOpen(false)}
         />
       )}
@@ -170,132 +210,162 @@ export default function NotificationPanel({
       {/* ── Painel slide-over ──────────────────────────────────────────────── */}
       <div className={`
         fixed top-0 right-0 h-full w-full max-w-sm z-50 flex flex-col
-        bg-white shadow-2xl border-l border-slate-200
+        bg-slate-50 shadow-2xl
         transition-transform duration-300 ease-out
         ${open ? 'translate-x-0' : 'translate-x-full'}
       `}>
 
-        {/* Cabeçalho */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 bg-slate-50/80">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-sm">
-              <BellRing size={16} className="text-white" />
-            </div>
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-widest text-slate-900">
-                Radar Estratégico
-              </h2>
-              {unread > 0 && (
-                <p className="text-[10px] text-slate-400 font-medium">
-                  {unread} alerta{unread !== 1 ? 's' : ''} não {unread !== 1 ? 'lidos' : 'lido'}
+        {/* ── Cabeçalho ────────────────────────────────────────────────────── */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 pt-6 pb-5">
+          {/* Textura sutil */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{
+            backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)',
+            backgroundSize: '20px 20px',
+          }} />
+
+          <div className="relative flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {/* Ícone animado */}
+              <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-900/30 shrink-0">
+                <BellRing size={18} className="text-white" />
+                {unread > 0 && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-slate-900 animate-pulse" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-white tracking-tight">
+                  Radar Estratégico
+                </h2>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  {unread > 0
+                    ? `${unread} alerta${unread !== 1 ? 's' : ''} pendente${unread !== 1 ? 's' : ''}`
+                    : 'Tudo em dia'}
                 </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {unread > 0 && (
+                <button
+                  onClick={marcarTodasLidas}
+                  className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-white transition-colors px-2.5 py-1.5 rounded-lg hover:bg-white/10"
+                >
+                  <CheckCheck size={13} />
+                  <span>Lidas</span>
+                </button>
               )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {unread > 0 && (
               <button
-                onClick={marcarTodasLidas}
-                className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600 transition-colors px-2 py-1 rounded-lg hover:bg-indigo-50"
+                onClick={() => setOpen(false)}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all"
               >
-                <CheckCheck size={14} /> Marcar lidas
+                <X size={16} />
               </button>
-            )}
-            <button
-              onClick={() => setOpen(false)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"
-            >
-              <X size={16} />
-            </button>
+            </div>
           </div>
-        </div>
 
-        {/* Lista */}
-        <div className="flex-1 overflow-y-auto">
-          {loading && !checked && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
-              <p className="text-[11px] text-slate-400 font-medium">
-                A analisar o seu perfil...
-              </p>
-            </div>
-          )}
-
-          {checked && notifs.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 px-8 text-center">
-              <span className="text-4xl">✅</span>
-              <p className="text-sm font-black text-slate-700">Tudo em dia!</p>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Nenhum alerta pendente para o seu workspace.
-              </p>
-            </div>
-          )}
-
-          {notifs.length > 0 && (
-            <div className="divide-y divide-slate-50">
-              {notifs.map((n) => {
-                const style = TIPO_STYLE[n.tipo] ?? TIPO_STYLE.compliance;
-                const isExternal = n.url.startsWith('/') && !n.url.startsWith('?');
-
+          {/* Pills de tipos com contagem */}
+          {unread > 0 && (
+            <div className="relative flex items-center gap-2 mt-4 flex-wrap">
+              {(['compliance','matchmaker','renovacao','oportunidade'] as const).map(tipo => {
+                const count = notifs.filter(n => n.tipo === tipo && !n.lida).length;
+                if (!count) return null;
+                const cfg = TIPO_CONFIG[tipo];
                 return (
-                  <button
-                    key={n._id}
-                    onClick={() => handleClick(n)}
-                    className={`
-                      w-full text-left px-5 py-4 border-l-4 ${style.border} ${style.bg}
-                      hover:brightness-95 transition-all group
-                    `}
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* Ícone */}
-                      <div className="text-xl shrink-0 mt-0.5 leading-none">
-                        {n.icone}
-                      </div>
-
-                      {/* Conteúdo */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight">
-                            {n.titulo}
-                          </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {n.criada_em && (
-                              <span className="text-[9px] font-bold text-slate-400">
-                                {timeAgo(n.criada_em)}
-                              </span>
-                            )}
-                            {isExternal && (
-                              <ExternalLink size={10} className="text-slate-300 group-hover:text-slate-500 transition-colors" />
-                            )}
-                          </div>
-                        </div>
-                        <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                          {n.mensagem}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* CTA sutil */}
-                    <div className="mt-2.5 ml-9">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600 transition-colors">
-                        {n.tipo === 'compliance' ? 'Verificar certidões →' :
-                         n.tipo === 'matchmaker' ? 'Ver editais →' :
-                         n.tipo === 'renovacao'  ? 'Ver contratos →' :
-                                                   'Ver oportunidade →'}
-                      </span>
-                    </div>
-                  </button>
+                  <span key={tipo} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${cfg.badge}`}>
+                    {count} {cfg.label}
+                  </span>
                 );
               })}
             </div>
           )}
         </div>
 
-        {/* Rodapé */}
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60">
+        {/* ── Lista ────────────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-2">
+
+          {/* Loading */}
+          {loading && !checked && (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-8 h-8 rounded-full border-2 border-amber-400 border-t-transparent animate-spin" />
+              <p className="text-[11px] text-slate-400 font-medium">A analisar o seu perfil...</p>
+            </div>
+          )}
+
+          {/* Vazio */}
+          {checked && notifs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 gap-4 px-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+                <CheckCircle2 size={32} className="text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-sm font-black text-slate-800">Tudo em dia!</p>
+                <p className="text-[11px] text-slate-400 font-medium mt-1 leading-relaxed">
+                  Nenhum alerta pendente para o seu workspace.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Cards */}
+          {notifs.map((n) => {
+            const cfg = TIPO_CONFIG[n.tipo] ?? TIPO_CONFIG.compliance;
+            const isExternal = n.url.startsWith('/') && !n.url.startsWith('?');
+
+            return (
+              <div
+                key={n._id}
+                className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden border-l-4 ${cfg.accent}`}
+              >
+                {/* Topo do card */}
+                <div className="px-4 pt-4 pb-3">
+                  <div className="flex items-start gap-3">
+                    {/* Ícone */}
+                    <div className={`w-9 h-9 rounded-xl ${cfg.iconBg} flex items-center justify-center shrink-0`}>
+                      <TipoIcon tipo={n.tipo} />
+                    </div>
+
+                    {/* Texto */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-tight">
+                          {n.titulo}
+                        </span>
+                        {n.criada_em && (
+                          <span className="text-[9px] font-bold text-slate-400 shrink-0 bg-slate-50 px-1.5 py-0.5 rounded-md">
+                            {timeAgo(n.criada_em)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        {n.mensagem}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rodapé do card — CTA */}
+                <div className={`px-4 py-2.5 border-t border-slate-100`}>
+                  <button
+                    onClick={() => handleClick(n)}
+                    className={`
+                      w-full flex items-center justify-between gap-2
+                      px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest
+                      transition-all ${cfg.cta} ${cfg.ctaHover}
+                    `}
+                  >
+                    <span>{CTA_LABEL[n.tipo] ?? 'Ver detalhes'}</span>
+                    <ArrowRight size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Rodapé ───────────────────────────────────────────────────────── */}
+        <div className="px-5 py-3 border-t border-slate-200 bg-white">
           <p className="text-[10px] text-slate-400 font-medium text-center leading-relaxed">
-            Alertas gerados automaticamente com base no CNAE da empresa.
-            Atualização semanal.
+            Alertas gerados automaticamente · Atualização semanal
           </p>
         </div>
       </div>

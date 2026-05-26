@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   ShieldCheck, ShieldAlert, AlertTriangle, ChevronDown, ChevronUp, 
   Landmark, Briefcase, Building, CheckCircle2, XCircle, RotateCw, Bot, ExternalLink,
@@ -239,6 +239,19 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
   const isCguApproved = cguData?.vereditto === 'APROVADO';
   const hasCguSanctions = cguData?.vereditto === 'REPROVADO_COM_SANCÃO';
 
+  // Agrega sanções de CEIS, CNEP e CEPIM numa lista plana (memoizado)
+  const todasSancoes = useMemo<Array<{ fonte: string; item: any }>>(() => {
+    if (!hasCguSanctions || !cguData?.certidoes) return [];
+    const acc: Array<{ fonte: string; item: any }> = [];
+    for (const fonte of ['ceis', 'cnep', 'cepim'] as const) {
+      const detalhes = cguData.certidoes[fonte]?.detalhes;
+      if (Array.isArray(detalhes)) {
+        detalhes.forEach((item: any) => acc.push({ fonte: fonte.toUpperCase(), item }));
+      }
+    }
+    return acc;
+  }, [hasCguSanctions, cguData]);
+
   const RenderCertidaoCard = ({ cert, onRefresh }: { cert: CertidaoStatus, onRefresh?: () => void }) => {
     const visual = calcularStatusVencimento(cert);
     const Icon = cert.icone;
@@ -373,23 +386,41 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
           {certFgts ? <RenderCertidaoCard cert={certFgts} onRefresh={() => colocarNaFila('fgts', setCertFgts)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
         </div>
 
-        {/* Dossiê CGU Oculto */}
-        {expanded && hasCguSanctions && cguData && cguData.sancoes && cguData.sancoes.length > 0 && (
+        {/* Dossiê CGU Expandido */}
+        {expanded && hasCguSanctions && (
           <div className="mt-3 px-3 pb-3 pt-3 border border-rose-200 bg-white rounded-xl shadow-sm mx-1 animate-in slide-in-from-top-2 duration-300">
-             <p className="text-[10px] font-bold uppercase tracking-widest text-rose-800/60 mb-3 flex items-center gap-1.5 px-1">
-               <AlertTriangle size={12} className="text-rose-500" />
-               Dossiê de Irregularidades ({cguData.sancoes.length})
-             </p>
-             <div className="flex flex-col gap-2">
-               {cguData.sancoes.map((sancao: any, idx: number) => (
-                 <div key={idx} className="flex flex-col gap-2 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
-                   <div>
-                     <p className="text-[11px] font-black text-rose-900 leading-tight">{sancao.categoria_sancao || sancao.tipo_sancao}</p>
-                     <p className="text-[9px] font-bold text-rose-700/70 mt-0.5 uppercase tracking-wide">{sancao.orgao_sancionador}</p>
-                   </div>
-                 </div>
-               ))}
-             </div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-rose-800/60 mb-3 flex items-center gap-1.5 px-1">
+              <AlertTriangle size={12} className="text-rose-500" />
+              Dossiê de Irregularidades ({todasSancoes.length})
+            </p>
+            {todasSancoes.length === 0 ? (
+              <p className="text-[11px] text-rose-700 font-medium px-1">Sanções detectadas mas sem detalhes disponíveis. Consulte diretamente o Portal da Transparência.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {todasSancoes.map(({ fonte, item }, idx) => (
+                  <div key={idx} className="flex flex-col gap-1 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-black text-rose-900 leading-tight">
+                        {item.tipoSancao || item.categoria_sancao || item.tipo_sancao || 'Sanção registrada'}
+                      </p>
+                      <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 shrink-0">{fonte}</span>
+                    </div>
+                    {(item.orgaoSancionador || item.orgao_sancionador) && (
+                      <p className="text-[9px] font-bold text-rose-700/70 uppercase tracking-wide">
+                        {item.orgaoSancionador || item.orgao_sancionador}
+                      </p>
+                    )}
+                    {(item.dataInicioPenalidade || item.dataFimPenalidade) && (
+                      <p className="text-[9px] text-rose-600/70 font-medium">
+                        {item.dataInicioPenalidade && `Início: ${item.dataInicioPenalidade}`}
+                        {item.dataInicioPenalidade && item.dataFimPenalidade && ' · '}
+                        {item.dataFimPenalidade && `Fim: ${item.dataFimPenalidade}`}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

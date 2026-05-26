@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 
 export default function PncpStatusBadge() {
-  const [status, setStatus] = useState<'online' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
+  const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -42,6 +42,13 @@ export default function PncpStatusBadge() {
     online: {
       text: 'PNCP Operacional',
       color: 'text-emerald-600',
+      bg: 'bg-emerald-50 border-emerald-200',
+      dot: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]',
+      animate: 'animate-pulse'
+    },
+    degraded: {
+      text: 'Radar Operacional',
+      color: 'text-emerald-700',
       bg: 'bg-emerald-50 border-emerald-200',
       dot: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]',
       animate: 'animate-pulse'

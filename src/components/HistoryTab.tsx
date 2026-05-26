@@ -447,70 +447,149 @@ export default function HistoryTab({
   // ==========================================
   // LISTAGEM COM FILTROS E PAGINAÇÃO
   // ==========================================
+
+  const scoreColors = (score: number) =>
+    score >= 70
+      ? { bar: 'bg-emerald-500', badge: 'bg-emerald-500', text: 'text-emerald-600', light: 'bg-emerald-50', border: 'border-emerald-200', label: 'text-emerald-700' }
+      : score >= 45
+      ? { bar: 'bg-amber-400',  badge: 'bg-amber-400',  text: 'text-amber-600',  light: 'bg-amber-50',  border: 'border-amber-200',  label: 'text-amber-700'  }
+      : { bar: 'bg-red-500',    badge: 'bg-red-500',    text: 'text-red-600',    light: 'bg-red-50',    border: 'border-red-200',    label: 'text-red-700'    };
+
   return (
-    <div className="animate-in fade-in duration-500">
-      <div className="flex flex-wrap items-center gap-2 mb-8 bg-white p-3 rounded-[2rem] border border-slate-200 shadow-sm">
-        <button onClick={() => setActiveFilter('all')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'all' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'}`}>Todos</button>
-        <button onClick={() => setActiveFilter('favorites')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeFilter === 'favorites' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>★ Favoritos</button>
-        <div className="w-px h-6 bg-slate-200 mx-2"></div>
-        <button onClick={() => setActiveFilter('go')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'go' ? 'bg-emerald-100 text-emerald-800' : 'text-slate-400 hover:bg-slate-50'}`}>🟢 Go</button>
-        <button onClick={() => setActiveFilter('attention')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'attention' ? 'bg-amber-100 text-amber-800' : 'text-slate-400 hover:bg-slate-50'}`}>🟡 Atenção</button>
-        <button onClick={() => setActiveFilter('nogo')} className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeFilter === 'nogo' ? 'bg-red-100 text-red-800' : 'text-slate-400 hover:bg-slate-50'}`}>🔴 No-Go</button>
+    <div className="animate-in fade-in duration-500 space-y-6">
+
+      {/* ── Barra de filtros ── */}
+      <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+        <div className="flex flex-wrap items-center gap-1 p-2">
+          {([
+            { key: 'all',       label: 'Todos',     emoji: null },
+            { key: 'favorites', label: 'Favoritos', emoji: '★'  },
+          ] as const).map(({ key, label, emoji }) => (
+            <button
+              key={key}
+              onClick={() => { setActiveFilter(key); setCurrentPage(1); }}
+              className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                activeFilter === key
+                  ? key === 'favorites'
+                    ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
+                    : 'bg-slate-900 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {emoji && <span>{emoji}</span>}{label}
+            </button>
+          ))}
+
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+
+          {([
+            { key: 'go',        label: 'Go',     dot: 'bg-emerald-500' },
+            { key: 'attention', label: 'Atenção', dot: 'bg-amber-400'  },
+            { key: 'nogo',      label: 'No-Go',  dot: 'bg-red-500'    },
+          ] as const).map(({ key, label, dot }) => (
+            <button
+              key={key}
+              onClick={() => { setActiveFilter(key); setCurrentPage(1); }}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                activeFilter === key
+                  ? key === 'go'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
+                    : key === 'attention'
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm'
+                    : 'bg-red-50 text-red-700 border border-red-200 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+              {label}
+            </button>
+          ))}
+
+          {/* contador */}
+          <span className="ml-auto text-[10px] font-black text-slate-400 pr-2">
+            {filteredAnalyses.length} análise{filteredAnalyses.length !== 1 ? 's' : ''}
+          </span>
+        </div>
       </div>
 
+      {/* ── Lista ── */}
       {paginatedAnalyses.length === 0 ? (
-        <div className="bg-white p-20 rounded-[3rem] border border-slate-100 text-center shadow-inner">
-           <span className="text-5xl block mb-4 grayscale opacity-30">📂</span>
-           <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Nenhum registro encontrado para este filtro.</p>
+        <div className="bg-white py-24 rounded-[2rem] border border-slate-100 text-center shadow-sm">
+          <span className="text-5xl block mb-4 opacity-20">📂</span>
+          <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
+            Nenhuma análise neste filtro.
+          </p>
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="space-y-3">
           {paginatedAnalyses.map((item) => {
             const score = item.score || 0;
             const isFav = favorites.includes(item.id);
+            const c = scoreColors(score);
+
             return (
-              <div 
-                key={item.id} 
+              <div
+                key={item.id}
                 onClick={() => setSelectedAnalysis(item)}
-                className="bg-white p-6 rounded-[2rem] border border-slate-200 hover:border-violet-400 hover:shadow-xl transition-all group flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer overflow-hidden"
+                className="group relative bg-white rounded-[1.5rem] border border-slate-100 hover:border-slate-200 hover:shadow-lg transition-all cursor-pointer overflow-hidden flex"
               >
-                <div className="flex items-center gap-6">
-                  <div className={`h-16 w-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border-2 ${
-                    score >= 70 ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
-                    score >= 45 ? 'bg-amber-50 text-amber-500 border-amber-100' : 'bg-red-50 text-red-600 border-red-100'
-                  }`}>
-                    <span className="text-2xl font-black">{score}</span>
-                    <span className="text-[8px] font-black uppercase opacity-60">Score</span>
-                  </div>
-                  <div>
-                    <h3 className="font-black text-slate-900 leading-tight group-hover:text-violet-700 transition-colors text-lg line-clamp-1">
-                      {item.title || "Sem Título"}
-                    </h3>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">
-                      <span>📅 {isMounted && item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : '...'}</span>
-                      <span className="h-1 w-1 bg-slate-300 rounded-full"></span>
-                      <span className={score >= 70 ? 'text-emerald-500' : 'text-amber-500'}>{item.classification}</span>
-                    </div>
+                {/* Barra lateral colorida */}
+                <div className={`w-1.5 shrink-0 ${c.bar}`} />
+
+                {/* Score badge */}
+                <div className={`flex flex-col items-center justify-center shrink-0 px-5 py-5 ${c.light}`}>
+                  <span className={`text-2xl font-black leading-none ${c.text}`}>{score}</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-0.5">score</span>
+                </div>
+
+                {/* Conteúdo principal */}
+                <div className="flex-1 min-w-0 px-5 py-4 flex flex-col justify-center">
+                  <h3 className="font-black text-slate-900 leading-snug line-clamp-1 text-[15px] group-hover:text-slate-700 transition-colors">
+                    {item.title || 'Sem Título'}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <span className="text-[10px] font-semibold text-slate-400">
+                      📅 {isMounted && item.created_at
+                        ? new Date(item.created_at).toLocaleDateString('pt-BR')
+                        : '...'}
+                    </span>
+                    {item.classification && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-slate-300" />
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${c.label}`}>
+                          {item.classification}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
-                
-                <div className="flex items-center gap-2 md:gap-3 shrink-0 self-end md:self-auto mt-4 md:mt-0">
-                  <button 
+
+                {/* Ações */}
+                <div className="flex items-center gap-1 px-4 shrink-0">
+                  <button
                     onClick={(e) => handleDeleteAnalysis(item.id, e)}
-                    className="p-3 md:p-4 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-2xl transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-                    title="Excluir Análise" 
+                    title="Excluir"
+                    className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
                   >
-                    🗑️
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                    </svg>
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => toggleFavorite(e, item.id)}
-                    className={`p-3 md:p-4 rounded-2xl transition-all ${isFav ? 'bg-amber-100 text-amber-500 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100'}`}
-                    title={isFav ? "Remover dos Favoritos" : "Adicionar aos Favoritos"}
+                    title={isFav ? 'Remover favorito' : 'Favoritar'}
+                    className={`w-8 h-8 flex items-center justify-center rounded-xl transition-all text-base ${
+                      isFav ? 'text-amber-400 bg-amber-50' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50'
+                    }`}
                   >
                     {isFav ? '★' : '☆'}
                   </button>
-                  <div className="px-5 py-3 md:px-6 md:py-4 bg-slate-900 text-white font-black rounded-2xl group-hover:bg-violet-600 transition-all text-[10px] md:text-xs uppercase tracking-widest shadow-lg group-hover:shadow-violet-500/30">
-                    Ver Detalhes
+                  {/* Seta */}
+                  <div className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 group-hover:bg-slate-900 transition-all ml-1">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                      className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors">
+                      <path d="M9 18l6-6-6-6"/>
+                    </svg>
                   </div>
                 </div>
               </div>
@@ -519,22 +598,50 @@ export default function HistoryTab({
         </div>
       )}
 
+      {/* ── Paginação ── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-12 bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm">
-          <button 
-            onClick={() => { setCurrentPage(p => Math.max(p - 1, 1)); window.scrollTo({top: 0}); }}
+        <div className="flex items-center justify-between bg-white rounded-[2rem] border border-slate-100 shadow-sm px-6 py-4">
+          <button
+            onClick={() => { setCurrentPage(p => Math.max(p - 1, 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             disabled={currentPage === 1}
-            className="px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 rounded-xl hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-600 bg-white border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            Anterior
+            ← Anterior
           </button>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pág <span className="text-slate-900">{currentPage}</span> / {totalPages}</span>
-          <button 
-            onClick={() => { setCurrentPage(p => Math.min(p + 1, totalPages)); window.scrollTo({top: 0}); }}
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+              .reduce<(number | 'ellipsis')[]>((acc, p, i, arr) => {
+                if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('ellipsis');
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, idx) =>
+                p === 'ellipsis' ? (
+                  <span key={`e${idx}`} className="px-1 text-xs text-slate-400">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => { setCurrentPage(p as number); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className={`w-8 h-8 text-xs font-black rounded-lg transition-all ${
+                      currentPage === p
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : 'text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+          </div>
+
+          <button
+            onClick={() => { setCurrentPage(p => Math.min(p + 1, totalPages)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             disabled={currentPage === totalPages}
-            className="px-6 py-3 text-xs font-black uppercase tracking-widest text-slate-500 bg-slate-100 rounded-xl hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-black uppercase tracking-widest text-slate-600 bg-white border border-slate-200 rounded-xl hover:border-slate-400 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            Próxima
+            Próxima →
           </button>
         </div>
       )}

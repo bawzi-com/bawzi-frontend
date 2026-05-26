@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale } from 'lucide-react';
+import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
 
@@ -89,17 +89,20 @@ export default function CompetitorWarRoom({
   };
 
   const valorEstimatedSeguro = useMemo(() => {
+    // PRIORIDADE 1: valor global do contrato vindo do backend (nível superior)
+    const vEdital = extrairValorExato(pricing?.valor_estimado_raw) || extrairValorExato(fullResult?.estimated_value);
+    if (vEdital > 0) return vEdital;
+
+    // PRIORIDADE 2: minerar do resumo da IA (texto livre)
+    const dadosMinerados = minerarDadosDoResumo(fullResult?.summary || fullResult?.description);
+    if (dadosMinerados.valorGlobal > 0) return dadosMinerados.valorGlobal;
+
+    // PRIORIDADE 3 (último recurso): soma dos itens/lotes — pode ser unitário, usar só se nada acima existir
     let soma = 0;
     if (pricing?.itens_lotes && Array.isArray(pricing.itens_lotes)) {
         soma = pricing.itens_lotes.reduce((acc: number, item: any) => acc + extrairValorExato(item.valor_estimado_raw), 0);
     }
     if (soma > 0) return soma;
-
-    const vEdital = extrairValorExato(pricing?.valor_estimado_raw) || extrairValorExato(fullResult?.estimated_value);
-    if (vEdital > 0) return vEdital;
-
-    const dadosMinerados = minerarDadosDoResumo(fullResult?.summary || fullResult?.description);
-    if (dadosMinerados.valorGlobal > 0) return dadosMinerados.valorGlobal;
 
     return extrairValorExato(fullResult?.summary) || 0;
   }, [pricing, fullResult]);
@@ -159,63 +162,79 @@ export default function CompetitorWarRoom({
   const listaRegional = useMemo(() => parseCompetitors(competitorsRegionais, 'regional'), [competitorsRegionais]);
   const listaAtiva = abaConcorrentes === 'nacional' ? listaNacional : listaRegional;
 
-  // 🟢 A BALA DE PRATA: O Padrão Ouro de Preço
-  // Varre os contratos à procura de um valor perfeitamente inquestionável para servir de âncora.
+  // 🟢 A BALA DE PRATA: Baseline de preço a partir de referências explícitas no texto.
+  // Usa APENAS preços encontrados via regex (mais confiáveis) e guarda
+  // o MÁXIMO entre eles — servindo de âncora superior para filtros de absurdo.
+  // Não usa o heurístico "< 10% do lote" pois este aceita lixo (ex: R$ 0,38 de
+  // um contrato de R$ 50.000 com 130.000 unidades passa o teste e vira baseline).
   const trustedBaselinePrice = useMemo(() => {
-    let minPrice = Infinity;
+    let maxRegex = 0;
     const allComps = [...listaNacional, ...listaRegional];
 
     allComps.forEach(comp => {
         const conts = comp.contratos?.length > 0 ? comp.contratos : (comp.rawDataOriginal?.contratos || []);
         conts.forEach((c: any) => {
             if (typeof c === 'string') return;
-            const global = extrairValorExato(c.valor || c.valorTotal || 0);
-            let v = extrairValorExato(c.valorUnitario || c.preco_unitario || c.valor_unitario || 0);
             const objText = String(c.objeto || c.descricao || "").toLowerCase();
-
-            // Padrão Ouro 1: Regex explícito no texto (ex: "R$ 44,35 /cx")
+            // Só aceita preços declarados explicitamente como unitários no texto
             const match = objText.match(/(?:unit[aá]rio|unidade|cada|r\$\s*[\d\.,]+\s*\/\s*(?:un|cx|fr))[\s:=]*r?\$\s*([\d\.,]+)/i);
             if (match) {
                 const vRegex = extrairValorExato(match[1]);
-                if (vRegex > 0 && vRegex < minPrice) minPrice = vRegex;
-            }
-
-            // Padrão Ouro 2: A API deu um valor que é matematicamente uma fração minúscula do Lote (ex: < 10%)
-            if (v > 0 && global > 0 && v < (global * 0.1)) {
-                if (v < minPrice) minPrice = v;
+                if (vRegex > maxRegex) maxRegex = vRegex;
             }
         });
     });
 
-    return minPrice === Infinity ? 0 : minPrice;
+    return maxRegex; // 0 se nenhuma referência explícita foi encontrada
   }, [listaNacional, listaRegional]);
 
+  // ── Guard central de sanidade ──────────────────────────────────────────────
+  // Centralizado aqui para ser reutilizado tanto por extrairUnitarioInteligente
+  // quanto por lerUnitarioConfiavel (evitando o bug onde raw bypassava os checks).
+  const isValorUnitarioAbsurdo = (val: number, globalDoContrato: number): boolean => {
+      if (val <= 0) return true;
+
+      // 1. Mentira do Lote: unitário ≥ 50% do total → provavelmente é o total, não a unidade
+      if (globalDoContrato > 2000 && val >= (globalDoContrato * 0.5)) return true;
+
+      // 2. Mentira do Anão: valor abaixo de 2% da baseline conhecida → lixo de divisão
+      //    (ex: R$ 50.000 / 130.000 un = R$ 0,38 é rejeitado quando baseline ≥ R$ 19)
+      if (trustedBaselinePrice > 0 && val < (trustedBaselinePrice * 0.02)) return true;
+
+      // 3. Mentira do Gigante: acima de 100× a baseline (absurdamente alto)
+      if (trustedBaselinePrice > 0 && val > (trustedBaselinePrice * 100)) return true;
+
+      // 4. Mentira do Teto: superior a 5× o teto unitário do edital atual
+      if (tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && val > (tetoUnitarioAtual * 5)) return true;
+
+      // 5. Mentira Extrema: unitário ≥ orçamento global de toda a licitação
+      if (valorEstimatedSeguro > 0 && val >= valorEstimatedSeguro) return true;
+
+      // 6. Mentira do Pó: unitário < 0,01% do lote → impossível como preço de item real
+      //    Ex: lote R$ 486.738 → floor = R$ 48,67. Elimina R$ 0,38 e R$ 8,09 sem precisar de baseline.
+      //    Só aplica para lotes expressivos (> R$ 5.000) para não filtrar demais em licitações pequenas.
+      if (valorEstimatedSeguro > 5000 && val < (valorEstimatedSeguro * 0.0001)) return true;
+
+      return false;
+  };
+
+  const getPrecoMeta = (contrato: any) => {
+    const meta = contrato?.precoUnitario;
+    if (meta && typeof meta === 'object') return meta;
+    return null;
+  };
+
   // 🟢 EXTRATOR MATEMÁTICO BLINDADO
-  const extrairUnitarioInteligente = (contrato: any) => {
+  const extrairUnitarioInteligente = (contrato: any, minConfidence = 0.45) => {
     const globalDoContratoAntigo = extrairValorExato(contrato.valor || contrato.valorTotal || 0);
-    let v = extrairValorExato(contrato.valorUnitario || contrato.preco_unitario || contrato.valor_unitario || 0);
-    
-    const isValorAbsurdo = (val: number) => {
-        if (val <= 0) return true;
-        
-        // 1. Mentira do Lote: O unitário reportado é > 50% do lote total (e o lote é maior que 2.000)
-        if (globalDoContratoAntigo > 2000 && val >= (globalDoContratoAntigo * 0.5)) return true;
-        
-        // 2. Mentira do Falso Gigante: bloqueia preços absurdamente fora da faixa conhecida.
-        // Usamos 100× porque produtos como medicamentos têm variação legítima de até 50× entre
-        // compras unitárias e em escala. O threshold de 10× bloqueava preços válidos.
-        if (trustedBaselinePrice > 0 && val > (trustedBaselinePrice * 100)) return true;
+    const meta = getPrecoMeta(contrato);
+    const confianca = Number(meta?.confianca ?? 1);
+    const rawBackend = meta && confianca < minConfidence
+      ? (contrato.preco_unitario ?? contrato.valor_unitario ?? 0)
+      : (meta?.valor ?? contrato.valorUnitario ?? contrato.preco_unitario ?? contrato.valor_unitario ?? 0);
+    const v = extrairValorExato(rawBackend);
 
-        // 3. Mentira do Teto: Se temos um teto de edital limpo, não pode ser 5x maior
-        if (tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && val > (tetoUnitarioAtual * 5)) return true;
-        
-        // 4. Mentira Extrema: Valor da "unidade" maior que o orçamento global de TODA a licitação atual
-        if (valorEstimatedSeguro > 0 && val >= valorEstimatedSeguro) return true;
-
-        return false;
-    };
-
-    if (!isValorAbsurdo(v)) return v; 
+    if (!isValorUnitarioAbsurdo(v, globalDoContratoAntigo)) return v;
 
     // Tenta caçar no texto se o valor da API for mentira
     const objText = String(contrato.objeto || contrato.descricao || "").toLowerCase();
@@ -228,7 +247,7 @@ export default function CompetitorWarRoom({
         const match = objText.match(regex);
         if (match) {
             const vEncontrado = extrairValorExato(match[1]);
-            if (!isValorAbsurdo(vEncontrado)) return vEncontrado;
+            if (!isValorUnitarioAbsurdo(vEncontrado, globalDoContratoAntigo)) return vEncontrado;
         }
     }
 
@@ -236,18 +255,24 @@ export default function CompetitorWarRoom({
     const dadosMinerados = minerarDadosDoResumo(objText);
     if (globalDoContratoAntigo > 0 && dadosMinerados.quantidade > 1) {
         const fallback = globalDoContratoAntigo / dadosMinerados.quantidade;
-        if (!isValorAbsurdo(fallback)) return fallback;
+        if (!isValorUnitarioAbsurdo(fallback, globalDoContratoAntigo)) return fallback;
     }
 
     return 0; // Oculto com segurança extrema.
   };
 
-  // Lê o valorUnitario direto do backend (já validado por extrair_unitario_real)
-  // e só cai no extrairUnitarioInteligente (com filtros anti-absurdo) se o campo vier zerado.
-  const lerUnitarioConfiavel = (c: any): number => {
-      const raw = extrairValorExato(c.valorUnitario ?? c.preco_unitario ?? c.valor_unitario ?? 0);
-      if (raw > 0) return raw;
-      return extrairUnitarioInteligente(c);
+  // Lê o valorUnitario direto do backend e valida com os mesmos guards do extrator.
+  // Antes este caminho bypassava todos os checks; agora raw também é validado.
+  const lerUnitarioConfiavel = (c: any, minConfidence = 0.45): number => {
+      const meta = getPrecoMeta(c);
+      const confianca = Number(meta?.confianca ?? c.confiancaPreco ?? 1);
+      const rawBackend = meta && confianca < minConfidence
+        ? (c.preco_unitario ?? c.valor_unitario ?? 0)
+        : (meta?.valor ?? c.valorUnitario ?? c.preco_unitario ?? c.valor_unitario ?? 0);
+      const raw = extrairValorExato(rawBackend);
+      const globalDoContrato = extrairValorExato(c.valor || c.valorTotal || 0);
+      if (raw > 0 && confianca >= minConfidence && !isValorUnitarioAbsurdo(raw, globalDoContrato)) return raw;
+      return extrairUnitarioInteligente(c, minConfidence);
   };
 
   const getMenorUnitario = (lista: any[]) => {
@@ -279,6 +304,22 @@ export default function CompetitorWarRoom({
       }
       return 0;
   }, [dossieContracts, tetoUnitarioAtual, trustedBaselinePrice]);
+
+  // ── Filtro de coerência pelo alvo (camada de display) ─────────────────────
+  // Quando temos o "Último Vencido" como âncora de mercado, rejeitamos menores
+  // que estão < 3% desse valor — são claramente de produtos/segmentos diferentes.
+  // Sem âncora (ultimoVencidoAlvo = 0) o guard de piso do lote já cobre o grosso.
+  const menorNacionalExibido = useMemo(() => {
+      if (menorNacional <= 0) return 0;
+      if (ultimoVencidoAlvo > 0 && menorNacional < ultimoVencidoAlvo * 0.03) return 0;
+      return menorNacional;
+  }, [menorNacional, ultimoVencidoAlvo]);
+
+  const menorRegionalExibido = useMemo(() => {
+      if (menorRegional <= 0) return 0;
+      if (ultimoVencidoAlvo > 0 && menorRegional < ultimoVencidoAlvo * 0.03) return 0;
+      return menorRegional;
+  }, [menorRegional, ultimoVencidoAlvo]);
 
   const fetchSancoes = async (cnpjToFind: string) => {
     setSancoesStatus('loading');
@@ -405,27 +446,29 @@ export default function CompetitorWarRoom({
           {/* ━━━ BARRA DE INTELIGÊNCIA DE PREÇO ━━━ */}
           {pricing && (pricing.nivelAmeaca || pricing.desagioPreditivoOrgao || pricing.perfilVencedor) && (() => {
             const nivel = String(pricing.nivelAmeaca || "").toUpperCase();
-            const nivelCfg: Record<string, { bg: string; badge: string; label: string; emoji: string }> = {
-              ALTO: { bg: 'bg-red-50 border-red-200', badge: 'bg-red-100 text-red-700', label: 'ALTO', emoji: '🔴' },
-              MODERADO: { bg: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', label: 'MODERADO', emoji: '🟡' },
-              BAIXO: { bg: 'bg-emerald-50 border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', label: 'BAIXO', emoji: '🟢' },
+            const nivelCfg: Record<string, { bg: string; badge: string; label: string; dotColor: string }> = {
+              ALTO: { bg: 'bg-red-50 border-red-200', badge: 'bg-red-100 text-red-700', label: 'ALTO', dotColor: 'bg-red-500' },
+              MODERADO: { bg: 'bg-amber-50 border-amber-200', badge: 'bg-amber-100 text-amber-700', label: 'MODERADO', dotColor: 'bg-amber-500' },
+              BAIXO: { bg: 'bg-emerald-50 border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', label: 'BAIXO', dotColor: 'bg-emerald-500' },
             };
-            const nc = nivelCfg[nivel] ?? { bg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-600', label: nivel || '—', emoji: '⚪' };
+            const nc = nivelCfg[nivel] ?? { bg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-600', label: nivel || '—', dotColor: 'bg-slate-400' };
             const desagio = Number(pricing.desagioPreditivoOrgao) || 0;
-            const perfilMap: Record<string, string> = { Tubarão: '🦈', Agressivo: '🎯', Conservador: '🛡️', Iniciante: '🌱' };
-            const perfilEmoji = perfilMap[pricing.perfilVencedor] || '🤖';
+            const precoUnitarioMercado = Number(pricing.valorMedioUnitarioMercado) || 0;
+            const amostraUnitarios = Number(pricing.amostraPrecosUnitarios) || 0;
+            const perfilIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={20} className="text-red-500" />, Agressivo: <Target size={20} className="text-orange-500" />, Conservador: <Shield size={20} className="text-blue-500" />, Iniciante: <Activity size={20} className="text-green-500" /> };
+            const perfilNode = perfilIcon[pricing.perfilVencedor] || <Bot size={20} className="text-slate-500" />;
             return (
               <div className={`border rounded-[2rem] p-6 md:p-8 shadow-sm ${nc.bg}`}>
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">💡</span>
+                  <Lightbulb size={18} className="text-slate-700" />
                   <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência de Preço do Órgão</h3>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Nível de Ameaça */}
                   <div className="bg-white/80 rounded-xl p-4 border border-white/60">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nível de Ameaça</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-xl">{nc.emoji}</span>
+                      <div className={`w-4 h-4 rounded-full ${nc.dotColor} shadow-sm shrink-0`}></div>
                       <span className={`text-sm font-black px-2 py-0.5 rounded-lg ${nc.badge}`}>{nc.label}</span>
                     </div>
                   </div>
@@ -441,11 +484,23 @@ export default function CompetitorWarRoom({
                       )}
                     </div>
                   </div>
+                  {/* Mediana Unitária */}
+                  <div className="bg-white/80 rounded-xl p-4 border border-white/60">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Preço Unitário Mediano</p>
+                    <div>
+                      <span className="text-xl font-black text-slate-900">
+                        {precoUnitarioMercado > 0 ? precoUnitarioMercado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                      </span>
+                      {amostraUnitarios > 0 && (
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{amostraUnitarios} evidências</p>
+                      )}
+                    </div>
+                  </div>
                   {/* Perfil do Vencedor */}
                   <div className="bg-white/80 rounded-xl p-4 border border-white/60">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Perfil do Vencedor Típico</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl">{perfilEmoji}</span>
+                      {perfilNode}
                       <span className="text-sm font-black text-slate-900">{pricing.perfilVencedor || '—'}</span>
                     </div>
                   </div>
@@ -465,7 +520,7 @@ export default function CompetitorWarRoom({
             return (
               <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
                 <div className="flex items-center gap-2 mb-5">
-                  <span className="text-lg">🗺️</span>
+                  <Map size={18} className="text-slate-700" />
                   <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Mapa de Território por UF</h3>
                 </div>
                 <div className="space-y-3">
@@ -499,7 +554,7 @@ export default function CompetitorWarRoom({
             {listaAtiva.length > 0 && (() => {
               const probOrder: Record<string, number> = { Alta: 3, Média: 2, Media: 2, Baixa: 1 };
               const forcaOrder: Record<string, number> = { Tubarão: 4, Agressivo: 3, Conservador: 2, Iniciante: 1 };
-              const forcaEmoji: Record<string, string> = { Tubarão: '🦈', Agressivo: '🎯', Conservador: '🛡️', Iniciante: '🌱' };
+              const forcaIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={14} className="text-red-500" />, Agressivo: <Target size={14} className="text-orange-500" />, Conservador: <Shield size={14} className="text-blue-500" />, Iniciante: <Activity size={14} className="text-green-500" /> };
               const ranked = [...listaAtiva]
                 .map(c => ({ ...c, threatScore: ((probOrder[c.probabilidade] ?? 2) * 10) + (forcaOrder[c.forca] ?? 2) + Math.min(c.vitorias, 20) }))
                 .sort((a, b) => b.threatScore - a.threatScore);
@@ -507,7 +562,7 @@ export default function CompetitorWarRoom({
               return (
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
-                    <span className="text-sm">🎯</span>
+                    <Target size={14} className="text-slate-600" />
                     <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Matriz de Ameaças — Ranqueado</span>
                   </div>
                   <div className="divide-y divide-slate-50">
@@ -523,7 +578,7 @@ export default function CompetitorWarRoom({
                               <span className="text-[9px] font-bold text-slate-400">{item.uf}</span>
                               <span className="text-[9px] font-bold text-slate-400">·</span>
                               <span className="text-[9px] font-bold text-slate-400">{item.vitorias} vitórias</span>
-                              <span className="text-sm">{forcaEmoji[item.forca] || '🤖'}</span>
+                              {forcaIcon[item.forca] || <Bot size={14} className="text-slate-400" />}
                               {item.cnpj && <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>}
                             </div>
                           </div>
@@ -534,11 +589,13 @@ export default function CompetitorWarRoom({
                             <p className={`text-[9px] font-black text-right mt-0.5 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>{threatPct}%</p>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <button onClick={() => handleOpenDossie(item)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white border border-indigo-200 transition-colors" title="Ver Dossiê">
+                            <button onClick={() => handleOpenDossie(item)} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white border border-indigo-200 transition-colors group" title="Ver Dossiê">
                               <Eye size={13} />
+                              <span className="text-[8px] font-black uppercase tracking-widest leading-none">Dossiê</span>
                             </button>
-                            <button onClick={() => handleLockTarget(item)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-900 hover:bg-rose-600 text-white transition-colors" title="Travar Alvo">
+                            <button onClick={() => handleLockTarget(item)} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-rose-600 text-white transition-colors" title="Travar Alvo">
                               <Crosshair size={13} />
+                              <span className="text-[8px] font-black uppercase tracking-widest leading-none">Atacar</span>
                             </button>
                           </div>
                         </div>
@@ -676,7 +733,7 @@ export default function CompetitorWarRoom({
 
                   {offensiveData.recomendacao_tatica && (
                     <div className="bg-slate-900 text-white p-6 rounded-3xl border border-slate-800">
-                      <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">🎯 Recomendação Tática</h4>
+                      <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2 flex items-center gap-1"><Target size={11} /> Recomendação Tática</h4>
                       <p className="text-sm font-medium text-slate-200 leading-relaxed">{offensiveData.recomendacao_tatica}</p>
                     </div>
                   )}
@@ -692,7 +749,7 @@ export default function CompetitorWarRoom({
                           {offensiveData.rascunho_recurso.pedidos?.map((p: string, i: number) => <li key={i}>{p}</li>)}
                         </ul>
                       </div>
-                      <button onClick={() => { navigator.clipboard.writeText(`Assunto: ${offensiveData.rascunho_recurso.assunto}\n\n${offensiveData.rascunho_recurso.tese_juridica}\n\nPedidos:\n${offensiveData.rascunho_recurso.pedidos.join('\n')}`); alert('Copiado!'); }} className="mt-5 w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl text-[10px] uppercase border border-indigo-200">📋 Copiar Peça Jurídica</button>
+                      <button onClick={() => { navigator.clipboard.writeText(`Assunto: ${offensiveData.rascunho_recurso.assunto}\n\n${offensiveData.rascunho_recurso.tese_juridica}\n\nPedidos:\n${offensiveData.rascunho_recurso.pedidos.join('\n')}`); alert('Copiado!'); }} className="mt-5 w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl text-[10px] uppercase border border-indigo-200 flex items-center justify-center gap-1.5"><ClipboardList size={13} /> Copiar Peça Jurídica</button>
                     </div>
                   )}
                 </div>
@@ -751,13 +808,33 @@ export default function CompetitorWarRoom({
                     
                     <div className="bg-slate-900 rounded-2xl p-5 shadow-inner mt-2 mb-6 border border-slate-800 relative overflow-hidden">
                       <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
-                      <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
-                        <Activity size={16} /> Termômetro de Preço Unitário
-                      </h4>
+                      <div className="flex items-start justify-between mb-4 relative z-10">
+                        <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-2">
+                          <Activity size={16} /> Termômetro de Preço Unitário
+                        </h4>
+                        {tetoUnitarioAtual === -1 && (
+                          <span className="text-[9px] text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-lg font-medium max-w-[160px] text-right leading-tight">
+                            Preços unitários extraídos de contratos similares anteriores
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 relative z-10">
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">
-                          <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Teto Edital Atual</span>
-                          <span className="text-sm font-black text-white">{tetoUnitarioAtual === -1 ? 'Lote Global' : (tetoUnitarioAtual > 0 ? tetoUnitarioAtual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Sigiloso')}</span>
+                          <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">
+                            {tetoUnitarioAtual === -1 ? 'Valor Edital (Lote)' : 'Teto Unitário Edital'}
+                          </span>
+                          <span className="text-sm font-black text-white">
+                            {tetoUnitarioAtual === -1
+                              ? valorEstimatedSeguro > 0
+                                ? valorEstimatedSeguro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                : 'Sigiloso'
+                              : tetoUnitarioAtual > 0
+                                ? tetoUnitarioAtual.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                : 'Sigiloso'}
+                          </span>
+                          {tetoUnitarioAtual === -1 && (
+                            <span className="text-[8px] text-slate-500 mt-0.5 block">sem breakdown por item</span>
+                          )}
                         </div>
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">
                           <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Último Vencido (Alvo)</span>
@@ -765,11 +842,23 @@ export default function CompetitorWarRoom({
                         </div>
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">
                           <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Menor Nacional</span>
-                          <span className="text-sm font-black text-emerald-400">{menorNacional > 0 ? menorNacional.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Oculto'}</span>
+                          {menorNacionalExibido > 0 ? (
+                            <span className="text-sm font-black text-emerald-400">{menorNacionalExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                          ) : menorNacional > 0 ? (
+                            <span className="text-xs font-bold text-slate-500 italic">Seg. diferente</span>
+                          ) : (
+                            <span className="text-sm font-black text-slate-500">Oculto</span>
+                          )}
                         </div>
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">
                           <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Menor Regional</span>
-                          <span className="text-sm font-black text-emerald-400">{menorRegional > 0 ? menorRegional.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Oculto'}</span>
+                          {menorRegionalExibido > 0 ? (
+                            <span className="text-sm font-black text-emerald-400">{menorRegionalExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                          ) : menorRegional > 0 ? (
+                            <span className="text-xs font-bold text-slate-500 italic">Seg. diferente</span>
+                          ) : (
+                            <span className="text-sm font-black text-slate-500">Oculto</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -782,11 +871,14 @@ export default function CompetitorWarRoom({
                         const cData = contrato.data || contrato.data_homologacao || "";
                         const cValor = contrato.valor || contrato.valorTotal || "";
                         const cLink = contrato.link || contrato.url || contrato.link_pncp || contrato.linkSistemaOrigem;
+                        const precoMeta = getPrecoMeta(contrato);
+                        const confiancaPreco = Number(precoMeta?.confianca ?? contrato.confiancaPreco ?? 0);
+                        const fontePreco = String(precoMeta?.fonte ?? contrato.fontePreco ?? "");
 
                         const cValorNum = typeof cValor === 'number' ? cValor : extrairValorExato(cValor);
                         // Usa o valorUnitario do backend diretamente (já validado por extrair_unitario_real)
                         // e só aplica extrairUnitarioInteligente se o campo vier zerado.
-                        const valorUnitario = lerUnitarioConfiavel(contrato);
+                        const valorUnitario = lerUnitarioConfiavel(contrato, 0.28);
 
                         // Fallback matemático: global / qty minerada do texto quando backend retornou 0
                         const dadosMineradosCard = valorUnitario === 0 && cValorNum > 0
@@ -796,6 +888,7 @@ export default function CompetitorWarRoom({
                             ? cValorNum / dadosMineradosCard.quantidade
                             : 0;
                         const isEstimado = valorUnitario === 0 && valorUnitarioEstimado > 0;
+                        const isBaixaConfianca = valorUnitario > 0 && confiancaPreco > 0 && confiancaPreco < 0.5;
                         const valorExibido = valorUnitario > 0 ? valorUnitario : valorUnitarioEstimado;
 
                         return (
@@ -806,20 +899,24 @@ export default function CompetitorWarRoom({
                                 <p className="text-xs text-slate-600 font-medium leading-relaxed mb-4">{cObjeto}</p>
 
                                 <div className="flex flex-wrap items-center gap-3 text-xs font-bold bg-slate-50 px-4 py-3 rounded-xl border border-slate-100 w-full">
-                                    {cData && <span className="text-slate-700 bg-white px-2 py-1 rounded-md border border-slate-200 shadow-sm">📅 {cData}</span>}
+                                    {cData && <span className="text-slate-700 bg-white px-2 py-1 rounded-md border border-slate-200 shadow-sm flex items-center gap-1"><CalendarDays size={11} /> {cData}</span>}
 
                                     {cValorNum > 0 && (
-                                        <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 shadow-sm">
-                                            💰 Global: {cValorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 shadow-sm flex items-center gap-1">
+                                            <DollarSign size={11} /> Global: {cValorNum.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </span>
                                     )}
 
                                     {valorExibido > 0 ? (
                                         <div className="flex items-center gap-2">
-                                          <span className={`px-2 py-1 rounded-md border shadow-sm flex items-center gap-1 ${isEstimado ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-indigo-700 bg-indigo-50 border-indigo-200'}`}>
+                                          <span
+                                            className={`px-2 py-1 rounded-md border shadow-sm flex items-center gap-1 ${isEstimado || isBaixaConfianca ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-indigo-700 bg-indigo-50 border-indigo-200'}`}
+                                            title={fontePreco ? `Fonte: ${fontePreco}${confiancaPreco > 0 ? ` | Confiança: ${Math.round(confiancaPreco * 100)}%` : ''}` : undefined}
+                                          >
                                               <Target size={12} />
-                                              {isEstimado ? '~' : ''}Unitário: {valorExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                              {isEstimado || isBaixaConfianca ? '~' : ''}Unitário: {valorExibido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                               {isEstimado && <span className="text-[8px] opacity-70 ml-0.5">(est.)</span>}
+                                              {!isEstimado && isBaixaConfianca && <span className="text-[8px] opacity-70 ml-0.5">(conf. baixa)</span>}
                                           </span>
                                           {tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && valorExibido < tetoUnitarioAtual && (
                                               <span className="text-[9px] font-black text-emerald-600 bg-emerald-100 px-2 py-1 rounded-md border border-emerald-200 shadow-sm" title="Desconto praticado neste contrato em relação ao Teto do Edital Atual">

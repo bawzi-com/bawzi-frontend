@@ -171,66 +171,144 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   };
 
   const tiers = [
-    { name: "Explorador", badge: "NÍVEL 0", price: "Grátis", ai: "⚡ Groq (Llama 3)", features: ["Até 10.000 caracteres", "Arquivos até 3MB", "Sem login exigido"], buttonText: "Testar Agora", tierLevel: -1, popular: false },
-    { name: "Potencial", badge: "NÍVEL 1", price: "Grátis*", ai: "🤖 GPT-4o-mini", features: ["Até 20.000 caracteres", "Arquivos até 5MB", "Histórico e Perfil Salvo"], buttonText: "Criar Conta", tierLevel: 1, popular: false },
-    { name: "Essencial", badge: "NÍVEL 2", price: "R$ 79/mês", ai: "🧠 GPT-4o (Advanced)", features: ["Até 60.000 caracteres", "Arquivos até 10MB", "Mapeamento de Riscos"], buttonText: "Assinar Essencial", tierLevel: 2, popular: false },
-    { name: "Especialista", badge: "NÍVEL 3", price: "R$ 197/mês", ai: "🎯 Claude 3.5 Sonnet", features: ["Até 150.000 caracteres", "Arquivos até 20MB", "Checklist Documental IA"], buttonText: "Assinar Pro", tierLevel: 3, popular: true },
-    { name: "Dominador", badge: "NÍVEL 4", price: "R$ 497/mês", ai: "🏆 GPT-4o + Claude Opus", features: ["Até 300.000 caracteres", "Arquivos até 50MB", "Consultoria Ilimitada"], buttonText: "Assinar Elite", tierLevel: 4, popular: false }
+    {
+      name: "Explorador", badge: "NÍVEL 0", price: "Grátis",
+      features: [
+        "Score Go/No-Go básico",
+        "Resumo executivo do edital",
+        "Editais até 10.000 caracteres",
+        "PDF até 3 MB · sem conta",
+      ],
+      buttonText: "Testar Agora", tierLevel: -1, popular: false,
+    },
+    {
+      name: "Potencial", badge: "NÍVEL 1", price: "Grátis*",
+      features: [
+        "Histórico de análises salvo",
+        "Perfil da empresa (CNPJ/UF)",
+        "Editais até 20.000 caracteres",
+        "PDF até 5 MB",
+      ],
+      buttonText: "Criar Conta", tierLevel: 1, popular: false,
+    },
+    {
+      name: "Essencial", badge: "NÍVEL 2", price: "R$ 79/mês",
+      features: [
+        "Radar 360 — busca PNCP",
+        "Mapa de riscos jurídicos",
+        "Semáforo de viabilidade",
+        "Editais até 60.000 caracteres",
+        "PDF até 10 MB",
+      ],
+      buttonText: "Assinar Essencial", tierLevel: 2, popular: false,
+    },
+    {
+      name: "Especialista", badge: "NÍVEL 3", price: "R$ 197/mês",
+      features: [
+        "4 Agentes IA em paralelo",
+        "Checklist documental automático",
+        "Capital Intelligence premium",
+        "Editais até 150.000 caracteres",
+        "PDF até 20 MB",
+      ],
+      buttonText: "Assinar Pro", tierLevel: 3, popular: true,
+    },
+    {
+      name: "Dominador", badge: "NÍVEL 4", price: "R$ 497/mês",
+      features: [
+        "Radar de Renovações (contratos a vencer)",
+        "War Room de concorrentes",
+        "Simulador tático de preços",
+        "Neural Matchmaker CNAE",
+        "Editais até 300.000 caracteres",
+        "PDF até 50 MB · suporte prioritário",
+      ],
+      buttonText: "Assinar Elite", tierLevel: 4, popular: false,
+    },
   ];
 
   return (
     <>
       {activeTier > 1 && (
-        <div className="bg-slate-50 border border-slate-200 p-8 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-8 shadow-sm mb-12">
-          <div className="flex-1">
-            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-md mb-4 inline-block shadow-sm">
-              Assinatura Ativa
-            </span>
-            <h3 className="text-2xl font-black text-slate-900 mb-2">Seu plano atual é o Nível {activeTier}</h3>
-            <p className="text-sm font-medium text-slate-500 leading-relaxed max-w-xl">
-              Você tem acesso total aos recursos premium. Para gerenciar pagamentos ou faturas, acesse o painel seguro.
-            </p>
-          </div>
-          
-          {/* 🟢 ADICIONADO O BOTÃO DE SYNC MANUAL AQUI */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            <button 
-              onClick={forceManualSync} 
+        <div className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl mb-6">
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
+            Assinatura Ativa
+          </span>
+          <p className="text-[12px] font-semibold text-emerald-800 flex-1 min-w-0">
+            Nível {activeTier} — acesso total aos recursos premium.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={forceManualSync}
               disabled={isSyncing}
-              className="w-full sm:w-auto px-6 py-4 bg-white border border-slate-200 text-slate-700 font-bold text-sm rounded-2xl hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 text-[11px] font-bold rounded-xl hover:bg-emerald-50 transition-all disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? "A Sincronizar..." : "Forçar Atualização"}
+              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Sincronizando…' : 'Atualizar'}
             </button>
-            <button 
-              onClick={handleManageSubscription} 
-              className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white font-black text-sm rounded-2xl hover:bg-violet-600 transition-all shadow-xl active:scale-[0.98]"
+            <button
+              onClick={handleManageSubscription}
+              className="px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-black rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
             >
-              Gerenciar Assinatura ↗
+              Gerenciar ↗
             </button>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 items-stretch mb-16">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end mb-16">
         {tiers.map((tier, index) => {
           const isCurrentPlan = tier.tierLevel === activeTier;
+          const isDark = tier.popular;
           return (
-            <div key={index} className={`p-8 rounded-[2rem] flex flex-col transition-all duration-300 ${tier.popular ? "bg-slate-950 shadow-2xl relative lg:-translate-y-4 z-10" : tier.tierLevel === -1 ? "bg-slate-50" : "bg-white"} ${isCurrentPlan ? "border-2 border-violet-500 ring-4 ring-violet-500/10" : "border border-slate-200"}`}>
-              <span className={`text-xs font-black uppercase mb-2 ${tier.popular ? 'text-slate-400' : 'text-slate-500'}`}>{tier.badge}</span>
-              <h3 className={`text-2xl font-black mb-4 ${tier.popular ? 'text-white' : 'text-slate-900'}`}>{tier.name}</h3>
-              <div className={`text-4xl font-black mb-6 ${tier.popular ? 'text-white' : 'text-slate-900'}`}>{tier.price}</div>
-              <ul className={`space-y-4 mb-8 flex-1 text-sm font-medium ${tier.popular ? 'text-slate-300' : 'text-slate-600'}`}>
+            <div
+              key={index}
+              className={`rounded-2xl flex flex-col transition-all duration-300 overflow-hidden
+                ${isDark ? 'bg-slate-950 shadow-xl lg:-translate-y-3 z-10 relative' : tier.tierLevel === -1 ? 'bg-slate-50' : 'bg-white'}
+                ${isCurrentPlan ? 'ring-2 ring-emerald-500 ring-offset-2' : 'border border-slate-200'}`}
+            >
+              {/* Topo colorido */}
+              <div className={`px-5 pt-5 pb-4 ${isDark ? '' : 'border-b border-slate-100'}`}>
+                <span className={`text-[9px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {tier.badge}
+                </span>
+                <h3 className={`text-[17px] font-black mt-0.5 leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  {tier.name}
+                </h3>
+                <div className={`text-[22px] font-black mt-2 leading-none ${isDark ? 'text-emerald-400' : 'text-slate-900'}`}>
+                  {tier.price}
+                </div>
+              </div>
+
+              {/* Features */}
+              <ul className={`px-5 py-4 space-y-2.5 flex-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                 {tier.features.map((feature, i) => (
-                  <li key={i} className="flex gap-2">
-                    <Check className={`w-4 h-4 ${tier.popular ? 'text-emerald-400' : 'text-emerald-500'}`} />
+                  <li key={i} className="flex items-start gap-2 text-[11px] font-medium leading-snug">
+                    <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-500'}`} />
                     {feature}
                   </li>
                 ))}
               </ul>
-              <button onClick={() => { if (isCurrentPlan) handleManageSubscription(); else if (tier.tierLevel === -1) window.scrollTo({top: 0, behavior: 'smooth'}); else if (tier.tierLevel === 1) handleRegisterClick(); else handleUpgradeClick(tier.tierLevel); }} className={`w-full py-3 rounded-xl font-bold transition-all ${isCurrentPlan ? 'bg-slate-200 text-slate-500 cursor-default' : tier.popular ? 'bg-white text-slate-900 hover:bg-slate-100' : 'bg-slate-100 text-slate-900 hover:bg-slate-200'}`}>
-                {isCurrentPlan ? 'Plano Atual' : tier.buttonText}
-              </button>
+
+              {/* Botão */}
+              <div className="px-5 pb-5">
+                <button
+                  onClick={() => {
+                    if (isCurrentPlan) handleManageSubscription();
+                    else if (tier.tierLevel === -1) window.scrollTo({ top: 0, behavior: 'smooth' });
+                    else if (tier.tierLevel === 1) handleRegisterClick();
+                    else handleUpgradeClick(tier.tierLevel);
+                  }}
+                  className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]
+                    ${isCurrentPlan
+                      ? 'bg-emerald-500/20 text-emerald-600 cursor-default'
+                      : isDark
+                        ? 'bg-white text-slate-900 hover:bg-slate-100 shadow-lg'
+                        : 'bg-slate-900 text-white hover:bg-slate-700'}`}
+                >
+                  {isCurrentPlan ? '✓ Plano Atual' : tier.buttonText}
+                </button>
+              </div>
             </div>
           );
         })}
