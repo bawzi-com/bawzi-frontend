@@ -357,9 +357,9 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
             {/* Linha 2 — todas as empresas monitoradas */}
             <div className="flex flex-col gap-1.5 mb-3">
               {(cnaeInfo.empresas.length > 0 ? cnaeInfo.empresas : [cnaeInfo.empresa]).map((emp) => {
-                const loc = cnaeInfo.empresaLocalizacao?.[emp] || {};
-                const ufEmp  = (loc.uf        || (cnaeInfo.empresas.length <= 1 ? cnaeInfo.ufEmpresa        : '')).toUpperCase().trim();
-                const munEmp = (loc.municipio  || (cnaeInfo.empresas.length <= 1 ? cnaeInfo.municipioEmpresa : '')).trim();
+                const loc = cnaeInfo.empresaLocalizacao?.[emp] as { uf?: string; municipio?: string } | undefined;
+                const ufEmp  = (loc?.uf        || (cnaeInfo.empresas.length <= 1 ? cnaeInfo.ufEmpresa        : '')).toUpperCase().trim();
+                const munEmp = (loc?.municipio  || (cnaeInfo.empresas.length <= 1 ? cnaeInfo.municipioEmpresa : '')).trim();
                 return (
                   <div key={emp} className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -510,9 +510,9 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                     {uf && (() => {
                       // Localização da empresa que gerou ESTE edital
                       const empNome = edital.empresa_match || '';
-                      const loc = cnaeInfo?.empresaLocalizacao?.[empNome] || {};
-                      const ufEmp  = (loc.uf        || cnaeInfo?.ufEmpresa        || '').toUpperCase().trim();
-                      const munEmp = (loc.municipio  || cnaeInfo?.municipioEmpresa || '').toUpperCase().trim();
+                      const loc = cnaeInfo?.empresaLocalizacao?.[empNome] as { uf?: string; municipio?: string } | undefined;
+                      const ufEmp  = (loc?.uf        || cnaeInfo?.ufEmpresa        || '').toUpperCase().trim();
+                      const munEmp = (loc?.municipio  || cnaeInfo?.municipioEmpresa || '').toUpperCase().trim();
                       const ufUp   = uf.toUpperCase();
                       const munUp  = municipio.toUpperCase();
                       const isCidade = ufEmp && ufUp === ufEmp && munEmp && munUp === munEmp;
