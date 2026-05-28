@@ -217,9 +217,18 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       // ──────────────────────────────────────────────────────────────
       const agora = new Date();
 
+      // Strings de fallback que o backend coloca quando não há data real — tratar como null.
+      const FALLBACK_STRINGS = [
+        'verificação direta', 'verificacao direta',
+        'acesso via edital', 'a apurar', 'a definir',
+        'urgente', 'não informado', 'nao informado',
+      ];
+
       const parsearData = (str: string | undefined | null): Date | null => {
         if (!str) return null;
         const s = str.replace('\xa0', ' ').trim();
+        // Rejeita strings de fallback do backend (não são datas reais)
+        if (FALLBACK_STRINGS.some(fb => s.toLowerCase().includes(fb))) return null;
         // Formato BR: DD/MM/YYYY [HH:MM[:SS]]
         const matchBR = s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
         if (matchBR) {
@@ -232,15 +241,35 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       };
 
       const vivos = encontrados.filter(edital => {
+        // 1. Tentar data de encerramento/fim (mais fiável)
         const dataFim = parsearData(
           edital.data_fim ||
           edital.dataFimRecebimentoProposta ||
           edital.dataEncerramentoProposta ||
           edital.dataEncerramento
         );
-        // Se não temos data fiável, mantemos (pode ser edital permanente ou sigiloso)
-        if (!dataFim) return true;
-        return dataFim >= agora;
+        if (dataFim !== null) return dataFim >= agora;
+
+        // 2. Sem data de fim fiável — tentar data de abertura como fallback
+        //    Se a abertura já passou, o edital está certamente vencido.
+        const dataInicio = parsearData(
+          edital.data_inicio ||
+          edital.dataAberturaProposta ||
+          edital.dataRecebimentoProposta
+        );
+        if (dataInicio !== null) return dataInicio >= agora;
+
+        // 3. Sem data de encerramento nem de abertura → usar data de publicação como proxy.
+        //    Se o edital foi publicado há mais de 60 dias sem datas explícitas, é improvável
+        //    que ainda esteja ativo (o backend usa regra de 45 dias, mas pode escapar algum).
+        const dataDivulgacao = parsearData(edital.data_divulgacao);
+        if (dataDivulgacao !== null) {
+          const sessentaDias = new Date(agora.getTime() - 60 * 24 * 60 * 60 * 1000);
+          return dataDivulgacao >= sessentaDias;
+        }
+
+        // 4. Nenhuma data disponível — manter (backend validou com regra dos 45 dias).
+        return true;
       });
 
       setResults([...vivos]);
@@ -253,8 +282,18 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       }
 
       if (resMarket && resMarket.ok) {
-         const marketJson = await resMarket.json();
-         setMarketData(marketJson);
+        try {
+          const marketJson = await resMarket.json();
+          const temDados =
+            marketJson &&
+            typeof marketJson.ticketMedio === 'number' && marketJson.ticketMedio > 0 &&
+            marketJson.competitividade &&
+            marketJson.competitividade !== 'Dados Insuficientes' &&
+            marketJson.competitividade !== 'Erro na API';
+          setMarketData(temDados ? marketJson : null);
+        } catch {
+          setMarketData(null);
+        }
       }
 
     } catch (err: any) {
@@ -570,7 +609,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 <span className="text-sm font-black text-slate-800 leading-tight block">{marketData.competitividade}</span>
               </div>
               <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Facilidade Entrada</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Taxa de Vitória</span>
                 <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{marketData.taxaSucesso}%</span>
               </div>
             </div>
@@ -609,6 +648,15 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             const dataFimRaw = edital.data_fim || '';
             const dataFimIlegivel = dataFimRaw && !/\d{2}\/\d{2}\/\d{4}/.test(dataFimRaw) && !/\d{4}-\d{2}-\d{2}/.test(dataFimRaw);
 
+            // Classifica a ausência de data: edital recente (PNCP sem metadado) ou genuinamente suspeito
+            const agoraRender = new Date();
+            const divulgacaoMatch = (edital.data_divulgacao || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+            const diasDesdePublicacao = divulgacaoMatch
+              ? Math.floor((agoraRender.getTime() - new Date(`${divulgacaoMatch[3]}-${divulgacaoMatch[2]}-${divulgacaoMatch[1]}`).getTime()) / 86400000)
+              : 999;
+            // Se publicado há < 45 dias sem data → plataforma externa não sincronizou com PNCP
+            const semDataRecente = dataFimIlegivel && diasDesdePublicacao < 45;
+
             return (
               <div key={edital.id || index} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-slate-300 transition-all shadow-sm hover:shadow-md group">
                 <div className="flex justify-between items-start mb-4">
@@ -640,7 +688,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 <p className="text-slate-500 text-xs font-medium line-clamp-2 mb-2">{edital.objeto}</p>
                 
                 {/* TIMELINE */}
-                <div className="mt-4 mb-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 border-t border-slate-100 pt-4">
+                <div className="mt-4 mb-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
                     <div>
@@ -655,35 +703,25 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       <p className="text-xs text-emerald-600 font-bold truncate">{edital.situacao || 'Publicado'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <PlayCircle className="w-4 h-4 text-blue-500 shrink-0" />
-                    <div>
-                      <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Início</p>
-                      <p className="text-xs text-slate-700 font-semibold truncate">{edital.data_inicio || 'A definir'}</p>
+                  {edital.data_inicio && /\d{2}\/\d{2}\/\d{4}/.test(edital.data_inicio) && (
+                    <div className="flex items-center gap-2">
+                      <PlayCircle className="w-4 h-4 text-blue-500 shrink-0" />
+                      <div>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Início</p>
+                        <p className="text-xs text-slate-700 font-semibold truncate">{edital.data_inicio}</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className={`flex items-center gap-2 border-l-2 pl-2 rounded-r py-1 ${dataFimIlegivel ? 'border-orange-400 bg-orange-50' : 'border-amber-400 bg-amber-50'}`}>
-                    <Timer className={`w-4 h-4 shrink-0 ${dataFimIlegivel ? 'text-orange-500' : 'text-amber-600'}`} />
-                    <div>
-                      <p className={`text-[9px] uppercase font-black tracking-widest ${dataFimIlegivel ? 'text-orange-600' : 'text-amber-600/80'}`}>Fim</p>
-                      {dataFimIlegivel ? (
-                        <p className="text-[10px] text-orange-700 font-black truncate">⚠️ Verificar no edital</p>
-                      ) : (
-                        <p className="text-xs text-amber-900 font-black truncate">{edital.data_fim || 'Sem limite'}</p>
-                      )}
+                  )}
+                  {edital.data_fim && /\d{2}\/\d{2}\/\d{4}/.test(edital.data_fim) && (
+                    <div className="flex items-center gap-2 border-l-2 pl-2 rounded-r py-1 border-amber-400 bg-amber-50">
+                      <Timer className="w-4 h-4 shrink-0 text-amber-600" />
+                      <div>
+                        <p className="text-[9px] uppercase font-black tracking-widest text-amber-600/80">Fim</p>
+                        <p className="text-xs text-amber-900 font-black truncate">{edital.data_fim}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-
-                {/* AVISO: prazo não verificável automaticamente */}
-                {dataFimIlegivel && (
-                  <div className="mb-4 flex items-center gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                    <span className="text-amber-500 text-base shrink-0">⚠️</span>
-                    <p className="text-[11px] font-bold text-amber-800 leading-snug">
-                      Prazo de encerramento não disponível nos metadados do PNCP. Verifique o edital original antes de analisar — pode estar vencido.
-                    </p>
-                  </div>
-                )}
 
                 {/* PREDICTIVE RADAR */}
                 {isRecorrente && (

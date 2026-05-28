@@ -16,9 +16,15 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   const [view, setView] = useState<'list' | 'form'>('list');
   const [companiesList, setCompaniesList] = useState<any[]>([]);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    _id: string; cnpj: string; razao_social: string; enquadramento: string;
+    capital_social: string; cnae_principal: string; cnae_descricao: string;
+    cnaes_secundarios: { codigo: string; descricao: string }[];
+    uf: string; municipio: string;
+  }>({
     _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
-    cnae_principal: '', cnae_descricao: '',
+    cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [],
+    uf: '', municipio: '',
   });
 
   const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
@@ -26,19 +32,67 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
   useEffect(() => {
     if (companyData) {
-      setCompaniesList(Array.isArray(companyData) ? companyData : (companyData.cnpj ? [companyData] : []));
+      const lista = Array.isArray(companyData) ? companyData : (companyData.cnpj ? [companyData] : []);
+      setCompaniesList(lista);
+
+      // Auto-enriquecer empresas sem CNAE ou sem CNAEs secundários — silencioso
+      lista.forEach(async (emp: any) => {
+        const precisaEnriquecer = emp.cnpj && (!emp.cnae_principal || !emp.cnaes_secundarios?.length);
+        if (precisaEnriquecer) {
+          try {
+            const cnpjLimpo = emp.cnpj.replace(/\D/g, '');
+            const res = await fetch(`${API_URL}/api/company/search/${cnpjLimpo}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data.cnae_principal) return;
+
+            const enriched = {
+              ...emp,
+              cnae_principal: data.cnae_principal,
+              cnae_descricao: data.cnae_descricao || '',
+              cnaes_secundarios: data.cnaes_secundarios || [],
+              uf: data.uf || emp.uf || '',
+              municipio: data.municipio || emp.municipio || '',
+            };
+
+            // Salva o enriquecimento no backend
+            await fetch(`${API_URL}/api/workspace/company`, {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(enriched),
+            });
+
+            // Atualiza a lista local imediatamente
+            setCompaniesList(prev =>
+              prev.map(e => e.cnpj === emp.cnpj ? enriched : e)
+            );
+          } catch {
+            // silencioso — não interrompe a UI
+          }
+        }
+      });
     }
-  }, [companyData]);
+  }, [companyData, token, API_URL]);
 
   const handleAddNew = () => {
-    setFormData({ _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '', cnae_principal: '', cnae_descricao: '' });
+    setFormData({ _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '', cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [], uf: '', municipio: '' });
     setView('form');
   };
 
   const handleEdit = (emp: any) => {
     setFormData({
-      _id: emp._id || '', cnpj: emp.cnpj || '', razao_social: emp.razao_social || '', enquadramento: emp.enquadramento || '', capital_social: emp.capital_social || '',
-      cnae_principal: emp.cnae_principal || '', cnae_descricao: emp.cnae_descricao || '',
+      _id: emp._id || '',
+      cnpj: emp.cnpj || '',
+      razao_social: emp.razao_social || '',
+      enquadramento: emp.enquadramento || '',
+      capital_social: emp.capital_social || '',
+      cnae_principal: emp.cnae_principal || '',
+      cnae_descricao: emp.cnae_descricao || '',
+      cnaes_secundarios: emp.cnaes_secundarios || [],
+      uf: emp.uf || '',
+      municipio: emp.municipio || '',
     });
     setView('form');
   };
@@ -70,6 +124,9 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
         capital_social: data.capital_social || '',
         cnae_principal: data.cnae_principal || '',
         cnae_descricao: data.cnae_descricao || '',
+        cnaes_secundarios: data.cnaes_secundarios || [],
+        uf: data.uf || '',
+        municipio: data.municipio || '',
       });
             
     } catch (error: any) {
@@ -185,6 +242,23 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                     <p className="text-[10px] font-bold text-slate-400 mt-1">
                       CNPJ: {emp.cnpj}
                     </p>
+                    {emp.cnae_principal && (
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        <span className="inline-flex items-center gap-1 text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md">
+                          ★ {emp.cnae_principal}{emp.cnae_descricao ? ` · ${emp.cnae_descricao}` : ''}
+                        </span>
+                        {(emp.cnaes_secundarios || []).slice(0, 3).map((c: any) => (
+                          <span key={c.codigo} className="inline-flex items-center gap-1 text-[9px] font-bold bg-slate-50 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-md">
+                            {c.codigo}{c.descricao ? ` · ${c.descricao.substring(0, 25)}${c.descricao.length > 25 ? '…' : ''}` : ''}
+                          </span>
+                        ))}
+                        {(emp.cnaes_secundarios || []).length > 3 && (
+                          <span className="text-[9px] font-bold text-slate-400 px-1 py-0.5">
+                            +{emp.cnaes_secundarios.length - 3} outros
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -298,6 +372,43 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 <input type="text" className={`${inputStyle} pl-12`} value={formData.capital_social} onChange={e => setFormData({...formData, capital_social: e.target.value})} />
                 <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"><Landmark size={20} /></div>
               </div>
+            </div>
+
+            <div className="w-full md:col-span-2">
+              <label className={labelStyle}>CNAE Principal <span className="normal-case text-slate-300">(preenchido automaticamente ou edite)</span></label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  className={`${inputStyle} w-40 shrink-0`}
+                  placeholder="Ex: 6201-5/01"
+                  value={formData.cnae_principal}
+                  onChange={e => setFormData({...formData, cnae_principal: e.target.value})}
+                />
+                <input
+                  type="text"
+                  className={inputStyle}
+                  placeholder="Descrição do CNAE (opcional)"
+                  value={formData.cnae_descricao}
+                  onChange={e => setFormData({...formData, cnae_descricao: e.target.value})}
+                />
+              </div>
+              {formData.cnae_principal && (
+                <p className="text-[10px] text-emerald-600 font-bold mt-2 ml-1">
+                  ✓ CNAE salvo — o Feed &quot;Para Você&quot; usará este código para encontrar oportunidades.
+                </p>
+              )}
+              {formData.cnaes_secundarios.length > 0 && (
+                <div className="mt-3 ml-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">CNAEs Secundários ({formData.cnaes_secundarios.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {formData.cnaes_secundarios.map((c) => (
+                      <span key={c.codigo} className="text-[9px] font-bold bg-slate-50 text-slate-500 border border-slate-200 px-2 py-1 rounded-md">
+                        {c.codigo}{c.descricao ? ` · ${c.descricao.substring(0, 30)}${c.descricao.length > 30 ? '…' : ''}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

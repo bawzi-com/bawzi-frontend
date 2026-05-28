@@ -5,14 +5,119 @@ import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
 
-interface CompetitorWarRoomProps {
-  competitorsNacionais?: any[];
-  competitorsRegionais?: any[];
+// ─── Tipos do domínio ────────────────────────────────────────────────────────
+
+export interface ContratoData {
+  numeroControlePNCP?: string;
+  objetoContrato?: string;
+  valorGlobalContrato?: number;
+  dataAssinatura?: string;
+  orgao?: string;
   uf?: string;
-  pricing?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export interface ConcorrenteData {
+  nome: string;
+  cnpj?: string;
+  cleanCnpj?: string;
+  uf?: string;
+  vitorias?: number | string;
+  /** Campo de probabilidade (alias usado em alguns contextos: prob) */
+  probabilidade?: string;
+  prob?: string;
+  forca?: string;
+  capital_social?: string;
+  porte?: string;
+  municipio?: string;
+  cnae?: string;
+  contratos?: ContratoData[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  rawDataOriginal?: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export interface PricingIntelligenceData {
+  valor_estimado_raw?: number | string;
+  estimated_discount?: string;
+  market_analysis?: string;
+  financial_verdict?: string;
+  desagioPreditivoOrgao?: number;
+  nivelAmeaca?: string;
+  perfilVencedor?: string;
+  valorMedioUnitarioMercado?: number;
+  amostraPrecosUnitarios?: number;
+  objeto?: string;
+  link_pncp?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  engenharia_reversa?: Record<string, any>;
+  itens_lotes?: Array<{
+    numero: string;
+    produto: string;
+    valor_estimado_raw: number;
+    quantidade: number;
+    desagioPreditivoOrgao?: number;
+  }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export interface FullResultData {
+  estimated_value?: string;
+  summary?: string;
+  description?: string;
+  title?: string;
+  objeto?: string;
+  termo_busca_pncp?: string;
+  uf?: string;
+  link_pncp?: string;
+  link_edital?: string;
+  url?: string;
+  link_original?: string;
+  link?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pricing_intelligence?: PricingIntelligenceData | Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  concorrentes_provaveis?: ConcorrenteData[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  concorrentes_regionais?: ConcorrenteData[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  war_room_cache?: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
+export interface FalhaDetectada {
+  tipo: string;
+  gravidade: 'ALTA' | 'MEDIA' | 'BAIXA';
+  descricao_tecnica: string;
+  fundamentacao_legal: string;
+}
+
+export interface AnaliseOfensivaData {
+  concorrente_razao_social: string;
+  concorrente_cnpj: string;
+  vulnerabilidades: FalhaDetectada[];
+  recomendacao_tatica: string;
+  rascunho_recurso?: {
+    assunto: string;
+    tese_juridica: string;
+    pedidos: string[];
+  };
+}
+
+// ─── Props ───────────────────────────────────────────────────────────────────
+
+interface CompetitorWarRoomProps {
+  competitorsNacionais?: ConcorrenteData[];
+  competitorsRegionais?: ConcorrenteData[];
+  uf?: string;
+  pricing?: PricingIntelligenceData;
   analysisId?: string;
   userTier?: number;
-  fullResult?: any;
+  fullResult?: FullResultData;
 }
 
 export default function CompetitorWarRoom({ 
@@ -27,18 +132,27 @@ export default function CompetitorWarRoom({
   
   const [view, setView] = useState<'radar' | 'operation'>('radar');
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
-  const [target, setTarget] = useState<any>(null);
-  
+  const [target, setTarget] = useState<ConcorrenteData | null>(null);
+
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [offensiveData, setOffensiveData] = useState<any>(null);
+  const [offensiveData, setOffensiveData] = useState<AnaliseOfensivaData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedItemIdx, setSelectedItemIdx] = useState<number>(0);
-  const [dossieTarget, setDossieTarget] = useState<any>(null); 
-  const [dossieContracts, setDossieContracts] = useState<any[] | null>(null);
+  const [dossieTarget, setDossieTarget] = useState<ConcorrenteData | null>(null);
+  const [dossieContracts, setDossieContracts] = useState<ContratoData[] | null>(null);
 
   const [sancoesStatus, setSancoesStatus] = useState<'idle' | 'loading' | 'clean' | 'dirty' | 'error'>('idle');
   const [sancoesLista, setSancoesLista] = useState<any[]>([]);
+
+  // Feedback de cópia — guarda o key do botão que acabou de copiar por 2s
+  const [copiadoKey, setCopiadoKey] = useState<string | null>(null);
+  const copiar = (texto: string, key: string) => {
+    navigator.clipboard.writeText(texto).then(() => {
+      setCopiadoKey(key);
+      setTimeout(() => setCopiadoKey(null), 2000);
+    });
+  };
 
   const linkEditalPrincipal = fullResult?.link_pncp || fullResult?.link_edital || fullResult?.url || fullResult?.link_original || fullResult?.link || pricing?.link_pncp;
 
@@ -94,17 +208,17 @@ export default function CompetitorWarRoom({
     if (vEdital > 0) return vEdital;
 
     // PRIORIDADE 2: minerar do resumo da IA (texto livre)
-    const dadosMinerados = minerarDadosDoResumo(fullResult?.summary || fullResult?.description);
+    const dadosMinerados = minerarDadosDoResumo((fullResult?.summary || fullResult?.description) ?? '');
     if (dadosMinerados.valorGlobal > 0) return dadosMinerados.valorGlobal;
 
     // PRIORIDADE 3 (último recurso): soma dos itens/lotes — pode ser unitário, usar só se nada acima existir
     let soma = 0;
     if (pricing?.itens_lotes && Array.isArray(pricing.itens_lotes)) {
-        soma = pricing.itens_lotes.reduce((acc: number, item: any) => acc + extrairValorExato(item.valor_estimado_raw), 0);
+        soma = pricing.itens_lotes.reduce((acc: number, item: { valor_estimado_raw: number }) => acc + extrairValorExato(item.valor_estimado_raw), 0);
     }
     if (soma > 0) return soma;
 
-    return extrairValorExato(fullResult?.summary) || 0;
+    return extrairValorExato(fullResult?.summary ?? '') || 0;
   }, [pricing, fullResult]);
 
   const nomeObjetoReal = fullResult?.termo_busca_pncp || fullResult?.objeto || pricing?.objeto || fullResult?.title || "Licitação";
@@ -112,7 +226,7 @@ export default function CompetitorWarRoom({
   const itensLotes = useMemo(() => {
     if (pricing?.itens_lotes && Array.isArray(pricing.itens_lotes) && pricing.itens_lotes.length > 0) return pricing.itens_lotes;
     
-    const dadosMinerados = minerarDadosDoResumo(fullResult?.summary || fullResult?.description);
+    const dadosMinerados = minerarDadosDoResumo((fullResult?.summary || fullResult?.description) ?? '');
     if (dadosMinerados.valorGlobal > 0) {
       return [{ numero: "Lote", produto: nomeObjetoReal, valor_estimado_raw: dadosMinerados.valorGlobal, quantidade: dadosMinerados.quantidade, desagioPreditivoOrgao: pricing?.desagioPreditivoOrgao || 19.7 }];
     }
@@ -359,8 +473,9 @@ export default function CompetitorWarRoom({
   const handleLockTarget = (competitor: any) => {
     setTarget(competitor);
     setView('operation');
-    const cache = fullResult?.war_room_cache || {};
-    if (cache[competitor.cleanCnpj]) setOffensiveData(cache[competitor.cleanCnpj]);
+    const cache = (fullResult?.war_room_cache || {}) as Record<string, AnaliseOfensivaData>;
+    const cnpjKey = competitor.cleanCnpj ?? '';
+    if (cnpjKey && cache[cnpjKey]) setOffensiveData(cache[cnpjKey]);
     else setOffensiveData(null);
     if (competitor.cleanCnpj) fetchSancoes(competitor.cleanCnpj);
   };
@@ -372,12 +487,12 @@ export default function CompetitorWarRoom({
     try {
         const token = localStorage.getItem('bawzi_token');
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        await fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${safeAnalysisId}/${target.cleanCnpj}`, {
+        await fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${safeAnalysisId}/${target!.cleanCnpj}`, {
             method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
         });
         setOffensiveData(null);
         handleOffensiveAttack();
-    } catch (err) { alert("Erro ao limpar histórico."); } 
+    } catch (err) { setError("Erro ao limpar histórico. Tente novamente."); }
     finally { setIsAnalyzing(false); }
   };
 
@@ -420,8 +535,7 @@ export default function CompetitorWarRoom({
   };
 
   const copiarCnpjNumeros = (cnpjStr: string) => {
-    navigator.clipboard.writeText(cnpjStr.replace(/\D/g, ''));
-    alert('CNPJ copiado com sucesso!');
+    copiar(cnpjStr.replace(/\D/g, ''), 'cnpj-dossie');
   };
 
   return (
@@ -456,7 +570,7 @@ export default function CompetitorWarRoom({
             const precoUnitarioMercado = Number(pricing.valorMedioUnitarioMercado) || 0;
             const amostraUnitarios = Number(pricing.amostraPrecosUnitarios) || 0;
             const perfilIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={20} className="text-red-500" />, Agressivo: <Target size={20} className="text-orange-500" />, Conservador: <Shield size={20} className="text-blue-500" />, Iniciante: <Activity size={20} className="text-green-500" /> };
-            const perfilNode = perfilIcon[pricing.perfilVencedor] || <Bot size={20} className="text-slate-500" />;
+            const perfilNode = perfilIcon[String(pricing.perfilVencedor ?? '')] || <Bot size={20} className="text-slate-500" />;
             return (
               <div className={`border rounded-[2rem] p-6 md:p-8 shadow-sm ${nc.bg}`}>
                 <div className="flex items-center gap-2 mb-4">
@@ -689,7 +803,7 @@ export default function CompetitorWarRoom({
                 <ReverseEngineeringBlock
                   valorReferencia={extrairValorExato(currentItem.valor_estimado_raw)} 
                   desagio={currentItem.desagioPreditivoOrgao || pricing?.desagioPreditivoOrgao || 0}
-                  engenhariaData={{ ...pricing?.engenharia_reversa, setor_identificado: currentItem.produto }}
+                  engenhariaData={{ ...(pricing?.engenharia_reversa ?? {}), setor_identificado: currentItem.produto }}
                   userTier={userTier}
                   quantidade={currentItem.quantidade}
                 />
@@ -749,7 +863,7 @@ export default function CompetitorWarRoom({
                           {offensiveData.rascunho_recurso.pedidos?.map((p: string, i: number) => <li key={i}>{p}</li>)}
                         </ul>
                       </div>
-                      <button onClick={() => { navigator.clipboard.writeText(`Assunto: ${offensiveData.rascunho_recurso.assunto}\n\n${offensiveData.rascunho_recurso.tese_juridica}\n\nPedidos:\n${offensiveData.rascunho_recurso.pedidos.join('\n')}`); alert('Copiado!'); }} className="mt-5 w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl text-[10px] uppercase border border-indigo-200 flex items-center justify-center gap-1.5"><ClipboardList size={13} /> Copiar Peça Jurídica</button>
+                      <button onClick={() => { const r = offensiveData.rascunho_recurso; if (r) copiar(`Assunto: ${r.assunto}\n\n${r.tese_juridica}\n\nPedidos:\n${r.pedidos.join('\n')}`, 'peca-juridica'); }} className="mt-5 w-full py-3 bg-indigo-50 text-indigo-700 font-black rounded-xl text-[10px] uppercase border border-indigo-200 flex items-center justify-center gap-1.5"><ClipboardList size={13} /> {copiadoKey === 'peca-juridica' ? '✓ Copiado!' : 'Copiar Peça Jurídica'}</button>
                     </div>
                   )}
                 </div>
@@ -956,8 +1070,8 @@ export default function CompetitorWarRoom({
                 </a>
               ) : <div />}
               
-              <button onClick={() => copiarCnpjNumeros(dossieTarget.cnpj)} className="px-5 py-2.5 bg-slate-900 hover:bg-indigo-600 text-white font-black text-[10px] uppercase rounded-xl transition-all shadow-md flex items-center gap-1.5">
-                <Clipboard size={14} /> Copiar CNPJ
+              <button onClick={() => copiarCnpjNumeros(dossieTarget.cnpj ?? '')} className="px-5 py-2.5 bg-slate-900 hover:bg-indigo-600 text-white font-black text-[10px] uppercase rounded-xl transition-all shadow-md flex items-center gap-1.5">
+                <Clipboard size={14} /> {copiadoKey === 'cnpj-dossie' ? '✓ Copiado!' : 'Copiar CNPJ'}
               </button>
             </div>
           </div>

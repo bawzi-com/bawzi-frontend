@@ -12,11 +12,6 @@ export default function HistoryPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto px-6 py-12">
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-slate-900 tracking-tight">O Teu Histórico</h1>
-        <p className="text-slate-500">Recupera estratégias de editais já analisados.</p>
-      </div>
-      
       {token ? (
         <HistoryTab token={token} />
       ) : (

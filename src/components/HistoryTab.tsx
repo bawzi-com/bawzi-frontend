@@ -1,6 +1,19 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import {
+  ArrowRight,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  FileText,
+  Search,
+  Star,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
+import AnalysisResults from './AnalysisResults';
+import { AnalysisResult } from './analysis-types';
 
 // 🟢 Adicionamos userTier e a função onRedoAnalysis nas Props
 export default function HistoryTab({ 
@@ -14,10 +27,12 @@ export default function HistoryTab({
 }) {
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [selectedAnalysis, setSelectedAnalysis] = useState<any | null>(null);
 
   const [favorites, setFavorites] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'favorites' | 'go' | 'attention' | 'nogo'>('all');
+  const [detailTab, setDetailTab] = useState<'analise' | 'concorrentes'>('analise');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
@@ -94,6 +109,75 @@ export default function HistoryTab({
     }
   };
 
+  const handleDeleteAllAnalyses = async () => {
+    if (analyses.length === 0 || isDeletingAll) return;
+
+    const confirmation = prompt(
+      `Esta ação vai excluir TODAS as ${analyses.length} análises do histórico e não pode ser desfeita.\n\nDigite EXCLUIR para confirmar.`
+    );
+    if (confirmation !== 'EXCLUIR') return;
+
+    setIsDeletingAll(true);
+    try {
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      const res = await fetch(`${API_URL}/api/analyses/history/all`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${tokenLocal}` }
+      });
+
+      if (res.status === 401) {
+        alert("Sua sessão expirou por segurança. Faça login novamente.");
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        alert(error?.detail || "Erro ao excluir o histórico.");
+        return;
+      }
+
+      setAnalyses([]);
+      setSelectedAnalysis(null);
+      setFavorites([]);
+      setCurrentPage(1);
+      localStorage.removeItem('bawzi_favorites');
+    } catch (err) {
+      alert("Erro de conexão. Tente novamente.");
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
+  const handleShareSelectedAnalysis = async () => {
+    if (!selectedAnalysis?.id) return;
+    const targetEmail = prompt('Para qual e-mail deseja partilhar esta análise?');
+    if (!targetEmail || !targetEmail.includes('@')) return;
+
+    try {
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      const res = await fetch(`${API_URL}/api/analyses/${selectedAnalysis.id}/share`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenLocal}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ target_email: targetEmail }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        alert(error?.detail || 'Erro ao partilhar a análise.');
+        return;
+      }
+
+      alert('Análise partilhada com sucesso.');
+    } catch {
+      alert('Erro de conexão. Tente novamente.');
+    }
+  };
+
   const filteredAnalyses = useMemo(() => {
     return analyses.filter(item => {
       const score = item.score || 0;
@@ -119,6 +203,62 @@ export default function HistoryTab({
   // MODO DETALHADO (TELA DE VISUALIZAÇÃO)
   // ============================================================================
   if (selectedAnalysis) {
+    return (
+      <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500 pb-16">
+        <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
+          <button
+            onClick={() => {
+              setSelectedAnalysis(null);
+              setDetailTab('analise');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
+          >
+            ← Voltar ao histórico
+          </button>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <span className="rounded-full bg-slate-50 px-3 py-1.5 text-[10px] font-bold uppercase text-slate-400">
+              Histórico salvo
+            </span>
+            <button
+              onClick={(e) => toggleFavorite(e, selectedAnalysis.id)}
+              className={`inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-[11px] font-black uppercase transition-all ${
+                favorites.includes(selectedAnalysis.id)
+                  ? 'border-amber-100 bg-amber-50 text-amber-600'
+                  : 'border-slate-200 bg-white text-slate-500 hover:border-amber-100 hover:bg-amber-50 hover:text-amber-600'
+              }`}
+            >
+              <Star size={14} fill={favorites.includes(selectedAnalysis.id) ? 'currentColor' : 'none'} />
+              Favorito
+            </button>
+          </div>
+        </div>
+
+        <AnalysisResults
+          result={selectedAnalysis as AnalysisResult}
+          activeTab={detailTab}
+          onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
+          userTier={userTier}
+          currentTier={userTier}
+          termoAlvo={selectedAnalysis.termo_busca_pncp || selectedAnalysis.title || 'Histórico'}
+          analysisId={selectedAnalysis.id}
+          token={token}
+          isSharing={false}
+          onShare={handleShareSelectedAnalysis}
+          onReset={() => {
+            setSelectedAnalysis(null);
+            setDetailTab('analise');
+          }}
+          resetLabel="Voltar ao histórico"
+          onExportPDF={() => window.print()}
+          modelSource={selectedAnalysis.model_source || selectedAnalysis.modelSource || 'Motor Bawzi IA'}
+          isCachedResult={false}
+          onUpgradeClick={() => alert('Faça upgrade pelo painel de planos para desbloquear este recurso.')}
+        />
+      </div>
+    );
+
     const res = selectedAnalysis;
     const isGo = res.score >= 70;
     const isAtention = res.score >= 45 && res.score < 70;
@@ -450,146 +590,175 @@ export default function HistoryTab({
 
   const scoreColors = (score: number) =>
     score >= 70
-      ? { bar: 'bg-emerald-500', badge: 'bg-emerald-500', text: 'text-emerald-600', light: 'bg-emerald-50', border: 'border-emerald-200', label: 'text-emerald-700' }
+      ? { bar: 'bg-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-50', border: 'border-emerald-100', label: 'Go' }
       : score >= 45
-      ? { bar: 'bg-amber-400',  badge: 'bg-amber-400',  text: 'text-amber-600',  light: 'bg-amber-50',  border: 'border-amber-200',  label: 'text-amber-700'  }
-      : { bar: 'bg-red-500',    badge: 'bg-red-500',    text: 'text-red-600',    light: 'bg-red-50',    border: 'border-red-200',    label: 'text-red-700'    };
+      ? { bar: 'bg-amber-400', text: 'text-amber-700', light: 'bg-amber-50', border: 'border-amber-100', label: 'Atenção' }
+      : { bar: 'bg-red-500', text: 'text-red-700', light: 'bg-red-50', border: 'border-red-100', label: 'No-Go' };
+
+  const totalAnalyses = analyses.length;
+  const goCount = analyses.filter(item => (item.score || 0) >= 70).length;
+  const attentionCount = analyses.filter(item => (item.score || 0) >= 45 && (item.score || 0) < 70).length;
+  const noGoCount = analyses.filter(item => (item.score || 0) < 45).length;
+  const favoriteCount = analyses.filter(item => favorites.includes(item.id)).length;
+
+  const filterOptions = [
+    { key: 'all', label: 'Todos', count: totalAnalyses, Icon: FileText, activeClass: 'bg-slate-900 text-white border-slate-900' },
+    { key: 'favorites', label: 'Favoritos', count: favoriteCount, Icon: Star, activeClass: 'bg-amber-500 text-white border-amber-500' },
+    { key: 'go', label: 'Go', count: goCount, Icon: CheckCircle2, activeClass: 'bg-emerald-600 text-white border-emerald-600' },
+    { key: 'attention', label: 'Atenção', count: attentionCount, Icon: Clock3, activeClass: 'bg-amber-500 text-white border-amber-500' },
+    { key: 'nogo', label: 'No-Go', count: noGoCount, Icon: XCircle, activeClass: 'bg-red-600 text-white border-red-600' },
+  ] as const;
 
   return (
-    <div className="animate-in fade-in duration-500 space-y-6">
+    <div className="animate-in fade-in duration-500 space-y-5">
 
-      {/* ── Barra de filtros ── */}
-      <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-        <div className="flex flex-wrap items-center gap-1 p-2">
-          {([
-            { key: 'all',       label: 'Todos',     emoji: null },
-            { key: 'favorites', label: 'Favoritos', emoji: '★'  },
-          ] as const).map(({ key, label, emoji }) => (
-            <button
-              key={key}
-              onClick={() => { setActiveFilter(key); setCurrentPage(1); }}
-              className={`flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                activeFilter === key
-                  ? key === 'favorites'
-                    ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
-                    : 'bg-slate-900 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {emoji && <span>{emoji}</span>}{label}
-            </button>
-          ))}
+      <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+        <div className="grid gap-6 bg-gradient-to-br from-white via-slate-50 to-emerald-50/50 p-5 md:grid-cols-[1fr_auto] md:p-7">
+          <div>
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
+              <Clock3 size={13} />
+              Histórico estratégico
+            </div>
+            <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Análises salvas</h2>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
+              Reveja decisões anteriores, filtre por veredito e retome oportunidades que ainda fazem sentido.
+            </p>
+          </div>
 
-          <div className="w-px h-5 bg-slate-200 mx-1" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:min-w-[430px]">
+            {[
+              { label: 'Total', value: totalAnalyses, tone: 'text-slate-900 bg-white border-slate-200' },
+              { label: 'Go', value: goCount, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+              { label: 'Atenção', value: attentionCount, tone: 'text-amber-700 bg-amber-50 border-amber-100' },
+              { label: 'No-Go', value: noGoCount, tone: 'text-red-700 bg-red-50 border-red-100' },
+            ].map(({ label, value, tone }) => (
+              <div key={label} className={`rounded-2xl border p-3 shadow-sm ${tone}`}>
+                <p className="text-2xl font-black leading-none">{value}</p>
+                <p className="mt-1 text-[10px] font-black uppercase text-current opacity-60">{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
 
-          {([
-            { key: 'go',        label: 'Go',     dot: 'bg-emerald-500' },
-            { key: 'attention', label: 'Atenção', dot: 'bg-amber-400'  },
-            { key: 'nogo',      label: 'No-Go',  dot: 'bg-red-500'    },
-          ] as const).map(({ key, label, dot }) => (
-            <button
-              key={key}
-              onClick={() => { setActiveFilter(key); setCurrentPage(1); }}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                activeFilter === key
-                  ? key === 'go'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm'
-                    : key === 'attention'
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200 shadow-sm'
-                    : 'bg-red-50 text-red-700 border border-red-200 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-col gap-3 border-t border-slate-100 bg-white p-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {filterOptions.map(({ key, label, count, Icon, activeClass }) => (
+              <button
+                key={key}
+                onClick={() => { setActiveFilter(key); setCurrentPage(1); }}
+                className={`inline-flex items-center gap-2 rounded-2xl border px-3.5 py-2 text-[11px] font-black uppercase transition-all ${
+                  activeFilter === key
+                    ? activeClass
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-white hover:text-slate-900'
+                }`}
+              >
+                <Icon size={13} />
+                {label}
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                  activeFilter === key ? 'bg-white/20 text-current' : 'bg-white text-slate-400'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          {/* contador */}
-          <span className="ml-auto text-[10px] font-black text-slate-400 pr-2">
-            {filteredAnalyses.length} análise{filteredAnalyses.length !== 1 ? 's' : ''}
-          </span>
+          <button
+            onClick={handleDeleteAllAnalyses}
+            disabled={totalAnalyses === 0 || isDeletingAll}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-2.5 text-[11px] font-black uppercase text-red-700 transition-all hover:border-red-200 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 size={14} />
+            {isDeletingAll ? 'Excluindo...' : 'Excluir histórico'}
+          </button>
         </div>
       </div>
 
-      {/* ── Lista ── */}
       {paginatedAnalyses.length === 0 ? (
-        <div className="bg-white py-24 rounded-[2rem] border border-slate-100 text-center shadow-sm">
-          <span className="text-5xl block mb-4 opacity-20">📂</span>
-          <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
-            Nenhuma análise neste filtro.
+        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
+            <Search size={24} />
+          </div>
+          <h3 className="text-lg font-black text-slate-800">Nada por aqui ainda</h3>
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            Nenhuma análise encontrada para o filtro selecionado.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3">
           {paginatedAnalyses.map((item) => {
             const score = item.score || 0;
             const isFav = favorites.includes(item.id);
             const c = scoreColors(score);
+            const createdDate = isMounted && item.created_at
+              ? new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
+              : '...';
 
             return (
               <div
                 key={item.id}
                 onClick={() => setSelectedAnalysis(item)}
-                className="group relative bg-white rounded-[1.5rem] border border-slate-100 hover:border-slate-200 hover:shadow-lg transition-all cursor-pointer overflow-hidden flex"
+                className="group overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
               >
-                {/* Barra lateral colorida */}
-                <div className={`w-1.5 shrink-0 ${c.bar}`} />
-
-                {/* Score badge */}
-                <div className={`flex flex-col items-center justify-center shrink-0 px-5 py-5 ${c.light}`}>
-                  <span className={`text-2xl font-black leading-none ${c.text}`}>{score}</span>
-                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-0.5">score</span>
-                </div>
-
-                {/* Conteúdo principal */}
-                <div className="flex-1 min-w-0 px-5 py-4 flex flex-col justify-center">
-                  <h3 className="font-black text-slate-900 leading-snug line-clamp-1 text-[15px] group-hover:text-slate-700 transition-colors">
-                    {item.title || 'Sem Título'}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <span className="text-[10px] font-semibold text-slate-400">
-                      📅 {isMounted && item.created_at
-                        ? new Date(item.created_at).toLocaleDateString('pt-BR')
-                        : '...'}
+                <div className={`h-1.5 ${c.bar}`} />
+                <div className="grid gap-4 p-4 md:grid-cols-[112px_minmax(0,1fr)_auto] md:items-center md:p-5">
+                  <div className={`flex items-center justify-between rounded-2xl border p-3 md:block md:text-center ${c.light} ${c.border}`}>
+                    <div>
+                      <span className={`block text-3xl font-black leading-none ${c.text}`}>{score}</span>
+                      <span className="mt-1 block text-[9px] font-black uppercase text-slate-400">score</span>
+                    </div>
+                    <span className={`rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase md:mt-3 md:inline-block ${c.text}`}>
+                      {c.label}
                     </span>
-                    {item.classification && (
-                      <>
-                        <span className="w-1 h-1 rounded-full bg-slate-300" />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${c.label}`}>
-                          {item.classification}
-                        </span>
-                      </>
-                    )}
                   </div>
-                </div>
 
-                {/* Ações */}
-                <div className="flex items-center gap-1 px-4 shrink-0">
-                  <button
-                    onClick={(e) => handleDeleteAnalysis(item.id, e)}
-                    title="Excluir"
-                    className="w-8 h-8 flex items-center justify-center rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-                    </svg>
-                  </button>
-                  <button
-                    onClick={(e) => toggleFavorite(e, item.id)}
-                    title={isFav ? 'Remover favorito' : 'Favoritar'}
-                    className={`w-8 h-8 flex items-center justify-center rounded-xl transition-all text-base ${
-                      isFav ? 'text-amber-400 bg-amber-50' : 'text-slate-300 hover:text-amber-400 hover:bg-amber-50'
-                    }`}
-                  >
-                    {isFav ? '★' : '☆'}
-                  </button>
-                  {/* Seta */}
-                  <div className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 group-hover:bg-slate-900 transition-all ml-1">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                      className="w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-colors">
-                      <path d="M9 18l6-6-6-6"/>
-                    </svg>
+                  <div className="min-w-0">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500">
+                        <CalendarDays size={12} />
+                        {createdDate}
+                      </span>
+                      {item.model_source && (
+                        <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-600">
+                          {item.model_source}
+                        </span>
+                      )}
+                    </div>
+
+                    <h3 className="text-base font-black leading-snug text-slate-950 transition-colors group-hover:text-emerald-700">
+                      {item.title || 'Análise de edital'}
+                    </h3>
+                    <p className="mt-2 line-clamp-2 text-sm font-medium leading-relaxed text-slate-500">
+                      {item.summary || item.recommendation || 'Abra esta análise para rever o veredito, riscos e próximos passos.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 md:justify-end">
+                    <button
+                      onClick={(e) => handleDeleteAnalysis(item.id, e)}
+                      title="Excluir análise"
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 text-slate-400 transition-all hover:border-red-100 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <button
+                      onClick={(e) => toggleFavorite(e, item.id)}
+                      title={isFav ? 'Remover favorito' : 'Favoritar'}
+                      className={`inline-flex h-10 w-10 items-center justify-center rounded-2xl border transition-all ${
+                        isFav
+                          ? 'border-amber-100 bg-amber-50 text-amber-500'
+                          : 'border-slate-200 text-slate-400 hover:border-amber-100 hover:bg-amber-50 hover:text-amber-500'
+                      }`}
+                    >
+                      <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
+                    >
+                      Abrir
+                      <ArrowRight size={14} />
+                    </button>
                   </div>
                 </div>
               </div>

@@ -58,6 +58,10 @@ export default function AdminDashboard() {
   const [workerAction, setWorkerAction] = useState<string | null>(null);
   const [municipiosUfs, setMunicipiosUfs] = useState('');
   const [fornecedoresUfs, setFornecedoresUfs] = useState('');
+  const [consultaUfUfs, setConsultaUfUfs] = useState('');
+  const [consultaUfJanelas, setConsultaUfJanelas] = useState('5');
+  const [enrichViaConsultaUfs, setEnrichViaConsultaUfs] = useState('');
+  const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
 
   // Estados dos Templates de E-mail
   const [templates, setTemplates] = useState<any[]>([]);
@@ -231,12 +235,14 @@ export default function AdminDashboard() {
       const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-      const [statsRes, statusRes] = await Promise.all([
+      const [statsRes, statusRes, schedulerRes] = await Promise.all([
         fetch(`${baseUrl}/api/admin/pncp/stats`, { headers }),
         fetch(`${baseUrl}/api/admin/workers/status`, { headers }),
+        fetch(`${baseUrl}/api/admin/scheduler/status`, { headers }),
       ]);
-      if (statsRes.ok)  setPncpStats(await statsRes.json());
-      if (statusRes.ok) setWorkersStatus(await statusRes.json());
+      if (statsRes.ok)     setPncpStats(await statsRes.json());
+      if (statusRes.ok)    setWorkersStatus(await statusRes.json());
+      if (schedulerRes.ok) setSchedulerStatus(await schedulerRes.json());
     } finally {
       setPncpLoading(false);
     }
@@ -282,6 +288,67 @@ export default function AdminDashboard() {
         setTimeout(loadPncpData, 1500);
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerEnrichViaConsulta = async () => {
+    const ufsLabel = enrichViaConsultaUfs.trim() || 'todas as UFs com contratos sem fornecedor';
+    if (!confirm(
+      `Iniciar Enriquecimento Via Consulta para: ${ufsLabel}?\n\n` +
+      `Este worker:\n` +
+      `  1. Lê todos os contratos sem fornecedor no banco\n` +
+      `  2. Agrupa por UF + janela mensal de data_vigencia_inicio\n` +
+      `  3. Busca /api/consulta para cada janela (tem nomeRazaoSocialFornecedor)\n` +
+      `  4. Faz match por NCP e atualiza fornecedor_nome no banco\n\n` +
+      `Tempo estimado: ~30-90 min para todos os 137k contratos`
+    )) return;
+    setWorkerAction('enrich_via_consulta');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = new URLSearchParams();
+      if (enrichViaConsultaUfs.trim()) qs.set('ufs', enrichViaConsultaUfs.trim());
+      const qsStr = qs.toString();
+      const res = await fetch(`${baseUrl}/api/admin/workers/enrich-via-consulta${qsStr ? '?' + qsStr : ''}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`Erro: ${err.detail || res.statusText}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerConsultaUf = async () => {
+    const ufsLabel = consultaUfUfs.trim() || 'todas as 27 UFs';
+    const janelas  = parseInt(consultaUfJanelas) || 5;
+    if (!confirm(
+      `Iniciar Worker Consulta UF para: ${ufsLabel}?\n\n` +
+      `Janelas anuais: ${janelas} (${janelas} anos retroativos)\n\n` +
+      `Este worker usa curl_cffi (TLS Chrome) — contorna o fingerprinting do PNCP\n` +
+      `e retorna nomeRazaoSocialFornecedor nativamente.\n\n` +
+      `Tempo estimado: ~5-15 min por UF · ${ufsLabel === 'todas as 27 UFs' ? '~2-5h completo' : '~' + ufsLabel.split(',').length * 10 + ' min'}`
+    )) return;
+    setWorkerAction('consulta_uf');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = new URLSearchParams();
+      if (consultaUfUfs.trim()) qs.set('ufs', consultaUfUfs.trim());
+      qs.set('janelas', String(janelas));
+      const res = await fetch(`${baseUrl}/api/admin/workers/consulta-uf?${qs.toString()}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(`Erro: ${err.detail || res.statusText}`);
       }
     } finally {
       setWorkerAction(null);
@@ -673,8 +740,22 @@ export default function AdminDashboard() {
                 <p className="text-3xl font-black text-emerald-400">{(pncpStats.contratos?.ativos || 0).toLocaleString()}</p>
               </div>
               <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Sem Fornecedor</p>
-                <p className="text-3xl font-black text-amber-400">{(pncpStats.contratos?.sem_fornecedor || 0).toLocaleString()}</p>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Com Fornecedor</p>
+                {(() => {
+                  const total = pncpStats.contratos?.total || 0;
+                  const semForn = pncpStats.contratos?.sem_fornecedor || 0;
+                  const comForn = Math.max(0, total - semForn);
+                  const pct = total > 0 ? Math.round((comForn / total) * 100) : 0;
+                  return (
+                    <>
+                      <p className="text-3xl font-black text-emerald-400">{comForn.toLocaleString()}</p>
+                      <div className="mt-2 h-1.5 w-full bg-slate-700/60 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1">{pct}% de cobertura · {semForn.toLocaleString()} sem dados</p>
+                    </>
+                  );
+                })()}
               </div>
               <div className="bg-slate-900/40 border border-slate-800/60 rounded-2xl p-6">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Municípios</p>
@@ -690,7 +771,93 @@ export default function AdminDashboard() {
             </p>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* ── PAINEL DE AGENDAMENTO ── */}
+          <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-6 backdrop-blur-md">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-slate-700/40 rounded-xl"><Clock size={18} className="text-slate-400" /></div>
+                <div>
+                  <h3 className="text-base font-black text-white">Agendamento Automático</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Workers diários — fuso America/Sao_Paulo</p>
+                </div>
+              </div>
+              {schedulerStatus && (
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black border ${
+                  schedulerStatus.scheduler_ativo
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-400'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${schedulerStatus.scheduler_ativo ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                  {schedulerStatus.scheduler_ativo ? 'ATIVO' : 'INATIVO'}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                {
+                  id: 'contratos',
+                  label: 'Contratos sem_termo',
+                  hora: '02:00',
+                  desc: '~10k contratos novos · ~3 min',
+                  cor: 'violet',
+                },
+                {
+                  id: 'enrich',
+                  label: 'Enrich Fornecedor',
+                  hora: '03:00',
+                  desc: 'Próximos 730 dias · ~10-30 min',
+                  cor: 'amber',
+                },
+                {
+                  id: 'consulta_uf',
+                  label: 'Consulta UF',
+                  hora: '04:00',
+                  desc: '5-6 UFs rotativas · ~1-2h',
+                  cor: 'emerald',
+                },
+              ].map(({ id, label, hora, desc, cor }) => {
+                const jobProx  = schedulerStatus?.jobs_proximas_exec?.find((j: any) => j.id.startsWith(id));
+                const jobRes   = schedulerStatus?.jobs_resultados?.[id];
+                const proxData = jobProx?.proxima_exec ? new Date(jobProx.proxima_exec) : null;
+                return (
+                  <div key={id} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-200">{label}</span>
+                      <span className={`text-[10px] font-black text-${cor}-400 bg-${cor}-500/10 px-2 py-0.5 rounded-full border border-${cor}-500/20`}>{hora} BRT</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">{desc}</p>
+                    <div className="pt-1 border-t border-slate-700/40 space-y-1">
+                      <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                        <Clock size={9} />
+                        <span className="font-bold text-slate-400">Próxima:</span>
+                        {proxData ? proxData.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                      </p>
+                      {jobRes?.ultima_exec && (
+                        <p className="text-[10px] text-slate-600">
+                          Última: {new Date(jobRes.ultima_exec).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                          {jobRes.ultimo_erro
+                            ? <span className="text-red-400 ml-1">✗ erro</span>
+                            : jobRes.ultimo_resultado
+                              ? <span className="text-emerald-400 ml-1">✓ ok</span>
+                              : null
+                          }
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {!schedulerStatus && (
+              <p className="text-xs text-slate-600 text-center mt-3">
+                Clique em "Atualizar" para carregar o status do scheduler.
+              </p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
             {/* WORKER CONTRATOS */}
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
@@ -753,72 +920,6 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* WORKER FORNECEDORES */}
-            <div className="bg-slate-900/40 border border-amber-500/10 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2.5 bg-amber-500/10 rounded-xl"><Users size={20} className="text-amber-400" /></div>
-                <div>
-                  <h3 className="text-lg font-black text-white">Worker · Fornecedores</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Enriquece fornecedor_nome via /api/consulta</p>
-                </div>
-              </div>
-
-              {/* Alerta de contexto */}
-              <div className="mb-5 px-3 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-300/80">
-                <span className="font-black text-amber-400">Por quê?</span> O /api/search não devolve dados de fornecedor.
-                Este worker usa o /api/consulta (que tem) e faz UPDATE nos {(pncpStats?.contratos?.sem_fornecedor || 0).toLocaleString()} contratos sem fornecedor.
-              </div>
-
-              {/* Status */}
-              {workersStatus?.fornecedores && (
-                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
-                  workersStatus.fornecedores.running
-                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                    : workersStatus.fornecedores.ultimo_erro
-                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                      : workersStatus.fornecedores.ultimo_resultado
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
-                }`}>
-                  {workersStatus.fornecedores.running
-                    ? <><Loader2 size={13} className="animate-spin" /> A correr (UFs: {typeof workersStatus.fornecedores.ufs === 'string' ? workersStatus.fornecedores.ufs : workersStatus.fornecedores.ufs?.join(', ')})...</>
-                    : workersStatus.fornecedores.ultimo_erro
-                      ? <><XCircle size={13} /> Erro: {workersStatus.fornecedores.ultimo_erro.slice(0, 60)}</>
-                      : workersStatus.fornecedores.ultimo_resultado
-                        ? <><CheckCircle2 size={13} /> {workersStatus.fornecedores.ultimo_resultado.atualizados?.toLocaleString()} atualizados · {workersStatus.fornecedores.ultimo_resultado.sem_restantes?.toLocaleString()} restantes</>
-                        : <><Clock size={13} /> Nunca executado nesta sessão</>
-                  }
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
-                    UFs a enriquecer (vazio = todas as 27)
-                  </label>
-                  <input
-                    type="text"
-                    value={fornecedoresUfs}
-                    onChange={e => setFornecedoresUfs(e.target.value.toUpperCase())}
-                    placeholder="Ex: GO,SP,MG"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-mono text-sm"
-                  />
-                  <p className="text-[10px] text-slate-600 mt-1.5">Só GO → ~2-5 min · Todas → ~1-2h</p>
-                </div>
-
-                <button
-                  onClick={triggerWorkerFornecedores}
-                  disabled={!!workerAction || workersStatus?.fornecedores?.running}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
-                    bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {workerAction === 'fornecedores'
-                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
-                    : <><Play size={14} /> Enriquecer Fornecedores</>
-                  }
-                </button>
-              </div>
-            </div>
 
             {/* WORKER MUNICÍPIOS */}
             <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
@@ -886,6 +987,94 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* WORKER CONSULTA UF */}
+            <div className="bg-slate-900/40 border border-emerald-500/15 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-emerald-500/10 rounded-xl"><RefreshCw size={20} className="text-emerald-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Consulta UF</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Indexa por UF com curl_cffi (TLS Chrome)</p>
+                </div>
+              </div>
+
+              {/* Badge recomendado */}
+              <div className="mb-5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black text-emerald-400 uppercase tracking-widest">
+                ✦ Recomendado para fornecedor em massa
+              </div>
+
+              {/* Alerta de contexto */}
+              <div className="mb-5 px-3 py-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15 text-xs text-emerald-300/80">
+                <span className="font-black text-emerald-400">Por quê?</span> Usa <code className="text-slate-300">curl_cffi</code> que replica o TLS do Chrome — contorna o fingerprinting do PNCP.
+                Retorna <code className="text-slate-300">nomeRazaoSocialFornecedor</code> nativamente em cada contrato.
+              </div>
+
+              {/* Status */}
+              {workersStatus?.consulta_uf && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.consulta_uf.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.consulta_uf.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.consulta_uf.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.consulta_uf.running
+                    ? <><Loader2 size={13} className="animate-spin" /> A correr (UFs: {typeof workersStatus.consulta_uf.ufs === 'string' ? workersStatus.consulta_uf.ufs : workersStatus.consulta_uf.ufs?.join(', ')})...</>
+                    : workersStatus.consulta_uf.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.consulta_uf.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.consulta_uf.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> {workersStatus.consulta_uf.ultimo_resultado.total_inseridos?.toLocaleString()} inseridos · {workersStatus.consulta_uf.ultimo_resultado.ufs_processadas} UFs</>
+                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                  }
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                      UFs (vazio = 27)
+                    </label>
+                    <input
+                      type="text"
+                      value={consultaUfUfs}
+                      onChange={e => setConsultaUfUfs(e.target.value.toUpperCase())}
+                      placeholder="Ex: GO,SP"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                      Janelas anuais
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={consultaUfJanelas}
+                      onChange={e => setConsultaUfJanelas(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-600">~5-15 min por UF · Todas as UFs: ~2-5h</p>
+
+                <button
+                  onClick={triggerWorkerConsultaUf}
+                  disabled={!!workerAction || workersStatus?.consulta_uf?.running}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
+                    bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {workerAction === 'consulta_uf'
+                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
+                    : <><Play size={14} /> Indexar por UF (curl_cffi)</>
+                  }
+                </button>
+              </div>
+            </div>
+
 
           </div>
         </div>

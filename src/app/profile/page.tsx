@@ -4,7 +4,7 @@ import Image from 'next/image';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { User, Building2, Users, AlertTriangle, Sparkles, LogOut, RefreshCw, ChevronUp, ChevronDown, Lock } from 'lucide-react';
+import { User, Building2, AlertTriangle, Sparkles, LogOut, RefreshCw, Lock, CreditCard, Shield, ChevronRight, ArrowLeft } from 'lucide-react';
 
 import CompanyProfileForm from '../../components/CompanyProfileForm'; 
 import PersonalDataForm from '../../components/PersonalDataForm';
@@ -197,196 +197,301 @@ function ProfileContent() {
   };
 
   if (isLoading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-black text-slate-400 uppercase animate-pulse">A carregar perfil...</div>;
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-600 animate-pulse" />
+          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">A carregar perfil...</p>
+        </div>
+      </div>
+    );
   }
 
   const initial = (userData?.name || userData?.email || 'B').charAt(0).toUpperCase();
 
-  return (
-    <div className="min-h-screen bg-slate-50/50 py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-5xl mx-auto space-y-8">
-        
-        {/* CABEÇALHO */}
-        <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6 pb-6 border-b border-slate-200">
-          <div className="flex items-center gap-5">
-            <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-2xl font-black shadow-lg border-2 border-white">
-              {initial}
-            </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black text-slate-900">{userData?.name || 'Utilizador Bawzi'}</h1>
-                <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest">
-                  ⭐ Nível {userTier}
-                </span>
-              </div>
-              <p className="text-slate-500 font-medium">{userData?.email}</p>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-3">
-            <button onClick={() => { localStorage.clear(); router.push('/'); }} className="text-sm font-bold text-slate-400 hover:text-rose-600 flex items-center gap-1.5 transition-colors">
-              <LogOut size={16} /> Terminar Sessão
-            </button>
-            <button onClick={() => router.push('/workspace')} className="text-xs font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-colors">
-              Voltar ao Radar ↗
-            </button>
-          </div>
-        </div>
+  const navItems = [
+    { id: 'sec-perfil',      label: 'Dados do Perfil',    icon: User },
+    { id: 'sec-empresas',    label: 'Empresas',            icon: Building2 },
+    { id: 'sec-seguranca',   label: 'Segurança',           icon: Shield },
+    { id: 'sec-equipa',      label: 'Equipa',              icon: User },
+    { id: 'sec-assinatura',  label: 'Assinatura',          icon: CreditCard },
+    { id: 'sec-risco',       label: 'Zona de Risco',       icon: AlertTriangle },
+  ];
 
-        {/* ======================================================= */}
-        {/* ESTRUTURA VERTICAL: CONTA > EMPRESAS > SEGURANÇA       */}
-        {/* ======================================================= */}
-        <div className="flex flex-col gap-8 mb-8">
-          
-          {/* 🛡️ CARTÃO 1: CONFIGURAÇÕES DA CONTA */}
-          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col w-full">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="p-3 bg-slate-50 text-slate-700 rounded-2xl border border-slate-100">
-                <User size={22} />
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100">
+
+      {/* ── Top bar (mobile only) ── */}
+      <div className="lg:hidden sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+        <button onClick={() => router.push('/workspace')} className="flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors">
+          <ArrowLeft size={16} /> Radar
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-sm font-black">{initial}</div>
+          <span className="text-sm font-black text-slate-900">{userData?.name?.split(' ')[0]}</span>
+        </div>
+        <button onClick={() => { localStorage.clear(); router.push('/'); }} className="text-xs font-bold text-slate-400 hover:text-rose-600 transition-colors">
+          <LogOut size={16} />
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12">
+        <div className="lg:flex lg:gap-8 xl:gap-10 lg:items-start">
+
+          {/* ══════════════════════════════════════════════
+              SIDEBAR — sticky, desktop only
+          ══════════════════════════════════════════════ */}
+          <aside className="hidden lg:flex flex-col gap-4 w-60 xl:w-64 shrink-0 sticky top-10 self-start">
+
+            {/* Avatar card */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col items-center text-center gap-3">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center text-2xl font-black shadow-md ring-4 ring-indigo-100">
+                {initial}
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">Configurações da Conta</h2>
-                <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Dados do Perfil</p>
+                <p className="font-black text-slate-900 text-sm leading-tight">{userData?.name || 'Utilizador Bawzi'}</p>
+                <p className="text-[11px] text-slate-400 font-medium mt-0.5 truncate max-w-[180px]">{userData?.email}</p>
               </div>
+              <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                ⭐ Nível {userTier}
+              </span>
             </div>
-            
-            <PersonalDataForm userData={userData} token={authToken} onUpdate={fetchData} />
-          </div>
 
-          {/* 🏢 CARTÃO 2: EMPRESAS EM MONITORIZAÇÃO (WORKSPACE) */}
-          <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 flex flex-col w-full">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl border border-indigo-100">
-                  <Building2 size={22} />
+            {/* Nav */}
+            <nav className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              {navItems.map((item, i) => {
+                const Icon = item.icon;
+                const isDanger = item.id === 'sec-risco';
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => scrollTo(item.id)}
+                    className={[
+                      'w-full flex items-center gap-3 px-4 py-3 text-sm font-bold transition-colors text-left group',
+                      i < navItems.length - 1 ? 'border-b border-slate-100' : '',
+                      isDanger
+                        ? 'text-red-500 hover:bg-red-50'
+                        : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700',
+                    ].join(' ')}
+                  >
+                    <Icon size={15} className={isDanger ? 'text-red-400' : 'text-slate-400 group-hover:text-indigo-500 transition-colors'} />
+                    {item.label}
+                    <ChevronRight size={13} className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => router.push('/workspace')}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-colors"
+              >
+                <ArrowLeft size={14} /> Voltar ao Radar
+              </button>
+              <button
+                onClick={() => { localStorage.clear(); router.push('/'); }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 hover:text-rose-600 text-xs font-bold rounded-xl transition-colors"
+              >
+                <LogOut size={14} /> Terminar Sessão
+              </button>
+            </div>
+          </aside>
+
+          {/* ══════════════════════════════════════════════
+              MAIN CONTENT
+          ══════════════════════════════════════════════ */}
+          <main className="flex-1 min-w-0 flex flex-col gap-5">
+
+            {/* Page title (desktop) */}
+            <div className="hidden lg:block mb-2">
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Definições</h1>
+              <p className="text-sm text-slate-500 font-medium mt-1">Gerir o seu perfil, segurança e assinatura.</p>
+            </div>
+
+            {/* ── SECÇÃO: DADOS DO PERFIL ── */}
+            <section id="sec-perfil" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-4 px-6 py-5 border-b border-slate-100">
+                <div className="p-2.5 bg-slate-100 text-slate-600 rounded-xl">
+                  <User size={18} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Empresas em Monitorização</h2>
-                  <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Slots do Workspace</p>
+                  <h2 className="text-base font-black text-slate-900">Dados do Perfil</h2>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Nome e e-mail da conta</p>
                 </div>
               </div>
-            </div>
-
-            <div className="pt-8 border-t border-slate-100">
-              <CompanyProfileForm 
-                token={authToken} 
-                userTier={userTier} 
-                companyData={userData?.companies} 
-                onCnpjDetected={(cnpj: string) => {
-                  setActiveCnpj(cnpj);
-                  localStorage.setItem('bawzi_active_cnpj', cnpj);
-                }}
-                onUpdate={fetchData}
-              />
-            </div>
-          </div>
-          
-        </div>
-
-
-        {/* ======================================================= */}
-        {/* LINHA 2: SEGURANÇA DA CONTA (1 COLUNA - LARGURA TOTAL)  */}
-        {/* ======================================================= */}
-        <div className="bg-white rounded-[2rem] p-8 sm:p-10 shadow-sm border border-slate-200 mb-8">
-          <div className="flex items-center gap-4 mb-8">
-            <div className="p-3 bg-slate-900 text-white rounded-2xl border border-slate-800 shadow-md">
-              <Lock size={22} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Segurança da Conta</h2>
-              <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">Atualize a sua senha de acesso</p>
-            </div>
-          </div>
-
-          {/* O COMPONENTE DE SENHA É INJETADO AQUI */}
-          <PasswordChangeForm token={authToken} />
-        </div>
-
-        {/* WORKSPACE E EQUIPA */}
-        <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200">
-          <TeamManager userToken={authToken} tier={userTier} members={members} is_admin={isAdmin} onUpdate={fetchData} />
-        </div>
-
-        {/* FATURAMENTO */}
-        {userTier > 1 ? (
-          <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
-              <div className="space-y-1">
-                <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-md mb-2">
-                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span> Assinatura Ativa
-                </span>
-                <h3 className="text-2xl font-black text-slate-900">Nível {userTier}</h3>
-                <p className="text-sm font-medium text-slate-500">Acesso total aos recursos premium.</p>
+              <div className="p-6">
+                <PersonalDataForm userData={userData} token={authToken} onUpdate={fetchData} />
               </div>
-              <div className="flex items-center gap-3">
-                <button onClick={forceManualSync} disabled={isSyncing} className="px-5 py-3.5 bg-white border border-slate-200 text-slate-700 font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2">
-                  <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={16} /> Sync
-                </button>
-                <button onClick={handleManageSubscription} className="px-6 py-3.5 bg-slate-900 text-white hover:bg-violet-600 rounded-xl font-black text-xs uppercase tracking-widest transition-all">
-                  Gerir Faturas ↗
-                </button>
-              </div>
-            </div>
-            
-            {invoices.length > 0 && (
-               <div className="border border-slate-100 rounded-2xl overflow-hidden bg-slate-50/50">
-                 <table className="w-full text-left text-xs md:text-sm">
-                   <thead className="bg-slate-100/50">
-                     <tr>
-                       <th className="px-5 py-3 font-black text-slate-700">Data</th>
-                       <th className="px-5 py-3 font-black text-slate-700">Fatura</th>
-                       <th className="px-5 py-3 font-black text-slate-700">Valor</th>
-                       <th className="px-5 py-3 font-black text-slate-700">Status</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-100">
-                     {invoices.map((inv) => (
-                       <tr key={inv.id} className="hover:bg-white transition-colors">
-                         <td className="px-5 py-3 text-slate-500 font-medium">{inv.date}</td>
-                         <td className="px-5 py-3 text-slate-900 font-bold">{inv.number}</td>
-                         <td className="px-5 py-3 text-slate-900 font-black">{inv.amount}</td>
-                         <td className="px-5 py-3"><span className="text-[9px] font-black uppercase bg-emerald-100 text-emerald-700 px-2 py-1 rounded">Pago</span></td>
-                       </tr>
-                     ))}
-                   </tbody>
-                 </table>
-               </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-slate-950 rounded-[2rem] p-10 border border-slate-800 relative overflow-hidden group">
-            <div className="absolute -right-20 -top-20 w-64 h-64 bg-violet-600/30 blur-[80px] rounded-full group-hover:bg-violet-500/40 transition-colors duration-700"></div>
-            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles size={20} className="text-amber-400" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">Funcionalidade Premium Bloqueada</span>
+            </section>
+
+            {/* ── SECÇÃO: EMPRESAS ── */}
+            <section id="sec-empresas" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-4 px-6 py-5 border-b border-slate-100">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Building2 size={18} />
                 </div>
-                <h3 className="text-2xl font-black text-white mb-2">Inteligência Competitiva</h3>
-                <p className="text-slate-400 text-sm font-medium max-w-xl">Desbloqueie o motor de análise de riscos e compliance total para vencer licitações.</p>
+                <div>
+                  <h2 className="text-base font-black text-slate-900">Empresas em Monitorização</h2>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Slots do workspace</p>
+                </div>
               </div>
-              <Link href="/plans" className="px-8 py-4 bg-white text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl hover:scale-105 transition-all">
-                Ver Planos 🚀
-              </Link>
-            </div>
-          </div>
-        )}
+              <div className="p-6">
+                <CompanyProfileForm
+                  token={authToken}
+                  userTier={userTier}
+                  companyData={userData?.companies}
+                  onCnpjDetected={(cnpj: string) => {
+                    setActiveCnpj(cnpj);
+                    localStorage.setItem('bawzi_active_cnpj', cnpj);
+                  }}
+                  onUpdate={fetchData}
+                />
+              </div>
+            </section>
 
-        {/* ZONA DE RISCO */}
-        <div className="mt-12 border border-red-200 bg-red-50/50 rounded-[2rem] p-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-white text-red-500 rounded-xl border border-red-100 shadow-sm"><AlertTriangle size={24} /></div>
-              <div>
-                <h3 className="text-lg font-black text-red-900 mb-1">Zona de Risco</h3>
-                <p className="text-red-700 font-medium text-sm max-w-xl">A exclusão da conta eliminará permanentemente todos os seus dados e histórico.</p>
+            {/* ── SECÇÃO: SEGURANÇA ── */}
+            <section id="sec-seguranca" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-4 px-6 py-5 border-b border-slate-100">
+                <div className="p-2.5 bg-slate-900 text-white rounded-xl">
+                  <Lock size={18} />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-slate-900">Segurança da Conta</h2>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Actualizar senha de acesso</p>
+                </div>
               </div>
-            </div>
-            <button onClick={handleDeleteAccount} disabled={isDeleting} className="px-6 py-3.5 bg-white border border-red-200 text-red-600 font-black uppercase tracking-widest text-[10px] rounded-xl hover:bg-red-600 hover:text-white transition-all">
-              {isDeleting ? 'A apagar...' : 'Excluir Conta'}
-            </button>
-          </div>
+              <div className="p-6">
+                <PasswordChangeForm token={authToken} />
+              </div>
+            </section>
+
+            {/* ── SECÇÃO: EQUIPA ── */}
+            <section id="sec-equipa" className="scroll-mt-24 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6">
+                <TeamManager userToken={authToken} tier={userTier} members={members} is_admin={isAdmin} onUpdate={fetchData} />
+              </div>
+            </section>
+
+            {/* ── SECÇÃO: ASSINATURA ── */}
+            <section id="sec-assinatura" className="scroll-mt-24">
+              {userTier > 1 ? (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 py-5 border-b border-slate-100">
+                    <div className="flex items-center gap-4">
+                      <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                        <CreditCard size={18} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-base font-black text-slate-900">Assinatura Ativa</h2>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Nível {userTier}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Acesso total aos recursos premium</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pl-0 sm:pl-4">
+                      <button
+                        onClick={forceManualSync}
+                        disabled={isSyncing}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-600 font-black text-xs uppercase tracking-widest rounded-xl hover:bg-slate-100 transition-all"
+                      >
+                        <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={14} /> Sync
+                      </button>
+                      <button
+                        onClick={handleManageSubscription}
+                        className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-violet-700 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all"
+                      >
+                        Gerir Faturas <ChevronRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+                  {invoices.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <th className="px-6 py-3 font-black text-slate-500 uppercase tracking-wider">Data</th>
+                            <th className="px-6 py-3 font-black text-slate-500 uppercase tracking-wider">Fatura</th>
+                            <th className="px-6 py-3 font-black text-slate-500 uppercase tracking-wider">Valor</th>
+                            <th className="px-6 py-3 font-black text-slate-500 uppercase tracking-wider">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {invoices.map((inv) => (
+                            <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-3.5 text-slate-500 font-medium">{inv.date}</td>
+                              <td className="px-6 py-3.5 text-slate-900 font-bold">{inv.number}</td>
+                              <td className="px-6 py-3.5 text-slate-900 font-black">{inv.amount}</td>
+                              <td className="px-6 py-3.5">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
+                                  <span className="w-1 h-1 bg-emerald-500 rounded-full" /> Pago
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-950 rounded-2xl border border-slate-800 p-8 relative overflow-hidden group">
+                  <div className="absolute -right-16 -top-16 w-56 h-56 bg-violet-600/25 blur-[72px] rounded-full group-hover:bg-violet-500/35 transition-colors duration-700 pointer-events-none" />
+                  <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <Sparkles size={16} className="text-amber-400" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">Premium Bloqueado</span>
+                      </div>
+                      <h3 className="text-xl font-black text-white mb-1.5">Inteligência Competitiva</h3>
+                      <p className="text-slate-400 text-sm font-medium max-w-sm">Análise de riscos e compliance total para vencer licitações.</p>
+                    </div>
+                    <Link
+                      href="/plans"
+                      className="shrink-0 px-6 py-3 bg-white text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl hover:scale-105 transition-all shadow-md"
+                    >
+                      Ver Planos 🚀
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* ── SECÇÃO: ZONA DE RISCO ── */}
+            <section id="sec-risco" className="scroll-mt-24">
+              <div className="rounded-2xl border border-red-200 bg-white overflow-hidden">
+                <div className="flex items-center gap-4 px-6 py-5 bg-red-50 border-b border-red-100">
+                  <div className="p-2.5 bg-white text-red-500 rounded-xl border border-red-100 shadow-sm">
+                    <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black text-red-900">Zona de Risco</h2>
+                    <p className="text-[11px] font-bold text-red-400 uppercase tracking-widest mt-0.5">Acções irreversíveis</p>
+                  </div>
+                </div>
+                <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <p className="text-sm font-medium text-slate-600 max-w-md">A exclusão da conta eliminará permanentemente todos os seus dados e histórico.</p>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={isDeleting}
+                    className="shrink-0 px-5 py-2.5 bg-white border border-red-200 text-red-600 font-black uppercase tracking-widest text-[10px] rounded-xl hover:bg-red-600 hover:text-white hover:border-red-600 transition-all"
+                  >
+                    {isDeleting ? 'A apagar...' : 'Excluir Conta'}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+          </main>
         </div>
-
       </div>
     </div>
   );

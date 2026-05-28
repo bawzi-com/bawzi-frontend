@@ -15,13 +15,13 @@ interface ContratoVencendo {
   dias_restantes?: number | null;
   is_oportunidade?: boolean;
   metadados?: {
-    orgao_nome?: string;
-    uf?: string;
-    municipio?: string;
-    fornecedor_nome?: string;
-    fornecedor_cnpj?: string;
-    modalidade?: string;
-    situacao?: string;
+    orgao_nome?: string | null;
+    uf?: string | null;
+    municipio?: string | null;
+    fornecedor_nome?: string | null;
+    fornecedor_cnpj?: string | null;
+    modalidade?: string | null;
+    situacao?: string | null;
   };
   valores?: {
     global?: number;
@@ -495,10 +495,11 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                 const u = urgencia(c.dias_restantes);
                 const valor = getValorContrato(c);
                 const orgao = c.metadados?.orgao_nome || 'Órgão não identificado';
-                const fornecedor = c.metadados?.fornecedor_nome;
-                const ufContrato = c.metadados?.uf;
-                const municipio  = c.metadados?.municipio;
-                const fornecedorCnpj = c.metadados?.fornecedor_cnpj;
+                // Fornecedor: schema A usa metadados.fornecedor_nome, schema B usa raiz
+                const fornecedor = c.metadados?.fornecedor_nome || (c as any).fornecedor_nome || '';
+                const fornecedorCnpj = c.metadados?.fornecedor_cnpj || (c as any).fornecedor_cnpj || '';
+                const ufContrato = c.metadados?.uf || (c as any).uf;
+                const municipio  = c.metadados?.municipio || (c as any).municipio;
                 const isOp = !!c.is_oportunidade;
                 const pncpUrl = ncpParaUrl(c.numeroControlePNCP || '');
 
@@ -607,9 +608,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                             )}
                           </div>
                         ) : (
-                          <span className="text-[11px] text-slate-400 italic">
-                            Não identificado
-                          </span>
+                          <span className="text-[11px] text-slate-400 italic">Fornecedor não identificado</span>
                         )}
                       </div>
 

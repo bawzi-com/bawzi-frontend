@@ -147,10 +147,15 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
       if (res.ok) {
         if (data.url) {
-          // Checkout hosted: redireciona para a página do Stripe
+          // Portal/Checkout Stripe — redireciona para lá.
+          // Safety net: reseta o loading se a navegação não acontecer em 8s.
           sessionStorage.setItem('returning_from_portal', 'true');
+          const navTimeout = setTimeout(() => {
+            setIsCheckoutLoading(false);
+            alert('Redirecionamento demorou. Tente novamente ou acesse o portal pelo perfil.');
+          }, 8000);
+          window.addEventListener('beforeunload', () => clearTimeout(navTimeout), { once: true });
           window.location.href = data.url;
-          // Nota: isCheckoutLoading permanece true propositadamente até a página mudar
         } else if (data.client_secret) {
           // Embedded checkout: abre o modal com o formulário do Stripe
           setStripeSecret(data.client_secret);
