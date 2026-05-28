@@ -79,7 +79,7 @@ export default function AnalysisResults({
           url: window.location.href,
         });
       } catch {
-        /* utilizador cancelou */
+      /* usuário cancelou */
       }
     } else {
       onShare();
@@ -128,7 +128,7 @@ export default function AnalysisResults({
             </div>
             <button
               onClick={onReset}
-              className="shrink-0 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors text-sm flex items-center gap-2"
+              className="shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center gap-2 shadow-sm"
             >
               + {resetLabel}
             </button>
@@ -144,7 +144,7 @@ export default function AnalysisResults({
               {/* Exportar PDF */}
               <button
                 onClick={onExportPDF}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-all shadow-sm"
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm"
               >
                 <Download size={13} /> Exportar PDF
               </button>
@@ -157,14 +157,14 @@ export default function AnalysisResults({
                 <Printer size={13} /> Imprimir
               </button>
 
-              {/* Partilhar por e-mail (só com conta) */}
+              {/* Compartilhar por e-mail (só com conta) */}
               {token && analysisId && (
                 <button
                   onClick={onShare}
                   disabled={isSharing}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all disabled:opacity-60"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-sky-50 hover:border-sky-200 hover:text-sky-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all disabled:opacity-60"
                 >
-                  <Mail size={13} /> {isSharing ? 'A enviar...' : 'Partilhar por E-mail'}
+                  <Mail size={13} /> {isSharing ? 'Enviando...' : 'Compartilhar por e-mail'}
                 </button>
               )}
 
@@ -184,9 +184,9 @@ export default function AnalysisResults({
               {typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'share' in navigator && (
                 <button
                   onClick={handleNativeShare}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all"
                 >
-                  <Share2 size={13} /> Partilhar
+                  <Share2 size={13} /> Compartilhar
                 </button>
               )}
 
@@ -200,7 +200,7 @@ export default function AnalysisResults({
             onClick={() => onSetActiveTab('analise')}
             className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
               activeTab === 'analise'
-                ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-1 ring-slate-900'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 ring-1 ring-emerald-600'
                 : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
             }`}
           >
@@ -212,7 +212,7 @@ export default function AnalysisResults({
             onClick={() => onSetActiveTab('concorrentes')}
             className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
               activeTab === 'concorrentes'
-                ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 ring-1 ring-slate-900'
+                ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 ring-1 ring-sky-600'
                 : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
             }`}
           >
@@ -374,28 +374,41 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
   );
 }
 
+// ─── Helper: detecta se o edital já expirou ───────────────────────────────────
+
+// Só 'encerramento' e 'recebimento' indicam prazo de submissão.
+// 'abertura' = sessão de análise (ocorre APÓS o prazo) — não é indicador de expiração.
+const LABELS_CHAVE_EXPIRACAO = ['encerramento', 'recebimento', 'prazo', 'limite'];
+
+function getDataExpirada(result: AnalysisResult) {
+  if (!result.datas_criticas?.length) return null;
+  const agora = new Date();
+  return result.datas_criticas.find(dc => {
+    if (!dc.data_iso) return false;
+    const isChave = LABELS_CHAVE_EXPIRACAO.some(k => dc.label.toLowerCase().includes(k));
+    return isChave && new Date(dc.data_iso) < agora;
+  }) ?? null;
+}
+
 // ─── Banner edital expirado ───────────────────────────────────────────────────
 
 function ExpiredBanner({ result }: { result: AnalysisResult }) {
-  if (!result.datas_criticas || result.datas_criticas.length === 0) return null;
-  const agora = new Date();
-  const labelsChave = ['abertura', 'proposta', 'recebimento', 'encerramento'];
-  const dataExpirada = result.datas_criticas.find(dc => {
-    if (!dc.data_iso) return false;
-    const isChave = labelsChave.some(k => dc.label.toLowerCase().includes(k));
-    return isChave && new Date(dc.data_iso) < agora;
-  });
+  const dataExpirada = getDataExpirada(result);
   if (!dataExpirada) return null;
   const formatted = new Date(dataExpirada.data_iso!).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
   return (
-    <div className="flex items-start gap-4 bg-red-950 border border-red-800 rounded-2xl px-6 py-4">
-      <XCircle size={24} className="shrink-0 mt-0.5 text-red-300" />
-      <div>
-        <p className="text-sm font-black text-red-300 uppercase tracking-widest mb-0.5">Prazo de Participação Encerrado</p>
-        <p className="text-xs font-medium text-red-400 leading-relaxed">
-          A <strong className="text-red-300">{dataExpirada.label}</strong> ocorreu em <strong className="text-red-300">{formatted}</strong>. Este edital já não aceita propostas — a análise serve apenas para referência histórica ou estudo de mercado.
+    <div className="flex items-center gap-4 bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3.5">
+      <CalendarX size={20} className="shrink-0 text-slate-400" />
+      <div className="flex-1 min-w-0">
+        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Edital encerrado</span>
+        <p className="text-sm font-medium text-slate-300 leading-snug mt-0.5">
+          A <strong className="text-white">{dataExpirada.label}</strong> ocorreu em <strong className="text-white">{formatted}</strong>.{' '}
+          <span className="text-slate-400">Análise disponível apenas para referência e estudo de mercado.</span>
         </p>
       </div>
+      <span className="shrink-0 text-[9px] font-black uppercase tracking-widest bg-slate-800 border border-slate-700 text-slate-400 px-2.5 py-1 rounded-full">
+        Histórico
+      </span>
     </div>
   );
 }
@@ -403,6 +416,8 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
 // ─── Score + datas críticas ───────────────────────────────────────────────────
 
 function ScoreHeader({ result }: { result: AnalysisResult }) {
+  const isExpired = !!getDataExpirada(result);
+
   return (
     <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-14 bg-slate-50 border border-slate-200 rounded-[1.5rem] p-8 print:border-none print:p-0">
       {/* Score circle */}
@@ -412,35 +427,50 @@ function ScoreHeader({ result }: { result: AnalysisResult }) {
             <circle cx="50" cy="50" r="42" className="stroke-slate-200" strokeWidth="6" fill="none" />
             <circle
               cx="50" cy="50" r="42"
-              className={`transition-all duration-1000 ease-out ${result.score >= 70 ? 'stroke-emerald-500' : result.score >= 45 ? 'stroke-amber-500' : 'stroke-red-500'}`}
+              className={`transition-all duration-1000 ease-out ${isExpired ? 'stroke-slate-400' : result.score >= 70 ? 'stroke-emerald-500' : result.score >= 45 ? 'stroke-amber-500' : 'stroke-red-500'}`}
               strokeWidth="6" fill="none" strokeLinecap="round"
               style={{ strokeDasharray: 264, strokeDashoffset: 264 - (264 * result.score) / 100 }}
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-4xl font-black text-slate-900 tracking-tighter leading-none">{result.score}</span>
+            <span className={`text-4xl font-black tracking-tighter leading-none ${isExpired ? 'text-slate-400' : 'text-slate-900'}`}>
+              {result.score}
+            </span>
           </div>
         </div>
         <div>
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Bawzi Score</p>
-          <h3 className={`text-lg font-black uppercase tracking-widest ${getScoreColor(result.score)}`}>
-            {result.classification}
-          </h3>
-          {result.pricing_intelligence?.financial_verdict && (
-            <p className="text-sm text-slate-600 font-medium mt-1 max-w-sm">
-              {result.pricing_intelligence.financial_verdict}
-            </p>
+          {isExpired ? (
+            <>
+              <h3 className="text-lg font-black uppercase tracking-widest text-slate-400">
+                Referência histórica
+              </h3>
+              <p className="text-xs font-medium text-slate-400 mt-1 max-w-sm">
+                Score de {result.score}/100 — edital já encerrado.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className={`text-lg font-black uppercase tracking-widest ${getScoreColor(result.score)}`}>
+                {result.classification}
+              </h3>
+              {result.pricing_intelligence?.financial_verdict && (
+                <p className="text-sm text-slate-600 font-medium mt-1 max-w-sm">
+                  {result.pricing_intelligence.financial_verdict}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
 
       {/* Datas críticas */}
-      <DatasBlock result={result} />
+      <DatasBlock result={result} isExpired={isExpired} />
     </div>
   );
 }
 
-function DatasBlock({ result }: { result: AnalysisResult }) {
+function DatasBlock({ result, isExpired = false }: { result: AnalysisResult; isExpired?: boolean }) {
   if (result.datas_criticas && result.datas_criticas.length > 0) {
     const visible = result.datas_criticas.filter(d => d.data_iso).slice(0, 3);
     if (visible.length === 0) return null;
@@ -449,12 +479,19 @@ function DatasBlock({ result }: { result: AnalysisResult }) {
         {visible.map((dc, i) => {
           const date = dc.data_iso ? new Date(dc.data_iso) : null;
           const fmt = date ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : dc.data_iso;
+          const isPast = date ? date < new Date() : false;
           return (
             <div key={i}>
-              <span className={`block text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${dc.urgente ? 'text-red-500' : 'text-slate-400'}`}>
-                {dc.urgente && <Zap size={10} />}{dc.label}
+              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
+                {isPast
+                  ? <CalendarX size={10} className="text-slate-400" />
+                  : dc.urgente ? <Zap size={10} className="text-red-500" /> : null
+                }
+                {dc.label}
               </span>
-              <span className="text-sm font-bold text-slate-900">{fmt}</span>
+              <span className={`text-sm font-bold ${isExpired || isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                {fmt}
+              </span>
             </div>
           );
         })}
@@ -474,8 +511,8 @@ function DatasBlock({ result }: { result: AnalysisResult }) {
   if (!propValida && !impValida) return null;
   return (
     <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
-      {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className="text-sm font-bold text-slate-900 flex items-center gap-1"><CalendarDays size={14} className="text-slate-500" /> {propValida}</span></div>}
-      {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className="text-sm font-bold text-slate-900 flex items-center gap-1"><AlertCircle size={14} className="text-red-500" /> {impValida}</span></div>}
+      {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><CalendarDays size={14} className="text-slate-400 shrink-0" /> {propValida}</span></div>}
+      {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><AlertCircle size={14} className={isExpired ? 'text-slate-400' : 'text-red-500'} /> {impValida}</span></div>}
     </div>
   );
 }

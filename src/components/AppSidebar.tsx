@@ -41,13 +41,15 @@ function FeatureBadge({
   color = 'slate',
 }: {
   label: string;
-  color?: 'slate' | 'teal' | 'amber' | 'blue' | 'violet';
+  color?: 'slate' | 'teal' | 'emerald' | 'amber' | 'blue' | 'sky' | 'violet';
 }) {
   const styles: Record<string, string> = {
     slate:  'bg-slate-100  text-slate-600  border-slate-200',
     teal:   'bg-teal-50    text-teal-700   border-teal-200',
+    emerald:'bg-emerald-50 text-emerald-700 border-emerald-200',
     amber:  'bg-amber-50   text-amber-700  border-amber-200',
     blue:   'bg-blue-50    text-blue-700   border-blue-200',
+    sky:    'bg-sky-50     text-sky-700    border-sky-200',
     violet: 'bg-violet-50  text-violet-700 border-violet-200',
   };
   return (
@@ -102,7 +104,7 @@ export default function AppSidebar({
           <>
             <div className="flex items-center justify-between px-3 py-2">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-slate-900 flex items-center justify-center text-white text-[10px] font-black shrink-0">
+                <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[10px] font-black shrink-0">
                   {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
                 </div>
                 <span className="text-[12px] font-black text-slate-700 truncate max-w-[100px]">
@@ -123,13 +125,13 @@ export default function AppSidebar({
         <button
           onClick={() => onSetActiveTab('workspace')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-            isAnalise ? 'bg-slate-900' : 'hover:bg-slate-50'
+            isAnalise ? 'bg-emerald-600' : 'hover:bg-emerald-50'
           }`}
         >
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-            isAnalise ? 'bg-white/15' : 'bg-slate-100 border border-slate-200'
+            isAnalise ? 'bg-white/15' : 'bg-emerald-50 border border-emerald-100'
           }`}>
-            <Zap size={16} className={isAnalise ? 'text-white fill-white' : 'text-slate-700'} strokeWidth={2.5} />
+            <Zap size={16} className={isAnalise ? 'text-white fill-white' : 'text-emerald-600'} strokeWidth={2.5} />
           </div>
           <div className="flex-1 text-left min-w-0">
             <p className={`text-[13px] font-black leading-none mb-1 ${isAnalise ? 'text-white' : 'text-slate-800'}`}>
@@ -139,20 +141,20 @@ export default function AppSidebar({
               Pesquise e analise editais
             </p>
           </div>
-          {isAnalise ? <ActiveDot /> : <FeatureBadge label="IA" color="slate" />}
+          {isAnalise ? <ActiveDot /> : <FeatureBadge label="IA" color="emerald" />}
         </button>
 
         {/* ── Histórico ──────────────────────────────────── */}
         <button
           onClick={() => onSetActiveTab('history')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-            activeTab === 'history' ? 'bg-slate-900' : 'hover:bg-slate-50'
+            activeTab === 'history' ? 'bg-sky-600' : 'hover:bg-sky-50'
           }`}
         >
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-            activeTab === 'history' ? 'bg-white/15' : 'bg-slate-100 border border-slate-200'
+            activeTab === 'history' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
           }`}>
-            <BookOpen size={16} className={activeTab === 'history' ? 'text-white' : 'text-slate-500'} />
+            <BookOpen size={16} className={activeTab === 'history' ? 'text-white' : 'text-sky-600'} />
           </div>
           <div className="flex-1 text-left min-w-0">
             <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'history' ? 'text-white' : 'text-slate-800'}`}>
@@ -162,7 +164,7 @@ export default function AppSidebar({
               Análises anteriores salvas
             </p>
           </div>
-          {activeTab === 'history' && <ActiveDot />}
+          {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
         </button>
 
         {/* ── Para Você — Feed CNAE (autenticados) ────────── */}
@@ -283,13 +285,13 @@ export default function AppSidebar({
             <button
               onClick={() => onSetActiveTab('capital')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'capital' ? 'bg-blue-600' : 'hover:bg-blue-50'
+                activeTab === 'capital' ? 'bg-sky-600' : 'hover:bg-sky-50'
               }`}
             >
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'capital' ? 'bg-white/15' : 'bg-blue-50 border border-blue-100'
+                activeTab === 'capital' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
               }`}>
-                <DollarSign size={16} className={activeTab === 'capital' ? 'text-white' : 'text-blue-600'} />
+                <DollarSign size={16} className={activeTab === 'capital' ? 'text-white' : 'text-sky-600'} />
               </div>
               <div className="flex-1 text-left min-w-0">
                 <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'capital' ? 'text-white' : 'text-slate-800'}`}>
@@ -299,7 +301,7 @@ export default function AppSidebar({
                   Crédito inteligente · Pré-qualificação
                 </p>
               </div>
-              {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="blue" />}
+              {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
             </button>
           )
         )}
@@ -320,15 +322,15 @@ export default function AppSidebar({
           <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center border border-slate-100 group-hover:scale-110 transition-transform shadow-inner">
             <ScanSearch size={28} />
           </div>
-          <h3 className="text-lg font-black text-slate-900 mb-2">Modo Anónimo</h3>
+          <h3 className="text-lg font-black text-slate-900 mb-2">Modo anônimo</h3>
           <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">
             Inicie sessão para ativar o Matchmaker de CNAE e salvar análises.
           </p>
           <button
             onClick={() => onShowAuthModal('login')}
-            className="w-full py-3.5 bg-slate-100 text-slate-900 font-black rounded-xl hover:bg-slate-200 transition-colors active:scale-95 border border-slate-200"
+            className="w-full py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 transition-colors active:scale-95 border border-emerald-600 shadow-sm"
           >
-            Entrar na Conta
+            Entrar na conta
           </button>
         </div>
       )}
@@ -351,7 +353,7 @@ export default function AppSidebar({
             { bg: 'bg-amber-50',   border: 'border-amber-100',   Icon: Scale,        color: 'text-amber-500',  label: 'Agente Jurídico',   desc: 'Fundamentação legal · Impugnações · Lei 14.133/21' },
             { bg: 'bg-emerald-50', border: 'border-emerald-100', Icon: TrendingDown,  color: 'text-emerald-500',label: 'Agente Financeiro', desc: 'Score de deságio · Margens · Viabilidade real' },
             { bg: 'bg-sky-50',     border: 'border-sky-100',     Icon: ShieldCheck,   color: 'text-sky-500',    label: 'Agente Auditor',    desc: 'Armadilhas contratuais · Compliance · Riscos' },
-            { bg: 'bg-slate-900',  border: 'border-slate-900',   Icon: Cpu,           color: 'text-white',      label: 'Neural Matchmaker', desc: 'CNAE vs. edital · Capacidade técnica · Fit' },
+            { bg: 'bg-sky-50',     border: 'border-sky-100',     Icon: Cpu,           color: 'text-sky-500',    label: 'Neural Matchmaker', desc: 'CNAE vs. edital · Capacidade técnica · Fit' },
           ].map(({ bg, border, Icon, color, label, desc }) => (
             <div key={label} className="flex items-start gap-3 px-5 py-4">
               <div className={`w-10 h-10 rounded-xl ${bg} border ${border} flex items-center justify-center shrink-0`}>

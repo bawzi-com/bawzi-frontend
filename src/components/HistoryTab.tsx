@@ -28,6 +28,14 @@ export default function HistoryTab({
   const [analyses, setAnalyses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [isDeletingOne, setIsDeletingOne] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+  const [deleteAllText, setDeleteAllText] = useState('');
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [shareTargetEmail, setShareTargetEmail] = useState('');
+  const [isSharingSelected, setIsSharingSelected] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [selectedAnalysis, setSelectedAnalysis] = useState<any | null>(null);
 
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -79,43 +87,53 @@ export default function HistoryTab({
     });
   };
 
-  const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
+  const handleDeleteAnalysis = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Tem certeza que deseja excluir esta análise? Esta ação não pode ser desfeita.")) return;
+    setDeleteTargetId(id);
+  };
 
+  const confirmDeleteAnalysis = async () => {
+    if (!deleteTargetId || isDeletingOne) return;
+
+    setIsDeletingOne(true);
     try {
       const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${id}`, {
+      const res = await fetch(`${API_URL}/api/analyses/${deleteTargetId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${tokenLocal}` }
       });
 
       if (res.status === 401) {
-        alert("Sua sessão expirou por segurança. Faça login novamente.");
+        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
         localStorage.clear();
         window.location.reload();
         return;
       }
 
       if (res.ok) {
-        setAnalyses(prev => prev.filter((item: any) => item.id !== id));
-        if (selectedAnalysis?.id === id) setSelectedAnalysis(null);
+        setAnalyses(prev => prev.filter((item: any) => item.id !== deleteTargetId));
+        if (selectedAnalysis?.id === deleteTargetId) setSelectedAnalysis(null);
+        setDeleteTargetId(null);
+        setNotice({ type: 'success', message: 'Análise excluída do histórico.' });
       } else {
         const error = await res.json();
-        alert(error.detail || "Erro ao excluir a análise."); 
+        setNotice({ type: 'error', message: error.detail || 'Erro ao excluir a análise.' });
       }
     } catch (err) {
-      alert("Erro de conexão. Tente novamente."); 
+      setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
+    } finally {
+      setIsDeletingOne(false);
     }
   };
 
-  const handleDeleteAllAnalyses = async () => {
+  const handleDeleteAllAnalyses = () => {
     if (analyses.length === 0 || isDeletingAll) return;
+    setDeleteAllText('');
+    setIsDeleteAllOpen(true);
+  };
 
-    const confirmation = prompt(
-      `Esta ação vai excluir TODAS as ${analyses.length} análises do histórico e não pode ser desfeita.\n\nDigite EXCLUIR para confirmar.`
-    );
-    if (confirmation !== 'EXCLUIR') return;
+  const confirmDeleteAllAnalyses = async () => {
+    if (analyses.length === 0 || isDeletingAll || deleteAllText !== 'EXCLUIR') return;
 
     setIsDeletingAll(true);
     try {
@@ -126,7 +144,7 @@ export default function HistoryTab({
       });
 
       if (res.status === 401) {
-        alert("Sua sessão expirou por segurança. Faça login novamente.");
+        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
         localStorage.clear();
         window.location.reload();
         return;
@@ -134,7 +152,7 @@ export default function HistoryTab({
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
-        alert(error?.detail || "Erro ao excluir o histórico.");
+        setNotice({ type: 'error', message: error?.detail || 'Erro ao excluir o histórico.' });
         return;
       }
 
@@ -143,8 +161,11 @@ export default function HistoryTab({
       setFavorites([]);
       setCurrentPage(1);
       localStorage.removeItem('bawzi_favorites');
+      setIsDeleteAllOpen(false);
+      setDeleteAllText('');
+      setNotice({ type: 'success', message: 'Histórico excluído com sucesso.' });
     } catch (err) {
-      alert("Erro de conexão. Tente novamente.");
+      setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
     } finally {
       setIsDeletingAll(false);
     }
@@ -152,9 +173,14 @@ export default function HistoryTab({
 
   const handleShareSelectedAnalysis = async () => {
     if (!selectedAnalysis?.id) return;
-    const targetEmail = prompt('Para qual e-mail deseja partilhar esta análise?');
-    if (!targetEmail || !targetEmail.includes('@')) return;
+    setShareTargetEmail('');
+    setIsShareOpen(true);
+  };
 
+  const confirmShareSelectedAnalysis = async () => {
+    if (!selectedAnalysis?.id || !shareTargetEmail.includes('@') || isSharingSelected) return;
+
+    setIsSharingSelected(true);
     try {
       const tokenLocal = localStorage.getItem('bawzi_token') || token;
       const res = await fetch(`${API_URL}/api/analyses/${selectedAnalysis.id}/share`, {
@@ -163,18 +189,22 @@ export default function HistoryTab({
           'Authorization': `Bearer ${tokenLocal}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ target_email: targetEmail }),
+        body: JSON.stringify({ target_email: shareTargetEmail }),
       });
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
-        alert(error?.detail || 'Erro ao partilhar a análise.');
+        setNotice({ type: 'error', message: error?.detail || 'Erro ao compartilhar a análise.' });
         return;
       }
 
-      alert('Análise partilhada com sucesso.');
+      setIsShareOpen(false);
+      setShareTargetEmail('');
+      setNotice({ type: 'success', message: 'Análise compartilhada com sucesso.' });
     } catch {
-      alert('Erro de conexão. Tente novamente.');
+      setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
+    } finally {
+      setIsSharingSelected(false);
     }
   };
 
@@ -195,6 +225,132 @@ export default function HistoryTab({
     return filteredAnalyses.slice(start, start + itemsPerPage);
   }, [filteredAnalyses, currentPage]);
 
+  const renderHistoryModals = () => (
+    <>
+      {notice && (
+        <div className={`fixed bottom-5 right-5 z-[130] max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl ${
+          notice.type === 'success'
+            ? 'border-emerald-100 bg-emerald-50 text-emerald-800'
+            : notice.type === 'error'
+              ? 'border-red-100 bg-red-50 text-red-800'
+              : 'border-sky-100 bg-sky-50 text-sky-800'
+        }`}>
+          <div className="flex items-start gap-3">
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-current opacity-70" />
+            <p className="leading-relaxed">{notice.message}</p>
+            <button
+              onClick={() => setNotice(null)}
+              className="ml-2 text-current opacity-50 transition-opacity hover:opacity-100"
+              aria-label="Fechar aviso"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      {deleteTargetId && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+              <Trash2 size={20} />
+            </div>
+            <h3 className="text-xl font-black text-slate-950">Excluir esta análise?</h3>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
+              Ela será removida do histórico e esta ação não poderá ser desfeita.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setDeleteTargetId(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteAnalysis}
+                disabled={isDeletingOne}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeletingOne ? 'Excluindo...' : 'Excluir análise'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDeleteAllOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+              <Trash2 size={20} />
+            </div>
+            <h3 className="text-xl font-black text-slate-950">Excluir todo o histórico?</h3>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
+              Todas as {analyses.length} análises salvas serão apagadas. Digite <strong className="text-slate-900">EXCLUIR</strong> para confirmar.
+            </p>
+            <input
+              value={deleteAllText}
+              onChange={(e) => setDeleteAllText(e.target.value)}
+              placeholder="EXCLUIR"
+              className="mt-5 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-red-300 focus:bg-white focus:ring-4 focus:ring-red-500/10"
+            />
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setIsDeleteAllOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDeleteAllAnalyses}
+                disabled={isDeletingAll || deleteAllText !== 'EXCLUIR'}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isDeletingAll ? 'Excluindo...' : 'Excluir tudo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isShareOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+              <ArrowRight size={20} />
+            </div>
+            <h3 className="text-xl font-black text-slate-950">Compartilhar análise</h3>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
+              Envie este detalhe para um e-mail do time ou da diretoria.
+            </p>
+            <input
+              type="email"
+              value={shareTargetEmail}
+              onChange={(e) => setShareTargetEmail(e.target.value)}
+              placeholder="email@empresa.com"
+              className="mt-5 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-800 outline-none transition-all focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+            />
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setIsShareOpen(false)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmShareSelectedAnalysis}
+                disabled={isSharingSelected || !shareTargetEmail.includes('@')}
+                className="rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isSharingSelected ? 'Enviando...' : 'Compartilhar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   if (!isMounted) return null;
 
   if (isLoading) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">Carregando o cofre estratégico...</div>;
@@ -205,6 +361,7 @@ export default function HistoryTab({
   if (selectedAnalysis) {
     return (
       <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500 pb-16">
+        {renderHistoryModals()}
         <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
           <button
             onClick={() => {
@@ -254,334 +411,11 @@ export default function HistoryTab({
           onExportPDF={() => window.print()}
           modelSource={selectedAnalysis.model_source || selectedAnalysis.modelSource || 'Motor Bawzi IA'}
           isCachedResult={false}
-          onUpgradeClick={() => alert('Faça upgrade pelo painel de planos para desbloquear este recurso.')}
+          onUpgradeClick={() => setNotice({ type: 'info', message: 'Faça upgrade pelo painel de planos para desbloquear este recurso.' })}
         />
       </div>
     );
 
-    const res = selectedAnalysis;
-    const isGo = res.score >= 70;
-    const isAtention = res.score >= 45 && res.score < 70;
-
-    // 🟢 LÓGICA DE UPGRADE DE ANÁLISE: Verifica se o Tier atual do utilizador é maior que o da análise salva
-    // Assumimos que o backend guarda o 'tier' da análise. Se não guardar, assumimos 1 (básico).
-    const analysisTier = res.tier || 1;
-    const canRedo = userTier > analysisTier;
-
-    return (
-      <div className="space-y-6 md:space-y-8 animate-in slide-in-from-right-10 duration-700 pb-20">
-        
-        <div className="flex items-center justify-between bg-white/60 backdrop-blur-md p-4 rounded-2xl border border-slate-200 sticky top-0 z-30 shadow-sm flex-wrap gap-3">
-          <button 
-            onClick={() => setSelectedAnalysis(null)}
-            className="flex items-center gap-2 text-slate-500 hover:text-violet-600 font-black uppercase text-xs transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-            Voltar
-          </button>
-          <div className="flex items-center gap-3 md:gap-4 ml-auto">
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest hidden sm:block">ID: {res.id.substring(0,8)}</span>
-             <button onClick={(e) => toggleFavorite(e, res.id)} className={`text-xl md:text-2xl ${favorites.includes(res.id) ? 'text-amber-400' : 'text-slate-300'}`}>
-               {favorites.includes(res.id) ? '★' : '☆'}
-             </button>
-          </div>
-        </div>
-
-        {/* 🟢 BANNER DE UPGRADE DE ANÁLISE (Só aparece se canRedo for TRUE) */}
-        {canRedo && (
-          <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-3xl p-6 md:p-8 text-white shadow-xl shadow-violet-500/20 flex flex-col md:flex-row items-center justify-between gap-6 animate-in fade-in slide-in-from-top-4">
-            <div>
-              <h4 className="font-black text-xl flex items-center gap-2 mb-2">
-                <span className="text-2xl">🚀</span> Nova Inteligência Disponível!
-              </h4>
-              <p className="text-violet-100 text-sm font-medium leading-relaxed">
-                Esta análise foi gerada com um motor de nível inferior (Tier {analysisTier}). Como você atualizou o seu plano para o <strong>Nível {userTier}</strong>, o nosso motor Multi-LLM pode processar este edital com muito mais profundidade e extrair riscos ocultos que o motor básico não viu.
-              </p>
-            </div>
-            <button
-              onClick={() => onRedoAnalysis && onRedoAnalysis(res)}
-              className="w-full md:w-auto px-8 py-4 bg-white text-violet-900 font-black rounded-2xl hover:bg-slate-50 transition-all shrink-0 shadow-lg active:scale-95 whitespace-nowrap"
-            >
-              Refazer Análise Agora
-            </button>
-          </div>
-        )}
-
-        <div className="bg-white rounded-3xl md:rounded-[3rem] p-6 md:p-12 shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col md:flex-row gap-6 md:gap-10 items-center md:items-start relative overflow-hidden break-words">
-          <div className={`absolute top-0 left-0 w-full h-2 ${isGo ? 'bg-emerald-500' : isAtention ? 'bg-amber-500' : 'bg-red-500'}`}></div>
-          
-          <div className="flex-1 w-full">
-            <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-6">
-              <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-slate-200">
-                <span>📅 {isMounted && res.created_at ? new Date(res.created_at).toLocaleDateString('pt-BR') : 'Processando...'}</span>
-              </span>
-              <span className="text-[10px] font-black text-violet-600 bg-violet-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-violet-100">
-                🤖 {res.model_source || "Motor Bawzi"}
-              </span>
-              <span className="text-[10px] font-black text-slate-600 bg-slate-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl uppercase tracking-widest border border-slate-200">
-                Tier {analysisTier}
-              </span>
-            </div>
-            
-            <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 mb-4 tracking-tight leading-tight">
-              {res.title || "Análise de Edital"}
-            </h1>
-            
-            <div className="flex flex-wrap items-center gap-3 mb-6 md:mb-8">
-              <span className={`inline-block px-4 py-1.5 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest ${
-                res.classification?.includes('Força') || isGo ? 'bg-emerald-100 text-emerald-700' :
-                res.classification?.includes('Atenção') || isAtention ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
-              }`}>
-                {res.classification || "Não Classificado"}
-              </span>
-              
-              {res.probabilidade_de_sucesso && (
-                <span className={`inline-block px-4 py-1.5 md:px-5 md:py-2 rounded-full text-[10px] md:text-xs font-black uppercase tracking-widest border ${
-                  String(res.probabilidade_de_sucesso).toLowerCase().includes('alta') ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                  String(res.probabilidade_de_sucesso).toLowerCase().includes('media') || String(res.probabilidade_de_sucesso).toLowerCase().includes('média') ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                  'bg-red-50 text-red-600 border-red-200'
-                }`}>
-                  Probabilidade: {res.probabilidade_de_sucesso}
-                </span>
-              )}
-            </div>
-
-            <p className="text-slate-600 text-base md:text-xl leading-relaxed font-medium mb-6 md:mb-8 break-words whitespace-pre-wrap">{res.summary}</p>
-            
-            {res.estimated_value && (
-              <div className="inline-flex flex-col sm:flex-row items-start sm:items-center gap-3 md:gap-4 text-slate-900 font-black text-base md:text-lg bg-slate-50 px-6 py-4 md:px-8 md:py-5 rounded-3xl md:rounded-[2rem] border border-slate-200 shadow-inner w-full sm:w-auto">
-                <span className="text-2xl md:text-3xl text-emerald-500 hidden sm:block">💰</span>
-                <div className="flex flex-col w-full break-words">
-                  <span className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Valor Estimado</span>
-                  <span className="break-all">{res.estimated_value}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className={`shrink-0 w-32 h-32 md:min-w-[180px] md:h-[180px] rounded-full md:rounded-[3rem] border-4 md:border-8 flex flex-col items-center justify-center shadow-xl transition-transform hover:scale-105 duration-500 ${isGo ? 'text-emerald-600 border-emerald-500 bg-emerald-50' : isAtention ? 'text-amber-500 border-amber-400 bg-amber-50' : 'text-red-600 border-red-500 bg-red-50'}`}>
-            <span className="text-5xl md:text-7xl font-black leading-none tracking-tighter">{res.score || 0}</span>
-            <span className="text-[10px] md:text-xs font-black uppercase mt-1 md:mt-2 tracking-widest opacity-60">Score Geral</span>
-          </div>
-        </div>
-
-        {/* 1. INTELIGÊNCIA COMPETITIVA & VEREDITO FINANCEIRO */}
-        <div className="grid lg:grid-cols-2 gap-6 mb-6">
-          <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 h-full">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <span className="text-lg">🎯</span> Recomendação / Rationale
-            </h3>
-            <p className="text-slate-700 leading-relaxed font-medium text-sm lg:text-base">
-              {res.rationale || res.recommendation}
-            </p>
-          </div>
-
-          <div className="bg-gradient-to-br from-violet-600 to-indigo-600 p-8 rounded-[2rem] text-white shadow-xl h-full relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 blur-[50px] rounded-full -translate-y-1/2 translate-x-1/2 group-hover:bg-white/20 transition-colors"></div>
-            <h3 className="text-[10px] font-black text-violet-200 uppercase tracking-widest mb-4 flex items-center gap-2 relative z-10">
-              <span className="text-lg">👑</span> Inteligência Competitiva
-            </h3>
-            <p className="text-white/90 leading-relaxed font-medium text-sm lg:text-base mb-6 relative z-10">
-              {res.recommendation}
-            </p>
-            {res.pricing_intelligence && (
-              <div className="mt-auto bg-black/20 p-5 rounded-2xl border border-white/10 relative z-10">
-                <h4 className="text-[10px] uppercase tracking-widest font-black text-violet-300 mb-2">Veredito Financeiro</h4>
-                <p className="text-sm font-bold text-emerald-300">{res.pricing_intelligence.financial_verdict}</p>
-                {res.pricing_intelligence.estimated_discount && (
-                  <p className="text-xs text-white/70 mt-1">Deságio Médio: {res.pricing_intelligence.estimated_discount}</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 2. PRAZOS E CRITÉRIOS DE JULGAMENTO */}
-        {((res.prazos && res.prazos.length > 0) || (res.criterios_de_julgamento && res.criterios_de_julgamento.length > 0)) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            {res.prazos && res.prazos.length > 0 && (
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-violet-200 transition-colors">
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  ⏱️ Linha do Tempo
-                </h3>
-                <ul className="space-y-3">
-                  {res.prazos.map((prazo: string, idx: number) => (
-                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                      <span className="text-violet-500 mt-0.5 text-lg leading-none">•</span> {prazo}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            
-            {res.criterios_de_julgamento && res.criterios_de_julgamento.length > 0 && (
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:border-emerald-200 transition-colors">
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  ⚖️ Critério de Julgamento
-                </h3>
-                <ul className="space-y-3">
-                  {res.criterios_de_julgamento.map((criterio: string, idx: number) => (
-                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                      <span className="text-emerald-500 mt-0.5 text-lg leading-none">✓</span> {criterio}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 3. MATRIZ DE DECISÃO (SWOT RÁPIDO) */}
-        {((res.vantagens && res.vantagens.length > 0) || (res.desvantagens && res.desvantagens.length > 0)) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {res.vantagens && res.vantagens.length > 0 && (
-              <div className="bg-emerald-50/50 p-6 rounded-3xl border border-emerald-100">
-                <h3 className="text-xs font-black text-emerald-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  👍 Vantagens Competitivas
-                </h3>
-                <ul className="space-y-3">
-                  {res.vantagens.map((vantagem: string, idx: number) => (
-                    <li key={idx} className="text-sm text-emerald-900 font-medium flex items-start gap-3">
-                      <span className="text-emerald-500 font-bold">＋</span> {vantagem}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {res.desvantagens && res.desvantagens.length > 0 && (
-              <div className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100">
-                <h3 className="text-xs font-black text-orange-700 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  👎 Desvantagens & Barreiras
-                </h3>
-                <ul className="space-y-3">
-                  {res.desvantagens.map((desvantagem: string, idx: number) => (
-                    <li key={idx} className="text-sm text-orange-900 font-medium flex items-start gap-3">
-                      <span className="text-orange-500 font-bold">−</span> {desvantagem}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 4. REQUISITOS OPERACIONAIS */}
-        {((res.exigencias_criticas && res.exigencias_criticas.length > 0) || (res.documentos_necessarios && res.documentos_necessarios.length > 0)) && (
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-12">
-            <div className="p-6 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Carga Operacional</h3>
-              <p className="text-slate-900 font-black text-lg">Exigências & Documentação Obrigatória</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-              <div className="p-6 md:p-8">
-                <h4 className="text-xs font-bold text-slate-800 mb-5 flex items-center gap-2">📌 Exigências Críticas</h4>
-                <ul className="space-y-4">
-                  {res.exigencias_criticas?.map((exigencia: string, idx: number) => (
-                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-2 shrink-0"></div>
-                      {exigencia}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="p-6 md:p-8">
-                <h4 className="text-xs font-bold text-slate-800 mb-5 flex items-center gap-2">📁 Documentos Chave</h4>
-                <ul className="space-y-4">
-                  {res.documentos_necessarios?.map((doc: string, idx: number) => (
-                    <li key={idx} className="text-sm text-slate-600 font-medium flex items-start gap-3">
-                      <div className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-2 shrink-0"></div>
-                      {doc}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 5. MATRIZ DE RISCO */}
-        <div className="mb-12">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
-            <span className="text-lg">🛡️</span> Matriz de Riscos Críticos
-          </h3>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {res.risks?.length > 0 ? res.risks.map((risk: any, i: number) => {
-              // 🟢 EXTRATOR BLINDADO (Tenta chaves conhecidas, se falhar, agarra no 1º valor do objeto)
-              const tituloRisk = typeof risk === 'string' ? risk : (risk.titulo || risk.title || risk.risk || risk.perigo || risk.nome || risk.Risco || risk.Titulo || (Object.keys(risk || {}).length > 0 ? Object.values(risk)[0] as string : null));
-              
-              const trechoRisk = typeof risk === 'object' ? (risk.quote || risk.snippet || risk.texto || risk.trecho) : null;
-              
-              const impactoRisk = typeof risk === 'object' ? (risk.descricao || risk.impact || risk.consequence || risk.impacto || risk.consequencia || risk.Descricao || risk.Impacto || (Object.keys(risk || {}).length > 1 ? Object.values(risk)[1] as string : null)) : null;
-
-              return (
-                <div key={i} className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm hover:border-red-200 hover:shadow-md transition-all group relative overflow-hidden flex flex-col">
-                  <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
-                  <div className="flex items-start justify-between mb-4">
-                    <span className="px-2.5 py-1 bg-red-50 text-red-600 text-[10px] font-black uppercase tracking-widest rounded-lg border border-red-100">
-                      Alto Risco
-                    </span>
-                  </div>
-                  <h4 className="font-black text-slate-900 mb-3 leading-snug text-sm">
-                    {tituloRisk || "Risco Identificado"}
-                  </h4>
-                  {trechoRisk && String(trechoRisk) !== String(tituloRisk) && (
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
-                      <p className="text-[11px] text-slate-600 font-medium italic leading-relaxed">"{trechoRisk}"</p>
-                    </div>
-                  )}
-                  {impactoRisk && String(impactoRisk) !== String(tituloRisk) && (
-                    <p className="text-xs text-slate-500 font-medium mt-auto pt-2 border-t border-slate-50">
-                      <strong className="text-red-700">Impacto:</strong> {impactoRisk}
-                    </p>
-                  )}
-                </div>
-              );
-            }) : (
-              <p className="col-span-full text-emerald-600 font-bold bg-emerald-50 p-6 rounded-2xl border border-emerald-100">✓ Nenhum risco fatal identificado pela IA.</p>
-            )}
-          </div>
-        </div>
-
-        {/* 6. CHECKLIST DE AÇÃO */}
-        {(res.checklist?.length ?? 0) > 0 && (
-          <div className="mb-12">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 px-2 flex items-center gap-2">
-              <span className="text-lg">📋</span> Plano de Ação (Checklist)
-            </h3>
-            <div className="space-y-3">
-              {res.checklist?.map((item: any, i: number) => {
-                // 🟢 EXTRATOR BLINDADO PARA CHECKLIST
-                const titulo = typeof item === 'string' ? item : (item.tarefa || item.title || item.task || item.item || item.acao || item.nome || item.Tarefa || (Object.keys(item || {}).length > 0 ? Object.values(item)[0] as string : null));
-                
-                const descricao = typeof item === 'object' ? (item.descricao || item.description || item.detalhe || item.contexto || item.obs || item.status || (Object.keys(item || {}).length > 1 ? Object.values(item)[1] as string : null)) : null;
-
-                return (
-                  <div key={i} className="flex gap-4 p-5 bg-slate-50 hover:bg-white border border-slate-100 hover:border-slate-300 rounded-2xl transition-all shadow-sm group">
-                    <div className="w-6 h-6 rounded-full border-2 border-slate-300 group-hover:border-violet-500 flex items-center justify-center shrink-0 mt-0.5 transition-colors">
-                      <span className="text-[10px] font-black text-slate-400 group-hover:text-violet-500">{i + 1}</span>
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm mb-1">{titulo || "Ação Recomendada"}</h4>
-                      {descricao && String(descricao) !== String(titulo) && (
-                        <p className="text-sm text-slate-500 font-medium leading-relaxed">{descricao}</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <button 
-          onClick={() => { setSelectedAnalysis(null); window.scrollTo({top: 0, behavior: 'smooth'}); }}
-          className="w-full py-5 md:py-6 bg-slate-900 text-white font-black rounded-3xl md:rounded-[2rem] hover:bg-violet-600 shadow-xl transition-all uppercase tracking-widest text-xs md:text-sm"
-        >
-          Fechar e Voltar à Lista
-        </button>
-      </div>
-    );
   }
 
   // ==========================================
@@ -602,7 +436,7 @@ export default function HistoryTab({
   const favoriteCount = analyses.filter(item => favorites.includes(item.id)).length;
 
   const filterOptions = [
-    { key: 'all', label: 'Todos', count: totalAnalyses, Icon: FileText, activeClass: 'bg-slate-900 text-white border-slate-900' },
+    { key: 'all', label: 'Todos', count: totalAnalyses, Icon: FileText, activeClass: 'bg-emerald-600 text-white border-emerald-600' },
     { key: 'favorites', label: 'Favoritos', count: favoriteCount, Icon: Star, activeClass: 'bg-amber-500 text-white border-amber-500' },
     { key: 'go', label: 'Go', count: goCount, Icon: CheckCircle2, activeClass: 'bg-emerald-600 text-white border-emerald-600' },
     { key: 'attention', label: 'Atenção', count: attentionCount, Icon: Clock3, activeClass: 'bg-amber-500 text-white border-amber-500' },
@@ -611,6 +445,7 @@ export default function HistoryTab({
 
   return (
     <div className="animate-in fade-in duration-500 space-y-5">
+      {renderHistoryModals()}
 
       <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-6 bg-gradient-to-br from-white via-slate-50 to-emerald-50/50 p-5 md:grid-cols-[1fr_auto] md:p-7">
@@ -719,7 +554,7 @@ export default function HistoryTab({
                         {createdDate}
                       </span>
                       {item.model_source && (
-                        <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-600">
+                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-600">
                           {item.model_source}
                         </span>
                       )}
@@ -754,7 +589,7 @@ export default function HistoryTab({
                     </button>
                     <button
                       type="button"
-                      className="inline-flex h-10 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
+                      className="inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
                     >
                       Abrir
                       <ArrowRight size={14} />
@@ -795,7 +630,7 @@ export default function HistoryTab({
                     onClick={() => { setCurrentPage(p as number); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     className={`w-8 h-8 text-xs font-black rounded-lg transition-all ${
                       currentPage === p
-                        ? 'bg-slate-900 text-white shadow-sm'
+                        ? 'bg-emerald-600 text-white shadow-sm'
                         : 'text-slate-500 hover:bg-slate-100'
                     }`}
                   >

@@ -5,7 +5,7 @@
  * Secção hero do painel de análise Bawzi.
  *
  * - Versão autenticada: nav bar com tier + dots + passos + proof bar
- * - Versão anónima: headline de marketing + animação de 4 agentes IA
+ * - Versão anônima: headline de marketing + animação de 4 agentes IA
  */
 
 import React from 'react';
@@ -48,7 +48,7 @@ export default function AppHero({
     const tierClass = currentTier >= 4
       ? 'border-amber-200 bg-amber-50 text-amber-800'
       : currentTier >= 3
-        ? 'border-violet-200 bg-violet-50 text-violet-800'
+        ? 'border-sky-200 bg-sky-50 text-sky-800'
         : 'border-emerald-200 bg-emerald-50 text-emerald-800';
 
     const focusRadar = () => {
@@ -111,8 +111,8 @@ export default function AppHero({
         Icon: Cpu,
         title: 'Decisão',
         desc: 'Score Go/No-Go, semáforo de risco e recomendação objetiva.',
-        shell: 'border-violet-100 bg-violet-50',
-        icon: 'text-violet-600',
+        shell: 'border-sky-100 bg-sky-50',
+        icon: 'text-sky-600',
       },
     ];
 
@@ -233,19 +233,22 @@ export default function AppHero({
             </aside>
           </div>
 
-          <div className="relative z-10 border-t border-emerald-100/70 bg-white/65 px-5 py-5 backdrop-blur-sm sm:px-8 lg:px-10">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
-              <section>
-                <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div className="relative z-10 border-t border-emerald-100/70 bg-white/70 px-5 py-5 backdrop-blur-sm sm:px-8 lg:px-10">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <section className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <p className="text-[11px] font-black uppercase text-slate-400">O que a Bawzi analisa</p>
-                    <h3 className="text-base font-black text-slate-950">Quatro lentes para decidir com menos ruído</h3>
+                    <p className="text-[11px] font-black uppercase text-emerald-700">Mapa de decisão</p>
+                    <h3 className="text-base font-black text-slate-950">A análise separa o edital em quatro perguntas</h3>
                   </div>
+                  <span className="w-max rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">
+                    visão única
+                  </span>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                   {focusAreas.map(({ Icon, title, desc, shell, icon }) => (
-                    <div key={title} className={`rounded-2xl border p-4 ${shell}`}>
+                    <div key={title} className={`rounded-xl border p-3 ${shell}`}>
                       <div className="mb-2 flex items-center gap-2">
                         <Icon size={15} className={icon} />
                         <p className="text-sm font-black text-slate-900">{title}</p>
@@ -256,11 +259,19 @@ export default function AppHero({
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="mb-3 text-[11px] font-black uppercase text-slate-400">A Bawzi observa por você</p>
-                <div className="space-y-2">
+              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase text-slate-400">Sinais monitorados</p>
+                    <h3 className="text-sm font-black text-slate-900">A Bawzi observa por você</h3>
+                  </div>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+                    <CheckCircle2 size={17} />
+                  </div>
+                </div>
+                <div className="grid gap-2">
                   {proofItems.map((label) => (
-                    <div key={label} className="flex items-start gap-2">
+                    <div key={label} className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2">
                       <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
                       <span className="text-[12px] font-semibold leading-relaxed text-slate-600">{label}</span>
                     </div>
@@ -274,29 +285,28 @@ export default function AppHero({
     );
   }
 
-  // ─── Versão anónima ────────────────────────────────────────────────────────
+  // ─── Versão anônima ────────────────────────────────────────────────────────
   return (
     <>
-      <div className="xl:w-2/3 bg-gradient-to-br from-slate-50 via-white to-indigo-50/40 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-[600px] h-[600px] bg-indigo-100/30 blur-[120px] rounded-full -translate-x-1/3 -translate-y-1/3 pointer-events-none"></div>
+      <div className="xl:w-2/3 bg-gradient-to-br from-white via-emerald-50/35 to-sky-50/45 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
 
         <div className="flex-1 relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Orquestração Multi-Agentes</span>
+            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Orquestração multiagente</span>
           </div>
 
           <h2 className="text-4xl md:text-5xl lg:text-5xl font-black text-slate-900 leading-[1.1] mb-5 tracking-tight">
-            Um esquadrão de IAs <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-sky-500">
-              dissecando o seu edital.
+            Inteligência para ler editais <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-sky-600">
+              e decidir com clareza.
             </span>
           </h2>
           <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
-            Por que depender de uma única IA genérica? A Bawzi divide o contrato e roteia as cláusulas para um time de especialistas. O Jurídico redige defesas, o Financeiro projeta margens, o Auditor cruza legislações em busca de armadilhas e o Compliance blinda a entrega.
+            A Bawzi organiza riscos jurídicos, viabilidade financeira, sinais de concorrência e próximos passos para você entrar nas oportunidades certas.
           </p>
         </div>
 
@@ -305,14 +315,14 @@ export default function AppHero({
             <div className="w-12 h-1 bg-slate-200 rounded-full"></div>
             <div className="w-16 h-1 bg-slate-200 rounded-full"></div>
             <div className="w-10 h-1 bg-slate-200 rounded-full"></div>
-            <div className="absolute left-0 right-0 h-0.5 bg-indigo-500 shadow-[0_0_12px_#6366f1]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
+            <div className="absolute left-0 right-0 h-0.5 bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.55)]" style={{ animation: 'scan-laser 2.5s ease-in-out infinite' }}></div>
           </div>
 
           <svg className="absolute left-24 w-[calc(100%-11rem)] h-full z-10" preserveAspectRatio="none" viewBox="0 0 100 100">
             <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-            <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#6366f1" strokeWidth="2" className="path-routing" />
+            <path d="M 0 50 C 30 50, 50 10, 100 10" fill="none" stroke="#059669" strokeWidth="2" className="path-routing" />
             <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
-            <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#8b5cf6" strokeWidth="2" className="path-routing" />
+            <path d="M 0 50 C 35 50, 55 35, 100 35" fill="none" stroke="#0284c7" strokeWidth="2" className="path-routing" />
             <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
             <path d="M 0 50 C 35 50, 55 65, 100 65" fill="none" stroke="#10b981" strokeWidth="2" className="path-routing" />
             <path d="M 0 50 C 30 50, 50 90, 100 90" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
@@ -320,8 +330,8 @@ export default function AppHero({
           </svg>
 
           {[
-            { top: '0%',  color: 'indigo',  Icon: Scale,     label: 'Agente Jurídico',    model: 'Claude 3.5 Sonnet', delay: '' },
-            { top: '26%', color: 'violet',  Icon: ScanSearch, label: 'Agente Auditor',    model: 'OpenAI o3-mini',    delay: '0.2s' },
+            { top: '0%',  color: 'emerald', Icon: Scale,     label: 'Agente Jurídico',    model: 'Claude 3.5 Sonnet', delay: '' },
+            { top: '26%', color: 'sky',     Icon: ScanSearch, label: 'Agente Auditor',     model: 'OpenAI o3-mini',    delay: '0.2s' },
             { top: '52%', color: 'emerald', Icon: Banknote,  label: 'Agente Financeiro',  model: 'GPT-4o Omni',       delay: '0.5s' },
             { top: '78%', color: 'amber',   Icon: Shield,    label: 'Agente Compliance',  model: 'Llama 3 (Local)',   delay: '1s' },
           ].map(({ top, color, Icon, label, model, delay }) => (
@@ -365,9 +375,9 @@ export default function AppHero({
 
         {[
           {
-            bg: 'bg-violet-50/50', border: 'border-violet-100', bar: 'bg-violet-400', hover: 'hover:bg-violet-50',
-            Icon: ScanSearch, iconColor: 'text-violet-600', titleColor: 'text-violet-800', badgeBg: 'bg-violet-100', badgeText: 'text-violet-700', badgeBorder: 'border-violet-200',
-            title: 'Armadilha Legal Detetada', badge: 'Agente Auditor',
+            bg: 'bg-amber-50/50', border: 'border-amber-100', bar: 'bg-amber-400', hover: 'hover:bg-amber-50',
+            Icon: ScanSearch, iconColor: 'text-amber-600', titleColor: 'text-amber-800', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', badgeBorder: 'border-amber-200',
+            title: 'Armadilha legal detectada', badge: 'Agente Auditor',
             body: (<>Exigência do Item 9.2 em conflito com o Art. 14 (14.133/21). Risco de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">direcionamento de edital</span>.</>),
           },
           {

@@ -12,7 +12,7 @@
  * Componentes extraídos:
  *   AppHero              — secção hero (dark/light)
  *   AnalysisForm         — formulário de submissão
- *   AnalysisLoadingOverlay — spinner com mensagens rotativas
+ *   AnalysisLoadingOverlay — painel de espera com progresso estimado
  *   AnalysisResults      — painel de resultados (tabs, score, etc.)
  *   AppSidebar           — sidebar de navegação
  *   ShareModal           — modal de partilha por e-mail
@@ -60,11 +60,11 @@ const dominadorFeatures = [
 ];
 
 const LOADING_MESSAGES = [
-  { title: 'A Orquestrar Swarm de Agentes',   desc: 'A instanciar modelos neurais especializados...' },
-  { title: 'Agente Jurídico em Operação',      desc: 'A varrer as entrelinhas do documento...' },
-  { title: 'Agente Financeiro a Calcular',     desc: 'A cruzar histórico de PNCP para deságio preditivo...' },
-  { title: 'Agente de Mercado a Rastrear',     desc: 'A mapear concorrentes locais e agressividade...' },
-  { title: 'A Consolidar Veredito',            desc: 'A fundir os dados para emissão da matriz (Go/No-Go).' },
+  { title: 'Preparando leitura multiagente', desc: 'Organizando o edital, os anexos e os sinais principais para iniciar a análise.' },
+  { title: 'Agente jurídico em leitura', desc: 'Verificando habilitação, prazos, exigências fiscais e pontos que podem gerar risco.' },
+  { title: 'Agente financeiro calculando viabilidade', desc: 'Estimando margem, pressão por preço, deságio provável e esforço de execução.' },
+  { title: 'Agente de mercado rastreando concorrência', desc: 'Mapeando fornecedores recorrentes, histórico semelhante e agressividade local.' },
+  { title: 'Consolidando veredito Go/No-Go', desc: 'Cruzando os achados para montar score, alertas e próximos passos em linguagem direta.' },
 ];
 
 // ─── Componente principal ─────────────────────────────────────────────────────
@@ -93,6 +93,9 @@ export default function AnalysisApp() {
   const [isCachedResult, setIsCachedResult] = useState(false);
   const [provider, setProvider]         = useState<string>('openai');
   const [loadingStep, setLoadingStep]   = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingRemainingSeconds, setLoadingRemainingSeconds] = useState(30);
+  const [loadingEstimateSeconds, setLoadingEstimateSeconds] = useState(30);
 
   // Auth / perfil
   const [token, setToken]               = useState<string | null>(null);
@@ -158,18 +161,39 @@ export default function AnalysisApp() {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), ms);
   };
+  const getLoadingEstimateSeconds = (motor: 'openai' | 'claude') => {
+    const isFastAnalysis = userTier === 4 && motor === 'openai';
+    const baseSeconds = isFastAnalysis ? 8 : motor === 'claude' ? 35 : 30;
+    const filePenalty = files.length > 0 ? 4 : 0;
+    const textPenalty = text.length > 80000 ? 8 : text.length > 30000 ? 4 : 0;
 
-  // ─── useEffect: rotação de mensagens de loading ─────────────────────────────
+    return Math.min(baseSeconds + filePenalty + textPenalty, isFastAnalysis ? 15 : 45);
+  };
+
+  // ─── useEffect: progresso temporal da análise ───────────────────────────────
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isAnalyzing) {
+      const startedAt = Date.now();
+      const totalSteps = LOADING_MESSAGES.length;
+      const estimate = Math.max(loadingEstimateSeconds, 6);
+
       setLoadingStep(0);
+      setLoadingProgress(4);
+      setLoadingRemainingSeconds(estimate);
+
       interval = setInterval(() => {
-        setLoadingStep((prev) => (prev + 1) % LOADING_MESSAGES.length);
-      }, 3500);
+        const elapsedSeconds = (Date.now() - startedAt) / 1000;
+        const progress = Math.min(96, Math.max(4, Math.round((elapsedSeconds / estimate) * 100)));
+        const nextStep = Math.min(totalSteps - 1, Math.floor((progress / 100) * totalSteps));
+
+        setLoadingProgress(progress);
+        setLoadingRemainingSeconds(Math.max(0, Math.ceil(estimate - elapsedSeconds)));
+        setLoadingStep(nextStep);
+      }, 500);
     }
     return () => clearInterval(interval);
-  }, [isAnalyzing]);
+  }, [isAnalyzing, loadingEstimateSeconds]);
 
   // ─── useEffect: soberania de tier (cache local) ─────────────────────────────
   useEffect(() => {
@@ -311,7 +335,9 @@ export default function AnalysisApp() {
     abortControllerRef.current?.abort();
     setIsAnalyzing(false);
     setLoadingStep(0);
-    showError('Análise cancelada pelo utilizador.', 4000);
+    setLoadingProgress(0);
+    setLoadingRemainingSeconds(loadingEstimateSeconds);
+    showError('Análise cancelada pelo usuário.', 4000);
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -389,6 +415,7 @@ export default function AnalysisApp() {
     }
     if (isOverLimit) { handleUpgrade(userTier >= 1 ? userTier + 1 : 2); return; }
 
+    setLoadingEstimateSeconds(getLoadingEstimateSeconds(motor));
     setIsAnalyzing(true);
     setError(null);
     setResult(null);
@@ -778,11 +805,6 @@ export default function AnalysisApp() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
-      {/* Glow decorativo de fundo */}
-      <div className="absolute top-0 left-0 w-full h-[600px] overflow-hidden -z-10 pointer-events-none">
-        <div className="absolute top-[-20%] left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-gradient-to-b from-slate-200/40 to-transparent rounded-full blur-[100px]"></div>
-      </div>
-
       {/* Keyframes globais (path-routing, scan-laser, float-agent, draw-arc) */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes route-data { 0% { stroke-dashoffset: 60; } 100% { stroke-dashoffset: 0; } }
@@ -876,6 +898,9 @@ export default function AnalysisApp() {
                     <AnalysisLoadingOverlay
                       loadingStep={loadingStep}
                       loadingMessages={LOADING_MESSAGES}
+                      loadingProgress={loadingProgress}
+                      remainingSeconds={loadingRemainingSeconds}
+                      estimatedSeconds={loadingEstimateSeconds}
                       onCancel={handleCancelAnalysis}
                     />
                   ) : result ? (

@@ -15,7 +15,7 @@ export default function Header() {
   useEffect(() => {
     const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-    // 1. ⚡ SINCRONISMO IMEDIATO (Lê o cache para a UI não piscar)
+    // Sincronismo imediato: usa o cache para a UI não piscar.
     const syncFromCache = () => {
       const savedToken = localStorage.getItem('bawzi_token');
       const savedTier = localStorage.getItem('bawzi_tier');
@@ -32,7 +32,7 @@ export default function Header() {
 
     const tokenAtivo = syncFromCache();
 
-    // 2. 🌐 VALIDAÇÃO REAL (Vai ao servidor confirmar o nível atual sem o utilizador notar)
+    // Validação silenciosa no servidor.
     const validateTierSilently = async (token: string) => {
       try {
         const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
@@ -47,15 +47,15 @@ export default function Header() {
           const uData = await userRes.json();
           const wData = await wsRes.json();
 
-          // Lógica central da Bawzi: o maior nível entre utilizador e empresa vence
+          // O maior nível entre usuário e empresa vence.
           const nivelReal = Math.max(uData.tier || 1, wData.tier || 1);
           const nivelString = String(nivelReal);
 
-          // Atualiza a interface se o que está no servidor for diferente do que está no ecrã
+          // Atualiza a interface quando o servidor divergir do cache.
           setUserTier(nivelString);
           setUserData({ name: uData.name || uData.nome || '', email: uData.email });
           
-          // Atualiza o cache para a próxima vez
+          // Atualiza o cache para a próxima abertura.
           localStorage.setItem('bawzi_tier', nivelString);
           localStorage.setItem('user_name', uData.name || uData.nome || '');
           localStorage.setItem('user_email', uData.email || '');
@@ -67,7 +67,7 @@ export default function Header() {
 
     if (tokenAtivo) validateTierSilently(tokenAtivo);
 
-    // 3. 🟢 ESCUTAR ATUALIZAÇÕES (Caso o utilizador mude de nível noutra aba/página)
+    // Escuta atualizações vindas de outras telas.
     const handleGlobalUpdate = (e: any) => {
       if (e.detail?.tier) setUserTier(String(e.detail.tier));
       if (e.detail?.name) setUserData(prev => ({ ...prev, name: e.detail.name }));
@@ -75,7 +75,7 @@ export default function Header() {
 
     window.addEventListener('bawzi_update', handleGlobalUpdate);
     return () => window.removeEventListener('bawzi_update', handleGlobalUpdate);
-  }, [pathname]); // Roda na montagem e sempre que mudares de página
+  }, [pathname]);
 
   const handleLogout = () => {
     localStorage.removeItem('bawzi_token');
@@ -87,25 +87,25 @@ export default function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm transition-all print:hidden">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all print:hidden">
       <div className="max-w-[1400px] mx-auto px-6 py-4 flex justify-between items-center">
         
         {/* LOGÓTIPO */}
         <Link href="/" className="flex items-center cursor-pointer hover:opacity-80 transition-opacity">
-          <img src="/logo-bawzi.png" alt="Bawzi" className="h-8 w-auto" />
+          <img src="/logo-bawzi.png" alt="Bawzi" className="h-10 w-auto" />
         </Link>
 
         {/* NAVEGAÇÃO CENTRAL */}
         <nav className="hidden md:flex items-center gap-8 mr-8">
-          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' || pathname === '/' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' || pathname === '/' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Workspace
           </Link>
           {token && (
-            <Link href="/history" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/history' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+            <Link href="/history" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/history' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
               Histórico
             </Link>
           )}
-          <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-slate-900 border-slate-900' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+          <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Planos
           </Link>
         </nav>
@@ -115,29 +115,27 @@ export default function Header() {
           {token ? (
             <div className="flex items-center gap-3 sm:gap-4">
               
-              {/* 🟢 AVATAR COM TOAST DINÂMICO */}
               <div className="relative group cursor-pointer">
-                <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-violet-600 to-pink-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-violet-500/20">
+                <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-emerald-500/15">
                   {userData?.name ? userData.name.charAt(0).toUpperCase() : 'B'}
                 </Link>
 
-                {/* O TOAST */}
                 <div className="absolute right-0 mt-3 w-max min-w-[220px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right scale-95 group-hover:scale-100 z-50">
-                  <div className="bg-slate-900 rounded-2xl p-4 shadow-2xl border border-slate-700 relative">
-                    <div className="absolute -top-2 right-4 w-4 h-4 bg-slate-900 border-t border-l border-slate-700 transform rotate-45"></div>
+                  <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 relative">
+                    <div className="absolute -top-2 right-4 w-4 h-4 bg-white border-t border-l border-slate-200 transform rotate-45"></div>
                     <div className="relative z-10 flex flex-col text-left">
-                      <span className="text-sm font-black text-white truncate max-w-[180px]">
-                        {userData?.name || 'Utilizador Bawzi'}
+                      <span className="text-sm font-black text-slate-900 truncate max-w-[180px]">
+                        {userData?.name || 'Usuário Bawzi'}
                       </span>
-                      <span className="text-[10px] font-medium text-slate-400 truncate max-w-[180px] mt-0.5">
-                        {userData?.email || 'Definições de Perfil'}
+                      <span className="text-[10px] font-medium text-slate-500 truncate max-w-[180px] mt-0.5">
+                        {userData?.email || 'Configurações de perfil'}
                       </span>
                       
-                      <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
-                         <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                           ⭐ Nível {userTier}
+                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                         <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest rounded-lg">
+                           Nível {userTier}
                          </span>
-                         <button onClick={handleLogout} className="text-[9px] font-bold text-slate-500 hover:text-rose-400 transition-colors uppercase tracking-widest">
+                         <button onClick={handleLogout} className="text-[9px] font-bold text-slate-500 hover:text-red-600 transition-colors uppercase tracking-widest">
                            Sair
                          </button>
                       </div>
@@ -148,9 +146,18 @@ export default function Header() {
 
             </div>
           ) : (
-             <button 
-              onClick={() => window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }))}
-              className="px-4 py-2 bg-slate-900 text-white rounded-xl font-black text-sm"
+             <button
+              onClick={() => {
+                // Na página principal/workspace, abre o modal inline.
+                // Em qualquer outra página (plans, history, etc.) navega para /login.
+                const isMainPage = pathname === '/' || pathname === '/workspace';
+                if (isMainPage) {
+                  window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }));
+                } else {
+                  router.push('/login');
+                }
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-sm transition-colors shadow-sm"
             >
               Entrar
             </button>

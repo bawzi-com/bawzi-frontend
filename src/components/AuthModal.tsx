@@ -142,9 +142,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   // ---- VIEW: ESQUECEU A SENHA ----
   if (view === 'forgot-password') {
     return (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
           <button
             onClick={onClose}
             className="absolute top-6 right-6 z-10 w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors text-xl font-bold"
@@ -156,7 +156,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
               <div className="mb-6 transform hover:scale-105 transition-transform">
                 <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
               </div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-tighter">Recuperar Senha</h2>
+              <h2 className="text-2xl font-black text-slate-900">Recuperar senha</h2>
               <p className="text-sm text-slate-500 font-medium mt-1">Enviaremos um link de redefinição para o seu e-mail</p>
             </div>
 
@@ -168,12 +168,12 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                   </svg>
                 </div>
                 <p className="text-slate-700 font-semibold text-sm">E-mail enviado!</p>
-                <p className="text-slate-500 text-xs">Se este e-mail estiver registado, receberás um link de recuperação em instantes. Verifica também a pasta de spam.</p>
+                <p className="text-slate-500 text-xs">Se este e-mail estiver cadastrado, você receberá um link de recuperação em instantes. Verifique também a pasta de spam.</p>
                 <button
                   onClick={() => { setView('login'); setForgotSuccess(false); setEmail(''); }}
-                  className="mt-4 w-full py-3 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all"
+                  className="mt-4 w-full py-3 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all"
                 >
-                  Voltar ao Login
+                  Voltar ao login
                 </button>
               </div>
             ) : (
@@ -186,23 +186,23 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 <form onSubmit={handleForgotPassword} className="space-y-4">
                   <input
                     type="email"
-                    placeholder="O teu e-mail de acesso"
+                    placeholder="Seu e-mail de acesso"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
+                    className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                     required
                   />
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+                    className="w-full py-4 mt-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200/60 active:scale-[0.98] disabled:opacity-50"
                   >
-                    {loading ? 'A enviar...' : 'Enviar Link de Recuperação'}
+                    {loading ? 'Enviando...' : 'Enviar link de recuperação'}
                   </button>
                 </form>
                 <div className="mt-6 text-center text-sm font-medium text-slate-500">
-                  <button onClick={() => setView('login')} className="text-violet-600 hover:text-violet-700 font-bold underline underline-offset-4">
-                    ← Voltar ao Login
+                  <button onClick={() => setView('login')} className="text-emerald-700 hover:text-emerald-800 font-bold underline underline-offset-4">
+                    ← Voltar ao login
                   </button>
                 </div>
               </>
@@ -215,10 +215,10 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
   // ---- VIEW: LOGIN / REGISTER ----
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
 
-        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-violet-600 to-pink-600"></div>
+        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
 
         <button
           onClick={onClose}
@@ -233,11 +233,11 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
               <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
             </div>
 
-            <h2 className="text-2xl font-black text-slate-900 tracking-tighter">
-              {view === 'login' ? 'Bem-vindo de volta' : 'Crie sua Conta'}
+            <h2 className="text-2xl font-black text-slate-900">
+              {view === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta'}
             </h2>
             <p className="text-sm text-slate-500 font-medium mt-1">
-              {view === 'login' ? 'Acesse o seu painel de inteligência' : 'Desbloqueie o poder da Bawzi'}
+              {view === 'login' ? 'Acesse seu painel de inteligência' : 'Comece a decidir com mais clareza'}
             </p>
           </div>
 
@@ -255,7 +255,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                   placeholder="Nome Completo"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
+                  className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                   required
                 />
               </div>
@@ -267,7 +267,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 placeholder="E-mail Profissional"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
+                className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
             </div>
@@ -278,7 +278,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full p-4 rounded-xl border border-slate-200 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 outline-none bg-slate-50 transition-all font-medium"
+                className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
             </div>
@@ -288,7 +288,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 <button
                   type="button"
                   onClick={() => { setError(''); setView('forgot-password'); }}
-                  className="text-xs text-slate-400 hover:text-violet-600 font-semibold transition-colors"
+                  className="text-xs text-slate-400 hover:text-emerald-700 font-semibold transition-colors"
                 >
                   Esqueceu a senha?
                 </button>
@@ -298,9 +298,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 mt-2 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
+              className="w-full py-4 mt-2 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200/60 active:scale-[0.98] disabled:opacity-50"
             >
-              {loading ? 'A processar...' : view === 'login' ? 'Entrar na Conta' : 'Começar Gratuitamente'}
+              {loading ? 'Processando...' : view === 'login' ? 'Entrar na conta' : 'Começar grátis'}
             </button>
           </form>
 
@@ -326,9 +326,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
           <div className="mt-8 text-center text-sm font-medium text-slate-500">
             {view === 'login' ? (
-              <>És novo por aqui? <button onClick={() => setView('register')} className="ml-1 text-violet-600 hover:text-violet-700 font-bold underline underline-offset-4">Criar Conta Grátis</button></>
+              <>Novo por aqui? <button onClick={() => setView('register')} className="ml-1 text-emerald-700 hover:text-emerald-800 font-bold underline underline-offset-4">Criar conta grátis</button></>
             ) : (
-              <>Já tens conta na Bawzi? <button onClick={() => setView('login')} className="ml-1 text-violet-600 hover:text-violet-700 font-bold underline underline-offset-4">Fazer Login</button></>
+              <>Já tem conta na Bawzi? <button onClick={() => setView('login')} className="ml-1 text-emerald-700 hover:text-emerald-800 font-bold underline underline-offset-4">Fazer login</button></>
             )}
           </div>
         </div>

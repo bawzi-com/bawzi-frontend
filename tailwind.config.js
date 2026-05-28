@@ -11,8 +11,13 @@ module.exports = {
       // Aqui podemos adicionar as cores da Bawzi se quisermos usar nomes personalizados
       colors: {
         bawzi: {
-          purple: '#8A05BE',
-          magenta: '#C123E0',
+          primary: '#059669',
+          primaryDark: '#047857',
+          info: '#0284c7',
+          warning: '#d97706',
+          danger: '#dc2626',
+          purple: '#7c3aed',
+          magenta: '#c026d3',
           dark: '#0f172a',
         },
       },

@@ -1,32 +1,40 @@
 :root {
-  /* Fundo e Superfícies (Mais limpo) */
-  --color-bg: #fdfdfd;
+  /* Superfícies */
+  --color-bg: #f8fafc;
   --color-bg-soft: #f8fafc;
   --color-panel: #ffffff;
-  --color-border: #eef2f6;
+  --color-border: #e2e8f0;
 
-  /* Texto (Contraste equilibrado) */
+  /* Texto */
   --color-text: #0f172a;
   --color-text-muted: #475569;
   --color-text-soft: #94a3b8;
 
   /* Identidade Bawzi */
-  --color-primary: #8a05be;
-  --color-primary-strong: #70049e;
-  --color-primary-soft: rgba(138, 5, 190, 0.05);
-  --bawzi-purple: #8A05BE;
-  --bawzi-magenta: #C123E0;
-  --grad-premium: linear-gradient(135deg, var(--bawzi-purple), var(--bawzi-magenta));
+  --color-primary: #059669;
+  --color-primary-strong: #047857;
+  --color-primary-soft: rgba(5, 150, 105, 0.08);
+  --color-info: #0284c7;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
 
-  /* Sombras de "Alta Costura" */
+  /* Acentos legados, usados apenas em estados premium/enterprise */
+  --bawzi-purple: #7c3aed;
+  --bawzi-magenta: #c026d3;
+  --grad-premium: linear-gradient(135deg, #059669, #0284c7);
+
   --shadow-sm: 0 2px 4px rgba(0,0,0,0.02);
   --shadow-md: 0 12px 24px -6px rgba(15, 23, 42, 0.08);
   --shadow-premium: 0 32px 64px -12px rgba(15, 23, 42, 0.12);
-  --shadow-glow: 0 8px 20px rgba(138, 5, 190, 0.2);
+  --shadow-glow: 0 8px 20px rgba(5, 150, 105, 0.16);
 
-  /* Curvaturas Modernas */
+  --content-max-width: 1400px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
   --radius-lg: 24px;
   --radius-pill: 99px;
 
+  --transition-fast: 180ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }

@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp } from 'lucide-react';
+import {
+  Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp,
+  Search, MapPin, SlidersHorizontal,
+} from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
 
@@ -393,47 +396,52 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
 
   return (
-    <div className="w-full max-w-5xl mx-auto p-6 md:p-8 bg-white rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 font-sans relative overflow-hidden group">
-      
-      {/* Efeito de luz sutil no fundo */}
-      <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-slate-100/30 blur-[80px] rounded-full translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+    <div className="w-full max-w-5xl mx-auto bg-white rounded-[2rem] shadow-sm border border-slate-200 font-sans relative overflow-hidden">
 
       {/* ========================================== */}
       {/* 1. CABEÇALHO RADAR 360                     */}
       {/* ========================================== */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-6 mb-8 relative z-10">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-              <div className="p-2 bg-slate-100 rounded-lg">
-                <Radar className="w-6 h-6 text-slate-700" strokeWidth={2.5} />
-              </div>
-              <div className="uppercase">
-                Radar 360
-              </div>
+      <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700 shadow-sm">
+              <Radar className="h-3.5 w-3.5" />
+              Radar PNCP
+            </div>
+            <h2 className="text-xl font-black tracking-tight text-slate-950 md:text-2xl">
+              Busque oportunidades abertas antes de enviar o edital.
             </h2>
-            
-            {/* 🟢 O SEU RADAR DINÂMICO EM TEMPO REAL ENTRA AQUI */}
-            <PncpStatusBadge />
-
-          </div>
-          {!token && (
-            <p className="text-slate-500 text-sm md:text-base leading-relaxed font-medium max-w-2xl">
-              Visão panorâmica do mercado público. Varredura em tempo real na base oficial do <strong className="text-slate-800 font-bold">PNCP</strong>. Encontre licitações e extraia o edital completo para a IA analisar com apenas um clique.
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
+              Pesquise por segmento, órgão, cidade ou palavra-chave. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para a análise.
             </p>
-          )}
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <PncpStatusBadge />
+            {detectedUf && !uf && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-[10px] font-black uppercase text-sky-700">
+                <MapPin size={12} />
+                UF detectada: {detectedUf}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ========================================== */}
       {/* 2. O TERMINAL DE BUSCA (VISUAL NOVO)       */}
       {/* ========================================== */}
-      <form onSubmit={handleSearch} className="relative z-10 bg-slate-50 p-3 rounded-2xl border border-slate-200/60 shadow-inner mb-8">
-        <div className="flex flex-col md:flex-row items-center gap-3">
+      <form onSubmit={handleSearch} className="relative z-10 p-5 md:p-6">
+        <div className="mb-3 flex items-center gap-2 text-[11px] font-black uppercase text-slate-400">
+          <Search size={13} />
+          Busca oficial
+        </div>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
           
-          <div className="relative flex-1 w-full h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all">
+          <div className="relative h-14 bg-slate-50 rounded-xl border border-slate-200 focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-300 transition-all lg:flex-[1_1_320px]">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <span className="text-slate-400">🔍</span>
+              <Search size={17} className="text-slate-400" />
             </div>
             <input 
               type="text" 
@@ -444,7 +452,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             />
           </div>
 
-          <div className="w-full md:w-40 h-14 bg-white rounded-xl border border-slate-200 shadow-sm relative focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all">
+          <div className="h-14 bg-slate-50 rounded-xl border border-slate-200 relative focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-300 transition-all lg:w-40">
             <select
               value={uf}
               onChange={(e) => {
@@ -491,9 +499,9 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           </div>
 
           {/* Filtro de cidade — só aparece após selecionar UF */}
-          <div className={`transition-all duration-200 overflow-visible ${uf ? 'w-full md:w-52 opacity-100' : 'w-0 opacity-0 pointer-events-none'}`}>
+          <div className={`transition-all duration-200 overflow-visible lg:w-52 ${uf ? 'opacity-100' : 'hidden opacity-0 pointer-events-none'}`}>
             {uf && (
-              <div className="h-14 bg-white rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-slate-400/20 focus-within:border-slate-400 transition-all overflow-visible">
+              <div className="h-14 bg-slate-50 rounded-xl border border-slate-200 focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-300 transition-all overflow-visible">
                 <MunicipioAutocomplete
                   value={municipioNome}
                   uf={uf}
@@ -511,7 +519,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           <button 
             onClick={handleSearch}
             disabled={isSearching}
-            className="w-full md:w-auto px-6 py-4 bg-slate-900 text-white font-black rounded-xl hover:bg-slate-800 transition-all shadow-md active:scale-95 disabled:bg-slate-500 disabled:cursor-not-allowed shrink-0"
+            className="h-14 w-full px-6 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 transition-all shadow-[0_16px_32px_-20px_rgba(5,150,105,0.7)] active:scale-[0.98] disabled:bg-slate-400 disabled:cursor-not-allowed shrink-0 lg:w-auto"
           >
             {isSearching ? (
               <span className="flex items-center gap-2">
@@ -525,15 +533,15 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                <Radar className="w-5 h-5 text-white/60" strokeWidth={2.5} />
-                <span className="font-bold tracking-wide">Buscar Radar 360º</span>
+                <Radar className="w-5 h-5 text-white/70" strokeWidth={2.5} />
+                <span className="font-bold tracking-wide">Buscar no PNCP</span>
               </span>
             )}
           </button>
         </div>
 
-        <div className="mt-4 px-2 flex items-center">
-          <label className="flex items-center gap-2.5 cursor-pointer group">
+        <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex items-center gap-2.5 cursor-pointer group min-w-0">
             <div className="relative flex items-center justify-center">
               <input 
                 type="checkbox" 
@@ -541,12 +549,16 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 onChange={(e) => setForceExact(e.target.checked)}
                 className="peer sr-only" 
               />
-              <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-800 transition-colors"></div>
+              <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
             </div>
-            <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors uppercase tracking-wider">
-              Forçar Busca Exata <span className="opacity-60">(Ignorar IA de Otimização)</span>
+            <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors">
+              Busca exata <span className="opacity-60">sem otimização automática do termo</span>
             </span>
           </label>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+            <SlidersHorizontal size={13} />
+            Use quando souber exatamente o objeto da compra.
+          </span>
         </div>
       </form>
 
@@ -754,7 +766,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       const seqInvalido = !edital.sequencial || String(edital.sequencial) === "undefined";
 
                       if (cnpjInvalido || anoInvalido || seqInvalido) {
-                        alert("⚠️ Falha de registo no PNCP (Falta CNPJ, Ano ou Sequencial). Impossível extrair.");
+                        alert("Falha de registro no PNCP: falta CNPJ, ano ou sequencial. Não foi possível extrair o edital.");
                         return;
                       }
                       handleDeepAnalyze(edital);
@@ -763,7 +775,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                     className="flex-1 bg-slate-900 text-white font-black py-3 px-4 rounded-xl text-xs hover:bg-slate-800 transition-all disabled:bg-slate-500 disabled:cursor-not-allowed shadow-md flex items-center justify-center gap-2"
                   >
                     {loadingId === edital.id ? (
-                      <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> A Extrair PDF (Aguarde)...</>
+                      <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Extraindo PDF...</>
                     ) : 'Extrair e Analisar IA ⚡'}
                   </button>
                   {edital.link && (
