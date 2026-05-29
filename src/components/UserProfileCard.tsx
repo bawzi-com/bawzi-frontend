@@ -68,7 +68,7 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
             <h4 className="text-base font-black text-slate-900 truncate">
-              {user.name || 'Utilizador Bawzi'}
+              {user.name || 'Usuário Bawzi'}
             </h4>
             <span className={`shrink-0 px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border flex items-center gap-1 ${getTierStyle(activeTier)}`}>
               <span>⭐</span> Nível {activeTier}

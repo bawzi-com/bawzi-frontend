@@ -4,30 +4,31 @@ import { useState, useEffect } from 'react';
 
 export default function PncpStatusBadge() {
   const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
+  const [retrying, setRetrying] = useState(false);
+
+  const checkStatus = async () => {
+    try {
+      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+      const res = await fetch(`${API_URL}/api/pncp/status`);
+      if (!res.ok) throw new Error("Falha na API");
+      const data = await res.json();
+      setStatus(data.pncp_state || 'error');
+    } catch {
+      setStatus('error');
+    }
+  };
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    setStatus('checking');
+    await checkStatus();
+    setRetrying(false);
+  };
 
   useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-        const res = await fetch(`${API_URL}/api/pncp/status`);
-        
-        if (!res.ok) throw new Error("Falha na API");
-    
-        const data = await res.json();
-        if (data.pncp_state) {
-          setStatus(data.pncp_state);
-        } else {
-          setStatus('error');
-        }
-      } catch (error) {
-        console.error("Erro ao ler status PNCP:", error);
-        setStatus('error'); // Se o backend não responder, mostra o erro
-      }
-    };
-
     checkStatus();
     // Verifica a cada 2 minutos
-    const interval = setInterval(checkStatus, 120000); 
+    const interval = setInterval(checkStatus, 120000);
     return () => clearInterval(interval);
   }, []);
 
@@ -87,6 +88,16 @@ export default function PncpStatusBadge() {
       <span className={`text-[10px] font-black uppercase tracking-widest ${config.color} flex items-center gap-1`}>
         {config.text}
       </span>
+      {(status === 'offline' || status === 'error') && (
+        <button
+          onClick={handleRetry}
+          disabled={retrying}
+          title="Verificar novamente"
+          className="ml-1 text-[9px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
+        >
+          ↺
+        </button>
+      )}
     </div>
   );
 }

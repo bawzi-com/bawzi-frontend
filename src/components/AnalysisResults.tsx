@@ -38,6 +38,8 @@ interface AnalysisResultsProps {
   modelSource: string | null;
   isCachedResult: boolean;
   onUpgradeClick: () => void;
+  /** Abre a aba Capital com o valor do edital pré-preenchido */
+  onGoToCapital?: (valor: number) => void;
 }
 
 export default function AnalysisResults({
@@ -57,6 +59,7 @@ export default function AnalysisResults({
   modelSource,
   isCachedResult,
   onUpgradeClick,
+  onGoToCapital,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
 
@@ -109,7 +112,7 @@ export default function AnalysisResults({
         {/* TÍTULO + BARRA DE IMPRIMIR E PARTILHAR */}
         <div className="flex flex-col gap-4 mb-8 print:hidden">
 
-          {/* Linha: título + nova análise */}
+          {/* Linha: título + botões de ação */}
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
@@ -126,12 +129,33 @@ export default function AnalysisResults({
                 </span>
               )}
             </div>
-            <button
-              onClick={onReset}
-              className="shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center gap-2 shadow-sm"
-            >
-              + {resetLabel}
-            </button>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* ── Capital de Giro CTA ── */}
+              {onGoToCapital && (
+                <button
+                  onClick={() => {
+                    const raw = result.estimated_value || '';
+                    const num = parseFloat(
+                      raw.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.')
+                    );
+                    onGoToCapital(isNaN(num) ? 0 : num);
+                  }}
+                  className="shrink-0 px-5 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-black rounded-xl transition-all text-sm flex items-center gap-2 shadow-md shadow-teal-500/30 hover:shadow-lg hover:shadow-teal-500/40 ring-1 ring-teal-400/30 print:hidden"
+                  title={result.estimated_value ? `Abrir Capital com ${result.estimated_value} pré-preenchido` : 'Abrir Capital de Giro'}
+                >
+                  <Banknote size={15} />
+                  💰 Capital de Giro
+                </button>
+              )}
+
+              <button
+                onClick={onReset}
+                className="shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center gap-2 shadow-sm"
+              >
+                + {resetLabel}
+              </button>
+            </div>
           </div>
 
           {/* Barra: Imprimir e Partilhar */}
@@ -192,6 +216,7 @@ export default function AnalysisResults({
 
             </div>
           </div>
+
         </div>
 
         {/* TABS */}

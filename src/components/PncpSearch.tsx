@@ -60,11 +60,28 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   useEffect(() => {
     setMounted(true);
 
-    // Função auxiliar para garantir que só sobram 2 letras (Ex: "BR-GO" vira "GO")
-    const extrairSiglaUF = (texto: string) => {
+    // Mapa nome-completo → sigla (para fallbacks de IP que retornam o nome do estado)
+    const ESTADOS_BR: Record<string, string> = {
+      'ACRE': 'AC', 'ALAGOAS': 'AL', 'AMAPÁ': 'AP', 'AMAPA': 'AP',
+      'AMAZONAS': 'AM', 'BAHIA': 'BA', 'CEARÁ': 'CE', 'CEARA': 'CE',
+      'DISTRITO FEDERAL': 'DF', 'ESPÍRITO SANTO': 'ES', 'ESPIRITO SANTO': 'ES',
+      'GOIÁS': 'GO', 'GOIAS': 'GO', 'MARANHÃO': 'MA', 'MARANHAO': 'MA',
+      'MATO GROSSO DO SUL': 'MS', 'MATO GROSSO': 'MT',
+      'MINAS GERAIS': 'MG', 'PARÁ': 'PA', 'PARA': 'PA',
+      'PARAÍBA': 'PB', 'PARAIBA': 'PB', 'PARANÁ': 'PR', 'PARANA': 'PR',
+      'PERNAMBUCO': 'PE', 'PIAUÍ': 'PI', 'PIAUI': 'PI',
+      'RIO DE JANEIRO': 'RJ', 'RIO GRANDE DO NORTE': 'RN',
+      'RIO GRANDE DO SUL': 'RS', 'RONDÔNIA': 'RO', 'RONDONIA': 'RO',
+      'RORAIMA': 'RR', 'SANTA CATARINA': 'SC', 'SÃO PAULO': 'SP', 'SAO PAULO': 'SP',
+      'SERGIPE': 'SE', 'TOCANTINS': 'TO',
+    };
+
+    // Extrai sigla de 2 letras: "BR-GO" → "GO", "Goiás" → "GO", "GO" → "GO"
+    const extrairSiglaUF = (texto: string): string => {
       if (!texto) return '';
       const limpo = texto.replace('BR-', '').trim().toUpperCase();
-      return limpo.length === 2 ? limpo : ''; 
+      if (limpo.length === 2) return limpo;
+      return ESTADOS_BR[limpo] || '';
     };
 
     if (userUf) {
@@ -74,24 +91,23 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
     const detectarLocalizacao = async () => {
       try {
+        // ipapi.co retorna region_code no formato "GO", "SP", etc.
         const res = await fetch('https://ipapi.co/json/');
         const data = await res.json();
         if (data.region_code) {
           const ufLimpo = extrairSiglaUF(data.region_code);
-          console.log("📍 [GEO] IPAPI detectou:", ufLimpo);
-          setDetectedUf(ufLimpo);
+          if (ufLimpo) setDetectedUf(ufLimpo);
           return;
         }
-      } catch (err) {
+      } catch {
         try {
-          const res = await fetch('https://ip-api.com/json/');
+          // ip-api.com retorna region como nome completo, ex: "Goiás"
+          const res = await fetch('https://ip-api.com/json/?fields=region,regionName');
           const data = await res.json();
-          if (data.region) {
-            const ufLimpo = extrairSiglaUF(data.region);
-            console.log("📍 [GEO] IP-API detectou:", ufLimpo);
-            setDetectedUf(ufLimpo);
-          }
-        } catch (e) {
+          const candidato = data.regionName || data.region || '';
+          const ufLimpo = extrairSiglaUF(candidato);
+          if (ufLimpo) setDetectedUf(ufLimpo);
+        } catch {
           console.warn("⚠️ [GEO] Bloqueio de IP. Nenhuma localização detectada.");
         }
       }
@@ -152,7 +168,10 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
     try {
       const ufParam = uf ? `&uf=${encodeURIComponent(uf)}` : '';
       const exactParam = forceExact ? `&force_exact=true` : '';
-      const munParam = municipioId ? `&municipio_id=${encodeURIComponent(municipioId)}` : '';
+      // Envia AMBOS id e nome — o backend usa nome (normalizado) como filtro principal
+      const munParam = municipioId
+        ? `&municipio_id=${encodeURIComponent(municipioId)}${municipioNome ? `&municipio_nome=${encodeURIComponent(municipioNome)}` : ''}`
+        : '';
 
       // Limpeza de segurança da UF detetada
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
@@ -160,13 +179,14 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       const fetchHeaders = new Headers();
       if (token) fetchHeaders.append('Authorization', `Bearer ${token}`);
 
-      // 1. Busca principal (com municipio_id se selecionado)
+      // 1. Busca principal (com filtro de município se selecionado)
       const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
       const reqMarket = fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(searchTerm)}${ufParam}`).catch(() => null);
 
-      // 2. A PINÇA: só ativa se não há filtro de cidade (município já é mais específico)
+      // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
+      // (quando há cidade, a busca principal já é suficientemente específica)
       let reqRegional = null;
-      if ((!uf || uf === '') && ufAtivo && !municipioId) {
+      if ((!uf || uf === '') && ufAtivo && !municipioId && !municipioNome) {
         reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
       }
 

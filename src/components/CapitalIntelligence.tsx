@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Building2, DollarSign, Sparkles, ExternalLink, ChevronDown, ChevronUp,
   AlertTriangle, TrendingUp, Zap, Shield, Clock, CheckCircle2, XCircle,
@@ -59,7 +59,7 @@ interface AnaliseInstituicoesResponse {
   idade_empresa_meses: number;
   capital_social: number;
   valor_solicitado: number;
-  score_geral: int;
+  score_geral: number;
   situacao_cadastral: string;
   opcao_simples: boolean;
   instituicoes: InstituicaoPreQualificacao[];
@@ -79,6 +79,8 @@ interface Props {
   defaultUf?: string;
   companies?: Empresa[];
   tier?: number;
+  /** Valor pré-preenchido vindo de uma análise (ex: resultado.estimated_value parseado) */
+  defaultValorEdital?: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,6 +131,7 @@ const BANCO_LOGO: Record<string, { emoji: string; bg: string }> = {
   'BTG Pactual Empresas': { emoji: '🏦', bg: 'from-blue-600 to-blue-800' },
   'Capital Empreendedor': { emoji: '🚀', bg: 'from-emerald-500 to-teal-700' },
   'Banco Inter Empresas': { emoji: '🟠', bg: 'from-orange-400 to-orange-600' },
+  'Celcoin Empresas':     { emoji: '⚡', bg: 'from-violet-600 to-purple-700' },
 };
 
 function fmt(v: number) {
@@ -228,13 +231,40 @@ function CardLinha({ linha, index }: { linha: LinhaCredito; index: number }) {
   );
 }
 
-// ─── Card de banco parceiro (pré-qualificação real) ────────────────────────────
+// ─── Card de banco parceiro ───────────────────────────────────────────────────
 
-function CardBanco({ inst }: { inst: InstituicaoPreQualificacao }) {
+function CardBanco({ inst, isRealApi = false, isLoading = false }: {
+  inst: InstituicaoPreQualificacao;
+  isRealApi?: boolean;
+  isLoading?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
   const cfg = STATUS_CONFIG[inst.status] || STATUS_CONFIG.ANALISE_NECESSARIA;
   const StatusIcon = cfg.icon;
   const logo = BANCO_LOGO[inst.nome] || { emoji: '🏛', bg: 'from-slate-500 to-slate-700' };
+
+  if (isLoading) {
+    return (
+      <div className="rounded-2xl border border-violet-100 bg-white shadow-sm overflow-hidden">
+        <div className="p-5 flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${logo.bg} flex items-center justify-center text-xl flex-shrink-0`}>
+            {logo.emoji}
+          </div>
+          <div className="flex-1 min-w-0 space-y-2 pt-0.5">
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-32 bg-slate-100 rounded animate-pulse" />
+              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-violet-600">
+                <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-ping inline-block" />
+                Consultando API...
+              </span>
+            </div>
+            <div className="h-3 w-48 bg-slate-100 rounded animate-pulse" />
+            <div className="h-1.5 w-full bg-slate-100 rounded-full animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-2xl border shadow-sm transition-all duration-200 overflow-hidden bg-white ${cfg.cardBorder}`}>
@@ -256,6 +286,12 @@ function CardBanco({ inst }: { inst: InstituicaoPreQualificacao }) {
                 <StatusIcon size={10} />
                 {cfg.label}
               </span>
+              {isRealApi && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse inline-block" />
+                  API AO VIVO
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 font-medium">{inst.produto}</p>
 
@@ -394,9 +430,64 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
+// ─── Converter resposta real da Celcoin → InstituicaoPreQualificacao ──────────
+
+function _celcoinApiToInstituicao(data: {
+  aprovado: boolean;
+  status: string;
+  valor_aprovado?: number;
+  parcela_estimada?: number;
+  taxa_anual?: number;
+  mensagem: string;
+  proposta_id?: string;
+  sandbox?: boolean;
+}): InstituicaoPreQualificacao {
+  const statusMap: Record<string, InstituicaoPreQualificacao['status']> = {
+    APPROVED:                 'PRE_QUALIFICADO',
+    PRE_APPROVED:             'PRE_QUALIFICADO',
+    APPROVED_WITH_CONDITIONS: 'PRE_QUALIFICADO',
+    PENDING:                  'ANALISE_NECESSARIA',
+    PENDING_DOCS:             'ANALISE_NECESSARIA',
+    UNDER_ANALYSIS:           'ANALISE_NECESSARIA',
+    REJECTED:                 'NAO_ELEGIVEL',
+    CANCELLED:                'NAO_ELEGIVEL',
+    EXPIRED:                  'ANALISE_NECESSARIA',
+  };
+  const st = statusMap[data.status.toUpperCase()] ?? 'ANALISE_NECESSARIA';
+  const prob = data.aprovado ? 85 : st === 'ANALISE_NECESSARIA' ? 50 : 10;
+  const taxa = data.taxa_anual
+    ? `${data.taxa_anual.toFixed(2)}% a.a.`
+    : 'a partir de 1,29% a.m.';
+
+  return {
+    nome: 'Celcoin Empresas',
+    produto: 'Crédito PJ via API — Capital de Giro / Consignado',
+    taxa_estimada: taxa,
+    prazo_maximo: 'até 48 meses',
+    valor_pre_aprovado: data.valor_aprovado ?? 0,
+    status: st,
+    probabilidade_aprovacao: prob,
+    requisitos_atendidos: data.aprovado
+      ? ['CNPJ validado pela Celcoin ✓', 'Perfil de crédito aprovado na análise real ✓']
+      : [],
+    requisitos_pendentes: !data.aprovado
+      ? [data.mensagem]
+      : (data.sandbox ? ['⚠️ Resultado gerado em ambiente sandbox — não vinculante'] : []),
+    diferenciais: [
+      'Decisão em tempo real via API (crédito embedded)',
+      'Infraestrutura financeira para 6.000+ clientes — R$ 30 bi/mês',
+      'Integração nativa com Pix, Boleto e Open Finance',
+      data.proposta_id ? `ID Proposta: ${data.proposta_id}` : 'Sandbox disponível para teste',
+    ],
+    link_aplicacao: 'https://www.celcoin.com.br/solucoes/corban-as-a-service/',
+    motivo: data.mensagem,
+  };
+}
+
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf = '', companies = [], tier = 3 }: Props) {
+export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf = '', companies = [], tier = 3, defaultValorEdital }: Props) {
   // Domínio .bawzi.com → apenas empresas cadastradas; outros → livre
   const isBawziDomain = typeof window !== 'undefined' && window.location.hostname.endsWith('.bawzi.com');
 
@@ -407,12 +498,24 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
 
   const [cnpj, setCnpj]             = useState(initialCnpj);
   const [useCustomCnpj, setCustom]  = useState(false); // "Outro CNPJ" só em domínios internos
-  const [valorEdital, setValor]     = useState('');
+
+  // Inicialização direta com lazy initializer — garante que o campo está preenchido
+  // no primeiro render, mesmo que `defaultValorEdital` chegue junto com a montagem.
+  const [valorEdital, setValor] = useState<string>(() => {
+    if (!defaultValorEdital || defaultValorEdital <= 0) return '';
+    const num = String(Math.round(defaultValorEdital * 100)).replace(/\D/g, '');
+    if (!num) return '';
+    return (Number(num) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  });
+
   const [objeto, setObjeto]         = useState('');
-  const [loading, setLoading]       = useState(false);
-  const [resultado, setResultado]   = useState<RecomendacaoCapital | null>(null);
-  const [analise, setAnalise]       = useState<AnaliseInstituicoesResponse | null>(null);
-  const [erro, setErro]             = useState('');
+  const [loading, setLoading]             = useState(false);
+  const [resultado, setResultado]         = useState<RecomendacaoCapital | null>(null);
+  const [analise, setAnalise]             = useState<AnaliseInstituicoesResponse | null>(null);
+  const [erro, setErro]                   = useState('');
+  // Celcoin: resultado da consulta real à API (independente dos 3 simulados)
+  const [celcoinRealData, setCelcoinReal] = useState<InstituicaoPreQualificacao | null>(null);
+  const [celcoinLoading, setCelcoinLoad] = useState(false);
 
   // Formata CNPJ para exibição no select (XX.XXX.XXX/XXXX-XX)
   function exibirCnpj(raw: string) {
@@ -449,8 +552,24 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
     setLoading(true);
     setResultado(null);
     setAnalise(null);
+    setCelcoinReal(null);
+    setCelcoinLoad(true);
 
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+
+    // Lança a consulta real à Celcoin em paralelo, de forma independente.
+    // Se falhar (sem credenciais, timeout), não bloqueia os outros resultados.
+    fetch(`${API_URL}/api/celcoin/pre-qualificacao`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ cnpj: cnpjLimpo, valor_solicitado: valor }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data) setCelcoinReal(_celcoinApiToInstituicao(data));
+      })
+      .catch(() => { /* silencioso — fallback mantém o card simulado */ })
+      .finally(() => setCelcoinLoad(false));
 
     try {
       // Chama os dois endpoints em paralelo
@@ -723,9 +842,15 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
                   <div className="space-y-3">
                     {analise.instituicoes
                       .sort((a, b) => b.probabilidade_aprovacao - a.probabilidade_aprovacao)
-                      .map((inst, i) => (
-                        <CardBanco key={i} inst={inst} />
-                      ))}
+                      .map((inst, i) => {
+                        const isCelcoin = inst.nome === 'Celcoin Empresas';
+                        // Celcoin: usa dado real se disponível, loading skeleton enquanto aguarda
+                        if (isCelcoin) {
+                          if (celcoinLoading) return <CardBanco key={i} inst={inst} isLoading={true} />;
+                          if (celcoinRealData) return <CardBanco key={i} inst={celcoinRealData} isRealApi={true} />;
+                        }
+                        return <CardBanco key={i} inst={inst} />;
+                      })}
                   </div>
                 </div>
               </div>

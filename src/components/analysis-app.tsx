@@ -19,7 +19,9 @@
  *   ImpugnacaoModal      — modal da peça de impugnação
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { initSession, clearSession, setAccessToken } from '@/lib/apiClient';
+import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import { useRouter } from 'next/navigation';
 
 // Sub-componentes extraídos
@@ -104,9 +106,12 @@ export default function AnalysisApp() {
   const [userData, setUserData]         = useState<any>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
+  // Valor pré-preenchido para Capital Intelligence (vindo de uma análise)
+  const [capitalPrefilledValor, setCapitalPrefilledValor] = useState<number>(0);
   const [showAuthModal, setShowAuthModal]   = useState(false);
   const [authMode, setAuthMode]         = useState<'login' | 'register'>('register');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -139,6 +144,17 @@ export default function AnalysisApp() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ─── Inactividade: timeout de sessão ────────────────────────────────────────
+  const handleInactivityExpire = useCallback(() => {
+    clearSession();
+    setSessionExpired(true);
+  }, []);
+
+  const { showWarning: showInactivityWarning, secondsRemaining: inactivitySecondsLeft } = useInactivityTimeout({
+    onExpire: handleInactivityExpire,
+    enabled: !!token,
+  });
 
   // ─── Configuração de limites por tier ──────────────────────────────────────
   const { tierLimits, tierFileLimits } = useTierConfig();
@@ -219,7 +235,7 @@ export default function AnalysisApp() {
   // ─── useEffect: carga de dados unificada ────────────────────────────────────
   useEffect(() => {
     const loadUnifiedData = async () => {
-      const savedToken = localStorage.getItem('bawzi_token');
+      const savedToken = await initSession();
       if (!savedToken) { setIsCheckingAuth(false); return; }
       setToken(savedToken);
 
@@ -327,6 +343,18 @@ export default function AnalysisApp() {
     };
     window.addEventListener('bawzi_open_auth', handleOpenAuth);
     return () => window.removeEventListener('bawzi_open_auth', handleOpenAuth);
+  }, []);
+
+  // ─── useEffect: sessão expirada (disparado pelo apiClient) ───────────────────
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setToken(null);
+      setUserData(null);
+      setUserTier(1);
+      setSessionExpired(true);
+    };
+    window.addEventListener('bawzi_session_expired', handleSessionExpired);
+    return () => window.removeEventListener('bawzi_session_expired', handleSessionExpired);
   }, []);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
@@ -803,6 +831,37 @@ export default function AnalysisApp() {
 
   // ─── Renderização ────────────────────────────────────────────────────────────
 
+  // ─── Banner de sessão expirada ───────────────────────────────────────────────
+  if (sessionExpired) {
+    return (
+      <div className="fixed inset-0 z-[700] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
+        <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center flex flex-col items-center gap-5">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center">
+            <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-black text-slate-900 mb-1">Sessão expirada</h2>
+            <p className="text-sm text-slate-500 font-medium">
+              A sua sessão terminou por inatividade. Faça login novamente para continuar.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setSessionExpired(false);
+              setAuthMode('login');
+              setShowAuthModal(true);
+            }}
+            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-sm transition-colors shadow-sm"
+          >
+            Fazer login novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
       {/* Keyframes globais (path-routing, scan-laser, float-agent, draw-arc) */}
@@ -847,7 +906,7 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch
                             token={token}
-                            userUf={userData?.company?.uf}
+                            userUf={userData?.companies?.[0]?.uf || userData?.company?.uf}
                             onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
                               setResult(null);
                               setError(null);
@@ -920,6 +979,13 @@ export default function AnalysisApp() {
                       modelSource={modelSource}
                       isCachedResult={isCachedResult}
                       onUpgradeClick={() => setShowUpgradeModal(true)}
+                      onGoToCapital={(valor) => {
+                        setCapitalPrefilledValor(valor);
+                        setActiveTab('capital');
+                        setTimeout(() => {
+                          document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 150);
+                      }}
                     />
                   ) : null}
                 </div>
@@ -938,7 +1004,7 @@ export default function AnalysisApp() {
 
               {/* Aba Capital */}
               {activeTab === 'capital' && (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div id="capital-section" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {currentTier < 3 ? (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
                       <p className="text-slate-600 font-medium">Capital Intelligence disponível a partir do Nível 3.</p>
@@ -950,6 +1016,7 @@ export default function AnalysisApp() {
                       companies={userData?.companies?.length ? userData.companies : userData?.company ? [userData.company] : []}
                       defaultCnpj={userData?.companies?.[0]?.cnpj || userData?.company?.cnpj || ''}
                       defaultUf={userData?.companies?.[0]?.uf || userData?.company?.uf || ''}
+                      defaultValorEdital={capitalPrefilledValor || undefined}
                     />
                   )}
                 </div>
@@ -1124,6 +1191,26 @@ export default function AnalysisApp() {
         description="Você está a um passo de antecipar o movimento do mercado. Desbloqueie a verdadeira Inteligência Corporativa e destrua a concorrência."
         features={dominadorFeatures}
       />
+
+      {/* ── AVISO DE INATIVIDADE ── */}
+      {showInactivityWarning && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[800] animate-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl shadow-xl px-5 py-4 flex items-center gap-4 max-w-sm">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <circle cx="12" cy="12" r="10" />
+                <path strokeLinecap="round" d="M12 6v6l4 2" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-amber-900">Sessão prestes a expirar</p>
+              <p className="text-xs text-amber-700 font-medium">
+                Sua sessão expira em <span className="font-black">{inactivitySecondsLeft}s</span>. Mova o mouse para continuar.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
+import { clearSession } from '@/lib/apiClient';
 
 export default function Header() {
   const router = useRouter();
@@ -77,10 +78,12 @@ export default function Header() {
     return () => window.removeEventListener('bawzi_update', handleGlobalUpdate);
   }, [pathname]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('bawzi_token');
-    localStorage.removeItem('bawzi_tier');
-    localStorage.removeItem('bawzi_user'); 
+  const handleLogout = async () => {
+    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+    try {
+      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch { /* silencioso — sessão local sempre é limpa */ }
+    clearSession();
     setToken(null);
     router.push('/');
     window.location.reload();

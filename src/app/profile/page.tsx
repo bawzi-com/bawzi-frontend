@@ -213,7 +213,7 @@ function ProfileContent() {
     { id: 'sec-perfil',      label: 'Dados do Perfil',    icon: User },
     { id: 'sec-empresas',    label: 'Empresas',            icon: Building2 },
     { id: 'sec-seguranca',   label: 'Segurança',           icon: Shield },
-    { id: 'sec-equipa',      label: 'Equipa',              icon: User },
+    { id: 'sec-equipa',      label: 'Equipe',              icon: User },
     { id: 'sec-assinatura',  label: 'Assinatura',          icon: CreditCard },
     { id: 'sec-risco',       label: 'Zona de Risco',       icon: AlertTriangle },
   ];
@@ -253,7 +253,7 @@ function ProfileContent() {
                 {initial}
               </div>
               <div>
-                <p className="font-black text-slate-900 text-sm leading-tight">{userData?.name || 'Utilizador Bawzi'}</p>
+                <p className="font-black text-slate-900 text-sm leading-tight">{userData?.name || 'Usuário Bawzi'}</p>
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5 truncate max-w-[180px]">{userData?.email}</p>
               </div>
               <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
@@ -311,7 +311,7 @@ function ProfileContent() {
             {/* Page title (desktop) */}
             <div className="hidden lg:block mb-2">
               <h1 className="text-2xl font-black text-slate-900 tracking-tight">Definições</h1>
-              <p className="text-sm text-slate-500 font-medium mt-1">Gerir o seu perfil, segurança e assinatura.</p>
+              <p className="text-sm text-slate-500 font-medium mt-1">Gerenciar seu perfil, segurança e assinatura.</p>
             </div>
 
             {/* ── SECÇÃO: DADOS DO PERFIL ── */}

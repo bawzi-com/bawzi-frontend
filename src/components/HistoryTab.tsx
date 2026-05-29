@@ -396,8 +396,8 @@ export default function HistoryTab({
           result={selectedAnalysis as AnalysisResult}
           activeTab={detailTab}
           onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
-          userTier={userTier}
-          currentTier={userTier}
+          userTier={Math.max(userTier, Number(typeof window !== 'undefined' ? localStorage.getItem('bawzi_tier') || 1 : 1))}
+          currentTier={Math.max(userTier, Number(typeof window !== 'undefined' ? localStorage.getItem('bawzi_tier') || 1 : 1))}
           termoAlvo={selectedAnalysis.termo_busca_pncp || selectedAnalysis.title || 'Histórico'}
           analysisId={selectedAnalysis.id}
           token={token}

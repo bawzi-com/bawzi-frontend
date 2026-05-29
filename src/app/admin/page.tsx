@@ -544,7 +544,7 @@ export default function AdminDashboard() {
       {activeTab === 'overview' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-            <StatCard icon={<Users />} label="Utilizadores" value={data.kpis.usuarios} color="text-blue-400" />
+            <StatCard icon={<Users />} label="Usuários" value={data.kpis.usuarios} color="text-blue-400" />
             <StatCard icon={<FileText />} label="Análises Totais" value={data.kpis.analises_totais} color="text-violet-400" />
             <StatCard icon={<Zap />} label="Requisições 24h" value={data.kpis.analises_24h} color="text-amber-400" />
             <StatCard icon={<TrendingUp />} label="Clientes Pagos" value={data.kpis.conversao_pro} color="text-emerald-400" />
@@ -655,7 +655,7 @@ export default function AdminDashboard() {
                 {filteredUsers.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="py-10 text-center text-slate-500 font-medium">
-                      Nenhum utilizador encontrado com este e-mail.
+                      Nenhum usuário encontrado com este e-mail.
                     </td>
                   </tr>
                 ) : (

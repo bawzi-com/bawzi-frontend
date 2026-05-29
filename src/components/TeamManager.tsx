@@ -120,9 +120,9 @@ const handleToggleAdmin = async (email: string) => {
       {/* HEADER DA SECÇÃO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
         <div>
-          <h3 className="text-xl font-black text-slate-900 mb-1">Equipa Estratégica</h3>
+          <h3 className="text-xl font-black text-slate-900 mb-1">Equipe Estratégica</h3>
           <p className="text-xs font-medium text-slate-500">
-            Gerir acessos e membros do workspace. <strong className={currentUsers >= maxUsers ? 'text-red-500' : 'text-emerald-500'}>{currentUsers}/{maxUsers} vagas</strong> utilizadas.
+            Gerenciar acessos e membros do workspace. <strong className={currentUsers >= maxUsers ? 'text-red-500' : 'text-emerald-500'}>{currentUsers}/{maxUsers} vagas</strong> utilizadas.
           </p>
         </div>
 
