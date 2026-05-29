@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import AnalysisApp from '../../components/analysis-app';
+import ErrorBoundary from '../../components/ErrorBoundary';
 
 export default function WorkspacePage() {
   
@@ -30,7 +31,7 @@ useEffect(() => {
               const detectedTier = freshData.tier ?? freshData.tier_level ?? 1;
 
               localStorage.setItem('bawzi_tier', detectedTier.toString());
-              console.log("✅ Tier sincronizado:", detectedTier);
+              /* tier sincronizado */
               
               // Limpa a URL e recarrega
               window.history.replaceState({}, document.title, window.location.pathname);
@@ -48,7 +49,9 @@ useEffect(() => {
 
   return (
     <div className="pt-8">
-      <AnalysisApp /> 
+      <ErrorBoundary>
+        <AnalysisApp />
+      </ErrorBoundary>
     </div>
   );
 }

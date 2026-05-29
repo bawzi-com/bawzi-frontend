@@ -20,8 +20,10 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { initSession, clearSession, setAccessToken } from '@/lib/apiClient';
+import { initSession, clearSession, setAccessToken, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
+import type { UserData, Empresa, Concorrente } from '@/lib/types';
+import { useAnalysis } from '@/hooks/useAnalysis';
 import { useRouter } from 'next/navigation';
 
 // Sub-componentes extraídos
@@ -40,6 +42,8 @@ import PncpSearch from '../components/PncpSearch';
 import ContratosVencendo from '../components/ContratosVencendo';
 import CapitalIntelligence from '../components/CapitalIntelligence';
 import CnaeOportunidades from '../components/CnaeOportunidades';
+import RadarAlertas from '../components/RadarAlertas';
+import OnboardingModal from '../components/OnboardingModal';
 import UpgradeModal from './UpgradeModal';
 import AuthModal from './AuthModal';
 import UpsellModal from './UpsellModal';
@@ -50,8 +54,10 @@ import { AnalysisResult } from './analysis-types';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
+// Usa clearSession() do apiClient — remove apenas os dados de sessão,
+// sem apagar preferências do usuário (ex: bawzi_favorites, bawzi_tier).
 const logout = () => {
-  localStorage.clear();
+  clearSession();
   window.location.reload();
 };
 
@@ -86,27 +92,18 @@ export default function AnalysisApp() {
   const [forceExact, setForceExact]     = useState(false);
   const [pncpData, setPncpData]         = useState<{ cnpj: string; ano: number; sequencial: number; uf?: string } | null>(null);
 
-  // Análise
-  const [result, setResult]             = useState<AnalysisResult | null>(null);
-  const [isAnalyzing, setIsAnalyzing]   = useState(false);
-  const [error, setError]               = useState<string | null>(null);
-  const [successMsg, setSuccessMsg]     = useState<string | null>(null);
-  const [modelSource, setModelSource]   = useState<string | null>(null);
-  const [isCachedResult, setIsCachedResult] = useState(false);
-  const [provider, setProvider]         = useState<string>('openai');
-  const [loadingStep, setLoadingStep]   = useState(0);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingRemainingSeconds, setLoadingRemainingSeconds] = useState(30);
-  const [loadingEstimateSeconds, setLoadingEstimateSeconds] = useState(30);
+  // Análise — estado e handlers geridos pelo hook useAnalysis
+  const [provider, setProvider] = useState<string>('openai');
 
   // Auth / perfil
   const [token, setToken]               = useState<string | null>(null);
   const [userTier, setUserTier]         = useState<number>(1);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [userData, setUserData]         = useState<any>(null);
+  const [userData, setUserData]         = useState<UserData | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
@@ -120,13 +117,11 @@ export default function AnalysisApp() {
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
 
   // Partilha
-  const [analysisId, setAnalysisId]     = useState<string | null>(null);
   const [isSharing, setIsSharing]       = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [shareEmail, setShareEmail]     = useState('');
 
   // Impugnação
-  const [impugnacaoText, setImpugnacaoText]           = useState('');
   const [showImpugnacaoModal, setShowImpugnacaoModal] = useState(false);
   const [copiadoImpugnacao, setCopiadoImpugnacao]     = useState(false);
 
@@ -136,14 +131,40 @@ export default function AnalysisApp() {
 
   // Misc
   const [termoAlvo, setTermoAlvo]   = useState('');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [selectedCompetitor, setSelectedCompetitor] = useState<any | null>(null);
+  const [selectedCompetitor, setSelectedCompetitor] = useState<Concorrente | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [searchTerm, setSearchTerm] = useState('');
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ─── Hook useAnalysis — estado e handlers do ciclo de análise ────────────────
+  const {
+    result, setResult,
+    isAnalyzing,
+    error, setError, showError,
+    successMsg, showSuccess,
+    modelSource, isCachedResult,
+    analysisId,
+    impugnacaoText, setImpugnacaoText,
+    loadingStep, loadingProgress, loadingRemainingSeconds, loadingEstimateSeconds,
+    handleAnalyze,
+    handleCancelAnalysis,
+  } = useAnalysis({
+    token,
+    text,
+    files,
+    uf,
+    forceExact,
+    pncpData,
+    userTier,
+    isOverLimit: false, // calculado abaixo e reatribuído dinamicamente
+    apiUrl: API_URL,
+    onUpgradeNeeded: (tier) => handleUpgrade(tier),
+    onUpsellNeeded: (data) => { setUpsellData(data); setShowUpsell(true); },
+    onFreeTrialUsed: () => setHasUsedFreeTrial(true),
+  });
 
   // ─── Inactividade: timeout de sessão ────────────────────────────────────────
   const handleInactivityExpire = useCallback(() => {
@@ -167,49 +188,6 @@ export default function AnalysisApp() {
   const isOverFileLimit     = totalFileSize > currentFileLimitBytes;
   const isOverLimit         = isOverTextLimit || isOverFileLimit;
   const requiresAuth        = !token && hasUsedFreeTrial;
-
-  // ─── Helpers de feedback ────────────────────────────────────────────────────
-  const showError = (msg: string, ms = 5000) => {
-    setError(msg);
-    setTimeout(() => setError(null), ms);
-  };
-  const showSuccess = (msg: string, ms = 3500) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), ms);
-  };
-  const getLoadingEstimateSeconds = (motor: 'openai' | 'claude') => {
-    const isFastAnalysis = userTier === 4 && motor === 'openai';
-    const baseSeconds = isFastAnalysis ? 8 : motor === 'claude' ? 35 : 30;
-    const filePenalty = files.length > 0 ? 4 : 0;
-    const textPenalty = text.length > 80000 ? 8 : text.length > 30000 ? 4 : 0;
-
-    return Math.min(baseSeconds + filePenalty + textPenalty, isFastAnalysis ? 15 : 45);
-  };
-
-  // ─── useEffect: progresso temporal da análise ───────────────────────────────
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isAnalyzing) {
-      const startedAt = Date.now();
-      const totalSteps = LOADING_MESSAGES.length;
-      const estimate = Math.max(loadingEstimateSeconds, 6);
-
-      setLoadingStep(0);
-      setLoadingProgress(4);
-      setLoadingRemainingSeconds(estimate);
-
-      interval = setInterval(() => {
-        const elapsedSeconds = (Date.now() - startedAt) / 1000;
-        const progress = Math.min(96, Math.max(4, Math.round((elapsedSeconds / estimate) * 100)));
-        const nextStep = Math.min(totalSteps - 1, Math.floor((progress / 100) * totalSteps));
-
-        setLoadingProgress(progress);
-        setLoadingRemainingSeconds(Math.max(0, Math.ceil(estimate - elapsedSeconds)));
-        setLoadingStep(nextStep);
-      }, 500);
-    }
-    return () => clearInterval(interval);
-  }, [isAnalyzing, loadingEstimateSeconds]);
 
   // ─── useEffect: soberania de tier (cache local) ─────────────────────────────
   useEffect(() => {
@@ -241,20 +219,23 @@ export default function AnalysisApp() {
 
       const urlParams = new URLSearchParams(window.location.search);
       const isSuccessReturn = urlParams.get('success') === 'true';
-      const headers = { 'Authorization': `Bearer ${savedToken}`, 'Content-Type': 'application/json' };
 
       const fetchWithRetry = async (attemptsLeft = 5) => {
         try {
           const [userRes, wsRes] = await Promise.all([
-            fetch(`${API_URL}/api/users/me`, { headers }),
-            fetch(`${API_URL}/api/workspace/details`, { headers }),
+            apiFetch(`${API_URL}/api/users/me`),
+            apiFetch(`${API_URL}/api/workspace/details`),
           ]);
 
-          if (userRes.status === 401) { localStorage.clear(); window.location.reload(); return; }
+          if (userRes.status === 401) {
+            clearSession();
+            window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
+            return;
+          }
 
           if (userRes.ok && wsRes.ok) {
-            const uData = await userRes.json();
-            const wData = await wsRes.json();
+            const uData = await userRes.json() as UserData;
+            const wData = await wsRes.json() as { tier?: number; companies?: Empresa[]; workspace_users_count?: number; vagas_totais?: number; company?: Empresa };
 
             const nivelServidor  = Math.max(uData.tier || 1, wData.tier || 1);
             const nivelDoCache   = Number(localStorage.getItem('bawzi_tier') || 1);
@@ -282,14 +263,21 @@ export default function AnalysisApp() {
             setUserData(blendedUserData);
             window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: nivelFinal } }));
 
+            // Onboarding: exibir se o usuário não completou e ainda não tem empresa
+            if (!localStorage.getItem('bawzi_onboarding_done')) {
+              const semEmpresa = !((wData.companies ?? []).length > 0 || uData.company?.cnpj);
+              if (semEmpresa) setShowOnboarding(true);
+            }
+
             // Contagem silenciosa de contratos a vencer (só tier 4)
-            if (nivelFinal >= 4 && (wData.companies?.length > 0 || uData.company)) {
-              const companies = wData.companies?.length > 0 ? wData.companies : (uData.company ? [uData.company] : []);
-              const cnpjs = companies.map((c: { cnpj: string }) => c.cnpj).filter(Boolean);
+            const companiesArr: Empresa[] = (wData.companies ?? []).length > 0 ? (wData.companies as Empresa[]) : (uData.company ? [uData.company as Empresa] : []);
+            if (nivelFinal >= 4 && companiesArr.length > 0) {
+              const companies = companiesArr;
+              const cnpjs = companies.map((c: Empresa) => c.cnpj).filter(Boolean);
               if (cnpjs.length > 0) {
                 try {
                   const params = new URLSearchParams({ cnpj: cnpjs[0], dias: '90' });
-                  const r = await fetch(`${API_URL}/api/contratos-vencendo?${params}`, { headers });
+                  const r = await apiFetch(`${API_URL}/api/contratos-vencendo?${params}`);
                   if (r.ok) {
                     const data = await r.json();
                     const contratos = data.contratos || data.results || data || [];
@@ -359,15 +347,6 @@ export default function AnalysisApp() {
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
-  const handleCancelAnalysis = () => {
-    abortControllerRef.current?.abort();
-    setIsAnalyzing(false);
-    setLoadingStep(0);
-    setLoadingProgress(0);
-    setLoadingRemainingSeconds(loadingEstimateSeconds);
-    showError('Análise cancelada pelo usuário.', 4000);
-  };
-
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     const tierReal   = typeof window !== 'undefined' ? Number(localStorage.getItem('bawzi_tier') || userTier) : userTier;
@@ -409,14 +388,9 @@ export default function AnalysisApp() {
     if (!analysisId) { showError('Erro: não foi possível identificar o ID desta análise. Tente novamente.'); return; }
     setIsSharing(true);
     try {
-      const currentToken = localStorage.getItem('bawzi_token');
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/analyses/${analysisId}/share`, {
+      const response = await apiFetch(`${API_URL}/api/analyses/${analysisId}/share`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(currentToken ? { 'Authorization': `Bearer ${currentToken}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_email: shareEmail }),
       });
       if (!response.ok) {
@@ -434,100 +408,11 @@ export default function AnalysisApp() {
     }
   };
 
-  const handleAnalyze = async (motor: 'openai' | 'claude') => {
+  // handleAnalyze delegado ao hook useAnalysis (ver @/hooks/useAnalysis.ts)
+  // Wrapper para guardar compatibilidade com requiresAuth
+  const handleAnalyzeWithAuth = (motor: 'openai' | 'claude') => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
-    if (!text.trim() && files.length === 0 && !pncpData) {
-      setError('Por favor, cole um texto, adicione um documento ou selecione um edital no Radar PNCP antes de analisar.');
-      setTimeout(() => setError(null), 5000);
-      return;
-    }
-    if (isOverLimit) { handleUpgrade(userTier >= 1 ? userTier + 1 : 2); return; }
-
-    setLoadingEstimateSeconds(getLoadingEstimateSeconds(motor));
-    setIsAnalyzing(true);
-    setError(null);
-    setResult(null);
-    setIsCachedResult(false);
-    abortControllerRef.current = new AbortController();
-
-    setTimeout(() => {
-      const el = document.getElementById('area-loading');
-      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 100, behavior: 'smooth' });
-    }, 50);
-
-    try {
-      const formData = new FormData();
-      if (text.trim()) formData.set('raw_text', text.trim());
-      files.forEach(f => formData.append('files', f));
-      formData.set('uf', uf && uf.trim() !== '' ? uf.trim().toUpperCase() : 'BR');
-      formData.set('force_exact', forceExact ? 'true' : 'false');
-      formData.set('provider', motor);
-      if (pncpData) {
-        formData.set('pncp_cnpj', pncpData.cnpj);
-        formData.set('pncp_ano', pncpData.ano.toString());
-        formData.set('pncp_sequencial', pncpData.sequencial.toString());
-        if (pncpData.uf) formData.set('uf', pncpData.uf);
-      }
-
-      const headers: Record<string, string> = {};
-      const currentToken = localStorage.getItem('bawzi_token');
-      if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
-
-      const response = await fetch(`${API_URL.replace(/\/$/, '')}/api/analyze`, {
-        method: 'POST', headers, body: formData,
-        signal: abortControllerRef.current.signal,
-      });
-
-      // Upsell 403
-      if (response.status === 403) {
-        const errorData = await response.json();
-        if (errorData.detail?.codigo === 'LIMIT_REACHED') {
-          setUpsellData({ title: errorData.detail.titulo, desc: errorData.detail.mensagem });
-          setShowUpsell(true);
-          setIsAnalyzing(false);
-          return;
-        }
-      }
-      if (response.status === 401) { logout(); return; }
-      if (response.status === 402) { handleUpgrade(userTier >= 1 ? userTier + 1 : 2); setIsAnalyzing(false); return; }
-
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail || 'Erro no servidor.');
-
-      const analysisData = data.analysis || data;
-      if (!analysisData || Object.keys(analysisData).length === 0 || !analysisData.score) {
-        throw new Error('A IA processou o documento, mas não conseguiu estruturar o formato final. Por favor, clique em Iniciar Análise novamente.');
-      }
-
-      setResult(analysisData);
-      setAnalysisId(data.id || data.record_id || data.analysis_hash);
-      setModelSource(data.source || data.model_source || 'Motor Bawzi IA');
-      setIsCachedResult(data.is_cached || false);
-
-      setTimeout(() => {
-        const el = document.getElementById('area-resultados');
-        if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 50, behavior: 'smooth' });
-      }, 100);
-
-      if (!token) { localStorage.setItem('bawzi_free_trial_used', 'true'); setHasUsedFreeTrial(true); }
-
-    } catch (err: unknown) {
-      if ((err as Error).name === 'AbortError') return;
-      if (userTier === -1) { setShowUpgradeModal(true); setIsAnalyzing(false); return; }
-
-      const msg = (err as Error).message || '';
-      let mensagemParaExibir = 'Ocorreu um erro inesperado. Por favor, tente novamente.';
-      if (msg.includes('NoneType') || msg.includes('401')) {
-        mensagemParaExibir = 'Parece que a sua sessão expirou. Por favor, faça login novamente.';
-      } else if (msg.includes('500')) {
-        mensagemParaExibir = 'O nosso motor de IA está sobrecarregado. Tente novamente em instantes.';
-      } else {
-        mensagemParaExibir = msg;
-      }
-      setError(mensagemParaExibir);
-    } finally {
-      setIsAnalyzing(false);
-    }
+    handleAnalyze(motor);
   };
 
   const handleUpgrade = async (tier: number) => {
@@ -535,9 +420,9 @@ export default function AnalysisApp() {
     setSelectedTier(tier);
     setIsCheckoutLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
+      const res = await apiFetch(`${API_URL}/api/billing/create-checkout-session`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tier }),
       });
       const data = await res.json();
@@ -949,7 +834,7 @@ export default function AnalysisApp() {
                         successMsg={successMsg}
                         provider={provider}
                         onProviderChange={setProvider}
-                        onAnalyze={handleAnalyze}
+                        onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
                       />
                     </>
@@ -1022,6 +907,13 @@ export default function AnalysisApp() {
                 </div>
               )}
 
+              {/* Aba Alertas PNCP */}
+              {activeTab === 'alertas' && token && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <RadarAlertas token={token} />
+                </div>
+              )}
+
               {/* Aba Para Você (Feed CNAE) */}
               {activeTab === 'cnae' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -1084,17 +976,53 @@ export default function AnalysisApp() {
               )}
             </div>
 
-            {/* ── SIDEBAR DIREITA ── */}
-            <AppSidebar
-              token={token}
-              userData={userData}
-              currentTier={currentTier}
-              activeTab={activeTab}
-              onSetActiveTab={setActiveTab}
-              renovacoesCount={renovacoesCount}
-              onNotifCountChange={setNotifCount}
-              onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-            />
+            {/* ── SIDEBAR DIREITA (desktop: inline, mobile: drawer) ── */}
+
+            {/* Mobile: drawer overlay */}
+            {sidebarMobileOpen && (
+              <div className="fixed inset-0 z-[600] lg:hidden flex">
+                {/* Backdrop */}
+                <div
+                  className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm"
+                  onClick={() => setSidebarMobileOpen(false)}
+                />
+                {/* Drawer */}
+                <div className="relative ml-auto w-[340px] max-w-[90vw] h-full bg-slate-50 overflow-y-auto shadow-2xl animate-in slide-in-from-right duration-300">
+                  <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+                    <span className="text-sm font-black text-slate-900 uppercase tracking-widest">Navegação</span>
+                    <button onClick={() => setSidebarMobileOpen(false)} className="text-slate-400 hover:text-slate-700 p-1">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <AppSidebar
+                      token={token}
+                      userData={userData}
+                      currentTier={currentTier}
+                      activeTab={activeTab}
+                      onSetActiveTab={(tab) => { setActiveTab(tab); setSidebarMobileOpen(false); }}
+                      renovacoesCount={renovacoesCount}
+                      onNotifCountChange={setNotifCount}
+                      onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); setSidebarMobileOpen(false); }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Desktop: sidebar normal */}
+            <div className="hidden lg:block">
+              <AppSidebar
+                token={token}
+                userData={userData}
+                currentTier={currentTier}
+                activeTab={activeTab}
+                onSetActiveTab={setActiveTab}
+                renovacoesCount={renovacoesCount}
+                onNotifCountChange={setNotifCount}
+                onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+              />
+            </div>
           </div>
         </section>
 
@@ -1149,22 +1077,14 @@ export default function AnalysisApp() {
         onClose={async () => {
           setShowUpgradeModal(false);
           setStripeSecret(null);
-          const currentToken = localStorage.getItem('bawzi_token');
-          if (currentToken) {
-            try {
-              const res = await fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
-                headers: { 'Authorization': `Bearer ${currentToken}` },
-              });
-              const data = await res.json();
-              if (res.ok && data.tier !== undefined) {
-                localStorage.setItem('user_tier', String(data.tier));
-                localStorage.setItem('bawzi_tier', String(data.tier));
-                window.location.reload();
-              }
-            } catch (e) {
-              console.error('Erro no sync após fechar modal', e);
+          try {
+            const res = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`);
+            const data = await res.json();
+            if (res.ok && data.tier !== undefined) {
+              localStorage.setItem('bawzi_tier', String(data.tier));
+              window.location.reload();
             }
-          }
+          } catch { /* silencioso — reload será feito de qualquer forma */ }
         }}
         tier={selectedTier}
         clientSecret={stripeSecret}
@@ -1191,6 +1111,38 @@ export default function AnalysisApp() {
         description="Você está a um passo de antecipar o movimento do mercado. Desbloqueie a verdadeira Inteligência Corporativa e destrua a concorrência."
         features={dominadorFeatures}
       />
+
+      {/* ── BOTÃO MOBILE SIDEBAR ── */}
+      {token && (
+        <button
+          onClick={() => setSidebarMobileOpen(true)}
+          className="fixed bottom-6 right-6 z-[500] lg:hidden w-14 h-14 bg-slate-900 hover:bg-emerald-700 text-white rounded-2xl shadow-xl flex items-center justify-center transition-all active:scale-95 print:hidden"
+          aria-label="Abrir menu"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          {notifCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* ── ONBOARDING ── */}
+      {showOnboarding && token && (
+        <OnboardingModal
+          userName={userData?.name || userData?.nome || 'usuário'}
+          hasCompany={!!(userData?.companies?.length > 0 || userData?.company?.cnpj)}
+          onClose={() => setShowOnboarding(false)}
+          onGoToProfile={() => window.location.href = '/profile'}
+          onGoToRadar={() => {
+            setShowOnboarding(false);
+            document.getElementById('radar-pncp-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+        />
+      )}
 
       {/* ── AVISO DE INATIVIDADE ── */}
       {showInactivityWarning && (

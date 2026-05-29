@@ -15,16 +15,16 @@
 import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
-  Scale, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target,
+  Scale, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
 import NotificationPanel from './NotificationPanel';
+import type { UserData } from '@/lib/types';
 
 interface AppSidebarProps {
   token: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  userData: any | null;
+  userData: UserData | null;
   currentTier: number;
   activeTab: string;
   onSetActiveTab: (tab: string) => void;
@@ -256,6 +256,31 @@ export default function AppSidebar({
               <FeatureBadge label="CONFIG." color="amber" />
             </button>
           )
+        )}
+
+        {/* ── Radar de Alertas ────────────────────────────── */}
+        {token && (
+          <button
+            onClick={() => onSetActiveTab('alertas')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'alertas' ? 'bg-amber-600' : 'hover:bg-amber-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'alertas' ? 'bg-white/15' : 'bg-amber-50 border border-amber-100'
+            }`}>
+              <Bell size={16} className={activeTab === 'alertas' ? 'text-white' : 'text-amber-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'alertas' ? 'text-white' : 'text-slate-800'}`}>
+                Alertas
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'alertas' ? 'text-white/60' : 'text-slate-400'}`}>
+                Notificações PNCP · Proativo
+              </p>
+            </div>
+            {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
+          </button>
         )}
 
         {/* ── Capital Inteligente ─────────────────────────── */}

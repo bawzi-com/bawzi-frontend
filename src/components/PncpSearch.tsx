@@ -55,6 +55,13 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   const [detectedUf, setDetectedUf] = useState('');
   const [marketData, setMarketData] = useState<any>(null);
 
+  // ── Modo de seleção (bulk) ───────────────────────────────────────────────
+  const [bulkMode, setBulkMode]         = useState(false);
+  const [selected, setSelected]         = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading]   = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(0);
+  const MAX_BULK = 5;
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
@@ -393,24 +400,40 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
       const promptEstrategicoFinal = cabecalhoPrompt + conteudoDetalhamentoFinal + rodapePrompt;
 
-      console.log("==== 🔍 DEBUG 1: SAÍDA DO RADAR ====");
-      console.log("Edital Alvo:", edital.orgao);
-      console.log("Termo que vai ser enviado:", searchTerm);
-      console.log("Início do Prompt:", promptEstrategicoFinal.substring(0, 150));
-      console.log("====================================");
-
       onAnalyzeOportunity(promptEstrategicoFinal, searchTerm, {
         cnpj: edital.cnpj,
         ano: edital.ano,
         sequencial: edital.sequencial,
         uf: edital.uf
       });
-      
+
     } catch (err: any) {
-      alert(err.message);
+      setError(err.message || 'Erro ao carregar o edital. Tente novamente.');
     } finally {
       setLoadingId(null);
     }
+  };
+
+  // ── Analisar em lote ───────────────────────────────────────────────────
+  const handleBulkAnalyze = async () => {
+    if (selected.size === 0) return;
+    const editaisSelecionados = results.filter(e => selected.has(e.id || e.link));
+    setBulkLoading(true);
+    setBulkProgress(0);
+    setBulkMode(false);
+    setSelected(new Set());
+
+    for (let i = 0; i < editaisSelecionados.length; i++) {
+      const edital = editaisSelecionados[i];
+      setBulkProgress(i + 1);
+      await handleDeepAnalyze(edital);
+      // Pequena pausa entre análises para não sobrecarregar
+      if (i < editaisSelecionados.length - 1) {
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+    setBulkLoading(false);
+    setBulkProgress(0);
   };
 
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
@@ -670,6 +693,35 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       {/* ========================================== */}
       {/* 4. LISTA DE EDITAIS E EXTRAÇÃO PROFUNDA    */}
       {/* ========================================== */}
+      {/* ── Barra de seleção em lote ──────────────────────────────────────── */}
+      {results.length > 0 && (
+        <div className="flex items-center justify-between gap-3 px-1">
+          <button
+            onClick={() => { setBulkMode(!bulkMode); setSelected(new Set()); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all border ${bulkMode ? 'bg-violet-600 text-white border-violet-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700'}`}
+          >
+            {bulkMode ? '✕ Cancelar seleção' : '☑ Selecionar para lote'}
+          </button>
+
+          {bulkMode && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">
+                {selected.size}/{MAX_BULK} selecionados
+              </span>
+              <button
+                onClick={handleBulkAnalyze}
+                disabled={selected.size === 0 || bulkLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-md shadow-violet-500/20"
+              >
+                {bulkLoading
+                  ? `Analisando ${bulkProgress}/${selected.size}...`
+                  : `Analisar ${selected.size} edital${selected.size !== 1 ? 'is' : ''}`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {results.length > 0 && (
         <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pr-3 pb-8 custom-scrollbar relative z-10">
           {results.map((edital, index) => {
@@ -689,10 +741,30 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             // Se publicado há < 45 dias sem data → plataforma externa não sincronizou com PNCP
             const semDataRecente = dataFimIlegivel && diasDesdePublicacao < 45;
 
+            const editalKey = edital.id || edital.link || String(index);
+            const isSelected = selected.has(editalKey);
+
             return (
-              <div key={edital.id || index} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-slate-300 transition-all shadow-sm hover:shadow-md group">
+              <div
+                key={editalKey}
+                className={`p-5 md:p-6 border rounded-[1.5rem] bg-white transition-all shadow-sm hover:shadow-md group ${isSelected ? 'border-violet-400 ring-2 ring-violet-200' : 'border-slate-200 hover:border-slate-300'}`}
+                onClick={bulkMode ? () => {
+                  if (isSelected) {
+                    setSelected(prev => { const n = new Set(prev); n.delete(editalKey); return n; });
+                  } else if (selected.size < MAX_BULK) {
+                    setSelected(prev => new Set([...prev, editalKey]));
+                  }
+                } : undefined}
+                style={bulkMode ? { cursor: 'pointer' } : undefined}
+              >
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex gap-2 items-center">
+                    {/* Checkbox em modo bulk */}
+                    {bulkMode && (
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-300 bg-white'}`}>
+                        {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                      </div>
+                    )}
                     <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200">
                       {edital.uf} • {edital.ano}
                     </span>
@@ -786,7 +858,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       const seqInvalido = !edital.sequencial || String(edital.sequencial) === "undefined";
 
                       if (cnpjInvalido || anoInvalido || seqInvalido) {
-                        alert("Falha de registro no PNCP: falta CNPJ, ano ou sequencial. Não foi possível extrair o edital.");
+                        setError("Dados incompletos neste edital (CNPJ, ano ou sequencial ausente). Tente outro edital ou acesse o link original.");
                         return;
                       }
                       handleDeepAnalyze(edital);

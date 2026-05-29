@@ -28,10 +28,16 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const maxUsers = WORKSPACE_LIMITS[tier] || 1;
   const currentUsers = members.length;
+
+  const showNotice = (type: 'success' | 'error', msg: string) => {
+    setNotice({ type, msg });
+    setTimeout(() => setNotice(null), 4000);
+  };
 
   // ==========================================
   // ADICIONAR NOVO MEMBRO
@@ -39,27 +45,22 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
     try {
       const res = await fetch(`${API_URL}/api/workspace/invite`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userToken}`
-        },
-        body: JSON.stringify({ email: newEmail })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        body: JSON.stringify({ email: newEmail }),
       });
-
       const data = await res.json();
       if (res.ok) {
         setShowAddModal(false);
         setNewEmail('');
-        onUpdate(); // Atualiza a página e o Nível de vagas
+        onUpdate();
       } else {
-        alert(data.detail || "Erro ao adicionar colaborador.");
+        showNotice('error', data.detail || 'Erro ao adicionar colaborador.');
       }
-    } catch (err) {
-      alert("Erro de ligação ao servidor.");
+    } catch {
+      showNotice('error', 'Erro de ligação ao servidor.');
     } finally {
       setLoading(false);
     }
@@ -69,53 +70,48 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   // REMOVER MEMBRO
   // ==========================================
   const handleRemoveUser = async (email: string) => {
-    if (!confirm(`Tem a certeza que deseja remover ${email} do workspace?`)) return;
-    
+    if (!confirm(`Tem certeza que deseja remover ${email} do workspace?`)) return;
     try {
       const res = await fetch(`${API_URL}/api/workspace/remove-user`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${userToken}`,
-          'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({ email })
+        headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
-
       if (res.ok) onUpdate();
-      else alert("Erro ao remover utilizador.");
-    } catch (err) {
-      console.error(err);
+      else showNotice('error', 'Erro ao remover usuário.');
+    } catch {
+      showNotice('error', 'Erro de ligação ao servidor.');
     }
   };
 
   // ==========================================
   // PROMOVER/DESPROMOVER ADMIN
   // ==========================================
-const handleToggleAdmin = async (email: string) => {
+  const handleToggleAdmin = async (email: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/workspace/toggle-admin`, { // <-- Certifique-se que está assim
+      const res = await fetch(`${API_URL}/api/workspace/toggle-admin`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${userToken}`,
-          'Content-Type': 'application/json' 
-        },
-        body: JSON.stringify({ email })
+        headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
-
       if (res.ok) {
         onUpdate();
       } else {
-        // 🟢 Lê a mensagem de erro que o Python mandou e mostra no alerta
         const data = await res.json();
-        alert(data.detail || "Erro ao alterar privilégios."); 
+        showNotice('error', data.detail || 'Erro ao alterar privilégios.');
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      showNotice('error', 'Erro de ligação ao servidor.');
     }
   };
 
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200">
+    <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200 relative">
+      {notice && (
+        <div className={`fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl ${notice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          {notice.msg}
+        </div>
+      )}
       
       {/* HEADER DA SECÇÃO */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">

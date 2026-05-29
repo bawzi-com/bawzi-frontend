@@ -104,7 +104,7 @@ function ProfileContent() {
               window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: tierReal } }));
             }
           })
-          .catch(() => console.log("Auto-Sync em background ignorado."));
+          .catch(() => { /* auto-sync em background — silencioso */ });
       }
       
       if (membersRes.ok) setMembers(await membersRes.json());

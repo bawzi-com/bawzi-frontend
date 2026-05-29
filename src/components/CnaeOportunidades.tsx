@@ -88,6 +88,7 @@ export default function CnaeOportunidades({
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null);
   const [mensagemServidor, setMensagemServidor] = useState('');
   const [mounted, setMounted] = useState(false);
+  const [erroEdital, setErroEdital] = useState<string | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -141,7 +142,8 @@ export default function CnaeOportunidades({
     const uid = edital.numero_controle_pncp || edital.id || String(Math.random());
 
     if (!cnpj || !ano || !seq) {
-      alert('⚠️ Edital sem identificação completa (CNPJ/Ano/Sequencial). Impossível extrair.');
+      setErroEdital('Dados incompletos neste edital (CNPJ, ano ou sequencial ausente). Tente outro edital.');
+      setTimeout(() => setErroEdital(null), 5000);
       return;
     }
 
@@ -195,7 +197,8 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
 
       onAnalyzeOportunity(prompt, edital.cnae_match || termo, { cnpj, ano, sequencial: seq, uf });
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Erro ao carregar edital.');
+      setErroEdital(err instanceof Error ? err.message : 'Erro ao carregar edital. Tente novamente.');
+      setTimeout(() => setErroEdital(null), 5000);
     } finally {
       setLoadingId(null);
     }
@@ -242,6 +245,13 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   };
 
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
+
+  // ─── Toast de erro de edital ────────────────────────────────────────────────
+  const ErroEditalToast = erroEdital ? (
+    <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border bg-red-50 border-red-200 text-red-800 px-4 py-3 text-sm font-semibold shadow-xl">
+      {erroEdital}
+    </div>
+  ) : null;
 
   // ─── Estado: não autenticado ───────────────────────────────────────────────
   if (!token) {
@@ -321,6 +331,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   // ─── Feed de editais ───────────────────────────────────────────────────────
   return (
     <div className="w-full max-w-5xl mx-auto font-sans">
+      {ErroEditalToast}
 
       {/* ── Cabeçalho ─────────────────────────────────────────────────────────── */}
       <div className="bg-white rounded-[1.75rem] border border-slate-100 shadow-sm p-5 mb-4">

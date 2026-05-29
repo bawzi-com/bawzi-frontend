@@ -16,11 +16,17 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false); // Estado para o botão de Sync
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [selectedTier, setSelectedTier] = useState<number>(1); 
-  const [stripeSecret, setStripeSecret] = useState<string | null>(null); 
+  const [selectedTier, setSelectedTier] = useState<number>(1);
+  const [stripeSecret, setStripeSecret] = useState<string | null>(null);
   const [activeTier, setActiveTier] = useState<number>(propCurrentTier ?? 0);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const showCheckoutError = (msg: string) => {
+    setCheckoutError(msg);
+    setTimeout(() => setCheckoutError(null), 5000);
+  };
 
   const refreshTier = useCallback(async () => {
     const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
@@ -116,11 +122,11 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         window.location.href = data.url; 
       } else {
         setIsCheckoutLoading(false);
-        alert(data.detail || "Erro ao abrir faturamento.");
+        showCheckoutError(data.detail || "Erro ao abrir faturamento.");
       }
-    } catch (error) {
+    } catch {
       setIsCheckoutLoading(false);
-      alert("Erro de conexão.");
+      showCheckoutError("Erro de conexão. Tente novamente.");
     }
   };
 
@@ -152,7 +158,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
           sessionStorage.setItem('returning_from_portal', 'true');
           const navTimeout = setTimeout(() => {
             setIsCheckoutLoading(false);
-            alert('Redirecionamento demorou. Tente novamente ou acesse o portal pelo perfil.');
+            showCheckoutError('Redirecionamento demorou. Tente novamente ou acesse o portal pelo perfil.');
           }, 8000);
           window.addEventListener('beforeunload', () => clearTimeout(navTimeout), { once: true });
           window.location.href = data.url;
@@ -164,14 +170,14 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         } else {
           // Resposta inesperada do backend (sem url nem client_secret)
           setIsCheckoutLoading(false);
-          alert(data.detail || "Erro inesperado ao processar o pagamento. Tente novamente.");
+          showCheckoutError(data.detail || "Erro inesperado ao processar o pagamento. Tente novamente.");
         }
       } else {
         throw new Error(data.detail || "Erro no processamento");
       }
-    } catch (error) {
+    } catch {
       setIsCheckoutLoading(false);
-      alert("Erro de ligação ao servidor. Por favor tente novamente.");
+      showCheckoutError("Erro de ligação ao servidor. Tente novamente.");
     }
   };
 
@@ -234,6 +240,11 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
   return (
     <>
+      {checkoutError && (
+        <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border bg-red-50 border-red-200 text-red-800 px-4 py-3 text-sm font-semibold shadow-xl">
+          {checkoutError}
+        </div>
+      )}
       {activeTier > 1 && (
         <div className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl mb-6">
           <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">

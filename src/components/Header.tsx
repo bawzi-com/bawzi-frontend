@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { clearSession } from '@/lib/apiClient';
 
@@ -95,7 +96,7 @@ export default function Header() {
         
         {/* LOGÓTIPO */}
         <Link href="/" className="flex items-center cursor-pointer hover:opacity-80 transition-opacity">
-          <img src="/logo-bawzi.png" alt="Bawzi" className="h-10 w-auto" />
+          <Image src="/logo-bawzi.png" alt="Bawzi" width={120} height={40} className="h-10 w-auto" priority />
         </Link>
 
         {/* NAVEGAÇÃO CENTRAL */}
@@ -151,10 +152,9 @@ export default function Header() {
           ) : (
              <button
               onClick={() => {
-                // Na página principal/workspace, abre o modal inline.
-                // Em qualquer outra página (plans, history, etc.) navega para /login.
-                const isMainPage = pathname === '/' || pathname === '/workspace';
-                if (isMainPage) {
+                // Só /workspace abre o modal inline (AnalysisApp está montado lá).
+                // Em / (landing) e em qualquer outra página → navega para /login.
+                if (pathname === '/workspace') {
                   window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }));
                 } else {
                   router.push('/login');
