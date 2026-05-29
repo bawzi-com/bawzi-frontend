@@ -211,7 +211,7 @@ export default function AppSidebar({
               </div>
               <FeatureBadge label="NÍV. 4" color="amber" />
             </button>
-          ) : (userData.companies?.length > 0 || userData.company) ? (
+          ) : (userData.companies?.length || userData.company) ? (
             /* Desbloqueado + empresa configurada */
             <button
               onClick={() => onSetActiveTab('renovacoes')}

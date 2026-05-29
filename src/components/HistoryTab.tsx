@@ -425,7 +425,7 @@ export default function HistoryTab({
         </div>
 
         <AnalysisResults
-          result={selectedAnalysis as AnalysisResult}
+          result={selectedAnalysis as unknown as AnalysisResult}
           activeTab={detailTab}
           onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
           userTier={Math.max(userTier, Number(typeof window !== 'undefined' ? localStorage.getItem('bawzi_tier') || 1 : 1))}
