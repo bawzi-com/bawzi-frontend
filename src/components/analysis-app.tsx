@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Lock, Sparkles } from 'lucide-react';
 import { initSession, clearSession, apiFetch, API_URL } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent } from '@/lib/types';
@@ -68,6 +69,45 @@ const dominadorFeatures = [
   { title: 'Engenharia Reversa',     desc: 'Descubra o custo real e a margem de lucro dos seus rivais.' },
   { title: 'Alertas de Vencimento',  desc: 'Saiba 30 dias antes quando o contrato milionário do seu rival vai vencer.' },
 ];
+
+// ─── Gate de tier (conteúdo de abas bloqueadas) ───────────────────────────────
+
+const TIER_NAMES: Record<number, string> = {
+  2: 'Essencial',
+  3: 'Pro',
+  4: 'Elite',
+};
+
+function TierGateTab({
+  requiredTier,
+  featureName,
+  onUpgrade,
+}: {
+  requiredTier: number;
+  featureName: string;
+  onUpgrade: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-12 text-center">
+      <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center mx-auto mb-5">
+        <Lock className="w-7 h-7 text-slate-400" />
+      </div>
+      <h3 className="text-lg font-black text-slate-800 mb-2">{featureName}</h3>
+      <p className="text-slate-500 text-sm font-medium mb-2 max-w-xs mx-auto leading-relaxed">
+        Esta funcionalidade está disponível a partir do plano{' '}
+        <span className="font-black text-slate-700">{TIER_NAMES[requiredTier] ?? `Nível ${requiredTier}`}</span>.
+      </p>
+      <p className="text-slate-400 text-xs mb-7">Nível {requiredTier} ou superior</p>
+      <button
+        onClick={onUpgrade}
+        className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-colors shadow-md"
+      >
+        <Sparkles className="w-4 h-4" />
+        Ver planos
+      </button>
+    </div>
+  );
+}
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
@@ -660,29 +700,45 @@ export default function AnalysisApp() {
               {/* Aba Alertas PNCP */}
               {activeTab === 'alertas' && token && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <RadarAlertas token={token} />
+                  {currentTier < 3 ? (
+                    <TierGateTab
+                      requiredTier={3}
+                      featureName="Alertas Proativos PNCP"
+                      onUpgrade={() => { setSelectedTier(3); setShowUpgradeModal(true); }}
+                    />
+                  ) : (
+                    <RadarAlertas token={token} />
+                  )}
                 </div>
               )}
 
               {/* Aba Para Você (Feed CNAE) */}
               {activeTab === 'cnae' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <CnaeOportunidades
-                    token={token}
-                    userData={userData}
-                    onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
-                      setResult(null);
-                      setError(null);
-                      setText(textoExtraido);
-                      setTermoAlvo(termoPesquisado);
-                      setPncpData(editalDados || null);
-                      setActiveTab('workspace');
-                      setTimeout(() => {
-                        document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }, 150);
-                    }}
-                    onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-                  />
+                  {currentTier < 3 ? (
+                    <TierGateTab
+                      requiredTier={3}
+                      featureName="Oportunidades por CNAE"
+                      onUpgrade={() => { setSelectedTier(3); setShowUpgradeModal(true); }}
+                    />
+                  ) : (
+                    <CnaeOportunidades
+                      token={token}
+                      userData={userData}
+                      onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
+                        setResult(null);
+                        setError(null);
+                        setText(textoExtraido);
+                        setTermoAlvo(termoPesquisado);
+                        setPncpData(editalDados || null);
+                        setActiveTab('workspace');
+                        setTimeout(() => {
+                          document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 150);
+                      }}
+                      onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+                    />
+                  )}
                 </div>
               )}
 
@@ -695,6 +751,12 @@ export default function AnalysisApp() {
                       <div className="h-5 w-48 bg-slate-100 rounded-lg mb-2"></div>
                       <div className="h-4 w-64 bg-slate-50 rounded-lg"></div>
                     </div>
+                  ) : (token && userTier !== -1 && currentTier < 2) ? (
+                    <TierGateTab
+                      requiredTier={2}
+                      featureName="Histórico de Análises"
+                      onUpgrade={() => { setSelectedTier(2); setShowUpgradeModal(true); }}
+                    />
                   ) : (token && userTier !== -1) ? (
                     <HistoryTab
                       token={token}
@@ -727,9 +789,7 @@ export default function AnalysisApp() {
               {/* Aba Comparar */}
               {activeTab === 'comparar' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {token ? (
-                    <CompareTab token={token} />
-                  ) : (
+                  {!token ? (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
                       <h3 className="text-lg font-black text-slate-800 mb-2">Inicie sessão para comparar</h3>
                       <p className="text-slate-500 font-medium mb-6">O modo comparação requer um histórico de análises salvas.</p>
@@ -740,6 +800,14 @@ export default function AnalysisApp() {
                         Entrar na Conta
                       </button>
                     </div>
+                  ) : currentTier < 2 ? (
+                    <TierGateTab
+                      requiredTier={2}
+                      featureName="Comparação de Editais"
+                      onUpgrade={() => { setSelectedTier(2); setShowUpgradeModal(true); }}
+                    />
+                  ) : (
+                    <CompareTab token={token} />
                   )}
                 </div>
               )}

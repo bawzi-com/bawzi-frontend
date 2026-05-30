@@ -16,6 +16,7 @@
     "next": "^15",
     "react": "^19",
     "react-dom": "^19",
+    "recharts": "^2.15.4",
     "swagger-ui-react": "^5.32.5"
   },
   "devDependencies": {

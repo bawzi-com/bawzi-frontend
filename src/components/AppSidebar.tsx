@@ -15,7 +15,7 @@
 import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
-  Scale, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
+  Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
@@ -145,79 +145,213 @@ export default function AppSidebar({
         </button>
 
         {/* ── Histórico ──────────────────────────────────── */}
-        <button
-          onClick={() => onSetActiveTab('history')}
-          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-            activeTab === 'history' ? 'bg-sky-600' : 'hover:bg-sky-50'
-          }`}
-        >
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-            activeTab === 'history' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
-          }`}>
-            <BookOpen size={16} className={activeTab === 'history' ? 'text-white' : 'text-sky-600'} />
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'history' ? 'text-white' : 'text-slate-800'}`}>
-              Histórico
-            </p>
-            <p className={`text-[10px] font-medium leading-none ${activeTab === 'history' ? 'text-white/60' : 'text-slate-400'}`}>
-              Análises anteriores salvas
-            </p>
-          </div>
-          {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
-        </button>
-
-        {/* ── Comparar editais ───────────────────────────── */}
-        {token && (
+        {token && currentTier < 2 ? (
           <button
-            onClick={() => onSetActiveTab('comparar')}
+            onClick={() => router.push('/plans')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-sky-50 opacity-60 hover:opacity-80"
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-sky-50 border border-sky-100">
+              <Lock size={15} className="text-sky-600" />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Histórico</p>
+              <p className="text-[10px] font-medium leading-none text-slate-400">Análises anteriores salvas</p>
+            </div>
+            <FeatureBadge label="NÍV. 2" color="sky" />
+          </button>
+        ) : (
+          <button
+            onClick={() => onSetActiveTab('history')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
+              activeTab === 'history' ? 'bg-sky-600' : 'hover:bg-sky-50'
             }`}
           >
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
+              activeTab === 'history' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
             }`}>
-              <Scale size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
+              <BookOpen size={16} className={activeTab === 'history' ? 'text-white' : 'text-sky-600'} />
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
-                Comparar
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'history' ? 'text-white' : 'text-slate-800'}`}>
+                Histórico
               </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
-                Editais lado a lado
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'history' ? 'text-white/60' : 'text-slate-400'}`}>
+                Análises anteriores salvas
               </p>
             </div>
-            {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
+            {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
           </button>
+        )}
+
+        {/* ── Comparar editais ───────────────────────────── */}
+        {token && (
+          currentTier < 2 ? (
+            <button
+              onClick={() => router.push('/plans')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-violet-50 opacity-60 hover:opacity-80"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-50 border border-violet-100">
+                <Lock size={15} className="text-violet-600" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Comparar</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Editais lado a lado</p>
+              </div>
+              <FeatureBadge label="NÍV. 2" color="violet" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onSetActiveTab('comparar')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
+              }`}>
+                <GitCompare size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
+                  Comparar
+                </p>
+                <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
+                  Editais lado a lado
+                </p>
+              </div>
+              {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
+            </button>
+          )
         )}
 
         {/* ── Para Você — Feed CNAE (autenticados) ────────── */}
         {token && userData && (
-          <button
-            onClick={() => onSetActiveTab('cnae')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'cnae' ? 'bg-teal-600' : 'hover:bg-teal-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'cnae' ? 'bg-white/15' : 'bg-teal-50 border border-teal-100'
-            }`}>
-              <Target size={16} className={activeTab === 'cnae' ? 'text-white' : 'text-teal-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
-                Para Você
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
-                Oportunidades pelo seu CNAE
-              </p>
-            </div>
-            {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
-          </button>
+          currentTier < 3 ? (
+            <button
+              onClick={() => router.push('/plans')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-teal-50 opacity-60 hover:opacity-80"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-teal-50 border border-teal-100">
+                <Lock size={15} className="text-teal-600" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Para Você</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Oportunidades pelo seu CNAE</p>
+              </div>
+              <FeatureBadge label="NÍV. 3" color="teal" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onSetActiveTab('cnae')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === 'cnae' ? 'bg-teal-600' : 'hover:bg-teal-50'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                activeTab === 'cnae' ? 'bg-white/15' : 'bg-teal-50 border border-teal-100'
+              }`}>
+                <Target size={16} className={activeTab === 'cnae' ? 'text-white' : 'text-teal-600'} />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
+                  Para Você
+                </p>
+                <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
+                  Oportunidades pelo seu CNAE
+                </p>
+              </div>
+              {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
+            </button>
+          )
         )}
 
-        {/* ── Renovações ─────────────────────────────────── */}
+        {/* ── Radar de Alertas (NÍV. 3) ───────────────────── */}
+        {token && (
+          currentTier < 3 ? (
+            <button
+              onClick={() => router.push('/plans')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-amber-50 opacity-60 hover:opacity-80"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 border border-amber-100">
+                <Lock size={15} className="text-amber-600" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Alertas</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Notificações PNCP · Proativo</p>
+              </div>
+              <FeatureBadge label="NÍV. 3" color="amber" />
+            </button>
+          ) : (
+            <button
+              onClick={() => onSetActiveTab('alertas')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === 'alertas' ? 'bg-amber-600' : 'hover:bg-amber-50'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                activeTab === 'alertas' ? 'bg-white/15' : 'bg-amber-50 border border-amber-100'
+              }`}>
+                <Bell size={16} className={activeTab === 'alertas' ? 'text-white' : 'text-amber-600'} />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'alertas' ? 'text-white' : 'text-slate-800'}`}>
+                  Alertas
+                </p>
+                <p className={`text-[10px] font-medium leading-none ${activeTab === 'alertas' ? 'text-white/60' : 'text-slate-400'}`}>
+                  Notificações PNCP · Proativo
+                </p>
+              </div>
+              {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
+            </button>
+          )
+        )}
+
+        {/* ── Capital Inteligente (NÍV. 3) ────────────────── */}
+        {token && (
+          currentTier < 3 ? (
+            /* Bloqueado */
+            <button
+              onClick={() => router.push('/plans')}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-blue-50 opacity-60 hover:opacity-80"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-50 border border-blue-100">
+                <Lock size={15} className="text-blue-600" />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Capital</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">
+                  Crédito inteligente · Pré-qualificação
+                </p>
+              </div>
+              <FeatureBadge label="NÍV. 3" color="blue" />
+            </button>
+          ) : (
+            /* Desbloqueado */
+            <button
+              onClick={() => onSetActiveTab('capital')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                activeTab === 'capital' ? 'bg-sky-600' : 'hover:bg-sky-50'
+              }`}
+            >
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                activeTab === 'capital' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
+              }`}>
+                <DollarSign size={16} className={activeTab === 'capital' ? 'text-white' : 'text-sky-600'} />
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'capital' ? 'text-white' : 'text-slate-800'}`}>
+                  Capital
+                </p>
+                <p className={`text-[10px] font-medium leading-none ${activeTab === 'capital' ? 'text-white/60' : 'text-slate-400'}`}>
+                  Crédito inteligente · Pré-qualificação
+                </p>
+              </div>
+              {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
+            </button>
+          )
+        )}
+
+        {/* ── Renovações (NÍV. 4) ─────────────────────────── */}
         {token && userData && (
           currentTier < 4 ? (
             /* Bloqueado */
@@ -279,79 +413,6 @@ export default function AppSidebar({
                 <p className="text-[10px] font-medium leading-none text-slate-400">Configure a empresa primeiro</p>
               </div>
               <FeatureBadge label="CONFIG." color="amber" />
-            </button>
-          )
-        )}
-
-        {/* ── Radar de Alertas ────────────────────────────── */}
-        {token && (
-          <button
-            onClick={() => onSetActiveTab('alertas')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'alertas' ? 'bg-amber-600' : 'hover:bg-amber-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'alertas' ? 'bg-white/15' : 'bg-amber-50 border border-amber-100'
-            }`}>
-              <Bell size={16} className={activeTab === 'alertas' ? 'text-white' : 'text-amber-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'alertas' ? 'text-white' : 'text-slate-800'}`}>
-                Alertas
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'alertas' ? 'text-white/60' : 'text-slate-400'}`}>
-                Notificações PNCP · Proativo
-              </p>
-            </div>
-            {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
-          </button>
-        )}
-
-        {/* ── Capital Inteligente ─────────────────────────── */}
-        {token && (
-          currentTier < 3 ? (
-            /* Bloqueado */
-            <button
-              onClick={() => {
-                const el = document.getElementById('planos');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-blue-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-50 border border-blue-100">
-                <Lock size={15} className="text-blue-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Capital</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">
-                  Crédito inteligente · Pré-qualificação
-                </p>
-              </div>
-              <FeatureBadge label="NÍV. 3" color="blue" />
-            </button>
-          ) : (
-            /* Desbloqueado */
-            <button
-              onClick={() => onSetActiveTab('capital')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'capital' ? 'bg-sky-600' : 'hover:bg-sky-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'capital' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
-              }`}>
-                <DollarSign size={16} className={activeTab === 'capital' ? 'text-white' : 'text-sky-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'capital' ? 'text-white' : 'text-slate-800'}`}>
-                  Capital
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'capital' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Crédito inteligente · Pré-qualificação
-                </p>
-              </div>
-              {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
             </button>
           )
         )}

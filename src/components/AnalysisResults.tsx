@@ -596,6 +596,17 @@ function SemaforoSection({ result }: { result: AnalysisResult }) {
 // ─── Cronograma Crítico ───────────────────────────────────────────────────────
 
 function CronogramaSection({ result }: { result: AnalysisResult }) {
+  const agora = new Date();
+
+  // Não exibir a seção quando todas as datas com valor já expiraram
+  // (edital encerrado — não há nenhuma ação pendente para o usuário)
+  if (Array.isArray(result.datas_criticas) && result.datas_criticas.length > 0) {
+    const temDataFutura = result.datas_criticas.some(
+      (dc) => dc.data_iso && new Date(dc.data_iso) >= agora,
+    );
+    if (!temDataFutura) return null;
+  }
+
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8 mb-8">
       <SectionLabel icon={<CalendarDays size={18} className="text-slate-700" />} label="Cronograma Crítico" />
@@ -620,7 +631,6 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
           <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
           <div className="space-y-4">
             {result.datas_criticas.map((dc, i) => {
-              const agora = new Date();
               const date = dc.data_iso ? new Date(dc.data_iso) : null;
               const expirado = date ? date < agora : false;
               const urgenteFuturo = date ? (!expirado && dc.urgente) : false;

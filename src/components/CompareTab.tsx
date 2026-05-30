@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Scale, CheckCircle2, XCircle, AlertTriangle, CalendarDays,
+  GitCompare, CheckCircle2, XCircle, AlertTriangle, CalendarDays,
   ChevronRight, ArrowLeft, TrendingUp,
 } from 'lucide-react';
 import { API_URL } from '@/lib/apiClient';
@@ -222,7 +222,7 @@ export default function CompareTab({ token }: { token: string }) {
             Alterar seleção
           </button>
           <div className="flex items-center gap-2 rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-black uppercase text-violet-700">
-            <Scale size={13} />
+            <GitCompare size={13} />
             Comparação de editais
           </div>
         </div>
@@ -280,7 +280,7 @@ export default function CompareTab({ token }: { token: string }) {
     return (
       <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
-          <Scale size={24} />
+          <GitCompare size={24} />
         </div>
         <h3 className="text-lg font-black text-slate-800">Histórico insuficiente</h3>
         <p className="mx-auto mt-2 max-w-xs text-sm font-medium text-slate-500">
@@ -298,7 +298,7 @@ export default function CompareTab({ token }: { token: string }) {
       <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
         <div className="bg-gradient-to-br from-white via-slate-50 to-violet-50/50 p-5 md:p-7">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-violet-700 shadow-sm">
-            <Scale size={13} />
+            <GitCompare size={13} />
             Modo comparação
           </div>
           <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
@@ -411,7 +411,7 @@ export default function CompareTab({ token }: { token: string }) {
                 }`}>
                   {isA && <span className="text-sm font-black">A</span>}
                   {isB && <span className="text-sm font-black">B</span>}
-                  {!isSelected && <Scale size={16} />}
+                  {!isSelected && <GitCompare size={16} />}
                 </div>
               </div>
             </button>

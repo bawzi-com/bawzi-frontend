@@ -101,7 +101,7 @@ export default function Header() {
 
         {/* NAVEGAÇÃO CENTRAL */}
         <nav className="hidden md:flex items-center gap-8 mr-8">
-          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' || pathname === '/' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Workspace
           </Link>
           {token && (

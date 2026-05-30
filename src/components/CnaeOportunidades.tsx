@@ -8,6 +8,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin } from 'lucide-react';
+import CnaePriceTrendChart from './CnaePriceTrendChart';
 
 interface CnaeOportunidadesProps {
   token: string | null;
@@ -424,6 +425,19 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
           </>
         )}
       </div>
+
+      {/* ── Inteligência de Preços por CNAE ──────────────────────────────────── */}
+      {cnaeInfo && cnaeInfo.cnae && (
+        <div className="mb-4">
+          <CnaePriceTrendChart
+            token={token}
+            cnae={cnaeInfo.cnae}
+            uf={cnaeInfo.ufEmpresa || undefined}
+            meses={12}
+            labelSegmento={cnaeInfo.termos[0]}
+          />
+        </div>
+      )}
 
       {/* ── Filtro por empresa ────────────────────────────────────────────────── */}
       {cnaeInfo && cnaeInfo.empresas.length > 1 && (
