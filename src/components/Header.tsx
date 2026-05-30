@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { clearSession } from '@/lib/apiClient';
+import { clearSession, API_URL } from '@/lib/apiClient';
+import type { BawziUpdateEvent } from '@/lib/types';
 
 export default function Header() {
   const router = useRouter();
@@ -15,7 +16,6 @@ export default function Header() {
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
 
   useEffect(() => {
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
     // Sincronismo imediato: usa o cache para a UI não piscar.
     const syncFromCache = () => {
@@ -70,9 +70,10 @@ export default function Header() {
     if (tokenAtivo) validateTierSilently(tokenAtivo);
 
     // Escuta atualizações vindas de outras telas.
-    const handleGlobalUpdate = (e: any) => {
-      if (e.detail?.tier) setUserTier(String(e.detail.tier));
-      if (e.detail?.name) setUserData(prev => ({ ...prev, name: e.detail.name }));
+    const handleGlobalUpdate = (e: Event) => {
+      const { detail } = e as BawziUpdateEvent;
+      if (detail?.tier) setUserTier(String(detail.tier));
+      if (detail?.name) setUserData(prev => ({ ...prev, name: detail.name }));
     };
 
     window.addEventListener('bawzi_update', handleGlobalUpdate);
@@ -80,7 +81,6 @@ export default function Header() {
   }, [pathname]);
 
   const handleLogout = async () => {
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
     try {
       await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
     } catch { /* silencioso — sessão local sempre é limpa */ }

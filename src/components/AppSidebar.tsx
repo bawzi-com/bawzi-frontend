@@ -167,6 +167,31 @@ export default function AppSidebar({
           {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
         </button>
 
+        {/* ── Comparar editais ───────────────────────────── */}
+        {token && (
+          <button
+            onClick={() => onSetActiveTab('comparar')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
+            }`}>
+              <Scale size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
+                Comparar
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
+                Editais lado a lado
+              </p>
+            </div>
+            {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
+          </button>
+        )}
+
         {/* ── Para Você — Feed CNAE (autenticados) ────────── */}
         {token && userData && (
           <button

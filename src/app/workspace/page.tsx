@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import AnalysisApp from '../../components/analysis-app';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import { apiFetch, API_URL } from '@/lib/apiClient';
 
 export default function WorkspacePage() {
   
@@ -16,13 +17,7 @@ useEffect(() => {
         // 🟢 ATRASO TÁTICO DE 3 SEGUNDOS: Dá tempo ao Webhook do Stripe para atualizar o BD
         setTimeout(async () => {
           try {
-            const token = localStorage.getItem('bawzi_token');
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://bawzi-api.onrender.com';
-            const apiUrl = `${baseUrl.replace(/\/$/, '')}/api/users/me`;
-
-            const response = await fetch(apiUrl, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const response = await apiFetch(`${API_URL}/api/users/me`);
             
             if (response.ok) {
               const freshData = await response.json();

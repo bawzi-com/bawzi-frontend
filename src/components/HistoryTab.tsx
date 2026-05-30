@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { getCachedTier } from '@/lib/tier';
+import { API_URL } from '@/lib/apiClient';
 import {
   ArrowRight,
   CalendarDays,
@@ -51,7 +53,7 @@ export default function HistoryTab({
   const [periodoFiltro, setPeriodo] = useState<'all' | '7d' | '30d' | '90d'>('all');
   const [showFilters, setShowFilters] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
@@ -428,8 +430,8 @@ export default function HistoryTab({
           result={selectedAnalysis as unknown as AnalysisResult}
           activeTab={detailTab}
           onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
-          userTier={Math.max(userTier, Number(typeof window !== 'undefined' ? localStorage.getItem('bawzi_tier') || 1 : 1))}
-          currentTier={Math.max(userTier, Number(typeof window !== 'undefined' ? localStorage.getItem('bawzi_tier') || 1 : 1))}
+          userTier={getCachedTier(userTier)}
+          currentTier={getCachedTier(userTier)}
           termoAlvo={selectedAnalysis.termo_busca_pncp || selectedAnalysis.title || 'Histórico'}
           analysisId={selectedAnalysis.id}
           token={token}

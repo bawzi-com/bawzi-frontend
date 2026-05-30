@@ -8,6 +8,7 @@
  */
 
 import React, { useState } from 'react';
+import { getCachedTier } from '@/lib/tier';
 import {
   ScanSearch, Radar, Printer, Mail, Zap, Target,
   Gauge, Settings2, Banknote, Scale, FolderOpen,
@@ -263,7 +264,7 @@ export default function AnalysisResults({
         {activeTab === 'concorrentes' && (
           <div className="animate-in fade-in zoom-in-95 duration-500 mt-8">
             <PremiumLock
-              isLocked={Math.max(userTier, typeof window !== 'undefined' ? Number(localStorage.getItem('bawzi_tier') || 1) : 1) < 4}
+              isLocked={getCachedTier(userTier) < 4}
               featureTitle="War Room (Inteligência Ofensiva)"
               requiredTierName="Nível 4 (Dominador)"
               onUpgradeClick={onUpgradeClick}

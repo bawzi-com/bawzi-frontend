@@ -22,7 +22,7 @@
  *   4. Se renovação falha → clearSession() + evento bawzi_session_expired.
  */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // ─── Token em memória (não persiste entre reloads — o cookie renova) ──────────
 let _accessToken: string | null = null;
@@ -34,6 +34,17 @@ export function setAccessToken(token: string | null): void {
 
 export function getAccessToken(): string | null {
   return _accessToken;
+}
+
+/** Token ativo: preferência ao token em memória, fallback para localStorage (legado). */
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return (
+    _accessToken ||
+    localStorage.getItem('bawzi_token') ||
+    localStorage.getItem('token') ||
+    null
+  );
 }
 
 // ─── Erro de sessão expirada ──────────────────────────────────────────────────

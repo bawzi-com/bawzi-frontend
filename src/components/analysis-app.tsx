@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { initSession, clearSession, apiFetch } from '@/lib/apiClient';
+import { initSession, clearSession, apiFetch, API_URL } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent } from '@/lib/types';
 import { useAnalysis, LOADING_MESSAGES } from '@/hooks/useAnalysis';
@@ -38,6 +38,7 @@ import ImpugnacaoModal from './ImpugnacaoModal';
 
 // Componentes externos (mantidos inalterados)
 import HistoryTab from './HistoryTab';
+import CompareTab from './CompareTab';
 import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
 import ContratosVencendo from '../components/ContratosVencendo';
@@ -72,7 +73,6 @@ const dominadorFeatures = [
 
 export default function AnalysisApp() {
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   // Upsell
   const [showUpsell, setShowUpsell]     = useState(false);
@@ -714,6 +714,25 @@ export default function AnalysisApp() {
                       </div>
                       <h3 className="text-lg font-black text-slate-800 mb-2">Modo Anónimo</h3>
                       <p className="text-slate-500 font-medium mb-6">Inicie sessão para ativar o histórico de editais e aceder ao Matchmaker de CNAE.</p>
+                      <button
+                        onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                        className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
+                      >
+                        Entrar na Conta
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Aba Comparar */}
+              {activeTab === 'comparar' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {token ? (
+                    <CompareTab token={token} />
+                  ) : (
+                    <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
+                      <h3 className="text-lg font-black text-slate-800 mb-2">Inicie sessão para comparar</h3>
+                      <p className="text-slate-500 font-medium mb-6">O modo comparação requer um histórico de análises salvas.</p>
                       <button
                         onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
                         className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
