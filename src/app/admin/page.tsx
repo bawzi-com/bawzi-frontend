@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Users,
@@ -43,7 +43,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'promo'>('overview');
 
   // Estados do Formulário SMTP
   const [smtpUser, setSmtpUser] = useState('');
@@ -62,6 +62,20 @@ export default function AdminDashboard() {
   const [consultaUfJanelas, setConsultaUfJanelas] = useState('5');
   const [enrichViaConsultaUfs, setEnrichViaConsultaUfs] = useState('');
   const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
+
+  // Estados de Convites Promo
+  const [promoEmail, setPromoEmail]   = useState('');
+  const [promoDias, setPromoDias]     = useState(3);
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoMsg, setPromoMsg]       = useState<{ text: string; ok: boolean } | null>(null);
+  const [promoList, setPromoList]     = useState<any[]>([]);
+  const [promoListLoading, setPromoListLoading] = useState(false);
+
+  // Estados de Tiers
+  const [tierConfigs, setTierConfigs] = useState<any[]>([]);
+  const [tierEdits, setTierEdits] = useState<Record<number, any>>({});
+  const [savingTier, setSavingTier] = useState<number | null>(null);
+  const [tierMsg, setTierMsg] = useState<{ tier_id: number; text: string; ok: boolean } | null>(null);
 
   // Estados dos Templates de E-mail
   const [templates, setTemplates] = useState<any[]>([]);
@@ -201,6 +215,126 @@ export default function AdminDashboard() {
     } catch (e) {
       alert("Erro de comunicação com o servidor.");
     }
+  };
+
+  const loadPromoList = async () => {
+    setPromoListLoading(true);
+    const token = localStorage.getItem('bawzi_token');
+    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      const res = await fetch(`${base}/api/admin/promo-invites`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setPromoList(await res.json());
+    } catch { /* silencioso */ } finally { setPromoListLoading(false); }
+  };
+
+  const promoSubmittingRef = useRef(false);
+  const handleEnviarPromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoEmail.includes('@') || promoSubmittingRef.current) return;
+    promoSubmittingRef.current = true;
+    setPromoLoading(true); setPromoMsg(null);
+    const token = localStorage.getItem('bawzi_token');
+    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      const res = await fetch(`${base}/api/admin/promo-invite`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: promoEmail, dias: promoDias }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPromoMsg({ text: `✅ Convite enviado para ${data.email} (${data.dias} dias)`, ok: true });
+        setPromoEmail('');
+        loadPromoList();
+      } else {
+        setPromoMsg({ text: data.detail || 'Erro ao enviar.', ok: false });
+      }
+    } catch { setPromoMsg({ text: 'Erro de conexão.', ok: false }); }
+    finally { setPromoLoading(false); promoSubmittingRef.current = false; setTimeout(() => setPromoMsg(null), 5000); }
+  };
+
+  const handleRevogarPromo = async (token_promo: string, email: string) => {
+    if (!confirm(`Revogar convite de ${email}?`)) return;
+    const token = localStorage.getItem('bawzi_token');
+    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    await fetch(`${base}/api/admin/promo-invites/${token_promo}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    loadPromoList();
+  };
+
+  const loadTierConfigs = async () => {
+    const token = localStorage.getItem('bawzi_token');
+    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      const res = await fetch(`${baseUrl}/api/admin/tier-configs`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTierConfigs(data);
+        // Inicializa edits com os valores actuais
+        const edits: Record<number, any> = {};
+        data.forEach((t: any) => {
+          edits[t.tier_id] = {
+            monthly_limit:      t.monthly_limit,
+            max_chars:          t.max_chars,
+            max_mb:             t.max_mb,
+            investigator_model: t.investigator_model,
+            writer_model:       t.writer_model,
+            agent_count:        t.agent_count ?? 1,
+            opus_threshold:     t.opus_threshold ?? null,
+          };
+        });
+        setTierEdits(edits);
+      }
+    } catch { /* silencioso */ }
+  };
+
+  const handleSaveTier = async (tierId: number) => {
+    const token = localStorage.getItem('bawzi_token');
+    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    setSavingTier(tierId);
+    setTierMsg(null);
+    try {
+      const body = tierEdits[tierId];
+      const res = await fetch(`${baseUrl}/api/admin/tier-configs/${tierId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          monthly_limit: Number(body.monthly_limit),
+          max_chars:     Number(body.max_chars),
+          max_mb:        Number(body.max_mb),
+        }),
+      });
+      if (res.ok) {
+        setTierMsg({ tier_id: tierId, text: 'Salvo com sucesso!', ok: true });
+        await loadTierConfigs();
+      } else {
+        const err = await res.json();
+        setTierMsg({ tier_id: tierId, text: err.detail || 'Erro ao salvar.', ok: false });
+      }
+    } catch {
+      setTierMsg({ tier_id: tierId, text: 'Erro de conexão.', ok: false });
+    } finally {
+      setSavingTier(null);
+      setTimeout(() => setTierMsg(null), 3000);
+    }
+  };
+
+  const handleResetTier = async (tierId: number) => {
+    if (!confirm(`Restaurar Tier ${tierId} aos valores padrão?`)) return;
+    const token = localStorage.getItem('bawzi_token');
+    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      await fetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      setTierMsg({ tier_id: tierId, text: 'Restaurado aos padrões.', ok: true });
+      await loadTierConfigs();
+      setTimeout(() => setTierMsg(null), 3000);
+    } catch { /* silencioso */ }
   };
 
   const handleSaveSMTP = async (e: React.FormEvent) => {
@@ -530,11 +664,23 @@ export default function AdminDashboard() {
         >
           <LayoutTemplate size={18} /> Templates de E-mail
         </button>
-        <button 
-          onClick={() => setActiveTab('settings')} 
+        <button
+          onClick={() => setActiveTab('settings')}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'settings' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
           <Settings size={18} /> Configurações
+        </button>
+        <button
+          onClick={() => { setActiveTab('tiers'); if (!tierConfigs.length) loadTierConfigs(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'tiers' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+        >
+          <Lock size={18} /> Tiers &amp; Limites
+        </button>
+        <button
+          onClick={() => { setActiveTab('promo'); loadPromoList(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'promo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+        >
+          <Zap size={18} /> Convites Promo
         </button>
       </div>
 
@@ -1285,6 +1431,413 @@ export default function AdminDashboard() {
             </form>
           </div>
           
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* ABA: TIERS & LIMITES                       */}
+      {/* ========================================== */}
+      {activeTab === 'tiers' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-black text-white tracking-tight">Tiers &amp; Limites</h2>
+              <p className="text-slate-500 text-sm mt-1">
+                Ajuste análises/mês, chars e MB por plano. Valores sobrepõem os padrões do <code className="text-violet-400">.env</code> imediatamente (cache de 60 s).
+              </p>
+            </div>
+            <button
+              onClick={loadTierConfigs}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-sm font-bold transition-all"
+            >
+              <RefreshCw size={14} /> Recarregar
+            </button>
+          </div>
+
+          {tierConfigs.length === 0 ? (
+            <div className="text-center py-16 text-slate-600">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
+              <p className="text-sm">Carregando configurações…</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {tierConfigs.map((tier) => {
+                const edit = tierEdits[tier.tier_id] || {};
+                const isSaving = savingTier === tier.tier_id;
+                const msg = tierMsg?.tier_id === tier.tier_id ? tierMsg : null;
+                const isDefault = tier.monthly_limit === 0;
+
+                const tierColors: Record<number, string> = {
+                  [-1]: 'border-slate-700',
+                  1:    'border-slate-700',
+                  2:    'border-sky-800/60',
+                  3:    'border-violet-800/60',
+                  4:    'border-amber-800/60',
+                };
+                const headerColors: Record<number, string> = {
+                  [-1]: 'text-slate-400',
+                  1:    'text-slate-300',
+                  2:    'text-sky-400',
+                  3:    'text-violet-400',
+                  4:    'text-amber-400',
+                };
+
+                return (
+                  <div key={tier.tier_id} className={`bg-slate-900/50 border rounded-2xl p-6 ${tierColors[tier.tier_id] ?? 'border-slate-700'}`}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-5">
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs font-black uppercase tracking-widest ${headerColors[tier.tier_id] ?? 'text-slate-400'}`}>
+                          NÍVEL {tier.tier_id === -1 ? '0' : tier.tier_id}
+                        </span>
+                        <h3 className="text-base font-black text-white">{tier.label}</h3>
+                        <span className="text-xs text-slate-600 font-medium">
+                          {tier.price_brl > 0 ? `R$ ${tier.price_brl}/mês` : 'Gratuito'}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-600 font-mono bg-slate-800 px-2 py-1 rounded">
+                        {edit.investigator_model ?? tier.investigator_model} → {edit.writer_model ?? tier.writer_model}
+                      </span>
+                    </div>
+
+                    {/* ── Configuração de IAs ─────────────────────────────── */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                      {/* Investigador */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          IA Investigadora
+                        </label>
+                        <select
+                          value={edit.investigator_model ?? tier.investigator_model}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], investigator_model: e.target.value },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        >
+                          {(tier.available_models || ['gpt-4o-mini','gpt-4o','o3-mini','claude','groq']).map((m: string) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Writer */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          IA Redatora
+                        </label>
+                        <select
+                          value={edit.writer_model ?? tier.writer_model}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], writer_model: e.target.value },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        >
+                          {(tier.available_models || ['gpt-4o-mini','gpt-4o','o3-mini','claude','groq']).map((m: string) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Agent count */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          IAs em execução
+                        </label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3].map(n => {
+                            const labels: Record<number, string> = {
+                              1: '1 — Base',
+                              2: '2 — + PNCP',
+                              3: '3 — + Jurídico',
+                            };
+                            const active = (edit.agent_count ?? tier.agent_count) === n;
+                            return (
+                              <button
+                                key={n}
+                                onClick={() => setTierEdits(prev => ({
+                                  ...prev,
+                                  [tier.tier_id]: { ...prev[tier.tier_id], agent_count: n },
+                                }))}
+                                className={`flex-1 py-2 rounded-lg text-[10px] font-black transition-all border ${
+                                  active
+                                    ? 'bg-violet-600 border-violet-500 text-white'
+                                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                                }`}
+                              >
+                                {labels[n]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          1=só análise · 2=+concorrentes · 3=+parecer
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-slate-800/60 mb-4" />
+
+                    {/* Campos de limites */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+                      {/* Análises/mês */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Análises / mês
+                          <span className="ml-1 text-slate-600 normal-case font-normal">(0 = ilimitado)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={edit.monthly_limit ?? tier.monthly_limit}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], monthly_limit: parseInt(e.target.value) || 0 },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          Padrão: {tier.monthly_limit === 0 ? '∞' : tier.monthly_limit}
+                        </p>
+                      </div>
+
+                      {/* Máx. chars */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Máx. caracteres
+                        </label>
+                        <input
+                          type="number"
+                          min={1000}
+                          step={1000}
+                          value={edit.max_chars ?? tier.max_chars}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_chars: parseInt(e.target.value) || 0 },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          Padrão: {(tier.max_chars / 1000).toFixed(0)}k
+                        </p>
+                      </div>
+
+                      {/* Máx. MB */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Máx. arquivo (MB)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={edit.max_mb ?? tier.max_mb}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_mb: parseInt(e.target.value) || 0 },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          Padrão: {tier.max_mb} MB
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* ── Auto-routing Opus (só tier 4) ────────────────── */}
+                    {tier.tier_id === 4 && (
+                      <div className="mt-1 mb-4 p-4 bg-amber-950/30 border border-amber-800/40 rounded-xl">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                            Auto-routing Opus / Sonnet
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            — editais acima do threshold usam Opus automaticamente
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id="opus-enabled"
+                              checked={edit.opus_threshold !== null && edit.opus_threshold !== undefined}
+                              onChange={e => setTierEdits(prev => ({
+                                ...prev,
+                                [4]: { ...prev[4], opus_threshold: e.target.checked ? 300000 : null },
+                              }))}
+                              className="w-4 h-4 accent-amber-500 cursor-pointer"
+                            />
+                            <label htmlFor="opus-enabled" className="text-xs text-slate-400 font-bold cursor-pointer">
+                              Activado
+                            </label>
+                          </div>
+                          {edit.opus_threshold !== null && edit.opus_threshold !== undefined && (
+                            <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                              <label className="text-[10px] text-slate-500 uppercase font-black whitespace-nowrap">
+                                Threshold (chars)
+                              </label>
+                              <input
+                                type="number"
+                                min={10000}
+                                step={10000}
+                                value={edit.opus_threshold}
+                                onChange={e => setTierEdits(prev => ({
+                                  ...prev,
+                                  [4]: { ...prev[4], opus_threshold: parseInt(e.target.value) || 300000 },
+                                }))}
+                                className="w-36 bg-slate-800 border border-amber-800/50 text-white rounded-lg px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500 transition-colors"
+                              />
+                              <span className="text-[10px] text-slate-500">
+                                ({edit.opus_threshold >= 1000 ? `${(edit.opus_threshold / 1000).toFixed(0)}k` : edit.opus_threshold} chars)
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {edit.opus_threshold !== null && edit.opus_threshold !== undefined && (
+                          <p className="text-[10px] text-amber-700 mt-2">
+                            ≥ {(edit.opus_threshold / 1000).toFixed(0)}k chars → Opus · abaixo → Sonnet
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Feedback + Acções */}
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-h-[20px]">
+                        {msg && (
+                          <p className={`text-xs font-bold flex items-center gap-1 ${msg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {msg.ok ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                            {msg.text}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleResetTier(tier.tier_id)}
+                          className="px-3 py-2 text-[11px] font-bold text-slate-500 hover:text-slate-300 border border-slate-700 hover:border-slate-600 rounded-lg transition-all"
+                        >
+                          Restaurar padrão
+                        </button>
+                        <button
+                          onClick={() => handleSaveTier(tier.tier_id)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-black rounded-lg transition-all"
+                        >
+                          {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                          {isSaving ? 'Salvando…' : 'Salvar'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-[11px] text-slate-600 text-center">
+            Os modelos de IA por tier são configurados via variáveis de ambiente e não são editáveis aqui.
+          </p>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* ABA: CONVITES PROMOCIONAIS                 */}
+      {/* ========================================== */}
+      {activeTab === 'promo' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+
+          <div>
+            <h2 className="text-2xl font-black text-white tracking-tight">Convites Promocionais</h2>
+            <p className="text-slate-500 text-sm mt-1">
+              Envie acesso completo (tier 4) por tempo limitado. O link é de uso único e não aparece nos planos públicos.
+            </p>
+          </div>
+
+          {/* Formulário de envio */}
+          <form onSubmit={handleEnviarPromo} className="bg-slate-900 border border-violet-800/40 rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-black text-violet-300 uppercase tracking-widest flex items-center gap-2">
+              <Zap size={13} /> Novo convite
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="email"
+                required
+                placeholder="email@empresa.com.br"
+                value={promoEmail}
+                onChange={e => setPromoEmail(e.target.value)}
+                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-violet-500 transition-colors placeholder:text-slate-500"
+              />
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="text-xs text-slate-400 font-bold whitespace-nowrap">Dias:</label>
+                <input
+                  type="number"
+                  min={1} max={30}
+                  value={promoDias}
+                  onChange={e => setPromoDias(parseInt(e.target.value) || 3)}
+                  className="w-16 bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2.5 text-sm text-center focus:outline-none focus:border-violet-500 transition-colors"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={promoLoading}
+                className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-colors"
+              >
+                {promoLoading ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                {promoLoading ? 'Enviando…' : 'Enviar convite'}
+              </button>
+            </div>
+            {promoMsg && (
+              <p className={`text-xs font-bold ${promoMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                {promoMsg.text}
+              </p>
+            )}
+          </form>
+
+          {/* Lista de convites */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <span className="text-sm font-black text-white">Histórico de convites</span>
+              <button onClick={loadPromoList} className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors">
+                <RefreshCw size={12} /> Atualizar
+              </button>
+            </div>
+            {promoListLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-slate-600" />
+              </div>
+            ) : promoList.length === 0 ? (
+              <p className="text-slate-600 text-sm text-center py-8">Nenhum convite enviado ainda.</p>
+            ) : (
+              <div className="divide-y divide-slate-800">
+                {promoList.map((inv: any) => (
+                  <div key={inv.token || inv.email + inv.created_at} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-800/30 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-white truncate">{inv.email}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {inv.dias} dias · criado por {inv.created_by} · {inv.created_at ? new Date(inv.created_at).toLocaleDateString('pt-BR') : ''}
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg shrink-0 ${
+                      inv.activated
+                        ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800'
+                        : 'bg-amber-900/40 text-amber-400 border border-amber-800'
+                    }`}>
+                      {inv.activated ? '✓ Ativado' : 'Aguardando'}
+                    </span>
+                    {!inv.activated && (
+                      <button
+                        onClick={() => handleRevogarPromo(inv.token, inv.email)}
+                        className="text-[11px] text-red-500 hover:text-red-400 font-bold shrink-0 transition-colors"
+                      >
+                        Revogar
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

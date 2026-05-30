@@ -60,21 +60,6 @@ export default function Footer() {
               </Link>
             </li>
             
-            {/* 3. BLOCO CONDICIONAL DA DOCUMENTAÇÃO API */}
-            {isAuthorized && (
-              <li>
-                <Link 
-                  href={`${process.env.NEXT_PUBLIC_API_URL || 'https://api.bawzi.com'}/docs`} 
-                  target="_blank"
-                  className="group flex items-center gap-2 hover:text-emerald-700 transition-colors"
-                >
-                  Documentação API 
-                  <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-2 py-0.5 rounded-full group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                    Restrito
-                  </span>
-                </Link>
-              </li>
-            )}
           </ul>
         </div>
 

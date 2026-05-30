@@ -83,53 +83,64 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
       <div className="h-px w-full bg-slate-100"></div>
 
       {/* ========================================== */}
-      {/* 2. UTILIZAÇÃO DA EQUIPA */}
+      {/* 2. UTILIZAÇÃO DA EQUIPA — só tier 2+       */}
       {/* ========================================== */}
-      <div className="flex flex-col gap-2">
+      {activeTier >= 2 ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Utilização da Equipe</span>
+            <span className="text-xs font-bold text-slate-700">
+              {vagasUsadas} <span className="text-slate-400 font-medium">de {vagasTotais} Vagas</span>
+            </span>
+          </div>
+          <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ${percentagemUso >= 100 ? 'bg-amber-500' : 'bg-violet-500'}`}
+              style={{ width: `${percentagemUso}%` }}
+            ></div>
+          </div>
+          {percentagemUso >= 100 && (
+            <p className="text-[10px] text-amber-600 font-bold mt-0.5 flex items-center gap-1">
+              <span>⚠️</span> Limite de vagas atingido no Workspace.
+            </p>
+          )}
+        </div>
+      ) : (
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Utilização da Equipe</span>
-          <span className="text-xs font-bold text-slate-700">
-            {vagasUsadas} <span className="text-slate-400 font-medium">de {vagasTotais} Vagas</span>
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plano</span>
+          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+            Individual · Gratuito
           </span>
         </div>
-        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
-          <div 
-            className={`h-full rounded-full transition-all duration-1000 ${percentagemUso >= 100 ? 'bg-amber-500' : 'bg-violet-500'}`}
-            style={{ width: `${percentagemUso}%` }}
-          ></div>
-        </div>
-        {percentagemUso >= 100 && (
-          <p className="text-[10px] text-amber-600 font-bold mt-0.5 flex items-center gap-1">
-            <span>⚠️</span> Limite de vagas atingido no Workspace.
-          </p>
-        )}
-      </div>
+      )}
 
       {/* ========================================== */}
-      {/* 3. O SEU TRECHO (CONTEXTO ATIVO) */}
+      {/* 3. CONTEXTO ATIVO — só tier 2+             */}
       {/* ========================================== */}
-      <div className="bg-slate-50 p-3.5 rounded-xl border border-indigo-100 flex items-center justify-between transition-colors bg-gradient-to-r from-indigo-50/50 to-white">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm">
-            <Activity size={16} />
+      {activeTier >= 2 && (
+        <div className="bg-slate-50 p-3.5 rounded-xl border border-indigo-100 flex items-center justify-between transition-colors bg-gradient-to-r from-indigo-50/50 to-white">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm">
+              <Activity size={16} />
+            </div>
+            <div className="flex flex-col min-w-0 justify-center min-h-[32px]">
+              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">
+                Contexto Ativo (Radar)
+              </span>
+              <span className="text-sm font-bold text-slate-700 truncate">
+                {currentCompany?.nome_fantasia || currentCompany?.razao_social || 'Nenhuma empresa'}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col min-w-0 justify-center min-h-[32px]">
-            <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">
-              Contexto Ativo (Radar)
-            </span>
-            <span className="text-sm font-bold text-slate-700 truncate">
-              {currentCompany?.nome_fantasia || currentCompany?.razao_social || 'Nenhuma empresa'}
-            </span>
-          </div>
-        </div>
 
-        {/* Badge de Multi-Monitoramento */}
-        {user.companies && user.companies.length > 1 && (
-          <div className="px-2 py-1 bg-slate-900 text-yellow-400 rounded-md text-[8px] font-black tracking-tighter uppercase shrink-0 border border-slate-800">
-            Multi-Slots
-          </div>
-        )}
-      </div>
+          {/* Badge de Multi-Monitoramento */}
+          {user.companies && user.companies.length > 1 && (
+            <div className="px-2 py-1 bg-slate-900 text-yellow-400 rounded-md text-[8px] font-black tracking-tighter uppercase shrink-0 border border-slate-800">
+              Multi-Slots
+            </div>
+          )}
+        </div>
+      )}
 
     </div>
   );

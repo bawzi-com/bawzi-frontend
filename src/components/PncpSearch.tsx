@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp,
-  Search, MapPin, SlidersHorizontal,
+  Search, MapPin, SlidersHorizontal, Layers, X, Zap,
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
@@ -91,32 +91,65 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       return ESTADOS_BR[limpo] || '';
     };
 
+    // Prioridade 1: UF da empresa cadastrada (mais confiável)
     if (userUf) {
       setDetectedUf(extrairSiglaUF(userUf));
       return;
     }
 
+    // Prioridade 2: UF salva manualmente pelo usuário
+    const ufSalva = localStorage.getItem('bawzi_uf_override');
+    if (ufSalva && ESTADOS_BR[ufSalva] !== undefined || ufSalva?.length === 2) {
+      setDetectedUf(ufSalva.toUpperCase());
+      return;
+    }
+
     const detectarLocalizacao = async () => {
+      // Prioridade 3: Geolocalização nativa do browser (GPS/Wi-Fi — muito mais preciso que IP)
+      const ufViaGPS = await new Promise<string>((resolve) => {
+        if (!navigator.geolocation) { resolve(''); return; }
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            try {
+              const { latitude: lat, longitude: lon } = pos.coords;
+              const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=pt-BR`,
+                { headers: { 'User-Agent': 'Bawzi/1.0' } }
+              );
+              const data = await res.json();
+              // Nominatim retorna state como nome completo ex: "Goiás"
+              const estado = (data.address?.state || '').toUpperCase();
+              resolve(extrairSiglaUF(estado));
+            } catch { resolve(''); }
+          },
+          () => resolve(''),   // negado ou timeout → fallback
+          { timeout: 5000, maximumAge: 300_000 }
+        );
+      });
+
+      if (ufViaGPS) {
+        setDetectedUf(ufViaGPS);
+        return;
+      }
+
+      // Prioridade 4: IP geolocation (menos preciso — GO/DF frequentemente se confundem)
       try {
-        // ipapi.co retorna region_code no formato "GO", "SP", etc.
         const res = await fetch('https://ipapi.co/json/');
         const data = await res.json();
         if (data.region_code) {
           const ufLimpo = extrairSiglaUF(data.region_code);
-          if (ufLimpo) setDetectedUf(ufLimpo);
-          return;
+          if (ufLimpo) { setDetectedUf(ufLimpo); return; }
         }
+      } catch { /* fallback */ }
+
+      try {
+        const res = await fetch('https://ip-api.com/json/?fields=region,regionName');
+        const data = await res.json();
+        const candidato = data.regionName || data.region || '';
+        const ufLimpo = extrairSiglaUF(candidato);
+        if (ufLimpo) setDetectedUf(ufLimpo);
       } catch {
-        try {
-          // ip-api.com retorna region como nome completo, ex: "Goiás"
-          const res = await fetch('https://ip-api.com/json/?fields=region,regionName');
-          const data = await res.json();
-          const candidato = data.regionName || data.region || '';
-          const ufLimpo = extrairSiglaUF(candidato);
-          if (ufLimpo) setDetectedUf(ufLimpo);
-        } catch {
-          console.warn("⚠️ [GEO] Bloqueio de IP. Nenhuma localização detectada.");
-        }
+        console.warn('⚠️ [GEO] Nenhuma localização detectada.');
       }
     };
 
@@ -462,9 +495,24 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <PncpStatusBadge />
             {detectedUf && !uf && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-[10px] font-black uppercase text-sky-700">
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-[10px] font-black uppercase text-sky-700">
                 <MapPin size={12} />
                 UF detectada: {detectedUf}
+                <button
+                  type="button"
+                  title="Clique para corrigir a UF detectada"
+                  onClick={() => {
+                    const nova = prompt(`UF detectada incorretamente como "${detectedUf}".\nDigite a sigla correta (ex: GO, SP, RJ):`);
+                    if (nova && nova.trim().length === 2) {
+                      const sig = nova.trim().toUpperCase();
+                      setDetectedUf(sig);
+                      localStorage.setItem('bawzi_uf_override', sig);
+                    }
+                  }}
+                  className="ml-1 text-sky-400 hover:text-sky-700 transition-colors"
+                >
+                  ✎
+                </button>
               </span>
             )}
           </div>
@@ -586,11 +634,11 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
         <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <label className="flex items-center gap-2.5 cursor-pointer group min-w-0">
             <div className="relative flex items-center justify-center">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={forceExact}
                 onChange={(e) => setForceExact(e.target.checked)}
-                className="peer sr-only" 
+                className="peer sr-only"
               />
               <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
             </div>
@@ -598,10 +646,19 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               Busca exata <span className="opacity-60">sem otimização automática do termo</span>
             </span>
           </label>
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
-            <SlidersHorizontal size={13} />
-            Use quando souber exatamente o objeto da compra.
-          </span>
+
+          {/* Botão de análise em lote — lado direito da barra */}
+          <button
+            type="button"
+            onClick={() => { setBulkMode(!bulkMode); setSelected(new Set()); }}
+            className={`shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all border ${
+              bulkMode
+                ? 'bg-violet-600 text-white border-violet-600 shadow-sm shadow-violet-200'
+                : 'bg-white border-violet-200 text-violet-600 hover:bg-violet-600 hover:text-white hover:border-violet-600 hover:shadow-sm hover:shadow-violet-200'
+            }`}
+          >
+            {bulkMode ? <><X size={12} /> Cancelar lote</> : <><Layers size={12} /> Analisar em lote</>}
+          </button>
         </div>
       </form>
 
@@ -693,32 +750,40 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       {/* ========================================== */}
       {/* 4. LISTA DE EDITAIS E EXTRAÇÃO PROFUNDA    */}
       {/* ========================================== */}
-      {/* ── Barra de seleção em lote ──────────────────────────────────────── */}
-      {results.length > 0 && (
-        <div className="flex items-center justify-between gap-3 px-1">
-          <button
-            onClick={() => { setBulkMode(!bulkMode); setSelected(new Set()); }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase transition-all border ${bulkMode ? 'bg-violet-600 text-white border-violet-600' : 'bg-white border-slate-200 text-slate-500 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700'}`}
-          >
-            {bulkMode ? '✕ Cancelar seleção' : '☑ Selecionar para lote'}
-          </button>
-
-          {bulkMode && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium">
-                {selected.size}/{MAX_BULK} selecionados
-              </span>
-              <button
-                onClick={handleBulkAnalyze}
-                disabled={selected.size === 0 || bulkLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-black rounded-xl text-xs transition-all disabled:opacity-50 shadow-md shadow-violet-500/20"
-              >
-                {bulkLoading
-                  ? `Analisando ${bulkProgress}/${selected.size}...`
-                  : `Analisar ${selected.size} edital${selected.size !== 1 ? 'is' : ''}`}
-              </button>
+      {/* ── Barra de execução do lote (aparece só quando bulk está ativo) ── */}
+      {results.length > 0 && bulkMode && (
+        <div className="rounded-2xl bg-violet-50 border border-violet-200 px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: MAX_BULK }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center text-[9px] font-black transition-all ${
+                    i < selected.size
+                      ? 'bg-violet-600 border-violet-600 text-white'
+                      : 'border-violet-300 text-violet-300'
+                  }`}
+                >
+                  {i < selected.size ? '✓' : i + 1}
+                </span>
+              ))}
             </div>
-          )}
+            <span className="text-[11px] text-violet-600 font-bold">
+              {selected.size === 0
+                ? 'Clique nos editais para selecionar'
+                : `${selected.size} de ${MAX_BULK} selecionado${selected.size !== 1 ? 's' : ''}`}
+            </span>
+          </div>
+          <button
+            onClick={handleBulkAnalyze}
+            disabled={selected.size === 0 || bulkLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs transition-all shadow-md shadow-violet-500/20 active:scale-[0.98]"
+          >
+            <Zap size={12} className={bulkLoading ? 'animate-pulse' : ''} />
+            {bulkLoading
+              ? `Analisando ${bulkProgress}/${selected.size}…`
+              : `Analisar${selected.size > 0 ? ` ${selected.size} edital${selected.size !== 1 ? 'is' : ''}` : ''}`}
+          </button>
         </div>
       )}
 

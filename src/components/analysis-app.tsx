@@ -30,7 +30,7 @@ import { useRouter } from 'next/navigation';
 
 // Sub-componentes extraídos
 import AppHero from './AppHero';
-import AnalysisForm from './AnalysisForm';
+import AnalysisForm, { type QuotaInfo } from './AnalysisForm';
 import AnalysisLoadingOverlay from './AnalysisLoadingOverlay';
 import AnalysisResults from './AnalysisResults';
 import AppSidebar from './AppSidebar';
@@ -161,6 +161,7 @@ export default function AnalysisApp() {
   // Sidebar
   const [notifCount, setNotifCount]         = useState(0);
   const [renovacoesCount, setRenovacoesCount] = useState<number | null>(null);
+  const [quota, setQuota]                   = useState<QuotaInfo | null>(null);
 
   // Misc
   const [termoAlvo, setTermoAlvo]   = useState('');
@@ -221,6 +222,16 @@ export default function AnalysisApp() {
   const isOverFileLimit     = totalFileSize > currentFileLimitBytes;
   const isOverLimit         = isOverTextLimit || isOverFileLimit;
   const requiresAuth        = !token && hasUsedFreeTrial;
+
+  // ─── useEffect: atualiza quota após cada análise concluída ──────────────────
+  useEffect(() => {
+    if (!result || !token) return;
+    apiFetch(`${API_URL}/api/analyses/quota`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setQuota(data); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   // ─── useEffect: soberania de tier (cache local) ─────────────────────────────
   useEffect(() => {
@@ -322,6 +333,12 @@ export default function AnalysisApp() {
             if (isSuccessReturn && nivelFinal > 1) {
               window.history.replaceState({}, document.title, window.location.pathname);
             }
+
+            // Busca quota mensal (silenciosa)
+            try {
+              const qRes = await apiFetch(`${API_URL}/api/analyses/quota`);
+              if (qRes.ok) setQuota(await qRes.json());
+            } catch { /* silencioso */ }
           }
         } catch (err) {
           console.error('Erro na sincronização:', err);
@@ -626,6 +643,8 @@ export default function AnalysisApp() {
                         onProviderChange={setProvider}
                         onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+                        quota={quota}
+                        onUpgradeClick={() => { setSelectedTier(currentTier + 1); setShowUpgradeModal(true); }}
                       />
                     </>
                   ) : isAnalyzing ? (

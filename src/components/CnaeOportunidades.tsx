@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin } from 'lucide-react';
+import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin, Globe } from 'lucide-react';
 import CnaePriceTrendChart from './CnaePriceTrendChart';
 
 interface CnaeOportunidadesProps {
@@ -95,12 +95,15 @@ export default function CnaeOportunidades({
 
   useEffect(() => { setMounted(true); }, []);
 
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async (forceRefresh = false) => {
     if (!token) return;
     setLoading(true);
     setStatus('loading');
     try {
-      const res = await fetch(`${API_URL}/api/pncp/feed-cnae`, {
+      const url = forceRefresh
+        ? `${API_URL}/api/pncp/feed-cnae?force_refresh=true`
+        : `${API_URL}/api/pncp/feed-cnae`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -322,7 +325,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
     return (
       <div className="w-full max-w-5xl mx-auto p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
         <p className="text-red-600 font-medium text-sm mb-4">Erro ao carregar oportunidades. Tente novamente.</p>
-        <button onClick={carregar} className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-sm">
+        <button onClick={() => carregar(true)} className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-sm">
           Tentar Novamente
         </button>
       </div>
@@ -355,7 +358,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
             </div>
           </div>
           <button
-            onClick={carregar}
+            onClick={() => carregar(true)}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-500 font-bold rounded-xl text-xs hover:bg-slate-100 transition-all disabled:opacity-50 border border-slate-200 shrink-0"
           >
@@ -508,10 +511,34 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
       {/* Cards */}
       {editaisFiltrados.length > 0 && (
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 pb-4 custom-scrollbar">
-          {editaisFiltrados.map((edital, idx) => {
-            const uid = edital.numero_controle_pncp || edital.id || String(idx);
-            const orgao = edital.orgao_nome || edital.orgaoEntidade?.razaoSocial || edital.unidadeOrgao?.nomeUnidade || edital.nomeOrgao || 'Órgão Público';
-            const uf = edital.uf || edital.unidadeOrgao?.ufSigla || '';
+          {(() => {
+            // UFs de todas as empresas cadastradas
+            const todasUfsEmpresas = new Set(
+              Object.values(cnaeInfo?.empresaLocalizacao || {})
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                .map((loc: any) => (loc?.uf || '').toUpperCase().trim())
+                .filter(Boolean)
+            );
+            const getUfEdital = (e: EditalCnae) =>
+              (e.uf || (e.unidadeOrgao as { ufSigla?: string } | undefined)?.ufSigla || '').toUpperCase().trim();
+
+            let jaExibioSeparadorNacional = false;
+            let contRegional = 0;
+
+            return editaisFiltrados.map((edital, idx) => {
+              const ufEdital = getUfEdital(edital);
+              const isRegional = todasUfsEmpresas.size > 0 && todasUfsEmpresas.has(ufEdital);
+
+              if (isRegional) contRegional++;
+
+              // Separador "Oportunidades nacionais" — primeira vez que sai dos estados cadastrados
+              const mostrarSeparadorNacional =
+                !isRegional && !jaExibioSeparadorNacional && contRegional > 0;
+              if (mostrarSeparadorNacional) jaExibioSeparadorNacional = true;
+
+              const uid = edital.numero_controle_pncp || edital.id || String(idx);
+              const orgao = edital.orgao_nome || edital.orgaoEntidade?.razaoSocial || edital.unidadeOrgao?.nomeUnidade || edital.nomeOrgao || 'Órgão Público';
+              const uf = edital.uf || edital.unidadeOrgao?.ufSigla || '';
             const municipio = (edital.unidadeOrgao?.municipioNome || (edital as any).municipio || '').toUpperCase();
             const objeto = String(edital.objetoCompra || edital.description || edital.title || edital.objeto || 'Objeto não especificado');
             const valor = edital.valor_total_estimado || edital.valorTotalEstimado || edital.valor_global || 0;
@@ -526,8 +553,20 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
             const ano = edital.anoCompra || edital.ano || edital.ano_compra || 0;
             const seq = edital.sequencialCompra || edital.numero_sequencial || edital.numero_sequencial_compra_ata || 0;
 
-            return (
-              <div key={uid} className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-slate-300 transition-all shadow-sm hover:shadow-md">
+              return (
+                <React.Fragment key={uid}>
+                  {/* Separador visual entre oportunidades regionais e nacionais */}
+                  {mostrarSeparadorNacional && (
+                    <div className="flex items-center gap-3 py-1">
+                      <div className="flex-1 h-px bg-slate-200" />
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 shrink-0">
+                        <Globe size={11} />
+                        Oportunidades nacionais
+                      </span>
+                      <div className="flex-1 h-px bg-slate-200" />
+                    </div>
+                  )}
+                  <div className="p-5 md:p-6 border border-slate-200 rounded-[1.5rem] bg-white hover:border-slate-300 transition-all shadow-sm hover:shadow-md">
 
                 {/* Linha superior */}
                 <div className="flex justify-between items-start mb-3">
@@ -668,9 +707,11 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                     </a>
                   )}
                 </div>
-              </div>
-            );
-          })}
+                  </div>
+                </React.Fragment>
+              );
+            });
+          })()}
         </div>
       )}
     </div>

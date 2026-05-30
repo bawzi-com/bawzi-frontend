@@ -63,9 +63,18 @@ const STEPS = [
 ];
 
 const PLANOS = [
-  { nome: 'Essencial', preco: 'R$ 97', cor: 'from-sky-500 to-indigo-500', destaque: false, itens: ['Radar PNCP', 'Análise IA — 100/mês', '1 empresa monitorada', 'Histórico de análises'] },
-  { nome: 'Pro', preco: 'R$ 197', cor: 'from-emerald-500 to-teal-500', destaque: true, itens: ['Tudo do Essencial', 'Análise IA — 300/mês', '2 empresas monitoradas', 'War Room Concorrentes', 'Alertas de Renovação'] },
-  { nome: 'Elite', preco: 'R$ 397', cor: 'from-amber-500 to-orange-500', destaque: false, itens: ['Tudo do Pro', 'Análise IA ilimitada', '3 empresas', 'Capital de Giro IA', 'Suporte prioritário'] },
+  {
+    nome: 'Essencial', preco: 'R$ 79', nivel: 'NÍVEL 2', cor: 'from-sky-500 to-indigo-500', destaque: false,
+    itens: ['Perfil da empresa (CNPJ/UF)', 'Histórico de análises salvo', 'Comparar editais lado a lado', 'Radar 360 — busca PNCP'],
+  },
+  {
+    nome: 'Especialista', preco: 'R$ 197', nivel: 'NÍVEL 3', cor: 'from-emerald-500 to-teal-500', destaque: true,
+    itens: ['Para Você — oportunidades por CNAE', 'Alertas proativos PNCP', 'Capital Inteligente — crédito', '4 Agentes IA em paralelo'],
+  },
+  {
+    nome: 'Dominador', preco: 'R$ 497', nivel: 'NÍVEL 4', cor: 'from-amber-500 to-orange-500', destaque: false,
+    itens: ['Renovações — radar de contratos', 'War Room de concorrentes', 'Simulador tático de preços', 'Suporte prioritário'],
+  },
 ];
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -191,11 +200,14 @@ export default function LandingPage() {
             <p className="mt-4 text-slate-500 font-medium">Comece grátis com 5 análises. Cancele quando quiser.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            {PLANOS.map(({ nome, preco, cor, destaque, itens }) => (
+            {PLANOS.map(({ nome, preco, nivel, cor, destaque, itens }) => (
               <div key={nome} className={`rounded-3xl border p-6 flex flex-col ${destaque ? 'border-emerald-300 shadow-xl shadow-emerald-100 ring-2 ring-emerald-300' : 'border-slate-200'}`}>
-                {destaque && (
-                  <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-3 py-1 self-start mb-3">Mais popular</div>
-                )}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{nivel}</span>
+                  {destaque && (
+                    <div className="text-[10px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-3 py-1">Mais popular</div>
+                  )}
+                </div>
                 <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${cor} mb-4`} />
                 <h3 className="text-lg font-black text-slate-900">{nome}</h3>
                 <div className="mt-2 mb-4">

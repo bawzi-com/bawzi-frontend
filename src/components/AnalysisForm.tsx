@@ -10,8 +10,19 @@ import React from 'react';
 import {
   Zap, FolderOpen, FileText, ScanSearch, BrainCircuit,
   AlertTriangle, CheckCircle2, UploadCloud, Gauge, ShieldCheck, Clock3,
+  RefreshCw,
 } from 'lucide-react';
 import { formatMB } from './analysis-types';
+
+export interface QuotaInfo {
+  tier: number;
+  ilimitado: boolean;
+  limite: number;
+  usado: number;
+  restante: number | null;
+  reseta_em: string;       // "YYYY-MM-DD"
+  dias_para_reset: number;
+}
 
 interface AnalysisFormProps {
   text: string;
@@ -30,6 +41,74 @@ interface AnalysisFormProps {
   onProviderChange: (p: string) => void;
   onAnalyze: (motor: 'openai' | 'claude') => void;
   onShowAuthModal: (mode: 'login' | 'register') => void;
+  quota?: QuotaInfo | null;
+  onUpgradeClick?: () => void;
+}
+
+// ─── Indicador de quota mensal ────────────────────────────────────────────────
+
+function QuotaBar({ quota, onUpgradeClick }: { quota: QuotaInfo; onUpgradeClick?: () => void }) {
+  if (quota.ilimitado) return null;
+
+  const pct = Math.min(100, Math.round((quota.usado / quota.limite) * 100));
+  const esgotado = quota.restante === 0;
+  const quaseEsgotado = !esgotado && quota.restante !== null && quota.restante <= 1;
+
+  const barColor = esgotado
+    ? 'bg-red-500'
+    : quaseEsgotado
+      ? 'bg-amber-500'
+      : 'bg-emerald-500';
+
+  const textColor = esgotado
+    ? 'text-red-700'
+    : quaseEsgotado
+      ? 'text-amber-700'
+      : 'text-slate-600';
+
+  const bgColor = esgotado
+    ? 'bg-red-50 border-red-200'
+    : quaseEsgotado
+      ? 'bg-amber-50 border-amber-200'
+      : 'bg-slate-50 border-slate-200';
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${bgColor}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className={`text-[11px] font-black uppercase tracking-wider ${textColor}`}>
+          {esgotado ? '⛔ Limite mensal atingido' : `Análises este mês`}
+        </span>
+        <span className={`text-[11px] font-bold ${textColor}`}>
+          {quota.usado} / {quota.limite}
+          {' '}·{' '}
+          reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
+        <div
+          className={`h-full rounded-full transition-all ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {esgotado && (
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-[11px] text-red-600 font-medium">
+            Reseta em {quota.reseta_em} · Faça upgrade para continuar agora.
+          </p>
+          {onUpgradeClick && (
+            <button
+              onClick={onUpgradeClick}
+              className="text-[11px] font-black text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2"
+            >
+              Fazer upgrade
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AnalysisForm({
@@ -49,6 +128,8 @@ export default function AnalysisForm({
   onProviderChange,
   onAnalyze,
   onShowAuthModal,
+  quota,
+  onUpgradeClick,
 }: AnalysisFormProps) {
   return (
     <div id="area-submissao" className="bg-white rounded-[2rem] shadow-sm border border-slate-200 relative z-20 w-full overflow-hidden">
@@ -171,6 +252,11 @@ export default function AnalysisForm({
 
         {/* Botões de análise */}
         <div className="mt-6 w-full">
+          {/* Indicador de quota mensal */}
+          {token && quota && !quota.ilimitado && (
+            <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick} />
+          )}
+
           {userTier === 4 ? (
             <TierFourButtons
               provider={provider}

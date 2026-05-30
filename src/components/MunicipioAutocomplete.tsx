@@ -130,7 +130,7 @@ export default function MunicipioAutocomplete({
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       {/* Input */}
-      <div className="relative flex items-center">
+      <div className="relative flex items-center h-full">
         <MapPin
           className="absolute left-3 w-4 h-4 text-slate-400 pointer-events-none shrink-0"
           strokeWidth={2}
