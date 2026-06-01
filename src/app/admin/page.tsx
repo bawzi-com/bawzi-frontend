@@ -1909,14 +1909,12 @@ export default function AdminDashboard() {
                             Ativar
                           </button>
                         )}
-                        {inv.status !== 'activated' && (
-                          <button
-                            onClick={() => handleRevogarPromo(inv.token, inv.email)}
-                            className="text-[11px] text-red-500 hover:text-red-400 font-bold transition-colors"
-                          >
-                            Revogar
-                          </button>
-                        )}
+                        <button
+                          onClick={() => handleRevogarPromo(inv.token, inv.email)}
+                          className="text-[11px] text-red-500 hover:text-red-400 font-bold transition-colors"
+                        >
+                          Revogar
+                        </button>
                       </div>
                     </div>
                   </div>
