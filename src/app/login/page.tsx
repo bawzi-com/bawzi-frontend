@@ -1,19 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthModal from '../../components/AuthModal';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [open, setOpen] = useState(true);
 
-  // Redirect to home after successful login
+  const view = searchParams.get('view') === 'register' ? 'register' : 'login';
+  const redirect = searchParams.get('redirect') || '/';
+
   const handleSuccess = () => {
-    router.push('/');
+    router.push(redirect);
   };
 
-  // If the user closes without logging in, also go to home
   const handleClose = () => {
     setOpen(false);
     router.push('/');
@@ -24,7 +26,7 @@ export default function LoginPage() {
       <AuthModal
         isOpen={open}
         onClose={handleClose}
-        defaultView="login"
+        defaultView={view}
         onSuccess={handleSuccess}
       />
     </main>

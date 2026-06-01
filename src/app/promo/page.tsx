@@ -117,7 +117,7 @@ function PromoActivateContent() {
               Crie a sua conta com o e-mail do convite e o acesso será ativado automaticamente.
             </p>
             <Link
-              href={`/login?redirect=/promo?token=${token}`}
+              href={`/login?view=register&redirect=/promo%3Ftoken%3D${token}`}
               className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-black px-6 py-3 rounded-xl text-sm transition-colors"
             >
               Criar conta <ArrowRight size={14} />

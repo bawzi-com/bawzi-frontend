@@ -96,7 +96,7 @@ export default function Header() {
         
         {/* LOGÓTIPO */}
         <Link href="/" className="flex items-center cursor-pointer hover:opacity-80 transition-opacity">
-          <Image src="/logo-bawzi.png" alt="Bawzi" width={120} height={40} className="h-10 w-auto" priority />
+          <Image src="/logo-bawzi.png" alt="Bawzi" width={120} height={40} className="h-10 w-auto" priority unoptimized />
         </Link>
 
         {/* NAVEGAÇÃO CENTRAL */}

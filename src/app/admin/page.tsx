@@ -49,6 +49,7 @@ export default function AdminDashboard() {
   const [smtpUser, setSmtpUser] = useState('');
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpName, setSmtpName] = useState('Bawzi');
+  const [smtpFromEmail, setSmtpFromEmail] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
 
   // Estados PNCP
@@ -128,8 +129,9 @@ export default function AdminDashboard() {
         if (smtpRes.ok) {
           const smtpData = await smtpRes.json();
           setSmtpUser(smtpData.username || '');
-          setSmtpPass(smtpData.password || '');
+          setSmtpPass(''); // Sempre vazio: campo vazio = manter API Key existente
           setSmtpName(smtpData.from_name || 'Bawzi');
+          setSmtpFromEmail(smtpData.from_email || '');
         }
 
         // Preenche os Templates
@@ -228,6 +230,7 @@ export default function AdminDashboard() {
   };
 
   const promoSubmittingRef = useRef(false);
+  const templateTextareaRef = useRef<HTMLTextAreaElement>(null);
   const handleEnviarPromo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!promoEmail.includes('@') || promoSubmittingRef.current) return;
@@ -261,6 +264,22 @@ export default function AdminDashboard() {
       method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
     });
     loadPromoList();
+  };
+
+  const handleAtivarPromo = async (token_promo: string, email: string) => {
+    if (!confirm(`Ativar manualmente o convite de ${email}?`)) return;
+    const token = localStorage.getItem('bawzi_token');
+    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const res = await fetch(`${base}/api/admin/promo-invites/${token_promo}/ativar`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`✅ Promo ativado para ${data.email} (${data.dias} dias)`);
+      loadPromoList();
+    } else {
+      alert(`Erro: ${data.detail}`);
+    }
   };
 
   const loadTierConfigs = async () => {
@@ -346,10 +365,10 @@ export default function AdminDashboard() {
       const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/email/smtp`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: smtpUser, password: smtpPass, from_name: smtpName })
+        body: JSON.stringify({ username: smtpUser, password: smtpPass, from_name: smtpName, from_email: smtpFromEmail })
       });
       if(res.ok) {
-        alert("✅ Configurações do servidor Titan salvas com sucesso!");
+        alert("✅ ZeptoMail configurado com sucesso!");
       } else {
         alert("Erro ao salvar as configurações SMTP.");
       }
@@ -1277,30 +1296,62 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* Upload de Imagem */}
-                <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-2xl">
-                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-3">
-                    <ImageIcon size={14} /> Carregar Imagem para o E-mail
+                <div className="p-5 bg-slate-950/50 border border-slate-800 rounded-2xl space-y-3">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <ImageIcon size={14} /> Importar Ícone / Imagem
                   </label>
-                  <div className="flex items-center gap-4">
-                    <input 
-                      type="file" 
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={uploadingImage}
-                      className="block w-full text-sm text-slate-400
-                        file:mr-4 file:py-2 file:px-4
-                        file:rounded-xl file:border-0
-                        file:text-sm file:font-black
-                        file:bg-emerald-500/10 file:text-emerald-400
-                        hover:file:bg-emerald-500/20 file:transition-colors
-                        disabled:opacity-50"
-                    />
-                  </div>
-                  {uploadingImage && <p className="text-xs text-slate-500 mt-2 italic">A enviar imagem para o servidor...</p>}
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={uploadingImage}
+                    className="block w-full text-sm text-slate-400
+                      file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0
+                      file:text-sm file:font-black file:bg-emerald-500/10 file:text-emerald-400
+                      hover:file:bg-emerald-500/20 file:transition-colors disabled:opacity-50"
+                  />
+                  {uploadingImage && <p className="text-xs text-slate-500 italic">Enviando imagem...</p>}
                   {uploadedImageUrl && (
-                    <div className="mt-3 p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-                      <p className="text-xs text-emerald-400 font-bold mb-1">Imagem pronta! Copie e cole no src="" do HTML abaixo:</p>
-                      <code className="text-sm text-white select-all break-all">{uploadedImageUrl}</code>
+                    <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-3">
+                      <div className="flex items-center gap-4">
+                        <img src={uploadedImageUrl} alt="preview" className="w-16 h-16 object-contain rounded-lg border border-slate-700 bg-slate-900 p-1" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-emerald-400 font-bold mb-1">Imagem pronta</p>
+                          <code className="text-xs text-slate-400 break-all">{uploadedImageUrl}</code>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const ta = templateTextareaRef.current;
+                            if (!ta) return;
+                            const imgTag = `<img src="${uploadedImageUrl}" alt="ícone" width="48" style="display:block;margin:0 auto 16px;" />`;
+                            const start = ta.selectionStart;
+                            const end = ta.selectionEnd;
+                            const newVal = templateHtml.slice(0, start) + imgTag + templateHtml.slice(end);
+                            setTemplateHtml(newVal);
+                            setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + imgTag.length; ta.focus(); }, 0);
+                          }}
+                          className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-lg transition-colors"
+                        >
+                          📌 Inserir ícone pequeno (48px)
+                        </button>
+                        <button
+                          onClick={() => {
+                            const ta = templateTextareaRef.current;
+                            if (!ta) return;
+                            const imgTag = `<img src="${uploadedImageUrl}" alt="imagem" width="200" style="display:block;margin:0 auto 16px;max-width:100%;" />`;
+                            const start = ta.selectionStart;
+                            const end = ta.selectionEnd;
+                            const newVal = templateHtml.slice(0, start) + imgTag + templateHtml.slice(end);
+                            setTemplateHtml(newVal);
+                            setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + imgTag.length; ta.focus(); }, 0);
+                          }}
+                          className="flex-1 py-2 px-3 bg-slate-700 hover:bg-slate-600 text-white text-xs font-black rounded-lg transition-colors"
+                        >
+                          🖼️ Inserir imagem grande (200px)
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1325,9 +1376,10 @@ export default function AdminDashboard() {
                     <FileText size={14} /> Código HTML
                   </label>
                   <textarea
+                    ref={templateTextareaRef}
                     value={templateHtml}
                     onChange={(e) => setTemplateHtml(e.target.value)}
-                    rows={15}
+                    rows={18}
                     className="w-full bg-[#0d1117] border border-slate-800 rounded-xl py-4 px-4 text-slate-300 font-mono text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all resize-y"
                     spellCheck="false"
                   ></textarea>
@@ -1367,8 +1419,8 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-4 mb-8">
               <div className="p-3 bg-amber-500/10 rounded-2xl"><Server size={24} className="text-amber-400" /></div>
               <div>
-                <h2 className="text-2xl font-black tracking-tight">Motor de Comunicação (SMTP)</h2>
-                <p className="text-slate-500 text-sm mt-1">Configure o servidor Titan para o envio de e-mails transacionais em background.</p>
+                <h2 className="text-2xl font-black tracking-tight">Motor de Comunicação (ZeptoMail)</h2>
+                <p className="text-slate-500 text-sm mt-1">Configure o ZeptoMail para envio de e-mails transacionais. Username é sempre <code className="text-amber-400">emailapikey</code>.</p>
               </div>
             </div>
 
@@ -1377,45 +1429,59 @@ export default function AdminDashboard() {
                 
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Mail size={14} /> E-mail de Disparo (Username)
+                    <Mail size={14} /> Username SMTP
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={smtpUser}
                     onChange={(e) => setSmtpUser(e.target.value)}
-                    placeholder="ex: hello@bawzi.com"
+                    placeholder="emailapikey"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Lock size={14} /> Senha do E-mail
+                    <Lock size={14} /> API Key ZeptoMail
                   </label>
                   <input
                     type="password"
-                    required
                     value={smtpPass}
                     onChange={(e) => setSmtpPass(e.target.value)}
-                    placeholder="********"
+                    placeholder="Cole a API Key (deixe vazio para manter a atual)"
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                  <Edit2 size={14} /> Nome do Remetente
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={smtpName}
-                  onChange={(e) => setSmtpName(e.target.value)}
-                  placeholder="ex: Equipe Bawzi"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Mail size={14} /> E-mail Remetente (From)
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={smtpFromEmail}
+                    onChange={(e) => setSmtpFromEmail(e.target.value)}
+                    placeholder="noreply@bawzi.com"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Edit2 size={14} /> Nome do Remetente
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={smtpName}
+                    onChange={(e) => setSmtpName(e.target.value)}
+                    placeholder="ex: Equipe Bawzi"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all"
+                  />
+                </div>
               </div>
 
               <div className="pt-4 border-t border-slate-800/50 flex justify-end">
@@ -1425,7 +1491,7 @@ export default function AdminDashboard() {
                   className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-amber-950 font-black px-6 py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save size={18} />
-                  {savingSmtp ? 'A Guardar...' : 'Gravar Credenciais SMTP'}
+                  {savingSmtp ? 'A Guardar...' : 'Gravar Configuração ZeptoMail'}
                 </button>
               </div>
             </form>
@@ -1818,21 +1884,41 @@ export default function AdminDashboard() {
                         {inv.dias} dias · criado por {inv.created_by} · {inv.created_at ? new Date(inv.created_at).toLocaleDateString('pt-BR') : ''}
                       </p>
                     </div>
-                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg shrink-0 ${
-                      inv.activated
-                        ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800'
-                        : 'bg-amber-900/40 text-amber-400 border border-amber-800'
-                    }`}>
-                      {inv.activated ? '✓ Ativado' : 'Aguardando'}
-                    </span>
-                    {!inv.activated && (
-                      <button
-                        onClick={() => handleRevogarPromo(inv.token, inv.email)}
-                        className="text-[11px] text-red-500 hover:text-red-400 font-bold shrink-0 transition-colors"
-                      >
-                        Revogar
-                      </button>
-                    )}
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      {/* Badge de status */}
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
+                        inv.status === 'activated'          ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800' :
+                        inv.status === 'user_registered'    ? 'bg-violet-900/40 text-violet-400 border border-violet-800' :
+                        inv.status === 'pending_registration'? 'bg-blue-900/40 text-blue-400 border border-blue-800' :
+                        inv.status === 'expired'            ? 'bg-slate-800 text-slate-500 border border-slate-700' :
+                                                              'bg-amber-900/40 text-amber-400 border border-amber-800'
+                      }`}>
+                        {inv.status === 'activated'           && `✓ Ativado${inv.activated_at ? ' · ' + new Date(inv.activated_at).toLocaleDateString('pt-BR') : ''}`}
+                        {inv.status === 'user_registered'     && '⚡ Conta criada'}
+                        {inv.status === 'pending_registration' && '⏳ Abrindo link'}
+                        {inv.status === 'expired'             && '✕ Expirado'}
+                        {inv.status === 'waiting'             && '● Aguardando'}
+                      </span>
+                      {/* Ações */}
+                      <div className="flex gap-2">
+                        {inv.status === 'user_registered' && (
+                          <button
+                            onClick={() => handleAtivarPromo(inv.token, inv.email)}
+                            className="text-[11px] text-emerald-500 hover:text-emerald-400 font-bold transition-colors"
+                          >
+                            Ativar
+                          </button>
+                        )}
+                        {inv.status !== 'activated' && (
+                          <button
+                            onClick={() => handleRevogarPromo(inv.token, inv.email)}
+                            className="text-[11px] text-red-500 hover:text-red-400 font-bold transition-colors"
+                          >
+                            Revogar
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

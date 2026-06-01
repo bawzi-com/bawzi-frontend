@@ -48,7 +48,13 @@ export interface PricingIntelligenceData {
   nivelAmeaca?: string;
   perfilVencedor?: string;
   valorMedioUnitarioMercado?: number;
+  valorMinimoUnitarioMercado?: number;
+  valorMedioUnitarioRegional?: number;
+  valorMinimoUnitarioRegional?: number;
   amostraPrecosUnitarios?: number;
+  amostraPrecosUnitariosRegional?: number;
+  evidenciasPrecosUnitarios?: Array<Record<string, any>>;
+  evidenciasPrecosUnitariosRegionais?: Array<Record<string, any>>;
   objeto?: string;
   link_pncp?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -411,8 +417,10 @@ export default function CompetitorWarRoom({
       return menor === Infinity ? 0 : menor;
   };
 
-  const menorNacional = useMemo(() => getMenorUnitario(listaNacional), [listaNacional, tetoUnitarioAtual, trustedBaselinePrice]);
-  const menorRegional = useMemo(() => getMenorUnitario(listaRegional), [listaRegional, tetoUnitarioAtual, trustedBaselinePrice]);
+  const menorNacional = useMemo(() => getMenorUnitario(listaNacional), [listaNacional, tetoUnitarioAtual, trustedBaselinePrice, valorEstimatedSeguro]);
+  const menorRegional = useMemo(() => getMenorUnitario(listaRegional), [listaRegional, tetoUnitarioAtual, trustedBaselinePrice, valorEstimatedSeguro]);
+  const menorNacionalMercado = Number(pricing?.valorMinimoUnitarioMercado) || 0;
+  const menorRegionalMercado = Number(pricing?.valorMinimoUnitarioRegional) || 0;
 
   const ultimoVencidoAlvo = useMemo(() => {
       if (!dossieContracts || dossieContracts.length === 0) return 0;
@@ -430,16 +438,18 @@ export default function CompetitorWarRoom({
   // que estão < 3% desse valor — são claramente de produtos/segmentos diferentes.
   // Sem âncora (ultimoVencidoAlvo = 0) o guard de piso do lote já cobre o grosso.
   const menorNacionalExibido = useMemo(() => {
-      if (menorNacional <= 0) return 0;
-      if (ultimoVencidoAlvo > 0 && menorNacional < ultimoVencidoAlvo * 0.03) return 0;
-      return menorNacional;
-  }, [menorNacional, ultimoVencidoAlvo]);
+      const menor = menorNacional > 0 ? menorNacional : menorNacionalMercado;
+      if (menor <= 0) return 0;
+      if (ultimoVencidoAlvo > 0 && menor < ultimoVencidoAlvo * 0.03) return 0;
+      return menor;
+  }, [menorNacional, menorNacionalMercado, ultimoVencidoAlvo]);
 
   const menorRegionalExibido = useMemo(() => {
-      if (menorRegional <= 0) return 0;
-      if (ultimoVencidoAlvo > 0 && menorRegional < ultimoVencidoAlvo * 0.03) return 0;
-      return menorRegional;
-  }, [menorRegional, ultimoVencidoAlvo]);
+      const menor = menorRegional > 0 ? menorRegional : menorRegionalMercado;
+      if (menor <= 0) return 0;
+      if (ultimoVencidoAlvo > 0 && menor < ultimoVencidoAlvo * 0.03) return 0;
+      return menor;
+  }, [menorRegional, menorRegionalMercado, ultimoVencidoAlvo]);
 
   const fetchSancoes = async (cnpjToFind: string) => {
     setSancoesStatus('loading');
