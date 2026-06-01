@@ -626,6 +626,7 @@ export default function AnalysisApp() {
                       )}
 
                       {/* Formulário */}
+                      <div id="area-submissao" className="scroll-mt-24">
                       <AnalysisForm
                         text={text}
                         onTextChange={handleTextChange}
@@ -646,6 +647,7 @@ export default function AnalysisApp() {
                         quota={quota}
                         onUpgradeClick={() => { setSelectedTier(currentTier + 1); setShowUpgradeModal(true); }}
                       />
+                      </div>
                     </>
                   ) : isAnalyzing ? (
                     <AnalysisLoadingOverlay

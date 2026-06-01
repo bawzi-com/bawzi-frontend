@@ -264,9 +264,9 @@ export default function AnalysisResults({
         {activeTab === 'concorrentes' && (
           <div className="animate-in fade-in zoom-in-95 duration-500 mt-8">
             <PremiumLock
-              isLocked={getCachedTier(userTier) < 4}
-              featureTitle="War Room (Inteligência Ofensiva)"
-              requiredTierName="Nível 4 (Dominador)"
+              isLocked={Math.max(getCachedTier(userTier), currentTier) < 2}
+              featureTitle="Radar de Concorrentes"
+              requiredTierName="Nível 2 (Essencial)"
               onUpgradeClick={onUpgradeClick}
             >
               <CompetitorWarRoom

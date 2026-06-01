@@ -64,6 +64,18 @@ export default function AppHero({
       }, 80);
     };
 
+    const focusAnalise = () => {
+      onGoToWorkspace();
+      setTimeout(() => {
+        const target = document.getElementById('area-submissao');
+        if (target) {
+          const y = target.getBoundingClientRect().top + window.scrollY - 80;
+          window.scrollTo({ top: y, behavior: 'smooth' });
+          target.querySelector<HTMLTextAreaElement>('textarea')?.focus();
+        }
+      }, 80);
+    };
+
     const guideSteps = [
       {
         Icon: ScanSearch,
@@ -194,10 +206,14 @@ export default function AppHero({
                   Buscar editais no Radar PNCP
                   <ChevronRight size={16} />
                 </button>
-                <div className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white/80 px-4 text-[12px] font-semibold text-slate-500 shadow-sm">
+                <button
+                  onClick={focusAnalise}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50/40 hover:text-emerald-700 active:scale-[0.98]"
+                >
                   <UploadCloud size={15} className="text-slate-400" />
-                  ou arraste um PDF abaixo
-                </div>
+                  Enviar PDF ou colar edital
+                  <ChevronRight size={15} />
+                </button>
               </div>
             </div>
 

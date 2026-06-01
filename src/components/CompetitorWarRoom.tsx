@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
@@ -276,6 +276,12 @@ export default function CompetitorWarRoom({
   const listaRegional = useMemo(() => parseCompetitors(competitorsRegionais, 'regional'), [competitorsRegionais]);
   const listaAtiva = abaConcorrentes === 'nacional' ? listaNacional : listaRegional;
 
+  useEffect(() => {
+    if (abaConcorrentes === 'nacional' && listaNacional.length === 0 && listaRegional.length > 0) {
+      setAbaConcorrentes('regional');
+    }
+  }, [abaConcorrentes, listaNacional.length, listaRegional.length]);
+
   // 🟢 A BALA DE PRATA: Baseline de preço a partir de referências explícitas no texto.
   // Usa APENAS preços encontrados via regex (mais confiáveis) e guarda
   // o MÁXIMO entre eles — servindo de âncora superior para filtros de absurdo.
@@ -324,10 +330,10 @@ export default function CompetitorWarRoom({
       // 5. Mentira Extrema: unitário ≥ orçamento global de toda a licitação
       if (valorEstimatedSeguro > 0 && val >= valorEstimatedSeguro) return true;
 
-      // 6. Mentira do Pó: unitário < 0,01% do lote → impossível como preço de item real
-      //    Ex: lote R$ 486.738 → floor = R$ 48,67. Elimina R$ 0,38 e R$ 8,09 sem precisar de baseline.
-      //    Só aplica para lotes expressivos (> R$ 5.000) para não filtrar demais em licitações pequenas.
-      if (valorEstimatedSeguro > 5000 && val < (valorEstimatedSeguro * 0.0001)) return true;
+      // 6. Mentira do Pó: só usa piso do edital quando há teto unitário conhecido.
+      // Em edital de lote global (sem breakdown por item), preços unitários reais
+      // podem ser muito menores que 0,01% do lote e não devem virar "Oculto".
+      if (tetoUnitarioAtual > 0 && valorEstimatedSeguro > 5000 && val < (valorEstimatedSeguro * 0.0001)) return true;
 
       return false;
   };

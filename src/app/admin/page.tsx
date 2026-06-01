@@ -680,7 +680,7 @@ export default function AdminDashboard() {
           onClick={() => { setActiveTab('promo'); loadPromoList(); }}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'promo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
-          <Zap size={18} /> Convites Promo
+          <Zap size={18} /> Convites (demo)
         </button>
       </div>
 
