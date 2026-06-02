@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, API_URL } from '@/lib/apiClient';
+import { apiFetch, API_URL, setAccessToken } from '@/lib/apiClient';
 import {
   Users,
   FileText,
@@ -108,9 +108,11 @@ export default function AdminDashboard() {
       return;
     }
 
-    async function loadDashboardData(_authToken: string) {
+    async function loadDashboardData(authToken: string) {
       try {
-        // apiFetch renova o token automaticamente e dispara bawzi_session_expired se falhar
+        // Inicializa o token em memória para que apiFetch possa usá-lo
+        setAccessToken(authToken);
+
         const [statsRes, usersRes, smtpRes, templatesRes] = await Promise.all([
           apiFetch(`${API_URL}/api/admin/stats`),
           apiFetch(`${API_URL}/api/admin/users`),
