@@ -41,6 +41,7 @@ export interface ConcorrenteData {
 
 export interface PricingIntelligenceData {
   valor_estimado_raw?: number | string;
+  valor_estimado_sigiloso?: boolean;
   estimated_discount?: string;
   market_analysis?: string;
   financial_verdict?: string;
@@ -209,6 +210,8 @@ export default function CompetitorWarRoom({
   };
 
   const valorEstimatedSeguro = useMemo(() => {
+    if (pricing?.valor_estimado_sigiloso) return 0;
+
     // PRIORIDADE 1: valor global do contrato vindo do backend (nível superior)
     const vEdital = extrairValorExato(pricing?.valor_estimado_raw) || extrairValorExato(fullResult?.estimated_value);
     if (vEdital > 0) return vEdital;

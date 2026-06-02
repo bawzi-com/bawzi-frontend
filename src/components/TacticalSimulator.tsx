@@ -69,6 +69,8 @@ export default function TacticalSimulator({
 
   // 🟢 CÁLCULO DO VALOR GLOBAL COM INTELIGÊNCIA TEXTUAL
   const valorGlobal = useMemo(() => {
+    if (pricing?.valor_estimado_sigiloso) return 0;
+
     let soma = 0;
 
     if (pricing?.itens_lotes && Array.isArray(pricing.itens_lotes) && pricing.itens_lotes.length > 0) {
