@@ -468,6 +468,46 @@ export default function CompetitorWarRoom({
     } catch (e) { setSancoesStatus('error'); }
   };
 
+  const normalizarTexto = (texto: any): string =>
+    String(texto || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+  const getTokensItemAtual = (): string[] => {
+    const stop = new Set(['aquisicao', 'contratacao', 'fornecimento', 'registro', 'precos', 'preco', 'para', 'com', 'das', 'dos', 'uma', 'uns', 'lote', 'global']);
+    const base = normalizarTexto(`${currentItem?.produto || ''} ${nomeObjetoReal || ''}`);
+    return Array.from(new Set((base.match(/[a-z0-9]+/g) || []).filter(t => t.length >= 3 && !stop.has(t))));
+  };
+
+  const contratoCompativelComItemAtual = (contrato: any): boolean => {
+    const tokens = getTokensItemAtual();
+    if (tokens.length === 0) return true;
+
+    const texto = normalizarTexto(
+      typeof contrato === 'string'
+        ? contrato
+        : `${contrato?.objeto || ''} ${contrato?.descricao || ''} ${contrato?.objetoContrato || ''}`
+    );
+    if (!tokens.some(t => texto.includes(t))) return false;
+
+    const produtosSensiveis = ['cadeira', 'mesa', 'armario', 'estante', 'poltrona', 'sofa', 'mobiliario', 'computador', 'notebook', 'tablet', 'impressora'];
+    const servicoMarkers = ['servico', 'servicos', 'limpeza', 'conservacao', 'higienizacao', 'apoio a edificios', 'apoio a predios', 'condominios prediais', 'manutencao predial', 'areas internas', 'areas externas', 'ambientes destinados', 'mobiliarios e outros'];
+    const fornecimentoMarkers = ['aquisicao', 'compra', 'fornecimento', 'registro de preco', 'registro de precos', 'mobiliario', 'moveis'];
+
+    const tokensProduto = tokens.filter(t => produtosSensiveis.some(p => t.startsWith(p) || p.startsWith(t)));
+    if (tokensProduto.length === 0 || !servicoMarkers.some(m => texto.includes(m))) return true;
+
+    const posicoes = tokensProduto.map(t => texto.indexOf(t)).filter(pos => pos >= 0);
+    if (posicoes.length === 0) return false;
+
+    const primeiraMencao = Math.min(...posicoes);
+    const contextoAnterior = texto.slice(Math.max(0, primeiraMencao - 90), primeiraMencao);
+    if (fornecimentoMarkers.some(m => contextoAnterior.includes(m))) return true;
+
+    return primeiraMencao <= 80;
+  };
+
   const handleOpenDossie = (competitor: any) => {
     setDossieTarget(competitor);
     setDossieContracts(null); 
@@ -482,7 +522,7 @@ export default function CompetitorWarRoom({
                 }
             }
         }
-        setDossieContracts(localContracts);
+        setDossieContracts(localContracts.filter(contratoCompativelComItemAtual));
     }, 1600); 
   };
 
@@ -517,7 +557,7 @@ export default function CompetitorWarRoom({
     setIsAnalyzing(true); setOffensiveData(null); setError(null);
     const safeAnalysisId = analysisId || crypto.randomUUID();
 
-    const contratosAtuais = target.contratos || target.rawDataOriginal?.contratos || [];
+    const contratosAtuais = (target.contratos || target.rawDataOriginal?.contratos || []).filter(contratoCompativelComItemAtual);
     const contratosParaIA = contratosAtuais.length > 0 
         ? contratosAtuais.map((c:any) => typeof c === 'string' ? c : JSON.stringify(c)).join('\n') 
         : "Nenhum contrato detalhado.";
