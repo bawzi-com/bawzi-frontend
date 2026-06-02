@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch, API_URL } from '@/lib/apiClient';
 import {
   Users,
   FileText,
@@ -87,6 +88,16 @@ export default function AdminDashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState('');
 
+  // Sessão expirada → derruba e redireciona imediatamente para login
+  useEffect(() => {
+    const handleExpired = () => {
+      localStorage.clear();
+      router.push('/login');
+    };
+    window.addEventListener('bawzi_session_expired', handleExpired);
+    return () => window.removeEventListener('bawzi_session_expired', handleExpired);
+  }, [router]);
+
   useEffect(() => {
     const token = localStorage.getItem('bawzi_token'); 
     
@@ -97,20 +108,14 @@ export default function AdminDashboard() {
       return;
     }
 
-    async function loadDashboardData(authToken: string) {
+    async function loadDashboardData(_authToken: string) {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-        const headers = { 
-          'Authorization': `Bearer ${authToken}`, 
-          'Content-Type': 'application/json'
-        };
-
-        // 🟢 Busca KPIs, Utilizadores, SMTP e Templates em paralelo
+        // apiFetch renova o token automaticamente e dispara bawzi_session_expired se falhar
         const [statsRes, usersRes, smtpRes, templatesRes] = await Promise.all([
-          fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/stats`, { headers }),
-          fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users`, { headers }),
-          fetch(`${baseUrl.replace(/\/$/, '')}/api/email/smtp`, { headers }),
-          fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/email-templates`, { headers }) // Requer a nova rota GET no backend
+          apiFetch(`${API_URL}/api/admin/stats`),
+          apiFetch(`${API_URL}/api/admin/users`),
+          apiFetch(`${API_URL}/api/email/smtp`),
+          apiFetch(`${API_URL}/api/admin/email-templates`),
         ]);
 
         if (!statsRes.ok || !usersRes.ok) {
@@ -276,6 +281,22 @@ export default function AdminDashboard() {
     const data = await res.json();
     if (res.ok) {
       alert(`✅ Promo ativado para ${data.email} (${data.dias} dias)`);
+      loadPromoList();
+    } else {
+      alert(`Erro: ${data.detail}`);
+    }
+  };
+
+  const handleReenviarPromo = async (token_promo: string, email: string) => {
+    if (!confirm(`Reenviar convite para ${email}? Um novo link será gerado.`)) return;
+    const token = localStorage.getItem('bawzi_token');
+    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const res = await fetch(`${base}/api/admin/promo-invites/${token_promo}/reenviar`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(`✅ Convite reenviado para ${data.email}`);
       loadPromoList();
     } else {
       alert(`Erro: ${data.detail}`);
@@ -1907,6 +1928,14 @@ export default function AdminDashboard() {
                             className="text-[11px] text-emerald-500 hover:text-emerald-400 font-bold transition-colors"
                           >
                             Ativar
+                          </button>
+                        )}
+                        {inv.status !== 'activated' && (
+                          <button
+                            onClick={() => handleReenviarPromo(inv.token, inv.email)}
+                            className="text-[11px] text-blue-400 hover:text-blue-300 font-bold transition-colors"
+                          >
+                            Reenviar
                           </button>
                         )}
                         <button
