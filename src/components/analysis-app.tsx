@@ -645,7 +645,7 @@ export default function AnalysisApp() {
                         onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
                         quota={quota}
-                        onUpgradeClick={() => { setSelectedTier(currentTier + 1); setShowUpgradeModal(true); }}
+                        onUpgradeClick={() => handleUpgrade(currentTier + 1)}
                       />
                       </div>
                     </>
@@ -674,7 +674,7 @@ export default function AnalysisApp() {
                       onExportPDF={handleExportPDF}
                       modelSource={modelSource}
                       isCachedResult={isCachedResult}
-                      onUpgradeClick={() => setShowUpgradeModal(true)}
+                      onUpgradeClick={() => handleUpgrade(selectedTier || 2)}
                       onGoToCapital={(valor) => {
                         setCapitalPrefilledValor(valor);
                         setActiveTab('capital');
@@ -725,7 +725,7 @@ export default function AnalysisApp() {
                     <TierGateTab
                       requiredTier={3}
                       featureName="Alertas Proativos PNCP"
-                      onUpgrade={() => { setSelectedTier(3); setShowUpgradeModal(true); }}
+                      onUpgrade={() => handleUpgrade(3)}
                     />
                   ) : (
                     <RadarAlertas token={token} />
@@ -740,7 +740,7 @@ export default function AnalysisApp() {
                     <TierGateTab
                       requiredTier={3}
                       featureName="Oportunidades por CNAE"
-                      onUpgrade={() => { setSelectedTier(3); setShowUpgradeModal(true); }}
+                      onUpgrade={() => handleUpgrade(3)}
                     />
                   ) : (
                     <CnaeOportunidades
@@ -776,7 +776,7 @@ export default function AnalysisApp() {
                     <TierGateTab
                       requiredTier={2}
                       featureName="Histórico de Análises"
-                      onUpgrade={() => { setSelectedTier(2); setShowUpgradeModal(true); }}
+                      onUpgrade={() => handleUpgrade(2)}
                     />
                   ) : (token && userTier !== -1) ? (
                     <HistoryTab
@@ -825,7 +825,7 @@ export default function AnalysisApp() {
                     <TierGateTab
                       requiredTier={2}
                       featureName="Comparação de Editais"
-                      onUpgrade={() => { setSelectedTier(2); setShowUpgradeModal(true); }}
+                      onUpgrade={() => handleUpgrade(2)}
                     />
                   ) : (
                     <CompareTab token={token} />
