@@ -50,14 +50,9 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
   const [cguData, setCguData] = useState<any>(null);
   const [cguError, setCguError] = useState(false);
 
-  // Estados dos Agentes Reais
-  const [loadingFederal, setLoadingFederal] = useState(true);
+  // Estados dos agentes reais. Eles ficam parados até o usuário solicitar.
   const [cndFederal, setCndFederal] = useState<CertidaoStatus | null>(memoryCache.federal[cnpj.replace(/\D/g, '')] || null);
-
-  const [loadingTst, setLoadingTst] = useState(true);
   const [cndTst, setCndTst] = useState<CertidaoStatus | null>(memoryCache.tst[cnpj.replace(/\D/g, '')] || null);
-
-  const [loadingFgts, setLoadingFgts] = useState(true);
   const [certFgts, setCertFgts] = useState<CertidaoStatus | null>(memoryCache.fgts[cnpj.replace(/\D/g, '')] || null);
 
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
@@ -185,17 +180,16 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
     if (fetchedCnpj.current === cnpj) return;
     fetchedCnpj.current = cnpj;
-    const cnpjLimpo = cnpj.replace(/\D/g, '');
-
     fetchCompliance();
-    
-    if (!memoryCache.federal[cnpjLimpo]) colocarNaFila('federal', setCndFederal);
-    if (!memoryCache.tst[cnpjLimpo]) colocarNaFila('trabalhista', setCndTst);
-    if (!memoryCache.fgts[cnpjLimpo]) colocarNaFila('fgts', setCertFgts);
 
-  }, [cnpj, fetchCompliance, colocarNaFila, isLocked]);
+  }, [cnpj, fetchCompliance, isLocked]);
 
-  const handleRefreshAll = () => {
+  const handleRefreshCgu = () => {
+    if (isLocked) return; // 🛑 PROTEÇÃO DE CLIQUE FORÇADO
+    fetchCompliance(true);
+  };
+
+  const verificarCertidoesPesadas = () => {
     if (isLocked) return; // 🛑 PROTEÇÃO DE CLIQUE FORÇADO
 
     const cnpjLimpo = cnpj.replace(/\D/g, '');
@@ -203,9 +197,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
     memoryCache.federal[cnpjLimpo] = null;
     memoryCache.tst[cnpjLimpo] = null;
     memoryCache.fgts[cnpjLimpo] = null;
-    memoryCache.cgu[cnpjLimpo] = null;
 
-    fetchCompliance(true);
     colocarNaFila('federal', setCndFederal);
     colocarNaFila('trabalhista', setCndTst);
     colocarNaFila('fgts', setCertFgts);
@@ -238,6 +230,11 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
   const isCguApproved = cguData?.vereditto === 'APROVADO';
   const hasCguSanctions = cguData?.vereditto === 'REPROVADO_COM_SANCÃO';
+  const isAnyCertidaoProcessing =
+    cndFederal?.statusForcado === 'processando' ||
+    cndTst?.statusForcado === 'processando' ||
+    certFgts?.statusForcado === 'processando';
+  const hasAnyCertidao = Boolean(cndFederal || cndTst || certFgts);
 
   // Agrega sanções de CEIS, CNEP e CEPIM numa lista plana (memoizado)
   const todasSancoes = useMemo<Array<{ fonte: string; item: any }>>(() => {
@@ -299,6 +296,24 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
     );
   };
 
+  const RenderCertidaoIdleCard = ({ nome, orgao, Icon }: { nome: string; orgao: string; Icon: any }) => (
+    <div className="flex flex-col p-3 rounded-xl border border-slate-200 bg-slate-50 h-[76px]">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Icon size={14} className="text-slate-400" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{nome}</span>
+        </div>
+        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-white border border-slate-200 text-slate-400">
+          {orgao}
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
+        <Bot size={14} />
+        Não consultada
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full mt-2 relative overflow-hidden rounded-xl bg-white p-1 pb-2">
       
@@ -313,12 +328,12 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
         </div>
         {!isLocked && (
           <button 
-            onClick={handleRefreshAll}
-            disabled={isRefreshingCgu || cndFederal?.statusForcado === 'processando' || cndTst?.statusForcado === 'processando' || certFgts?.statusForcado === 'processando'}
+            onClick={handleRefreshCgu}
+            disabled={isRefreshingCgu}
             className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
-            title="Atualizar Tudo"
+            title="Atualizar CEIS / CNEP"
           >
-            <RotateCw size={14} className={(isRefreshingCgu || cndFederal?.statusForcado === 'processando' || cndTst?.statusForcado === 'processando' || certFgts?.statusForcado === 'processando') ? "animate-spin text-indigo-500" : ""} />
+            <RotateCw size={14} className={isRefreshingCgu ? "animate-spin text-indigo-500" : ""} />
           </button>
         )}
       </div>
@@ -381,10 +396,32 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
           )}
 
           {/* Renderização Condicional dos Cards Restantes (Usa dados ou o Mock se locked) */}
-          {cndFederal ? <RenderCertidaoCard cert={cndFederal} onRefresh={() => colocarNaFila('federal', setCndFederal)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
-          {cndTst ? <RenderCertidaoCard cert={cndTst} onRefresh={() => colocarNaFila('trabalhista', setCndTst)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
-          {certFgts ? <RenderCertidaoCard cert={certFgts} onRefresh={() => colocarNaFila('fgts', setCertFgts)} /> : <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100"></div>}
+          {cndFederal ? <RenderCertidaoCard cert={cndFederal} onRefresh={() => colocarNaFila('federal', setCndFederal)} /> : <RenderCertidaoIdleCard nome="CND Federal" orgao="Receita Federal" Icon={Landmark} />}
+          {cndTst ? <RenderCertidaoCard cert={cndTst} onRefresh={() => colocarNaFila('trabalhista', setCndTst)} /> : <RenderCertidaoIdleCard nome="CND Trabalhista" orgao="TST" Icon={Briefcase} />}
+          {certFgts ? <RenderCertidaoCard cert={certFgts} onRefresh={() => colocarNaFila('fgts', setCertFgts)} /> : <RenderCertidaoIdleCard nome="Regularidade FGTS" orgao="Caixa Econômica" Icon={Building} />}
         </div>
+
+        {!isLocked && (
+          <div className="px-1 mt-3">
+            <button
+              onClick={verificarCertidoesPesadas}
+              disabled={isAnyCertidaoProcessing}
+              className="w-full py-3 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-60 disabled:hover:bg-indigo-50 disabled:hover:text-indigo-700"
+            >
+              {isAnyCertidaoProcessing ? (
+                <>
+                  <Bot size={14} className="animate-pulse" />
+                  Extraindo certidões
+                </>
+              ) : (
+                <>
+                  <ShieldCheck size={14} />
+                  {hasAnyCertidao ? 'Reverificar certidões' : 'Verificar certidões'}
+                </>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Dossiê CGU Expandido */}
         {expanded && hasCguSanctions && (
