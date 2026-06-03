@@ -125,6 +125,10 @@ export default function AnalysisApp() {
   const [forceExact, setForceExact]     = useState(false);
   const [pncpData, setPncpData]         = useState<{ cnpj: string; ano: number; sequencial: number; uf?: string } | null>(null);
 
+  // Parâmetros de busca pré-carregados via URL (link de email ou notificação)
+  const [initialPncpQuery, setInitialPncpQuery] = useState('');
+  const [initialPncpUf, setInitialPncpUf]       = useState('');
+
   // Análise — estado e handlers geridos pelo hook useAnalysis
   const [provider, setProvider] = useState<string>('openai');
 
@@ -262,6 +266,16 @@ export default function AnalysisApp() {
 
       const urlParams = new URLSearchParams(window.location.search);
       const isSuccessReturn = urlParams.get('success') === 'true';
+
+      // Parâmetros de link de email / notificação de radar
+      const qParam  = urlParams.get('q')  || '';
+      const ufParam = urlParams.get('uf') || '';
+      if (qParam && qParam.length >= 3) {
+        setInitialPncpQuery(qParam);
+        setInitialPncpUf(ufParam);
+        // Limpa a URL para não re-disparar ao recarregar manualmente
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
 
       const fetchWithRetry = async (attemptsLeft = 5) => {
         try {
@@ -599,6 +613,8 @@ export default function AnalysisApp() {
                           <PncpSearch
                             token={token}
                             userUf={userData?.companies?.[0]?.uf || userData?.company?.uf}
+                            initialQuery={initialPncpQuery}
+                            initialUf={initialPncpUf}
                             onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
                               setResult(null);
                               setError(null);

@@ -175,9 +175,13 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
 
   function handleClick(n: Notificacao) {
     marcarLida(n._id);
-    if (n.url.startsWith('?tab=')) {
+    if (n.url.startsWith('?tab=') && !n.url.includes('&')) {
+      // Navegação SPA simples: apenas troca de aba (ex: ?tab=alertas)
       onNavigate?.(n.url.replace('?tab=', ''));
       setOpen(false);
+    } else if (n.url.startsWith('?')) {
+      // URL com parâmetros de busca (ex: ?q=losartana&uf=GO) — navegação completa
+      window.location.href = window.location.pathname + n.url;
     } else if (n.url.startsWith('/')) {
       window.location.href = n.url;
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp,
   Search, MapPin, SlidersHorizontal, Layers, X, Zap,
@@ -30,17 +30,21 @@ interface PncpItem {
 
 interface PncpSearchProps {
   onAnalyzeOportunity: (
-    textoCompleto: string, 
-    termoPesquisado: string, 
-    editalDados?: { cnpj: string; ano: number; sequencial: number; uf?: string } 
+    textoCompleto: string,
+    termoPesquisado: string,
+    editalDados?: { cnpj: string; ano: number; sequencial: number; uf?: string }
   ) => void;
-  charLimit?: number; 
+  charLimit?: number;
   onUfChange?: (estadoSelecionado: string) => void;
   token?: string | null;
   userUf?: string;
+  /** Termo de busca pré-carregado (ex: vindo de link de email ou notificação) */
+  initialQuery?: string;
+  /** UF pré-carregada junto com o initialQuery */
+  initialUf?: string;
 }
 
-export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf }: PncpSearchProps) {
+export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf, initialQuery, initialUf }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
   const [municipioId, setMunicipioId]   = useState('');
@@ -61,6 +65,9 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   const [bulkLoading, setBulkLoading]   = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
   const MAX_BULK = 5;
+
+  /** Garante que a auto-busca por initialQuery só dispara uma vez. */
+  const autoSearchFired = useRef(false);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -197,37 +204,34 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   };
 
   // 🟢 BUSCA NO RADAR COM "PINÇA" E ORDENAÇÃO ABSOLUTA
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchTerm || searchTerm.length < 3) return;
+  // runSearch(term, ufVal): núcleo reutilizável — chamado por handleSearch e pela auto-busca.
+  const runSearch = async (term: string, ufVal: string) => {
+    if (!term || term.length < 3) return;
 
     setIsSearching(true);
     setError('');
-    setMarketData(null); 
-    
+    setMarketData(null);
+
     try {
-      const ufParam = uf ? `&uf=${encodeURIComponent(uf)}` : '';
+      const ufParam = ufVal ? `&uf=${encodeURIComponent(ufVal)}` : '';
       const exactParam = forceExact ? `&force_exact=true` : '';
-      // Envia AMBOS id e nome — o backend usa nome (normalizado) como filtro principal
       const munParam = municipioId
         ? `&municipio_id=${encodeURIComponent(municipioId)}${municipioNome ? `&municipio_nome=${encodeURIComponent(municipioNome)}` : ''}`
         : '';
 
-      // Limpeza de segurança da UF detetada
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
 
       const fetchHeaders = new Headers();
       if (token) fetchHeaders.append('Authorization', `Bearer ${token}`);
 
       // 1. Busca principal (com filtro de município se selecionado)
-      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
-      const reqMarket = fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(searchTerm)}${ufParam}`).catch(() => null);
+      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(term)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
+      const reqMarket = fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(term)}${ufParam}`).catch(() => null);
 
       // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
-      // (quando há cidade, a busca principal já é suficientemente específica)
       let reqRegional = null;
-      if ((!uf || uf === '') && ufAtivo && !municipioId && !municipioNome) {
-        reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(searchTerm)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
+      if ((!ufVal || ufVal === '') && ufAtivo && !municipioId && !municipioNome) {
+        reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(term)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
       }
 
       // Dispara tudo
@@ -365,6 +369,27 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       setIsSearching(false);
     }
   };
+
+  /** Wrapper do form — mantém compatibilidade com o submit do formulário. */
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runSearch(searchTerm, uf);
+  };
+
+  /**
+   * Auto-busca quando o componente recebe initialQuery (ex: link de email ou notificação).
+   * Dispara apenas uma vez por montagem.
+   */
+  useEffect(() => {
+    if (!mounted || autoSearchFired.current) return;
+    if (!initialQuery || initialQuery.length < 3) return;
+    autoSearchFired.current = true;
+    setSearchTerm(initialQuery);
+    if (initialUf) setUf(initialUf);
+    // Small delay para garantir que o estado de UF foi aplicado antes da busca
+    setTimeout(() => runSearch(initialQuery, initialUf || ''), 80);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, initialQuery, initialUf]);
 
   const handleDeepAnalyze = async (edital: PncpItem) => {
     setLoadingId(edital.id);
