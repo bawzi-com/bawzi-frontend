@@ -56,6 +56,12 @@ export interface PricingIntelligenceData {
   amostraPrecosUnitariosRegional?: number;
   evidenciasPrecosUnitarios?: Array<Record<string, any>>;
   evidenciasPrecosUnitariosRegionais?: Array<Record<string, any>>;
+  /** Fonte mais confiável usada nos preços unitários */
+  fonteConfiabilidade?: 'PNCP_HOMOLOGADO' | 'DB_ESTRUTURADO' | 'DB_CALCULADO' | 'ESTIMADO';
+  /** True quando não havia dados e o sistema usou o deságio padrão de 18.5% */
+  usandoDefaultFallback?: boolean;
+  /** Intervalo das amostras de preço (formato "YYYY-MM") */
+  intervaloAmostral?: { inicio: string; fim: string };
   objeto?: string;
   link_pncp?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -660,12 +666,50 @@ export default function CompetitorWarRoom({
                   {/* Mediana Unitária */}
                   <div className="bg-white/80 rounded-xl p-4 border border-white/60">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Preço Unitário Mediano</p>
+                    {/* Badge de confiança da fonte */}
+                    {pricing.fonteConfiabilidade && (
+                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase mb-2 ${
+                        pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? 'bg-emerald-100 text-emerald-700' :
+                        pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'bg-blue-100 text-blue-700' :
+                        pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? 'bg-emerald-500' :
+                          pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'bg-blue-500' :
+                          pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'bg-yellow-500' :
+                          'bg-amber-500'
+                        }`} />
+                        {pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? '✓ Verificado PNCP' :
+                         pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'Base Local' :
+                         pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'Base Local (Calculado)' :
+                         'Estimado'}
+                      </div>
+                    )}
+                    {/* Alerta quando usando deságio padrão hardcoded */}
+                    {pricing.usandoDefaultFallback && (
+                      <p className="text-[9px] text-amber-600 font-bold mb-1 flex items-center gap-1">
+                        <span>⚠</span> Sem histórico — deságio padrão
+                      </p>
+                    )}
                     <div>
                       <span className="text-xl font-black text-slate-900">
                         {precoUnitarioMercado > 0 ? precoUnitarioMercado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
                       </span>
+                      {/* Preço mínimo do mercado */}
+                      {Number(pricing.valorMinimoUnitarioMercado) > 0 && precoUnitarioMercado > 0 && (
+                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                          Mín: {Number(pricing.valorMinimoUnitarioMercado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </p>
+                      )}
+                      {/* Amostra com intervalo de datas */}
                       {amostraUnitarios > 0 && (
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{amostraUnitarios} evidências</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
+                          {amostraUnitarios} contrato{amostraUnitarios > 1 ? 's' : ''}
+                          {pricing.intervaloAmostral?.inicio && (
+                            <> · {pricing.intervaloAmostral.inicio} → {pricing.intervaloAmostral.fim}</>
+                          )}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -677,6 +721,56 @@ export default function CompetitorWarRoom({
                       <span className="text-sm font-black text-slate-900">{pricing.perfilVencedor || '—'}</span>
                     </div>
                   </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ━━━ EVIDÊNCIAS DE PREÇO POR CONTRATO ━━━ */}
+          {(() => {
+            const evs: Array<Record<string, any>> = pricing?.evidenciasPrecosUnitarios || [];
+            if (evs.length === 0) return null;
+
+            const fonteCfg: Record<string, { bg: string; dot: string; label: string }> = {
+              PNCP_HOMOLOGADO: { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: '✓ PNCP' },
+              DB_ESTRUTURADO:  { bg: 'bg-blue-100 text-blue-700',       dot: 'bg-blue-500',    label: 'Campo direto' },
+              DB_CALCULADO:    { bg: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-500',  label: 'Calculado' },
+              ESTIMADO:        { bg: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500',   label: 'Estimado' },
+            };
+
+            return (
+              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
+                <div className="flex items-center gap-2 mb-5">
+                  <DollarSign size={18} className="text-slate-700" />
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Evidências de Preço Unitário</h3>
+                  <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-widest">{evs.length} contrato{evs.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {evs.map((ev, idx) => {
+                    const cfg = fonteCfg[ev.fonte as string] ?? fonteCfg.ESTIMADO;
+                    const valorFmt = Number(ev.valor) > 0
+                      ? Number(ev.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      : '—';
+                    const dataFmt = String(ev.data || '').slice(0, 7) || null;
+                    return (
+                      <div key={idx} className="flex items-start gap-3 py-3">
+                        {/* Badge de fonte */}
+                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase shrink-0 mt-0.5 ${cfg.bg}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+                          {cfg.label}
+                        </div>
+                        {/* Descrição e meta */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-semibold text-slate-700 leading-snug truncate">{ev.descricao || 'Item sem descrição'}</p>
+                          <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate">
+                            {[ev.orgao, ev.uf, dataFmt].filter(Boolean).join(' · ')}
+                          </p>
+                        </div>
+                        {/* Valor */}
+                        <span className="text-sm font-black text-slate-900 shrink-0">{valorFmt}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
