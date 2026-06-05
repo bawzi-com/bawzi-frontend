@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
-import { Lock, Check, RefreshCw } from 'lucide-react';
+import { Lock, Check, RefreshCw, Sparkles, CalendarClock } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 
 interface PricingSectionProps {
@@ -22,6 +22,8 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   const [stripeSecret, setStripeSecret] = useState<string | null>(null);
   const [activeTier, setActiveTier] = useState<number>(propCurrentTier ?? 0);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isPromo, setIsPromo] = useState(false);
+  const [promoExpiresAt, setPromoExpiresAt] = useState<string | null>(null);
 
   const showCheckoutError = (msg: string) => {
     setCheckoutError(msg);
@@ -34,17 +36,19 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
     try {
       const res = await fetch(`${API_URL}/api/users/me?_t=${Date.now()}`, {
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Cache-Control': 'no-cache, no-store, must-revalidate'
         }
       });
       const data = await res.json();
-      
+
       if (res.ok && data.tier !== undefined) {
         setActiveTier(data.tier);
         localStorage.setItem('user_tier', String(data.tier));
         localStorage.setItem('bawzi_tier', String(data.tier));
+        setIsPromo(!!data.is_promo);
+        setPromoExpiresAt(data.promo_expires_at ?? null);
       }
     } catch (error) {
       console.error("Erro ao atualizar tier", error);
@@ -247,7 +251,32 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
           {checkoutError}
         </div>
       )}
-      {activeTier > 1 && (
+      {/* Banner: Convite Promocional */}
+      {isPromo && (
+        <div className="flex flex-wrap items-center gap-3 bg-violet-50 border border-violet-200 px-5 py-4 rounded-2xl mb-6">
+          <div className="flex items-center gap-2 shrink-0">
+            <Sparkles className="w-4 h-4 text-violet-500" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-violet-700 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-lg">
+              Convite Promocional
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold text-violet-900">
+              Você tem acesso completo ao plano <strong>Dominador</strong> via convite.
+            </p>
+            {promoExpiresAt && (
+              <p className="flex items-center gap-1 text-[11px] text-violet-500 font-medium mt-0.5">
+                <CalendarClock className="w-3 h-3" />
+                Expira em {new Date(promoExpiresAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {' '}— assine abaixo para manter o acesso.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Banner: Assinatura Paga Ativa */}
+      {activeTier > 1 && !isPromo && (
         <div className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl mb-6">
           <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
             Assinatura Ativa
@@ -276,14 +305,19 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end mb-16">
         {tiers.map((tier, index) => {
-          const isCurrentPlan = tier.tierLevel === activeTier;
+          const isActivePaid  = !isPromo && tier.tierLevel === activeTier;
+          const isPromoActive = isPromo && tier.tierLevel === activeTier;
+          const isCurrentPlan = isActivePaid; // só marca como "atual" se for assinatura paga
           const isDark = tier.popular;
+
           return (
             <div
               key={index}
               className={`rounded-2xl flex flex-col transition-all duration-300 overflow-hidden
                 ${isDark ? 'bg-slate-950 shadow-xl lg:-translate-y-3 z-10 relative' : tier.tierLevel === -1 ? 'bg-slate-50' : 'bg-white'}
-                ${isCurrentPlan ? 'ring-2 ring-emerald-500 ring-offset-2' : 'border border-slate-200'}`}
+                ${isActivePaid  ? 'ring-2 ring-emerald-500 ring-offset-2' : ''}
+                ${isPromoActive ? 'ring-2 ring-violet-400 ring-offset-2' : ''}
+                ${!isActivePaid && !isPromoActive ? 'border border-slate-200' : ''}`}
             >
               {/* Topo colorido */}
               <div className={`px-5 pt-5 pb-4 ${isDark ? '' : 'border-b border-slate-100'}`}>
@@ -309,22 +343,36 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
               </ul>
 
               {/* Botão */}
-              <div className="px-5 pb-5">
+              <div className="px-5 pb-5 space-y-2">
+                {/* Badge promo no topo do botão */}
+                {isPromoActive && (
+                  <div className="flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-violet-600 bg-violet-50 border border-violet-200 px-2 py-1 rounded-lg">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Acesso via convite ativo
+                  </div>
+                )}
+
                 <button
                   onClick={() => {
-                    if (isCurrentPlan) handleManageSubscription();
+                    if (isActivePaid) handleManageSubscription();
                     else if (tier.tierLevel === -1) window.scrollTo({ top: 0, behavior: 'smooth' });
                     else if (tier.tierLevel === 1) handleRegisterClick();
                     else handleUpgradeClick(tier.tierLevel);
                   }}
                   className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]
-                    ${isCurrentPlan
+                    ${isActivePaid
                       ? 'bg-emerald-500/20 text-emerald-600 cursor-default'
-                      : isDark
-                        ? 'bg-white text-slate-900 hover:bg-slate-100 shadow-lg'
-                        : 'bg-slate-900 text-white hover:bg-slate-700'}`}
+                      : isPromoActive
+                        ? isDark
+                          ? 'bg-violet-500 text-white hover:bg-violet-400 shadow-lg'
+                          : 'bg-violet-600 text-white hover:bg-violet-700'
+                        : isDark
+                          ? 'bg-white text-slate-900 hover:bg-slate-100 shadow-lg'
+                          : 'bg-slate-900 text-white hover:bg-slate-700'}`}
                 >
-                  {isCurrentPlan ? '✓ Plano Atual' : tier.buttonText}
+                  {isActivePaid  ? '✓ Plano Atual' :
+                   isPromoActive ? 'Assinar e manter acesso' :
+                   tier.buttonText}
                 </button>
               </div>
             </div>
