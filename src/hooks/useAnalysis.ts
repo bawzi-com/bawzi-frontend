@@ -75,7 +75,7 @@ const LOADING_MESSAGES = [
   { title: 'Agente jurídico em leitura',     desc: 'Verificando habilitação, prazos, exigências fiscais e pontos que podem gerar risco.' },
   { title: 'Agente financeiro calculando viabilidade', desc: 'Estimando margem, pressão por preço, deságio provável e esforço de execução.' },
   { title: 'Agente de mercado rastreando concorrência', desc: 'Mapeando fornecedores recorrentes, histórico semelhante e agressividade local.' },
-  { title: 'Consolidando veredito Go/No-Go', desc: 'Cruzando os achados para montar score, alertas e próximos passos em linguagem direta.' },
+  { title: 'Consolidando veredito Go/No-Go', desc: 'Cruzando score, alertas, radar de concorrentes e próximos passos em linguagem direta.' },
 ];
 
 export { LOADING_MESSAGES };
@@ -126,7 +126,10 @@ export function useAnalysis({
 
       interval = setInterval(() => {
         const elapsedSeconds = (Date.now() - startedAt) / 1000;
-        const progress = Math.min(96, Math.max(4, Math.round((elapsedSeconds / estimate) * 100)));
+        const ratio = elapsedSeconds / estimate;
+        const progress = ratio <= 1
+          ? Math.min(94, Math.max(4, Math.round(ratio * 94)))
+          : Math.min(99, 94 + Math.floor((elapsedSeconds - estimate) / 6));
         const nextStep = Math.min(totalSteps - 1, Math.floor((progress / 100) * totalSteps));
         setLoadingProgress(progress);
         setLoadingRemainingSeconds(Math.max(0, Math.ceil(estimate - elapsedSeconds)));
@@ -148,12 +151,22 @@ export function useAnalysis({
   }, []);
 
   const getEstimateSeconds = useCallback((motor: Motor): number => {
-    const isFast = userTier === 4 && motor === 'openai';
-    const base = isFast ? 8 : motor === 'claude' ? 35 : 30;
-    const filePenalty = files.length > 0 ? 4 : 0;
-    const textPenalty = text.length > 80000 ? 8 : text.length > 30000 ? 4 : 0;
-    return Math.min(base + filePenalty + textPenalty, isFast ? 15 : 45);
-  }, [userTier, files.length, text.length]);
+    const loggedIn = Boolean(token);
+    const runsMarketAgents = loggedIn && userTier >= 2;
+
+    let base = motor === 'claude' ? 35 : 30;
+    if (runsMarketAgents) {
+      if (userTier >= 4) base = motor === 'claude' ? 95 : 80;
+      else if (userTier >= 3) base = motor === 'claude' ? 90 : 75;
+      else base = motor === 'claude' ? 70 : 55;
+    }
+
+    const filePenalty = files.length > 0 ? (runsMarketAgents ? 10 : 4) : 0;
+    const textPenalty = text.length > 80000 ? (runsMarketAgents ? 18 : 8) : text.length > 30000 ? (runsMarketAgents ? 10 : 4) : 0;
+    const pncpPenalty = pncpData && runsMarketAgents ? 12 : 0;
+
+    return Math.min(base + filePenalty + textPenalty + pncpPenalty, runsMarketAgents ? 130 : 45);
+  }, [token, userTier, files.length, text.length, pncpData]);
 
   // ── handleCancelAnalysis ──────────────────────────────────────────────────
   const handleCancelAnalysis = useCallback(() => {

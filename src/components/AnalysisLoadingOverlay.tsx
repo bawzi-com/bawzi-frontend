@@ -38,15 +38,16 @@ export default function AnalysisLoadingOverlay({
     title: 'Preparando análise',
     desc: 'Organizando os dados do edital para iniciar a leitura multiagente.',
   };
-  const progress = Math.min(96, Math.max(4, Math.round(loadingProgress)));
+  const progress = Math.min(99, Math.max(4, Math.round(loadingProgress)));
   const formatSeconds = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
     return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`;
   };
-  const remainingLabel = remainingSeconds > 0 ? `~${formatSeconds(remainingSeconds)} restantes` : 'Finalizando';
-  const estimateLabel = `Estimativa ${formatSeconds(estimatedSeconds)}`;
+  const isExternalFinalizing = remainingSeconds <= 0 && progress >= 94;
+  const remainingLabel = remainingSeconds > 0 ? `~${formatSeconds(remainingSeconds)} restantes` : 'Conferindo dados externos';
+  const estimateLabel = isExternalFinalizing ? 'PNCP pode levar mais alguns segundos' : `Estimativa ${formatSeconds(estimatedSeconds)}`;
   const steps = [
     { label: 'Documento', icon: FileSearch },
     { label: 'Jurídico', icon: Scale },
@@ -120,7 +121,9 @@ export default function AnalysisLoadingOverlay({
               />
             </div>
             <p className="text-center text-xs font-semibold leading-relaxed text-slate-500">
-              Estamos cruzando o edital com critérios jurídicos, financeiros e de mercado. Você pode cancelar a qualquer momento.
+              {isExternalFinalizing
+                ? 'Estamos finalizando consultas oficiais e consolidando os sinais do radar. Você pode cancelar a qualquer momento.'
+                : 'Estamos cruzando o edital com critérios jurídicos, financeiros e de mercado. Você pode cancelar a qualquer momento.'}
             </p>
           </div>
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -94,6 +94,32 @@ function TipoIcon({ tipo }: { tipo: string }) {
   return <ShieldAlert size={sz} className={cls} />;
 }
 
+// ─────────────────────────────────────────────
+// Status badge
+// ─────────────────────────────────────────────
+type StatusNotif = 'nao-lida' | 'lida' | 'aberto';
+
+function StatusBadge({ status }: { status: StatusNotif }) {
+  if (status === 'nao-lida') return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-100">
+      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+      Não lida
+    </span>
+  );
+  if (status === 'aberto') return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+      Aberto
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-200">
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+      Lida
+    </span>
+  );
+}
+
 const CTA_LABEL: Record<string, string> = {
   compliance:   'Verificar certidões',
   matchmaker:   'Ver editais',
@@ -106,6 +132,7 @@ const CTA_LABEL: Record<string, string> = {
 // ─────────────────────────────────────────────
 export function useNotificacoes(token: string, onCountChange?: (n: number) => void) {
   const [notifs, setNotifs]   = useState<Notificacao[]>([]);
+  const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
   const intervalRef           = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -135,6 +162,7 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [token, check]);
 
+  // Marca como lida (mantém na lista)
   const marcarLida = useCallback(async (id: string) => {
     try {
       await fetch(`${API_URL}/api/notifications/${id}/read`, {
@@ -142,25 +170,65 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
         headers: { Authorization: `Bearer ${token}` },
       });
       setNotifs(prev => {
-        const updated = prev.filter(n => n._id !== id);
+        const updated = prev.map(n => n._id === id ? { ...n, lida: true } : n);
         onCountChange?.(updated.filter(n => !n.lida).length);
         return updated;
       });
     } catch { /* silencioso */ }
   }, [token, onCountChange]);
 
+  // Marca como lida + registra como "aberto" (quando o CTA é clicado)
+  const abrirNotificacao = useCallback(async (id: string) => {
+    await marcarLida(id);
+    setAbertos(prev => new Set([...prev, id]));
+  }, [marcarLida]);
+
+  // Marca todas como lidas (mantém na lista)
   const marcarTodasLidas = useCallback(async () => {
     try {
       await fetch(`${API_URL}/api/notifications/read-all`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
       });
-      setNotifs([]);
+      setNotifs(prev => prev.map(n => ({ ...n, lida: true })));
       onCountChange?.(0);
     } catch { /* silencioso */ }
   }, [token, onCountChange]);
 
-  return { notifs, loading, checked, check, marcarLida, marcarTodasLidas };
+  // Remove uma notificação individualmente
+  const remover = useCallback(async (id: string) => {
+    try {
+      await fetch(`${API_URL}/api/notifications/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* silencioso */ }
+    setNotifs(prev => {
+      const updated = prev.filter(n => n._id !== id);
+      onCountChange?.(updated.filter(n => !n.lida).length);
+      return updated;
+    });
+    setAbertos(prev => { const s = new Set(prev); s.delete(id); return s; });
+  }, [token, onCountChange]);
+
+  // Remove todas as notificações
+  const removerTodas = useCallback(async () => {
+    try {
+      await fetch(`${API_URL}/api/notifications`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* silencioso */ }
+    setNotifs([]);
+    setAbertos(new Set());
+    onCountChange?.(0);
+  }, [token, onCountChange]);
+
+  return {
+    notifs, abertos, loading, checked,
+    check, marcarLida, abrirNotificacao,
+    marcarTodasLidas, remover, removerTodas,
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -168,19 +236,25 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
 // ─────────────────────────────────────────────
 export default function NotificationPanel({ token, onNavigate, onCountChange }: NotificationPanelProps) {
   const [open, setOpen] = useState(false);
-  const { notifs, loading, checked, marcarLida, marcarTodasLidas } =
-    useNotificacoes(token, onCountChange);
+  const {
+    notifs, abertos, loading, checked,
+    abrirNotificacao, marcarTodasLidas, remover, removerTodas,
+  } = useNotificacoes(token, onCountChange);
 
   const unread = notifs.filter(n => !n.lida).length;
 
+  function getStatus(n: Notificacao): StatusNotif {
+    if (abertos.has(n._id)) return 'aberto';
+    if (n.lida) return 'lida';
+    return 'nao-lida';
+  }
+
   function handleClick(n: Notificacao) {
-    marcarLida(n._id);
+    abrirNotificacao(n._id);
     if (n.url.startsWith('?tab=') && !n.url.includes('&')) {
-      // Navegação SPA simples: apenas troca de aba (ex: ?tab=alertas)
       onNavigate?.(n.url.replace('?tab=', ''));
       setOpen(false);
     } else if (n.url.startsWith('?')) {
-      // URL com parâmetros de busca (ex: ?q=losartana&uf=GO) — navegação completa
       window.location.href = window.location.pathname + n.url;
     } else if (n.url.startsWith('/')) {
       window.location.href = n.url;
@@ -243,7 +317,7 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5">
                   {unread > 0
                     ? `${unread} alerta${unread !== 1 ? 's' : ''} pendente${unread !== 1 ? 's' : ''}`
-                    : 'Tudo em dia'}
+                    : notifs.length > 0 ? `${notifs.length} notificaç${notifs.length !== 1 ? 'ões' : 'ão'}` : 'Tudo em dia'}
                 </p>
               </div>
             </div>
@@ -253,9 +327,20 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
                 <button
                   onClick={marcarTodasLidas}
                   className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-white transition-colors px-2.5 py-1.5 rounded-lg hover:bg-white/10"
+                  title="Marcar todas como lidas"
                 >
                   <CheckCheck size={13} />
                   <span>Lidas</span>
+                </button>
+              )}
+              {notifs.length > 0 && (
+                <button
+                  onClick={removerTodas}
+                  className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 hover:text-red-400 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-white/10"
+                  title="Excluir todas"
+                >
+                  <Trash2 size={13} />
+                  <span>Excluir todas</span>
                 </button>
               )}
               <button
@@ -312,13 +397,13 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
 
           {/* Cards */}
           {notifs.map((n) => {
-            const cfg = TIPO_CONFIG[n.tipo] ?? TIPO_CONFIG.compliance;
-            const isExternal = n.url.startsWith('/') && !n.url.startsWith('?');
+            const cfg    = TIPO_CONFIG[n.tipo] ?? TIPO_CONFIG.compliance;
+            const status = getStatus(n);
 
             return (
               <div
                 key={n._id}
-                className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden border-l-4 ${cfg.accent}`}
+                className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden border-l-4 ${cfg.accent} ${status === 'lida' || status === 'aberto' ? 'opacity-70' : ''}`}
               >
                 {/* Topo do card */}
                 <div className="px-4 pt-4 pb-3">
@@ -330,16 +415,32 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
 
                     {/* Texto */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
                         <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-tight">
                           {n.titulo}
                         </span>
-                        {n.criada_em && (
-                          <span className="text-[9px] font-bold text-slate-400 shrink-0 bg-slate-50 px-1.5 py-0.5 rounded-md">
-                            {timeAgo(n.criada_em)}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {n.criada_em && (
+                            <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md">
+                              {timeAgo(n.criada_em)}
+                            </span>
+                          )}
+                          {/* Botão remover individual */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); remover(n._id); }}
+                            className="p-0.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                            title="Remover notificação"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Status badge */}
+                      <div className="mb-2">
+                        <StatusBadge status={status} />
+                      </div>
+
                       <p className="text-[11px] text-slate-600 leading-relaxed">
                         {n.mensagem}
                       </p>
@@ -348,7 +449,7 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
                 </div>
 
                 {/* Rodapé do card — CTA */}
-                <div className={`px-4 py-2.5 border-t border-slate-100`}>
+                <div className="px-4 py-2.5 border-t border-slate-100">
                   <button
                     onClick={() => handleClick(n)}
                     className={`

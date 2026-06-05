@@ -7,6 +7,18 @@ import CompliancePanel from './CompliancePanel';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
+export interface PrecoUnitarioMeta {
+  valor?: number | string;
+  fonte?: string;
+  confianca?: number;
+  descricao?: string;
+  quantidade?: number | string;
+  unidade?: string;
+  metodo?: string;
+  alerta?: string | null;
+  valorTotalItem?: number | string;
+}
+
 export interface ContratoData {
   numeroControlePNCP?: string;
   objetoContrato?: string;
@@ -14,6 +26,10 @@ export interface ContratoData {
   dataAssinatura?: string;
   orgao?: string;
   uf?: string;
+  valorUnitario?: number | string | PrecoUnitarioMeta;
+  precoUnitario?: PrecoUnitarioMeta | null;
+  fontePreco?: string;
+  confiancaPreco?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
@@ -326,50 +342,89 @@ export default function CompetitorWarRoom({
   // ── Guard central de sanidade ──────────────────────────────────────────────
   // Centralizado aqui para ser reutilizado tanto por extrairUnitarioInteligente
   // quanto por lerUnitarioConfiavel (evitando o bug onde raw bypassava os checks).
-  const isValorUnitarioAbsurdo = (val: number, globalDoContrato: number): boolean => {
+  const getPrecoMeta = (contrato: any): PrecoUnitarioMeta | null => {
+    const meta =
+      contrato?.precoUnitario ??
+      contrato?.preco_unitario_meta ??
+      (typeof contrato?.valorUnitario === 'object' ? contrato.valorUnitario : null);
+    if (meta && typeof meta === 'object') return meta as PrecoUnitarioMeta;
+    return null;
+  };
+
+  const getFontePreco = (contrato: any): string => {
+    const meta = getPrecoMeta(contrato);
+    return String(meta?.fonte ?? contrato?.fontePreco ?? '').toUpperCase();
+  };
+
+  const formatarFontePreco = (fonteRaw?: string): string => {
+    const fonte = String(fonteRaw || '').toUpperCase();
+    const labels: Record<string, string> = {
+      PNCP_HOMOLOGADO: 'PNCP homologado',
+      PNCP_ESTRUTURADO: 'PNCP estruturado',
+      PNCP_ESTIMADO: 'PNCP estimado',
+      PNCP_CALCULADO: 'PNCP calculado',
+      PNCP_CAPA_RATEIO: 'Rateio capa',
+      DB_ESTRUTURADO: 'Base estruturada',
+      DB_CALCULADO: 'Base calculada',
+      TEXTO_REGEX: 'Texto do contrato',
+      FRONT_CALCULADO: 'Estimado',
+    };
+    return labels[fonte] || fonte || '';
+  };
+
+  const isFontePrecoAltaConfianca = (meta?: PrecoUnitarioMeta | null, contrato?: any): boolean => {
+    const fonte = String(meta?.fonte ?? contrato?.fontePreco ?? '').toUpperCase();
+    const confianca = Number(meta?.confianca ?? contrato?.confiancaPreco ?? 0);
+    return ['PNCP_HOMOLOGADO', 'DB_ESTRUTURADO', 'PNCP_ESTRUTURADO'].includes(fonte) || confianca >= 0.85;
+  };
+
+  const isFontePrecoEstruturada = (meta?: PrecoUnitarioMeta | null, contrato?: any): boolean => {
+    const fonte = String(meta?.fonte ?? contrato?.fontePreco ?? '').toUpperCase();
+    return isFontePrecoAltaConfianca(meta, contrato) || ['DB_CALCULADO', 'PNCP_ESTIMADO', 'PNCP_CALCULADO'].includes(fonte);
+  };
+
+  const isValorUnitarioAbsurdo = (val: number, globalDoContrato: number, meta?: PrecoUnitarioMeta | null): boolean => {
       if (val <= 0) return true;
+      const fonteAltaConfianca = isFontePrecoAltaConfianca(meta);
+      const fonteEstruturada = isFontePrecoEstruturada(meta);
 
       // 1. Mentira do Lote: unitário ≥ 50% do total → provavelmente é o total, não a unidade
-      if (globalDoContrato > 2000 && val >= (globalDoContrato * 0.5)) return true;
+      // Exceção: campo unitário oficial/estruturado já vem separado do total.
+      if (globalDoContrato > 2000 && val >= (globalDoContrato * 0.5) && !fonteAltaConfianca) return true;
 
       // 2. Mentira do Anão: valor abaixo de 2% da baseline conhecida → lixo de divisão
       //    (ex: R$ 50.000 / 130.000 un = R$ 0,38 é rejeitado quando baseline ≥ R$ 19)
-      if (trustedBaselinePrice > 0 && val < (trustedBaselinePrice * 0.02)) return true;
+      if (!fonteAltaConfianca && trustedBaselinePrice > 0 && val < (trustedBaselinePrice * 0.02)) return true;
 
       // 3. Mentira do Gigante: acima de 100× a baseline (absurdamente alto)
-      if (trustedBaselinePrice > 0 && val > (trustedBaselinePrice * 100)) return true;
+      if (!fonteAltaConfianca && trustedBaselinePrice > 0 && val > (trustedBaselinePrice * 100)) return true;
 
       // 4. Mentira do Teto: superior a 5× o teto unitário do edital atual
-      if (tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && val > (tetoUnitarioAtual * 5)) return true;
+      if (!fonteEstruturada && tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && val > (tetoUnitarioAtual * 5)) return true;
 
       // 5. Mentira Extrema: unitário ≥ orçamento global de toda a licitação
-      if (valorEstimatedSeguro > 0 && val >= valorEstimatedSeguro) return true;
+      if (!fonteEstruturada && valorEstimatedSeguro > 0 && val >= valorEstimatedSeguro) return true;
 
       // 6. Mentira do Pó: só usa piso do edital quando há teto unitário conhecido.
       // Em edital de lote global (sem breakdown por item), preços unitários reais
       // podem ser muito menores que 0,01% do lote e não devem virar "Oculto".
-      if (tetoUnitarioAtual > 0 && valorEstimatedSeguro > 5000 && val < (valorEstimatedSeguro * 0.0001)) return true;
+      if (!fonteEstruturada && tetoUnitarioAtual > 0 && valorEstimatedSeguro > 5000 && val < (valorEstimatedSeguro * 0.0001)) return true;
 
       return false;
-  };
-
-  const getPrecoMeta = (contrato: any) => {
-    const meta = contrato?.precoUnitario;
-    if (meta && typeof meta === 'object') return meta;
-    return null;
   };
 
   // 🟢 EXTRATOR MATEMÁTICO BLINDADO
   const extrairUnitarioInteligente = (contrato: any, minConfidence = 0.45) => {
     const globalDoContratoAntigo = extrairValorExato(contrato.valor || contrato.valorTotal || 0);
     const meta = getPrecoMeta(contrato);
-    const confianca = Number(meta?.confianca ?? 1);
+    const metaCompat = meta ?? { fonte: contrato?.fontePreco, confianca: contrato?.confiancaPreco };
+    const confianca = Number(metaCompat?.confianca ?? 1);
     const rawBackend = meta && confianca < minConfidence
       ? (contrato.preco_unitario ?? contrato.valor_unitario ?? 0)
       : (meta?.valor ?? contrato.valorUnitario ?? contrato.preco_unitario ?? contrato.valor_unitario ?? 0);
     const v = extrairValorExato(rawBackend);
 
-    if (!isValorUnitarioAbsurdo(v, globalDoContratoAntigo)) return v;
+    if (!isValorUnitarioAbsurdo(v, globalDoContratoAntigo, metaCompat)) return v;
 
     // Tenta caçar no texto se o valor da API for mentira
     const objText = String(contrato.objeto || contrato.descricao || "").toLowerCase();
@@ -382,7 +437,7 @@ export default function CompetitorWarRoom({
         const match = objText.match(regex);
         if (match) {
             const vEncontrado = extrairValorExato(match[1]);
-            if (!isValorUnitarioAbsurdo(vEncontrado, globalDoContratoAntigo)) return vEncontrado;
+            if (!isValorUnitarioAbsurdo(vEncontrado, globalDoContratoAntigo, { fonte: 'TEXTO_REGEX', confianca: 0.55 })) return vEncontrado;
         }
     }
 
@@ -390,7 +445,7 @@ export default function CompetitorWarRoom({
     const dadosMinerados = minerarDadosDoResumo(objText);
     if (globalDoContratoAntigo > 0 && dadosMinerados.quantidade > 1) {
         const fallback = globalDoContratoAntigo / dadosMinerados.quantidade;
-        if (!isValorUnitarioAbsurdo(fallback, globalDoContratoAntigo)) return fallback;
+        if (!isValorUnitarioAbsurdo(fallback, globalDoContratoAntigo, { fonte: 'FRONT_CALCULADO', confianca: 0.32, quantidade: dadosMinerados.quantidade })) return fallback;
     }
 
     return 0; // Oculto com segurança extrema.
@@ -400,13 +455,14 @@ export default function CompetitorWarRoom({
   // Antes este caminho bypassava todos os checks; agora raw também é validado.
   const lerUnitarioConfiavel = (c: any, minConfidence = 0.45): number => {
       const meta = getPrecoMeta(c);
-      const confianca = Number(meta?.confianca ?? c.confiancaPreco ?? 1);
+      const metaCompat = meta ?? { fonte: c?.fontePreco, confianca: c?.confiancaPreco };
+      const confianca = Number(metaCompat?.confianca ?? 1);
       const rawBackend = meta && confianca < minConfidence
         ? (c.preco_unitario ?? c.valor_unitario ?? 0)
         : (meta?.valor ?? c.valorUnitario ?? c.preco_unitario ?? c.valor_unitario ?? 0);
       const raw = extrairValorExato(rawBackend);
       const globalDoContrato = extrairValorExato(c.valor || c.valorTotal || 0);
-      if (raw > 0 && confianca >= minConfidence && !isValorUnitarioAbsurdo(raw, globalDoContrato)) return raw;
+      if (raw > 0 && confianca >= minConfidence && !isValorUnitarioAbsurdo(raw, globalDoContrato, metaCompat)) return raw;
       return extrairUnitarioInteligente(c, minConfidence);
   };
 
@@ -733,6 +789,9 @@ export default function CompetitorWarRoom({
 
             const fonteCfg: Record<string, { bg: string; dot: string; label: string }> = {
               PNCP_HOMOLOGADO: { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: '✓ PNCP' },
+              PNCP_ESTRUTURADO:{ bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: 'PNCP direto' },
+              PNCP_ESTIMADO:   { bg: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500',   label: 'PNCP estimado' },
+              PNCP_CALCULADO:  { bg: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-500',  label: 'PNCP calc.' },
               DB_ESTRUTURADO:  { bg: 'bg-blue-100 text-blue-700',       dot: 'bg-blue-500',    label: 'Campo direto' },
               DB_CALCULADO:    { bg: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-500',  label: 'Calculado' },
               ESTIMADO:        { bg: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500',   label: 'Estimado' },
@@ -1140,7 +1199,8 @@ export default function CompetitorWarRoom({
                         const cLink = contrato.link || contrato.url || contrato.link_pncp || contrato.linkSistemaOrigem;
                         const precoMeta = getPrecoMeta(contrato);
                         const confiancaPreco = Number(precoMeta?.confianca ?? contrato.confiancaPreco ?? 0);
-                        const fontePreco = String(precoMeta?.fonte ?? contrato.fontePreco ?? "");
+                        const fontePreco = getFontePreco(contrato);
+                        const fontePrecoLabel = formatarFontePreco(fontePreco);
 
                         const cValorNum = typeof cValor === 'number' ? cValor : extrairValorExato(cValor);
                         // Usa o valorUnitario do backend diretamente (já validado por extrair_unitario_real)
@@ -1155,7 +1215,7 @@ export default function CompetitorWarRoom({
                             ? cValorNum / dadosMineradosCard.quantidade
                             : 0;
                         const isEstimado = valorUnitario === 0 && valorUnitarioEstimado > 0;
-                        const isBaixaConfianca = valorUnitario > 0 && confiancaPreco > 0 && confiancaPreco < 0.5;
+                        const isBaixaConfianca = valorUnitario > 0 && confiancaPreco > 0 && confiancaPreco < 0.75;
                         const valorExibido = valorUnitario > 0 ? valorUnitario : valorUnitarioEstimado;
 
                         return (
@@ -1185,6 +1245,15 @@ export default function CompetitorWarRoom({
                                               {isEstimado && <span className="text-[8px] opacity-70 ml-0.5">(est.)</span>}
                                               {!isEstimado && isBaixaConfianca && <span className="text-[8px] opacity-70 ml-0.5">(conf. baixa)</span>}
                                           </span>
+                                          {fontePrecoLabel && !isEstimado && (
+                                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md border shadow-sm ${
+                                              isFontePrecoAltaConfianca(precoMeta, contrato)
+                                                ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                                : 'text-amber-700 bg-amber-50 border-amber-200'
+                                            }`}>
+                                              {fontePrecoLabel}
+                                            </span>
+                                          )}
                                           {tetoUnitarioAtual > 0 && tetoUnitarioAtual !== -1 && valorExibido < tetoUnitarioAtual && (
                                               <span className="text-[9px] font-black text-emerald-600 bg-emerald-100 px-2 py-1 rounded-md border border-emerald-200 shadow-sm" title="Desconto praticado neste contrato em relação ao Teto do Edital Atual">
                                                   -{Math.round((1 - valorExibido / tetoUnitarioAtual) * 100)}% vs Teto
