@@ -6,11 +6,12 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { User, Building2, AlertTriangle, Sparkles, LogOut, RefreshCw, Lock, CreditCard, Shield, ChevronRight, ArrowLeft } from 'lucide-react';
 
-import CompanyProfileForm from '../../components/CompanyProfileForm'; 
+import CompanyProfileForm from '../../components/CompanyProfileForm';
 import PersonalDataForm from '../../components/PersonalDataForm';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TeamManager from '../../components/TeamManager';
 import CompliancePanel from '../../components/CompliancePanel';
+import { resolveEffectiveTier } from '@/lib/tier';
 
 function ProfileContent() {
   const router = useRouter();
@@ -55,7 +56,7 @@ function ProfileContent() {
         const wData = await wsRes.json();
 
         const companies = wData.companies || (wData.company ? [wData.company] : []);
-        const nivelAtualizado = Math.max(uData.tier || 1, wData.tier || 1);
+        const nivelAtualizado = resolveEffectiveTier(uData.tier, wData.tier);
 
         setUserData({ 
           ...uData, 
@@ -95,7 +96,7 @@ function ProfileContent() {
             const checkUser = await checkUserRes.json();
 
             // 3. Mesma lógica que o fetch inicial: o maior dos dois vence
-            const tierReal = Math.max(checkWs.tier || 1, checkUser.tier || 1);
+            const tierReal = resolveEffectiveTier(checkUser.tier, checkWs.tier);
 
             // 4. Actualiza UI só se o tier mudou (upgrade OU downgrade)
             if (tierReal !== nivelAtualizado) {
@@ -431,9 +432,20 @@ function ProfileContent() {
                               <td className="px-6 py-3.5 text-slate-900 font-bold">{inv.number}</td>
                               <td className="px-6 py-3.5 text-slate-900 font-black">{inv.amount}</td>
                               <td className="px-6 py-3.5">
-                                <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full">
-                                  <span className="w-1 h-1 bg-emerald-500 rounded-full" /> Pago
-                                </span>
+                                {(() => {
+                                  const s = inv.status as string;
+                                  const cfg =
+                                    s === 'Pago'        ? { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' } :
+                                    s === 'Aberto'      ? { dot: 'bg-amber-500',   badge: 'bg-amber-50 text-amber-700 border-amber-200' }   :
+                                    s === 'Inadimplente'? { dot: 'bg-red-500',     badge: 'bg-red-50 text-red-700 border-red-200' }        :
+                                                          { dot: 'bg-slate-400',   badge: 'bg-slate-50 text-slate-600 border-slate-200' };
+                                  return (
+                                    <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase border px-2.5 py-1 rounded-full ${cfg.badge}`}>
+                                      <span className={`w-1 h-1 rounded-full ${cfg.dot}`} />
+                                      {s || 'Pendente'}
+                                    </span>
+                                  );
+                                })()}
                               </td>
                             </tr>
                           ))}

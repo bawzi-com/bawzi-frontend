@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
 
 // ─────────────────────────────────────────────
@@ -236,10 +237,13 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
 // ─────────────────────────────────────────────
 export default function NotificationPanel({ token, onNavigate, onCountChange }: NotificationPanelProps) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const {
     notifs, abertos, loading, checked,
     abrirNotificacao, marcarTodasLidas, remover, removerTodas,
   } = useNotificacoes(token, onCountChange);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const unread = notifs.filter(n => !n.lida).length;
 
@@ -277,21 +281,25 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
         )}
       </button>
 
-      {/* ── Overlay ────────────────────────────────────────────────────────── */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
-          onClick={() => setOpen(false)}
-        />
-      )}
+      {/* ── Overlay + Painel renderizados no body via portal ────────────────── */}
+      {mounted && createPortal(
+        <>
+        {open && (
+          <div
+            className="fixed inset-0 bg-black/30 backdrop-blur-[2px]"
+            style={{ zIndex: 9998 }}
+            onClick={() => setOpen(false)}
+          />
+        )}
 
       {/* ── Painel slide-over ──────────────────────────────────────────────── */}
       <div className={`
-        fixed top-0 right-0 h-full w-full max-w-sm z-50 flex flex-col
+        fixed top-0 right-0 h-full w-full max-w-sm flex flex-col
         bg-slate-50 shadow-2xl
         transition-transform duration-300 ease-out
         ${open ? 'translate-x-0' : 'translate-x-full'}
-      `}>
+      `}
+      style={{ zIndex: 9999 }}>
 
         {/* ── Cabeçalho ────────────────────────────────────────────────────── */}
         <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-6 pt-6 pb-5">
@@ -474,6 +482,9 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
           </p>
         </div>
       </div>
+        </>,
+        document.body
+      )}
     </>
   );
 }

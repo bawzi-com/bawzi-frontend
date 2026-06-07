@@ -54,6 +54,7 @@ import UpsellModal from './UpsellModal';
 // Contextos e tipos
 import { useTierConfig } from '../Contexts/TierContext';
 import { AnalysisResult } from './analysis-types';
+import { resolveEffectiveTier } from '@/lib/tier';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -217,7 +218,7 @@ export default function AnalysisApp() {
 
   // ─── Configuração de limites por tier ──────────────────────────────────────
   const { tierLimits, tierFileLimits } = useTierConfig();
-  const currentTier = Math.max(userTier, userData?.active_workspace?.tier || 1);
+  const currentTier = resolveEffectiveTier(userTier, userData?.active_workspace?.tier);
   const currentCharLimit    = tierLimits[userTier] || 10000;
   const currentFileLimitMB  = tierFileLimits[userTier] || 3;
   const currentFileLimitBytes = currentFileLimitMB * 1024 * 1024;
@@ -704,15 +705,45 @@ export default function AnalysisApp() {
               )}
 
               {/* Aba Renovações */}
-              {activeTab === 'renovacoes' && (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <ContratosVencendo
-                    token={token ?? ''}
-                    companies={userData?.companies?.length ? (userData.companies ?? []) : userData?.company ? [userData.company] : []}
-                    defaultUf={userData?.company?.uf || ''}
-                  />
-                </div>
-              )}
+              {activeTab === 'renovacoes' && (() => {
+                const companies = userData?.companies?.length
+                  ? (userData.companies ?? [])
+                  : userData?.company ? [userData.company] : [];
+
+                if (!companies.length) {
+                  return (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-12 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center mx-auto mb-5">
+                          <svg className="w-8 h-8 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                        </div>
+                        <p className="text-base font-black text-slate-900 mb-2">Nenhuma empresa cadastrada</p>
+                        <p className="text-sm text-slate-500 font-medium mb-6 max-w-xs mx-auto leading-relaxed">
+                          Configure o CNPJ da sua empresa para monitorar contratos a vencer.
+                        </p>
+                        <a
+                          href="/profile"
+                          className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase tracking-widest px-5 py-2.5 rounded-xl transition-colors shadow-sm"
+                        >
+                          Configurar empresa
+                        </a>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <ContratosVencendo
+                      token={token ?? ''}
+                      companies={companies}
+                      defaultUf={userData?.company?.uf || ''}
+                    />
+                  </div>
+                );
+              })()}
 
               {/* Aba Capital */}
               {activeTab === 'capital' && (

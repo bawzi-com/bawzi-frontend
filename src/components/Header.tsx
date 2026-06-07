@@ -53,12 +53,21 @@ export default function Header() {
           const nivelReal = Math.max(uData.tier || 1, wData.tier || 1);
           const nivelString = String(nivelReal);
 
-          // Atualiza a interface quando o servidor divergir do cache.
+          // Se o servidor sinalizou que o tier mudou (ex: promo expirou),
+          // invalida o cache local independentemente do valor armazenado.
+          const tierResetAt = uData.tier_reset_at ? new Date(uData.tier_reset_at).getTime() : 0;
+          const tierSetAt   = Number(localStorage.getItem('bawzi_tier_ts') || 0);
+          if (tierResetAt > tierSetAt) {
+            localStorage.setItem('bawzi_tier', nivelString);
+            localStorage.setItem('bawzi_tier_ts', String(Date.now()));
+            window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: nivelReal } }));
+          }
+
           setUserTier(nivelString);
           setUserData({ name: uData.name || uData.nome || '', email: uData.email });
-          
-          // Atualiza o cache para a próxima abertura.
+
           localStorage.setItem('bawzi_tier', nivelString);
+          localStorage.setItem('bawzi_tier_ts', String(Date.now()));
           localStorage.setItem('user_name', uData.name || uData.nome || '');
           localStorage.setItem('user_email', uData.email || '');
         }

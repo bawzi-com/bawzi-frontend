@@ -7,39 +7,56 @@ import { apiFetch, API_URL } from '@/lib/apiClient';
 
 export default function WorkspacePage() {
   
-  // 🟢 2. A lógica que "escuta" se o utilizador acabou de voltar do Stripe
-useEffect(() => {
-    const checkUpgrade = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const isSuccess = params.get('success') === 'true';
+  // Polling robusto pós-pagamento: até 6 tentativas com 2 s de intervalo,
+  // igual ao padrão já usado em profile/page.tsx.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') !== 'true') return;
 
-      if (isSuccess) {
-        // 🟢 ATRASO TÁTICO DE 3 SEGUNDOS: Dá tempo ao Webhook do Stripe para atualizar o BD
-        setTimeout(async () => {
-          try {
-            const response = await apiFetch(`${API_URL}/api/users/me`);
-            
-            if (response.ok) {
-              const freshData = await response.json();
-              
-              // Procura por .tier ou .tier_level ou assume 1 se não vier nada
-              const detectedTier = freshData.tier ?? freshData.tier_level ?? 1;
+    // Limpa o parâmetro da URL imediatamente para não re-disparar no reload
+    window.history.replaceState({}, document.title, window.location.pathname);
 
-              localStorage.setItem('bawzi_tier', detectedTier.toString());
-              /* tier sincronizado */
-              
-              // Limpa a URL e recarrega
-              window.history.replaceState({}, document.title, window.location.pathname);
-              window.location.reload(); 
-            }
-          } catch (err) {
-            console.error("Erro ao sincronizar dados pós-pagamento:", err);
+    let attempts = 0;
+    const MAX_ATTEMPTS = 6;
+    const tierAntes = Number(localStorage.getItem('bawzi_tier') || 1);
+
+    const poll = async () => {
+      attempts++;
+      const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+      if (!token) return;
+
+      try {
+        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+        // Força sync com Stripe antes de ler os dados
+        await fetch(`${API_URL}/api/billing/sync`, { headers }).catch(() => {});
+
+        const [userRes, wsRes] = await Promise.all([
+          fetch(`${API_URL}/api/users/me`, { headers }),
+          fetch(`${API_URL}/api/workspace/details`, { headers }),
+        ]);
+
+        if (userRes.ok && wsRes.ok) {
+          const uData = await userRes.json();
+          const wData = await wsRes.json();
+          const tierNovo = Math.max(wData.tier || 1, uData.tier || 1);
+
+          if (tierNovo !== tierAntes || attempts >= MAX_ATTEMPTS) {
+            localStorage.setItem('bawzi_tier', String(tierNovo));
+            window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: tierNovo } }));
+            window.location.reload();
+          } else {
+            setTimeout(poll, 2000);
           }
-        }, 3000);
+        } else if (attempts < MAX_ATTEMPTS) {
+          setTimeout(poll, 2000);
+        }
+      } catch {
+        if (attempts < MAX_ATTEMPTS) setTimeout(poll, 2000);
       }
     };
 
-    checkUpgrade();
+    poll();
   }, []);
 
   return (

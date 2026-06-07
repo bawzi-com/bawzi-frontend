@@ -1,8 +1,9 @@
 import './globals.css';
 import type { Metadata } from 'next';
 
-import Header from '../components/Header'; 
+import Header from '../components/Header';
 import Footer from '../components/Footer';
+import ConsentBanner from '../components/ConsentBanner';
 import { TierProvider } from '../Contexts/TierContext';
 
 export const metadata: Metadata = {
@@ -22,7 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         
         {/* 🟢 2. Embrulhar toda a aplicação com o TierProvider */}
         <TierProvider>
-          
+
+          {/* BANNER DE CONSENTIMENTO LGPD — aparece uma única vez por dispositivo */}
+          <ConsentBanner />
+
           {/* CABEÇALHO GLOBAL */}
           <Header />
 

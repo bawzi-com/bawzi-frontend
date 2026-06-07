@@ -1,9 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
+import { useTier } from '@/hooks/useTier';
+
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 interface PricingSectionProps {
   onRegister?: () => void;
@@ -13,95 +16,53 @@ interface PricingSectionProps {
 
 export default function PricingSection({ onRegister, onUpgrade, currentTier: propCurrentTier }: PricingSectionProps) {
   const router = useRouter();
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+  // Tier centralizado via hook — substitui refreshTier + isPromo + promoExpiresAt internos
+  const { tier: hookTier, isPromo, promoExpiresAt, refresh: refreshTier } = useTier();
+  const activeTier = propCurrentTier && propCurrentTier > 0 ? propCurrentTier : hookTier;
 
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [selectedTier, setSelectedTier] = useState<number>(1);
-  const [stripeSecret, setStripeSecret] = useState<string | null>(null);
-  const [activeTier, setActiveTier] = useState<number>(propCurrentTier ?? 0);
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [isPromo, setIsPromo] = useState(false);
-  const [promoExpiresAt, setPromoExpiresAt] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing]                 = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal]   = useState(false);
+  const [selectedTier, setSelectedTier]           = useState<number>(1);
+  const [stripeSecret, setStripeSecret]           = useState<string | null>(null);
+  const [checkoutError, setCheckoutError]         = useState<string | null>(null);
 
   const showCheckoutError = (msg: string) => {
     setCheckoutError(msg);
     setTimeout(() => setCheckoutError(null), 5000);
   };
 
-  const refreshTier = useCallback(async () => {
-    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
-    if (!token) return;
-
-    try {
-      const res = await fetch(`${API_URL}/api/users/me?_t=${Date.now()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Cache-Control': 'no-cache, no-store, must-revalidate'
-        }
-      });
-      const data = await res.json();
-
-      if (res.ok && data.tier !== undefined) {
-        setActiveTier(data.tier);
-        localStorage.setItem('user_tier', String(data.tier));
-        localStorage.setItem('bawzi_tier', String(data.tier));
-        setIsPromo(!!data.is_promo);
-        setPromoExpiresAt(data.promo_expires_at ?? null);
-      }
-    } catch (error) {
-      console.error("Erro ao atualizar tier", error);
-    }
-  }, [API_URL]);
-
-  // 🟢 FUNÇÃO MESTRA DE SYNC: Vai diretamente ao Stripe!
+  // Sync forçado com Stripe (após portal ou retorno de checkout)
   const forceManualSync = async () => {
     const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
     if (!token) return;
-    
     setIsSyncing(true);
     try {
       const res = await fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Cache-Control': 'no-cache, no-store'
-        }
+        headers: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache, no-store' },
       });
       const data = await res.json();
-
       if (res.ok && data.tier !== undefined) {
-        localStorage.setItem('user_tier', String(data.tier));
         localStorage.setItem('bawzi_tier', String(data.tier));
-        window.location.reload(); // Recarrega para destrancar cadeados!
+        localStorage.setItem('bawzi_tier_ts', String(Date.now()));
+        window.location.reload();
       }
-    } catch (error) {
-      console.error("Erro ao forçar sync", error);
-    } finally {
+    } catch { /* silencioso */ } finally {
       setIsSyncing(false);
     }
   };
 
-  // 🟢 VERIFICA SE O UTILIZADOR ESTÁ A VOLTAR DO PORTAL DO STRIPE
+  // Detecta retorno do portal Stripe
   useEffect(() => {
-    const checkPortalReturn = async () => {
-      if (sessionStorage.getItem('returning_from_portal') === 'true') {
-        // Remove a marca para não ficar em loop
-        sessionStorage.removeItem('returning_from_portal');
-        
-        // Dispara o sync com o Stripe na hora!
-        await forceManualSync();
-      } else {
-        // Fluxo normal
-        if (propCurrentTier !== undefined && propCurrentTier > 0) {
-          setActiveTier(propCurrentTier);
-        } else {
-          refreshTier();
-        }
-      }
-    };
-    checkPortalReturn();
-  }, [propCurrentTier, refreshTier]);
+    if (sessionStorage.getItem('returning_from_portal') === 'true') {
+      sessionStorage.removeItem('returning_from_portal');
+      forceManualSync();
+    } else if (!propCurrentTier) {
+      refreshTier();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRegisterClick = () => {
     if (onRegister) onRegister(); 
