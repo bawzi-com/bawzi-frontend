@@ -507,13 +507,13 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
           <div className="min-w-0">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700 shadow-sm">
               <Radar className="h-3.5 w-3.5" />
-              Radar PNCP
+              Radar PNCP · Decidir com a Bawzi
             </div>
             <h2 className="text-xl font-black tracking-tight text-slate-950 md:text-2xl">
-              Busque oportunidades abertas antes de enviar o edital.
+              Busque oportunidades abertas e decida se vale participar.
             </h2>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Pesquise por segmento, órgão, cidade ou palavra-chave. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para a análise.
+              Pesquise por segmento, órgão, cidade ou palavra-chave. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para o veredito Go/No-Go.
             </p>
           </div>
 

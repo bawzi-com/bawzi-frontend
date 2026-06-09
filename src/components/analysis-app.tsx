@@ -321,6 +321,16 @@ export default function AnalysisApp() {
             setUserData(blendedUserData);
             window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: nivelFinal } }));
 
+            // Salva info de promo no localStorage para o Header exibir a barra
+            if (uData.promo_expires_at) {
+              localStorage.setItem('bawzi_promo', JSON.stringify({
+                is_promo: uData.is_promo ?? false,
+                promo_expires_at: uData.promo_expires_at,
+              }));
+            } else {
+              localStorage.removeItem('bawzi_promo');
+            }
+
             // Onboarding: exibir se o usuário não completou e ainda não tem empresa
             if (!localStorage.getItem('bawzi_onboarding_done')) {
               const semEmpresa = !((wData.companies ?? []).length > 0 || uData.company?.cnpj);
@@ -569,6 +579,7 @@ export default function AnalysisApp() {
     );
   }
 
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
       {/* Keyframes globais (path-routing, scan-laser, float-agent, draw-arc) */}
@@ -581,6 +592,7 @@ export default function AnalysisApp() {
       ` }} />
 
       <main>
+
         {/* ── HERO ── */}
         <div className="w-full max-w-[1400px] mx-auto p-2 md:p-4 font-sans relative group">
           <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
@@ -688,6 +700,7 @@ export default function AnalysisApp() {
                       isSharing={isSharing}
                       onShare={handleShare}
                       onReset={handleResetAnalysis}
+                      resetLabel="Buscar outra oportunidade"
                       onExportPDF={handleExportPDF}
                       modelSource={modelSource}
                       isCachedResult={isCachedResult}

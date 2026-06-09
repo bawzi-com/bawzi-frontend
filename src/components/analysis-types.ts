@@ -46,6 +46,41 @@ export interface RiskItem {
   impacto?: 'alto' | 'medio' | 'baixo';
 }
 
+export type DecisionVerdict = 'GO' | 'GO_CONDICIONADO' | 'NO_GO';
+
+export interface DecisionAction {
+  prazo?: string;
+  acao: string;
+  responsavel?: string;
+  resultado_esperado?: string;
+}
+
+export interface DecisionData {
+  veredito?: DecisionVerdict | string;
+  rotulo?: string;
+  confianca?: number;
+  resumo_decisao?: string;
+  motivos?: string[];
+  condicoes_para_participar?: string[];
+  impeditivos?: string[];
+  proximas_acoes?: DecisionAction[];
+  perguntas_criticas?: string[];
+  decisao_executiva?: string;
+}
+
+export interface BusinessFitData {
+  status?: 'match_forte' | 'match_parcial' | 'sem_match' | 'indeterminado' | 'sem_cnae' | string;
+  score?: number;
+  cnae_principal?: string | null;
+  cnae_descricao?: string | null;
+  objeto_detectado?: string | null;
+  justificativa?: string;
+  sinais_de_match?: string[];
+  sinais_de_desalinhamento?: string[];
+  termos_negocio?: string[];
+  empresa?: string;
+}
+
 export interface PegadinhaData {
   detectada: boolean;
   tipo?: string;
@@ -63,6 +98,8 @@ export interface AnalysisResult {
   estimated_value: string;
   recommendation: string;
   rationale: string;
+  decisao?: DecisionData;
+  aderencia_negocio?: BusinessFitData;
   // New structured dates (replaces datas_criticas_extraidas)
   datas_criticas?: DataCritica[];
   // Legacy — kept for backwards compat with older saved analyses

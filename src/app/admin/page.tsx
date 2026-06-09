@@ -1906,6 +1906,12 @@ export default function AdminDashboard() {
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         {inv.dias} dias · criado por {inv.created_by} · {inv.created_at ? new Date(inv.created_at).toLocaleDateString('pt-BR') : ''}
                       </p>
+                      {inv.link_expires_at && inv.status !== 'activated' && (
+                        <p className={`text-[10px] mt-0.5 font-medium ${inv.status === 'expired' ? 'text-red-500' : 'text-slate-600'}`}>
+                          {inv.status === 'expired' ? '✕ Expirado em' : 'Expira em'}{' '}
+                          {new Date(inv.link_expires_at).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
                       {/* Badge de status */}

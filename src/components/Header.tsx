@@ -14,6 +14,7 @@ export default function Header() {
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
+  const [promo, setPromo] = useState<{is_promo: boolean; promo_expires_at: string} | null>(null);
 
   useEffect(() => {
 
@@ -66,6 +67,13 @@ export default function Header() {
           setUserTier(nivelString);
           setUserData({ name: uData.name || uData.nome || '', email: uData.email });
 
+          // Promo
+          if (uData.promo_expires_at) {
+            setPromo({ is_promo: uData.is_promo ?? false, promo_expires_at: uData.promo_expires_at });
+          } else {
+            setPromo(null);
+          }
+
           localStorage.setItem('bawzi_tier', nivelString);
           localStorage.setItem('bawzi_tier_ts', String(Date.now()));
           localStorage.setItem('user_name', uData.name || uData.nome || '');
@@ -99,8 +107,52 @@ export default function Header() {
     window.location.reload();
   };
 
+  const promoStrip = promo?.promo_expires_at ? (() => {
+    const exp     = new Date(promo.promo_expires_at);
+    const dias    = Math.ceil((exp.getTime() - Date.now()) / 86_400_000);
+    const urgente = dias <= 1;
+
+    if (promo.is_promo) {
+      return (
+        <div className={`flex items-center justify-center gap-2 px-4 py-1.5 text-[11px] font-medium border-b ${
+          urgente
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-emerald-50 border-emerald-100 text-emerald-800'
+        }`}>
+          <span>🎁</span>
+          <span>
+            Acesso promocional —{' '}
+            {urgente
+              ? <strong>expira hoje!</strong>
+              : `expira em ${dias} ${dias === 1 ? 'dia' : 'dias'} · ${exp.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}`}
+          </span>
+          <Link
+            href="/plans"
+            className={`ml-1 rounded-full border px-2.5 py-0.5 text-[10px] font-black transition-colors ${
+              urgente ? 'border-amber-300 hover:bg-amber-100' : 'border-emerald-300 hover:bg-emerald-100'
+            }`}
+          >
+            Ver planos
+          </Link>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-slate-50 border-b border-slate-200 text-slate-500 text-[11px] font-medium">
+        <span>⏰</span>
+        <span>Acesso promocional encerrou em {exp.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+        <Link href="/plans" className="ml-1 rounded-full border border-slate-300 px-2.5 py-0.5 text-[10px] font-black text-slate-600 hover:bg-slate-100 transition-colors">
+          Resgatar plano
+        </Link>
+      </div>
+    );
+  })() : null;
+
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all print:hidden">
+    <div className="sticky top-0 z-50 print:hidden">
+      {promoStrip}
+    <header className="bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all">
       <div className="max-w-[1400px] mx-auto px-6 py-4 flex justify-between items-center">
         
         {/* LOGÓTIPO */}
@@ -177,5 +229,6 @@ export default function Header() {
         </div>
       </div>
     </header>
+    </div>
   );
 }

@@ -136,7 +136,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
         if (data.finalizado) {
           let statusForce: 'vencida' | 'indisponivel' | undefined = undefined;
-          
+
           if (data.status === 'vencida' || data.status === 'irregular') statusForce = 'vencida';
           if (data.status === 'indisponivel' || data.status === 'erro') statusForce = 'indisponivel';
 
@@ -149,10 +149,15 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
             icone: tipo === 'federal' ? Landmark : tipo === 'trabalhista' ? Briefcase : Building,
             engine: data.dados?.engine || data.engine || 'Robô + IA'
           };
-          
+
           setCert(certPronta);
           cacheLocal[cnpjLimpo] = certPronta;
-        } 
+        }
+        else if (data.status === 'nao_solicitado') {
+          // Job sumiu da memória (ex: restart do servidor) — para o polling e sinaliza para retentar
+          setCert((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Servidor reiniciado' } : null);
+          if (cacheLocal[cnpjLimpo]) cacheLocal[cnpjLimpo] = null;
+        }
         else if (data.status === 'indisponivel' || data.status === 'erro') {
           setCert((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Erro no Agente' } : null);
         }
@@ -434,28 +439,46 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
               <p className="text-[11px] text-rose-700 font-medium px-1">Sanções detectadas mas sem detalhes disponíveis. Consulte diretamente o Portal da Transparência.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {todasSancoes.map(({ fonte, item }, idx) => (
-                  <div key={idx} className="flex flex-col gap-1 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-black text-rose-900 leading-tight">
-                        {item.tipoSancao || item.categoria_sancao || item.tipo_sancao || 'Sanção registrada'}
-                      </p>
-                      <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 shrink-0">{fonte}</span>
+                {todasSancoes.map(({ fonte, item }, idx) => {
+                  const toStr = (v: any): string => {
+                    if (!v) return '';
+                    if (typeof v === 'string') return v;
+                    if (typeof v === 'object') return v.descricaoResumida || v.descricaoPortal || '';
+                    return String(v);
+                  };
+                  const tipo = toStr(item.tipoSancao) || toStr(item.categoria_sancao) || toStr(item.tipo_sancao) || 'Sanção registrada';
+                  const orgao = toStr(item.orgaoSancionador) || toStr(item.orgao_sancionador);
+                  const cnpjLimpo = cnpj.replace(/\D/g, '');
+                  const portalUrl = item.id
+                    ? `https://portaldatransparencia.gov.br/sancoes/consulta/${item.id}`
+                    : `https://portaldatransparencia.gov.br/sancoes/consulta?cadastro=1&cadastro=2&cpfCnpj=${cnpjLimpo}&ordenarPor=nomeSancionado&direcao=asc`;
+                  return (
+                    <div key={idx} className="flex flex-col gap-1 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-black text-rose-900 leading-tight">{tipo}</p>
+                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 shrink-0">{fonte}</span>
+                      </div>
+                      {orgao && (
+                        <p className="text-[9px] font-bold text-rose-700/70 uppercase tracking-wide">{orgao}</p>
+                      )}
+                      {(item.dataInicioPenalidade || item.dataFimPenalidade) && (
+                        <p className="text-[9px] text-rose-600/70 font-medium">
+                          {item.dataInicioPenalidade && `Início: ${item.dataInicioPenalidade}`}
+                          {item.dataInicioPenalidade && item.dataFimPenalidade && ' · '}
+                          {item.dataFimPenalidade && `Fim: ${item.dataFimPenalidade}`}
+                        </p>
+                      )}
+                      <a
+                        href={portalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 self-start text-[9px] font-black uppercase tracking-wide text-rose-600 underline underline-offset-2 hover:text-rose-800"
+                      >
+                        Ver no Portal da Transparência →
+                      </a>
                     </div>
-                    {(item.orgaoSancionador || item.orgao_sancionador) && (
-                      <p className="text-[9px] font-bold text-rose-700/70 uppercase tracking-wide">
-                        {item.orgaoSancionador || item.orgao_sancionador}
-                      </p>
-                    )}
-                    {(item.dataInicioPenalidade || item.dataFimPenalidade) && (
-                      <p className="text-[9px] text-rose-600/70 font-medium">
-                        {item.dataInicioPenalidade && `Início: ${item.dataInicioPenalidade}`}
-                        {item.dataInicioPenalidade && item.dataFimPenalidade && ' · '}
-                        {item.dataFimPenalidade && `Fim: ${item.dataFimPenalidade}`}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

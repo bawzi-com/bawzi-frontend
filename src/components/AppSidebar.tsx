@@ -2,7 +2,7 @@
 
 /**
  * AppSidebar.tsx
- * Sidebar direita do painel de análise: navegação principal (Nova Análise,
+ * Sidebar direita do painel de análise: navegação principal (Radar PNCP,
  * Histórico, Para Você, Renovações, Capital), identidade estratégica e motor de IA.
  *
  * Design: todos os nav items seguem o mesmo template —
@@ -121,7 +121,7 @@ export default function AppSidebar({
           </>
         )}
 
-        {/* ── Nova Análise ──────────────────────────────── */}
+        {/* ── Radar PNCP ────────────────────────────────── */}
         <button
           onClick={() => onSetActiveTab('workspace')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -135,10 +135,10 @@ export default function AppSidebar({
           </div>
           <div className="flex-1 text-left min-w-0">
             <p className={`text-[13px] font-black leading-none mb-1 ${isAnalise ? 'text-white' : 'text-slate-800'}`}>
-              Nova Análise
+              Radar PNCP
             </p>
             <p className={`text-[10px] font-medium leading-none ${isAnalise ? 'text-white/60' : 'text-slate-400'}`}>
-              Pesquise e analise editais
+              Buscar e analisar editais
             </p>
           </div>
           {isAnalise ? <ActiveDot /> : <FeatureBadge label="IA" color="emerald" />}

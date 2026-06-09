@@ -32,7 +32,18 @@ function PromoActivateContent() {
         if (!res.ok) {
           const msg = data.detail || 'Erro ao ativar convite.';
           if (msg.toLowerCase().includes('já foi utilizado')) {
-            setStatus('already_used');
+            // Pode ser auto-ativação durante o cadastro — se há token no localStorage,
+            // o promo já foi aplicado; tratar como sucesso e redirecionar.
+            const hasSession = !!localStorage.getItem('bawzi_token');
+            if (hasSession) {
+              localStorage.setItem('bawzi_tier', '4');
+              window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: 4 } }));
+              setDias(3);
+              setStatus('activated');
+              setTimeout(() => router.replace('/workspace'), 2500);
+            } else {
+              setStatus('already_used');
+            }
           } else {
             setStatus('error');
             setMessage(msg);
@@ -52,8 +63,10 @@ function PromoActivateContent() {
         localStorage.setItem('bawzi_tier', '4');
         window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: 4 } }));
 
-        // Redireciona para o workspace após 3 s
-        setTimeout(() => router.replace('/workspace'), 3000);
+        // Se já está logado vai direto ao workspace; senão manda para login com redirect
+        const hasSession = !!localStorage.getItem('bawzi_token');
+        const dest = hasSession ? '/workspace' : '/login?redirect=/workspace';
+        setTimeout(() => router.replace(dest), 3000);
       } catch {
         setStatus('error');
         setMessage('Não foi possível conectar ao servidor.');
@@ -99,9 +112,16 @@ function PromoActivateContent() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-slate-500 mb-4">Redirecionando para o workspace…</p>
-            <Link href="/workspace" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-black px-6 py-3 rounded-xl text-sm transition-colors">
-              Ir agora <ArrowRight size={14} />
+            <p className="text-xs text-slate-500 mb-4">
+              {typeof window !== 'undefined' && localStorage.getItem('bawzi_token')
+                ? 'Redirecionando para o workspace…'
+                : 'Redirecionando para o login…'}
+            </p>
+            <Link
+              href={typeof window !== 'undefined' && localStorage.getItem('bawzi_token') ? '/workspace' : '/login?redirect=/workspace'}
+              className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-black px-6 py-3 rounded-xl text-sm transition-colors"
+            >
+              {typeof window !== 'undefined' && localStorage.getItem('bawzi_token') ? 'Ir para o workspace' : 'Fazer login'} <ArrowRight size={14} />
             </Link>
           </>
         )}

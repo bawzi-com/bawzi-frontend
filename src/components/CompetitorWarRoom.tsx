@@ -1052,7 +1052,7 @@ export default function CompetitorWarRoom({
                           <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase ${vuln.gravidade === 'ALTA' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>{vuln.gravidade}</span>
                         </div>
                         <p className="text-slate-600 text-xs font-medium leading-relaxed mb-3">{vuln.descricao_tecnica}</p>
-                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-[11px] text-slate-800" dangerouslySetInnerHTML={{ __html: vuln.fundamentacao_legal }} />
+                        <p className="bg-slate-50 p-3 rounded-lg border border-slate-100 text-[11px] text-slate-800 whitespace-pre-wrap">{vuln.fundamentacao_legal}</p>
                       </div>
                     ))}
                   </div>

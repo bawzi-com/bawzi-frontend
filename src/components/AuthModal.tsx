@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
+import { setAccessToken } from '@/lib/apiClient';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -78,7 +79,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
         const data = await res.json();
 
-        localStorage.setItem('bawzi_token', data.access_token);
+        setAccessToken(data.access_token);
+        localStorage.setItem('bawzi_token', data.access_token); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
@@ -115,14 +117,31 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Ocorreu um erro na autenticação.');
+        const msg = errorData.detail || 'Ocorreu um erro na autenticação.';
+        // Se estiver no register e email já existe → switch automático para login
+        if (view === 'register' && (
+          msg.toLowerCase().includes('já cadastrado') ||
+          msg.toLowerCase().includes('already') ||
+          msg.toLowerCase().includes('duplicate') ||
+          msg.toLowerCase().includes('já existe') ||
+          msg.toLowerCase().includes('em uso') ||
+          msg.toLowerCase().includes('e-mail já') ||
+          msg.toLowerCase().includes('email já')
+        )) {
+          setView('login');
+          setError('Este e-mail já tem uma conta. Entre com sua senha abaixo.');
+          setLoading(false);
+          return;
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();
 
       const tokenToSave = data.access_token || data.token;
       if (tokenToSave) {
-        localStorage.setItem('bawzi_token', tokenToSave);
+        setAccessToken(tokenToSave);
+        localStorage.setItem('bawzi_token', tokenToSave); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
         

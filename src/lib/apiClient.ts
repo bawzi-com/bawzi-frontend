@@ -36,15 +36,14 @@ export function getAccessToken(): string | null {
   return _accessToken;
 }
 
-/** Token ativo: preferência ao token em memória, fallback para localStorage (legado). */
+/**
+ * Token ativo: preferência à memória; fallback para localStorage enquanto
+ * os componentes legacy não forem migrados para apiFetch/getAuthToken.
+ * TODO: remover fallback localStorage após migrar todos os componentes.
+ */
 export function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return (
-    _accessToken ||
-    localStorage.getItem('bawzi_token') ||
-    localStorage.getItem('token') ||
-    null
-  );
+  if (typeof window === 'undefined') return _accessToken;
+  return _accessToken || localStorage.getItem('bawzi_token') || null;
 }
 
 // ─── Erro de sessão expirada ──────────────────────────────────────────────────
@@ -111,15 +110,16 @@ export function clearSession(): void {
 
 // ─── Inicialização de sessão (chamar no mount do app) ────────────────────────
 export async function initSession(): Promise<string | null> {
-  // Tenta hidratar a partir do cookie (Fase 2 — caminho seguro)
+  // 1. Caminho seguro: hidrata a partir do cookie HttpOnly
   const token = await renewToken();
   if (token) {
     _accessToken = token;
-    // Manter localStorage em sync para componentes legacy
-    localStorage.setItem('bawzi_token', token);
+    if (typeof window !== 'undefined') localStorage.setItem('bawzi_token', token);
     return token;
   }
-  // Fallback: verificar localStorage (utilizadores que fizeram login antes da Fase 2)
+  // 2. Fallback legacy: utilizadores que fizeram login antes do cookie HttpOnly
+  //    ser implementado ainda têm o token no localStorage.
+  //    TODO: remover quando todos os utilizadores tiverem renovado sessão via cookie.
   const legacy = typeof window !== 'undefined' ? localStorage.getItem('bawzi_token') : null;
   if (legacy) {
     _accessToken = legacy;
@@ -136,7 +136,6 @@ async function getFreshToken(): Promise<string | null> {
     const newToken = await renewToken();
     if (newToken) {
       _accessToken = newToken;
-      localStorage.setItem('bawzi_token', newToken);
       return newToken;
     }
     clearSession();
@@ -166,7 +165,6 @@ export async function apiFetch(
     const newToken = await renewToken();
     if (newToken) {
       _accessToken = newToken;
-      localStorage.setItem('bawzi_token', newToken);
       const retryHeaders = new Headers(options.headers);
       retryHeaders.set('Authorization', `Bearer ${newToken}`);
       return fetch(url, { ...options, headers: retryHeaders });

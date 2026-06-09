@@ -43,6 +43,8 @@ export interface UserData extends UserProfile {
   vagas_totais?: number;
   active_cnpj?: string;
   active_workspace?: { tier?: number };
+  is_promo?: boolean;
+  promo_expires_at?: string;
 }
 
 // ─── Análise salva (histórico) ────────────────────────────────────────────────
