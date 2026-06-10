@@ -16,6 +16,7 @@ import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
+  ClipboardList,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
@@ -180,6 +181,45 @@ export default function AppSidebar({
               </p>
             </div>
             {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
+          </button>
+        )}
+
+        {/* ── Gestão de execução ─────────────────────────── */}
+        {token && currentTier < 2 ? (
+          <button
+            onClick={() => router.push('/plans')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-50 opacity-60 hover:opacity-80"
+          >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-50 border border-slate-200">
+              <Lock size={15} className="text-slate-600" />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Gestão</p>
+              <p className="text-[10px] font-medium leading-none text-slate-400">Fluxo dos editais</p>
+            </div>
+            <FeatureBadge label="NÍV. 2" color="slate" />
+          </button>
+        ) : (
+          <button
+            onClick={() => onSetActiveTab('gestao')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'gestao' ? 'bg-slate-900' : 'hover:bg-slate-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'gestao' ? 'bg-white/15' : 'bg-slate-50 border border-slate-200'
+            }`}>
+              <ClipboardList size={16} className={activeTab === 'gestao' ? 'text-white' : 'text-slate-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'gestao' ? 'text-white' : 'text-slate-800'}`}>
+                Gestão
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'gestao' ? 'text-white/60' : 'text-slate-400'}`}>
+                Fluxo dos editais
+              </p>
+            </div>
+            {activeTab === 'gestao' ? <ActiveDot /> : <FeatureBadge label="EXEC." color="slate" />}
           </button>
         )}
 

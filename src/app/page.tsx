@@ -90,7 +90,7 @@ const PLANOS = [
     nivel: 'Nível 2',
     cor: 'from-sky-500 to-indigo-500',
     destaque: false,
-    itens: ['Radar PNCP e central de decisões', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais', 'Editais até 80 mil caracteres'],
+    itens: ['Radar PNCP e central de decisões', 'Gestão de execução', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais'],
   },
   {
     nome: 'Profissional',

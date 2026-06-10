@@ -173,6 +173,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       features: [
         "Perfil da empresa (CNPJ/UF)",
         "Central de decisões e laudos salvos",
+        "Gestão do fluxo completo dos editais",
         "Priorização entre editais",
         "Radar 360 — busca PNCP",
         "Editais até 80.000 caracteres",

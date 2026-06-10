@@ -15,56 +15,10 @@ import {
   XCircle,
   Download,
   Filter,
-  ClipboardList,
 } from 'lucide-react';
 import AnalysisResults from './AnalysisResults';
 import { AnalysisResult } from './analysis-types';
 import type { SavedAnalysis } from '@/lib/types';
-
-type HistoryQueueKey = 'action' | 'proposal' | 'waiting' | 'done';
-type HistoryQueueFilter = 'all' | HistoryQueueKey;
-
-type HistoryCockpitTask = {
-  id: string;
-  prazo: string;
-  acao: string;
-  responsavel: string;
-  resultado_esperado: string;
-  origem: string;
-  prioridade: 'Alta' | 'Média' | 'Normal';
-};
-
-const queueStageConfig: Record<HistoryQueueKey, {
-  label: string;
-  helper: string;
-  className: string;
-  dotClass: string;
-}> = {
-  action: {
-    label: 'Em execução',
-    helper: 'Resolver condição',
-    className: 'border-amber-100 bg-amber-50 text-amber-700',
-    dotClass: 'bg-amber-500',
-  },
-  proposal: {
-    label: 'Proposta',
-    helper: 'Montar envio',
-    className: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    dotClass: 'bg-emerald-500',
-  },
-  waiting: {
-    label: 'Aguardando',
-    helper: 'Órgão ou edital',
-    className: 'border-sky-100 bg-sky-50 text-sky-700',
-    dotClass: 'bg-sky-500',
-  },
-  done: {
-    label: 'Concluído',
-    helper: 'Checklist fechado',
-    className: 'border-slate-200 bg-slate-50 text-slate-600',
-    dotClass: 'bg-slate-400',
-  },
-};
 
 export default function HistoryTab({
   token,
@@ -91,10 +45,8 @@ export default function HistoryTab({
 
   const [favorites, setFavorites] = useState<string[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'favorites' | 'go' | 'attention' | 'nogo'>('all');
-  const [queueFilter, setQueueFilter] = useState<HistoryQueueFilter>('all');
   const [detailTab, setDetailTab] = useState<'analise' | 'concorrentes'>('analise');
   const [currentPage, setCurrentPage] = useState(1);
-  const [savingQuickTaskId, setSavingQuickTaskId] = useState<string | null>(null);
   const itemsPerPage = 6;
 
   // ── Filtros avançados ────────────────────────────────────────────────────
@@ -300,79 +252,6 @@ export default function HistoryTab({
     }
   };
 
-  const completeNextTaskFromList = async (
-    event: React.MouseEvent,
-    analysis: SavedAnalysis,
-    task: HistoryCockpitTask,
-  ) => {
-    event.stopPropagation();
-    if (!analysis.id || savingQuickTaskId) return;
-
-    const statusBefore = normalizeHistoryCockpitStatus(analysis.cockpit_status);
-    const nowIso = new Date().toISOString();
-    const nextStatus = {
-      ...statusBefore,
-      [task.id]: {
-        ...statusBefore[task.id],
-        done: true,
-        responsavel: statusBefore[task.id]?.responsavel || task.responsavel,
-        prazo: statusBefore[task.id]?.prazo || task.prazo,
-        updated_at: nowIso,
-      },
-    };
-
-    const quickId = `${analysis.id}-${task.id}`;
-    setSavingQuickTaskId(quickId);
-    setAnalyses((prev) => prev.map((item) => (
-      item.id === analysis.id
-        ? { ...item, cockpit_status: nextStatus, cockpit_updated_at: nowIso }
-        : item
-    )));
-
-    try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}/cockpit`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ tasks: nextStatus }),
-      });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => null);
-        setAnalyses((prev) => prev.map((item) => (
-          item.id === analysis.id ? { ...item, cockpit_status: statusBefore } : item
-        )));
-        setNotice({ type: 'error', message: error?.detail || 'Não foi possível concluir a tarefa.' });
-        return;
-      }
-
-      const data = await res.json().catch(() => null);
-      if (data?.analysis) {
-        setAnalyses((prev) => prev.map((item) => (
-          item.id === analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
-        )));
-      }
-      setNotice({ type: 'success', message: 'Próxima ação concluída e salva no histórico.' });
-    } catch {
-      setAnalyses((prev) => prev.map((item) => (
-        item.id === analysis.id ? { ...item, cockpit_status: statusBefore } : item
-      )));
-      setNotice({ type: 'error', message: 'Erro de conexão ao salvar a tarefa.' });
-    } finally {
-      setSavingQuickTaskId(null);
-    }
-  };
-
   const filteredAnalyses = useMemo(() => {
     const now = Date.now();
     const periodoMs: Record<string, number> = {
@@ -390,7 +269,6 @@ export default function HistoryTab({
       if (activeFilter === 'go' && score < 70) return false;
       if (activeFilter === 'attention' && !(score >= 45 && score < 70)) return false;
       if (activeFilter === 'nogo' && score >= 45) return false;
-      if (queueFilter !== 'all' && getHistoryQueueStage(item).key !== queueFilter) return false;
 
       // Filtro de período
       if (periodoFiltro !== 'all' && item.created_at) {
@@ -409,7 +287,7 @@ export default function HistoryTab({
 
       return true;
     });
-  }, [analyses, activeFilter, favorites, periodoFiltro, queueFilter, searchText]);
+  }, [analyses, activeFilter, favorites, periodoFiltro, searchText]);
 
   const totalPages = Math.ceil(filteredAnalyses.length / itemsPerPage);
   const paginatedAnalyses = useMemo(() => {
@@ -666,11 +544,6 @@ export default function HistoryTab({
   const attentionCount = analyses.filter(item => (item.score || 0) >= 45 && (item.score || 0) < 70).length;
   const noGoCount = analyses.filter(item => (item.score || 0) < 45).length;
   const favoriteCount = analyses.filter(item => favorites.includes(item.id)).length;
-  const queueCounts = analyses.reduce<Record<HistoryQueueFilter, number>>((acc, item) => {
-    acc.all += 1;
-    acc[getHistoryQueueStage(item).key] += 1;
-    return acc;
-  }, { all: 0, action: 0, proposal: 0, waiting: 0, done: 0 });
 
   const filterOptions = [
     { key: 'all', label: 'Todos', count: totalAnalyses, Icon: FileText, activeClass: 'bg-emerald-600 text-white border-emerald-600' },
@@ -777,47 +650,7 @@ export default function HistoryTab({
             </div>
           )}
 
-          {/* Linha 3: fila operacional */}
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
-            <div className="mb-2 flex items-center gap-2 px-1">
-              <ClipboardList size={13} className="text-emerald-600" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                Fila de decisão
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {([
-                { key: 'all' as const, label: 'Todas', helper: 'Carteira', count: queueCounts.all, className: 'border-slate-200 bg-white text-slate-600' },
-                ...(['action', 'proposal', 'waiting', 'done'] as const).map((key) => ({
-                  key,
-                  label: queueStageConfig[key].label,
-                  helper: queueStageConfig[key].helper,
-                  count: queueCounts[key],
-                  className: queueStageConfig[key].className,
-                })),
-              ]).map((option) => (
-                <button
-                  key={option.key}
-                  onClick={() => { setQueueFilter(option.key); setCurrentPage(1); }}
-                  className={`group flex min-w-[132px] items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-all ${
-                    queueFilter === option.key
-                      ? `${option.className} shadow-sm ring-2 ring-white`
-                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900'
-                  }`}
-                >
-                  <span>
-                    <span className="block text-[11px] font-black uppercase leading-none">{option.label}</span>
-                    <span className="mt-1 block text-[9px] font-bold uppercase leading-none opacity-60">{option.helper}</span>
-                  </span>
-                  <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-500 shadow-sm">
-                    {option.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Linha 4: filtros veredito */}
+          {/* Linha 3: filtros veredito */}
           <div className="flex flex-wrap gap-2">
             {filterOptions.map(({ key, label, count, Icon, activeClass }) => (
               <button
@@ -859,14 +692,10 @@ export default function HistoryTab({
             const score = item.score || 0;
             const isFav = favorites.includes(item.id);
             const c = scoreColors(score);
-            const cockpitTasks = buildHistoryCockpitTasks(item);
-            const cockpitMap = normalizeHistoryCockpitStatus(item.cockpit_status);
-            const cockpitDone = cockpitTasks.filter((task) => cockpitMap[task.id]?.done).length;
-            const cockpitTotal = cockpitTasks.length;
-            const nextTask = cockpitTasks.find((task) => !cockpitMap[task.id]?.done);
-            const queueStage = getHistoryQueueStage(item, cockpitTasks, cockpitMap);
-            const queueUi = queueStageConfig[queueStage.key];
-            const quickTaskId = nextTask ? `${item.id}-${nextTask.id}` : '';
+            const cockpitStatus = item.cockpit_status && typeof item.cockpit_status === 'object'
+              ? Object.values(item.cockpit_status as Record<string, { done?: boolean }>)
+              : [];
+            const cockpitDone = cockpitStatus.filter((state) => state?.done).length;
             const createdDate = isMounted && item.created_at
               ? new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
               : '...';
@@ -902,13 +731,9 @@ export default function HistoryTab({
                           {item.model_source}
                         </span>
                       )}
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${queueUi.className}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${queueUi.dotClass}`} />
-                        {queueUi.label}
-                      </span>
-                      {cockpitTotal > 0 && (
+                      {cockpitStatus.length > 0 && (
                         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
-                          Cockpit {cockpitDone}/{cockpitTotal}
+                          Cockpit {cockpitDone}/{cockpitStatus.length}
                         </span>
                       )}
                     </div>
@@ -919,45 +744,6 @@ export default function HistoryTab({
                     <p className="mt-2 line-clamp-2 text-sm font-medium leading-relaxed text-slate-500">
                       {item.summary || item.recommendation || 'Abra esta análise para rever o veredito, riscos e próximos passos.'}
                     </p>
-
-                    {nextTask && (
-                      <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="mb-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
-                            Próxima ação
-                          </span>
-                          <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
-                            {cockpitMap[nextTask.id]?.prazo || nextTask.prazo}
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                            nextTask.prioridade === 'Alta'
-                              ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
-                              : nextTask.prioridade === 'Média'
-                                ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
-                                : 'bg-white text-slate-500 ring-1 ring-slate-200'
-                          }`}>
-                            {nextTask.prioridade}
-                          </span>
-                        </div>
-                        <p className="line-clamp-2 text-xs font-black leading-snug text-slate-800">
-                          {nextTask.acao}
-                        </p>
-                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <p className="text-[11px] font-semibold text-slate-500">
-                            Responsável: <strong className="text-slate-700">{cockpitMap[nextTask.id]?.responsavel || nextTask.responsavel}</strong>
-                          </p>
-                          <button
-                            type="button"
-                            onClick={(event) => completeNextTaskFromList(event, item, nextTask)}
-                            disabled={savingQuickTaskId === quickTaskId}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black uppercase text-emerald-700 transition-all hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <CheckCircle2 size={12} />
-                            {savingQuickTaskId === quickTaskId ? 'Salvando...' : 'Concluir próxima'}
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex items-center gap-2 md:justify-end">
@@ -1043,160 +829,4 @@ export default function HistoryTab({
       )}
     </div>
   );
-}
-
-function getHistoryQueueStage(
-  analysis: SavedAnalysis,
-  tasks = buildHistoryCockpitTasks(analysis),
-  statusMap = normalizeHistoryCockpitStatus(analysis.cockpit_status),
-): { key: HistoryQueueKey } {
-  const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
-  if (tasks.length > 0 && completed >= tasks.length) return { key: 'done' };
-
-  const verdict = inferHistoryVerdict(analysis);
-  if (verdict === 'NO_GO') return { key: 'waiting' };
-  if (verdict === 'GO') return { key: 'proposal' };
-  return { key: 'action' };
-}
-
-function inferHistoryVerdict(analysis: SavedAnalysis): 'GO' | 'GO_CONDICIONADO' | 'NO_GO' {
-  const decision = asHistoryRecord(analysis.decisao);
-  const raw = normalizeHistoryDecisionText(
-    decision.veredito || decision.rotulo || analysis.classification || analysis.recommendation || '',
-  );
-  const score = Number(analysis.score || 0);
-
-  if (raw.includes('no-go') || raw.includes('no go') || raw.includes('nao participar') || score < 45) {
-    return 'NO_GO';
-  }
-  if (raw.includes('condicion') || raw.includes('atencao') || (score >= 45 && score < 70)) {
-    return 'GO_CONDICIONADO';
-  }
-  return 'GO';
-}
-
-function buildHistoryCockpitTasks(analysis: SavedAnalysis): HistoryCockpitTask[] {
-  const decision = asHistoryRecord(analysis.decisao);
-  const tasks: HistoryCockpitTask[] = [];
-  const actions = Array.isArray(decision.proximas_acoes) ? decision.proximas_acoes : [];
-
-  actions.forEach((item, index) => {
-    const action = asHistoryRecord(item);
-    const prazo = shortenHistoryDecisionText(action.prazo || 'Hoje', 40);
-    const acao = shortenHistoryDecisionText(action.acao || action.tarefa || action.descricao || item, 220);
-    if (!acao) return;
-    const priority: HistoryCockpitTask['prioridade'] =
-      inferHistoryVerdict(analysis) === 'NO_GO' || /agora|hoje/i.test(prazo) ? 'Alta' : 'Média';
-
-    tasks.push({
-      id: `decision-${index}-${normalizeHistoryDecisionText(acao).slice(0, 40)}`,
-      prazo,
-      acao,
-      responsavel: shortenHistoryDecisionText(action.responsavel || 'Licitações', 80),
-      resultado_esperado: shortenHistoryDecisionText(action.resultado_esperado || 'Critério objetivo para seguir ou abandonar.', 140),
-      origem: 'Decisão',
-      prioridade: priority,
-    });
-  });
-
-  const checklist = Array.isArray(analysis.checklist) ? analysis.checklist : [];
-  checklist.slice(0, 6).forEach((item, index) => {
-    const record = asHistoryRecord(item);
-    const acao = shortenHistoryDecisionText(record.tarefa || record.descricao || record.label || record.item || item, 180);
-    if (!acao) return;
-    const impacto = String(record.impacto || '').toLowerCase();
-
-    tasks.push({
-      id: `checklist-${index}-${normalizeHistoryDecisionText(acao).slice(0, 40)}`,
-      prazo: shortenHistoryDecisionText(record.prazo || record.fase || 'Antes da proposta', 40),
-      acao,
-      responsavel: shortenHistoryDecisionText(record.responsavel || 'Licitações', 80),
-      resultado_esperado: shortenHistoryDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
-      origem: 'Checklist',
-      prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
-    });
-  });
-
-  if (!tasks.length) {
-    const verdict = inferHistoryVerdict(analysis);
-    const fallback = verdict === 'NO_GO'
-      ? {
-          prazo: 'Após resposta oficial',
-          acao: 'Reavaliar somente quando o órgão corrigir as informações críticas.',
-          responsavel: 'Licitações',
-          resultado_esperado: 'Evitar esforço de proposta sem segurança técnica, financeira ou jurídica.',
-          prioridade: 'Alta' as const,
-        }
-      : verdict === 'GO'
-        ? {
-            prazo: 'Hoje',
-            acao: 'Separar documentos, validar preço limite e iniciar montagem da proposta.',
-            responsavel: 'Licitações',
-            resultado_esperado: 'Transformar o Go em envio controlado.',
-            prioridade: 'Média' as const,
-          }
-        : {
-            prazo: 'Hoje',
-            acao: 'Resolver condições pendentes antes de consumir esforço de proposta.',
-            responsavel: 'Licitações / Jurídico',
-            resultado_esperado: 'Converter Go condicionado em decisão segura.',
-            prioridade: 'Alta' as const,
-          };
-
-    tasks.push({
-      id: `decision-0-${normalizeHistoryDecisionText(fallback.acao).slice(0, 40)}`,
-      origem: 'Decisão',
-      ...fallback,
-    });
-  }
-
-  const seen = new Set<string>();
-  return tasks
-    .filter((task) => {
-      const key = normalizeHistoryDecisionText(`${task.origem}-${task.acao}`);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 8);
-}
-
-function normalizeHistoryCockpitStatus(value: SavedAnalysis['cockpit_status']) {
-  if (!value || typeof value !== 'object') return {};
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([taskId]) => Boolean(taskId))
-      .map(([taskId, state]) => [
-        taskId,
-        {
-          done: Boolean(state?.done),
-          updated_at: state?.updated_at,
-          responsavel: state?.responsavel,
-          prazo: state?.prazo,
-          nota: state?.nota,
-        },
-      ]),
-  );
-}
-
-function asHistoryRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function normalizeHistoryDecisionText(value: unknown) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function shortenHistoryDecisionText(value: unknown, max = 260) {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (text.length <= max) return text;
-  return `${text.slice(0, max - 1).trim()}…`;
 }

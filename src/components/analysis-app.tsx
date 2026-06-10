@@ -39,6 +39,7 @@ import ImpugnacaoModal from './ImpugnacaoModal';
 
 // Componentes externos (mantidos inalterados)
 import HistoryTab from './HistoryTab';
+import DecisionManagementTab from './DecisionManagementTab';
 import CompareTab from './CompareTab';
 import PricingSection from './PricingSection';
 import PncpSearch from '../components/PncpSearch';
@@ -864,6 +865,32 @@ export default function AnalysisApp() {
                         Entrar na Conta
                       </button>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Aba Gestão */}
+              {activeTab === 'gestao' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {!token ? (
+                    <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
+                      <h3 className="text-lg font-black text-slate-800 mb-2">Inicie sessão para gerir decisões</h3>
+                      <p className="text-slate-500 font-medium mb-6">A gestão de execução usa as análises salvas e o cockpit pós-veredito.</p>
+                      <button
+                        onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+                        className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all shadow-md"
+                      >
+                        Entrar na Conta
+                      </button>
+                    </div>
+                  ) : currentTier < 2 ? (
+                    <TierGateTab
+                      requiredTier={2}
+                      featureName="Gestão do Fluxo dos Editais"
+                      onUpgrade={() => handleUpgrade(2)}
+                    />
+                  ) : (
+                    <DecisionManagementTab token={token} userTier={userTier} />
                   )}
                 </div>
               )}

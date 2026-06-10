@@ -65,6 +65,8 @@ export interface SavedAnalysis {
   created_at?: string;
   cockpit_status?: Record<string, { done?: boolean; updated_at?: string; responsavel?: string; prazo?: string; nota?: string }>;
   cockpit_updated_at?: string;
+  workflow_status?: string;
+  workflow_updated_at?: string;
   /** Campos extras da IA (riscos, semáforo, etc.) */
   [key: string]: unknown;
 }
