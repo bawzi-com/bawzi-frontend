@@ -39,7 +39,7 @@ export default function HistoryPage() {
             <section className="relative bg-gradient-to-br from-white via-emerald-50/45 to-sky-50/45 p-6 sm:p-8 lg:p-10">
               <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white/85 px-3.5 py-2 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
                 <BookOpen size={13} />
-                Histórico estratégico
+                Central de decisões
               </div>
 
               <div className="max-w-2xl">

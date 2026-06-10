@@ -347,7 +347,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
               <Target className="w-4.5 h-4.5 text-teal-600" strokeWidth={2.5} style={{width:18,height:18}} />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-800 leading-none">Para Você</h2>
+              <h2 className="text-base font-black text-slate-800 leading-none">Oportunidades com fit</h2>
               {cnaeInfo && (
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5 leading-none">
                   {cnaeInfo.empresas.length > 1

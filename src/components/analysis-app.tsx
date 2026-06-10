@@ -145,7 +145,7 @@ export default function AnalysisApp() {
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
-  // Valor pré-preenchido para Capital Intelligence (vindo de uma análise)
+  // Valor pré-preenchido para Capital (vindo de uma análise)
   const [capitalPrefilledValor, setCapitalPrefilledValor] = useState<number>(0);
   const [showAuthModal, setShowAuthModal]   = useState(false);
   const [authMode, setAuthMode]         = useState<'login' | 'register'>('register');
@@ -763,7 +763,7 @@ export default function AnalysisApp() {
                 <div id="capital-section" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {currentTier < 3 ? (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
-                      <p className="text-slate-600 font-medium">Capital Intelligence disponível a partir do Nível 3.</p>
+                      <p className="text-slate-600 font-medium">Fôlego financeiro disponível a partir do Nível 3.</p>
                     </div>
                   ) : (
                     <CapitalIntelligence
@@ -784,7 +784,7 @@ export default function AnalysisApp() {
                   {currentTier < 3 ? (
                     <TierGateTab
                       requiredTier={3}
-                      featureName="Alertas Proativos PNCP"
+                      featureName="Monitor Inteligente PNCP"
                       onUpgrade={() => handleUpgrade(3)}
                     />
                   ) : (
@@ -793,13 +793,13 @@ export default function AnalysisApp() {
                 </div>
               )}
 
-              {/* Aba Para Você (Feed CNAE) */}
+              {/* Aba Oportunidades (Feed CNAE) */}
               {activeTab === 'cnae' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {currentTier < 3 ? (
                     <TierGateTab
                       requiredTier={3}
-                      featureName="Oportunidades por CNAE"
+                      featureName="Oportunidades com fit CNAE"
                       onUpgrade={() => handleUpgrade(3)}
                     />
                   ) : (
@@ -835,7 +835,7 @@ export default function AnalysisApp() {
                   ) : (token && userTier !== -1 && currentTier < 2) ? (
                     <TierGateTab
                       requiredTier={2}
-                      featureName="Histórico de Análises"
+                      featureName="Central de Decisões"
                       onUpgrade={() => handleUpgrade(2)}
                     />
                   ) : (token && userTier !== -1) ? (
@@ -884,7 +884,7 @@ export default function AnalysisApp() {
                   ) : currentTier < 2 ? (
                     <TierGateTab
                       requiredTier={2}
-                      featureName="Comparação de Editais"
+                      featureName="Priorização de Disputas"
                       onUpgrade={() => handleUpgrade(2)}
                     />
                   ) : (

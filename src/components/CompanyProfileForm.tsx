@@ -394,7 +394,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
               </div>
               {formData.cnae_principal && (
                 <p className="text-[10px] text-emerald-600 font-bold mt-2 ml-1">
-                  ✓ CNAE salvo — o Feed &quot;Para Você&quot; usará este código para encontrar oportunidades.
+                  ✓ CNAE salvo — Oportunidades usará este código para encontrar editais com fit.
                 </p>
               )}
               {formData.cnaes_secundarios.length > 0 && (

@@ -1170,7 +1170,7 @@ export default function AdminDashboard() {
 
                 <div className="bg-slate-800/30 border border-slate-700/40 rounded-xl p-4 text-xs text-slate-500 space-y-1">
                   <p className="font-bold text-slate-400">Para que serve?</p>
-                  <p>Necessário para o filtro de cidade no Radar de Renovações. Cada município precisa ter o seu <code className="text-slate-300">municipio_id</code> PNCP registado.</p>
+                  <p>Necessário para o filtro de cidade no Pipeline de Renovações. Cada município precisa ter o seu <code className="text-slate-300">municipio_id</code> PNCP registado.</p>
                   <p className="text-slate-600">Tempo: ~5 min por UF · ~2-4h completo</p>
                 </div>
               </div>

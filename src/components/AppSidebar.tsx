@@ -3,7 +3,7 @@
 /**
  * AppSidebar.tsx
  * Sidebar direita do painel de análise: navegação principal (Radar PNCP,
- * Histórico, Para Você, Renovações, Capital), identidade estratégica e motor de IA.
+ * Decisões, Oportunidades, Renovações, Capital), identidade estratégica e motor de IA.
  *
  * Design: todos os nav items seguem o mesmo template —
  *   [ícone 36px] [label + subtitle] [badge]
@@ -138,7 +138,7 @@ export default function AppSidebar({
               Radar PNCP
             </p>
             <p className={`text-[10px] font-medium leading-none ${isAnalise ? 'text-white/60' : 'text-slate-400'}`}>
-              Buscar e analisar editais
+              Encontrar e decidir
             </p>
           </div>
           {isAnalise ? <ActiveDot /> : <FeatureBadge label="IA" color="emerald" />}
@@ -154,8 +154,8 @@ export default function AppSidebar({
               <Lock size={15} className="text-sky-600" />
             </div>
             <div className="flex-1 text-left min-w-0">
-              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Histórico</p>
-              <p className="text-[10px] font-medium leading-none text-slate-400">Análises anteriores salvas</p>
+              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Decisões</p>
+              <p className="text-[10px] font-medium leading-none text-slate-400">Laudos e resultados salvos</p>
             </div>
             <FeatureBadge label="NÍV. 2" color="sky" />
           </button>
@@ -173,10 +173,10 @@ export default function AppSidebar({
             </div>
             <div className="flex-1 text-left min-w-0">
               <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'history' ? 'text-white' : 'text-slate-800'}`}>
-                Histórico
+                Decisões
               </p>
               <p className={`text-[10px] font-medium leading-none ${activeTab === 'history' ? 'text-white/60' : 'text-slate-400'}`}>
-                Análises anteriores salvas
+                Laudos e resultados salvos
               </p>
             </div>
             {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
@@ -194,8 +194,8 @@ export default function AppSidebar({
                 <Lock size={15} className="text-violet-600" />
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Comparar</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Editais lado a lado</p>
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Priorizar</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Escolha o melhor edital</p>
               </div>
               <FeatureBadge label="NÍV. 2" color="violet" />
             </button>
@@ -213,10 +213,10 @@ export default function AppSidebar({
               </div>
               <div className="flex-1 text-left min-w-0">
                 <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
-                  Comparar
+                  Priorizar
                 </p>
                 <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Editais lado a lado
+                  Escolha o melhor edital
                 </p>
               </div>
               {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
@@ -224,7 +224,7 @@ export default function AppSidebar({
           )
         )}
 
-        {/* ── Para Você — Feed CNAE (autenticados) ────────── */}
+        {/* ── Oportunidades — Feed CNAE (autenticados) ────── */}
         {token && userData && (
           currentTier < 3 ? (
             <button
@@ -235,8 +235,8 @@ export default function AppSidebar({
                 <Lock size={15} className="text-teal-600" />
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Para Você</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Oportunidades pelo seu CNAE</p>
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Oportunidades</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Match CNAE e perfil</p>
               </div>
               <FeatureBadge label="NÍV. 3" color="teal" />
             </button>
@@ -254,10 +254,10 @@ export default function AppSidebar({
               </div>
               <div className="flex-1 text-left min-w-0">
                 <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
-                  Para Você
+                  Oportunidades
                 </p>
                 <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Oportunidades pelo seu CNAE
+                  Match CNAE e perfil
                 </p>
               </div>
               {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
@@ -265,7 +265,7 @@ export default function AppSidebar({
           )
         )}
 
-        {/* ── Radar de Alertas (NÍV. 3) ───────────────────── */}
+        {/* ── Monitor inteligente (NÍV. 3) ────────────────── */}
         {token && (
           currentTier < 3 ? (
             <button
@@ -276,8 +276,8 @@ export default function AppSidebar({
                 <Lock size={15} className="text-amber-600" />
               </div>
               <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Alertas</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Notificações PNCP · Proativo</p>
+                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Monitor</p>
+                <p className="text-[10px] font-medium leading-none text-slate-400">Sinais críticos PNCP</p>
               </div>
               <FeatureBadge label="NÍV. 3" color="amber" />
             </button>
@@ -295,10 +295,10 @@ export default function AppSidebar({
               </div>
               <div className="flex-1 text-left min-w-0">
                 <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'alertas' ? 'text-white' : 'text-slate-800'}`}>
-                  Alertas
+                  Monitor
                 </p>
                 <p className={`text-[10px] font-medium leading-none ${activeTab === 'alertas' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Notificações PNCP · Proativo
+                  Sinais críticos PNCP
                 </p>
               </div>
               {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
@@ -306,7 +306,7 @@ export default function AppSidebar({
           )
         )}
 
-        {/* ── Capital Inteligente (NÍV. 3) ────────────────── */}
+        {/* ── Capital / fôlego financeiro (NÍV. 3) ────────── */}
         {token && (
           currentTier < 3 ? (
             /* Bloqueado */
@@ -320,7 +320,7 @@ export default function AppSidebar({
               <div className="flex-1 text-left min-w-0">
                 <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Capital</p>
                 <p className="text-[10px] font-medium leading-none text-slate-400">
-                  Crédito inteligente · Pré-qualificação
+                  Fôlego para executar
                 </p>
               </div>
               <FeatureBadge label="NÍV. 3" color="blue" />
@@ -343,7 +343,7 @@ export default function AppSidebar({
                   Capital
                 </p>
                 <p className={`text-[10px] font-medium leading-none ${activeTab === 'capital' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Crédito inteligente · Pré-qualificação
+                  Fôlego para executar
                 </p>
               </div>
               {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
@@ -365,7 +365,7 @@ export default function AppSidebar({
               <div className="flex-1 text-left min-w-0">
                 <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Renovações</p>
                 <p className="text-[10px] font-medium leading-none text-slate-400">
-                  Contratos a vencer · Renovações
+                  Contratos vencendo
                 </p>
               </div>
               <FeatureBadge label="NÍV. 4" color="amber" />
@@ -390,7 +390,7 @@ export default function AppSidebar({
                 <p className={`text-[10px] font-medium leading-none ${activeTab === 'renovacoes' ? 'text-white/60' : 'text-slate-400'}`}>
                   {renovacoesCount && renovacoesCount > 0
                     ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} a vencer`
-                    : 'Contratos a vencer · Renovações'}
+                    : 'Contratos vencendo'}
                 </p>
               </div>
               {activeTab === 'renovacoes'

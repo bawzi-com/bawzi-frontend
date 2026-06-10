@@ -91,6 +91,9 @@ export interface DecisionData {
 export interface CockpitTaskPersistedState {
   done?: boolean;
   updated_at?: string;
+  responsavel?: string;
+  prazo?: string;
+  nota?: string;
 }
 
 export type CockpitStatusMap = Record<string, CockpitTaskPersistedState>;

@@ -172,8 +172,8 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       name: "Essencial", badge: "NÍVEL 2", price: "R$ 79/mês",
       features: [
         "Perfil da empresa (CNPJ/UF)",
-        "Histórico de análises salvo",
-        "Comparar editais lado a lado",
+        "Central de decisões e laudos salvos",
+        "Priorização entre editais",
         "Radar 360 — busca PNCP",
         "Editais até 80.000 caracteres",
         "PDF até 15 MB",
@@ -183,9 +183,9 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
     {
       name: "Profissional", badge: "NÍVEL 3", price: "R$ 197/mês",
       features: [
-        "Para Você — oportunidades por CNAE",
-        "Alertas proativos PNCP (e-mail + sino)",
-        "Capital Inteligente — crédito e pré-qualificação",
+        "Oportunidades com fit CNAE e perfil",
+        "Monitor inteligente PNCP (e-mail + sino)",
+        "Fôlego financeiro e capital de execução",
         "4 Agentes IA em paralelo",
         "Editais até 180.000 caracteres",
         "PDF até 30 MB",
@@ -195,7 +195,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
     {
       name: "Avançado", badge: "NÍVEL 4", price: "R$ 497/mês",
       features: [
-        "Renovações — radar de contratos a vencer",
+        "Pipeline de renovações e contratos vencendo",
         "War Room de concorrentes",
         "Simulador tático de preços",
         "Editais até 400.000 caracteres",

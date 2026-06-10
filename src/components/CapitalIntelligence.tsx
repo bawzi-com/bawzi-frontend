@@ -613,15 +613,15 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
             <DollarSign size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-slate-900">Capital Inteligente</h1>
-            <p className="text-xs text-slate-500">Encontre a linha de crédito certa para participar ou executar o contrato</p>
+            <h1 className="text-xl font-black text-slate-900">Fôlego financeiro da disputa</h1>
+            <p className="text-xs text-slate-500">Estime capital necessário, risco de caixa e linhas possíveis antes de assumir o contrato</p>
           </div>
         </div>
       </div>
 
       {/* Formulário */}
       <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 space-y-4">
-        <p className="text-sm font-bold text-slate-700">Informe os dados para análise</p>
+        <p className="text-sm font-bold text-slate-700">Informe os dados para medir capacidade de execução</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

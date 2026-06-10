@@ -90,7 +90,7 @@ const PLANOS = [
     nivel: 'Nível 2',
     cor: 'from-sky-500 to-indigo-500',
     destaque: false,
-    itens: ['Radar PNCP e histórico', 'Perfil da empresa por CNPJ/UF', 'Comparação lado a lado', 'Editais até 80 mil caracteres'],
+    itens: ['Radar PNCP e central de decisões', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais', 'Editais até 80 mil caracteres'],
   },
   {
     nome: 'Profissional',
@@ -99,7 +99,7 @@ const PLANOS = [
     nivel: 'Nível 3',
     cor: 'from-emerald-500 to-teal-500',
     destaque: true,
-    itens: ['Oportunidades por CNAE', 'Alertas proativos PNCP', 'Capital inteligente', '4 agentes de IA em paralelo'],
+    itens: ['Oportunidades com fit CNAE', 'Monitor inteligente PNCP', 'Fôlego financeiro da disputa', '4 agentes de IA em paralelo'],
   },
   {
     nome: 'Avançado',
@@ -108,7 +108,7 @@ const PLANOS = [
     nivel: 'Nível 4',
     cor: 'from-amber-500 to-orange-500',
     destaque: false,
-    itens: ['Renovações e contratos a vencer', 'War Room de concorrentes', 'Simulador tático de preços', 'Suporte prioritário'],
+    itens: ['Pipeline de renovações', 'War Room de concorrentes', 'Simulador tático de preços', 'Suporte prioritário'],
   },
 ];
 

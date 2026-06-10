@@ -299,13 +299,13 @@ export default function CompareTab({ token }: { token: string }) {
         <div className="bg-gradient-to-br from-white via-slate-50 to-violet-50/50 p-5 md:p-7">
           <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-violet-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-violet-700 shadow-sm">
             <GitCompare size={13} />
-            Modo comparação
+            Priorização de disputa
           </div>
           <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
-            Selecione 2 editais
+            Escolha o melhor edital para disputar
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-            Escolha dois registos do histórico para comparar scores, semáforo de viabilidade, riscos e pontos-chave lado a lado.
+            Compare duas oportunidades salvas para decidir qual merece equipe, tempo e orçamento agora.
           </p>
         </div>
 

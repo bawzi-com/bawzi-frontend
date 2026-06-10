@@ -124,11 +124,11 @@ export default function RadarAlertas({ token }: Props) {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-amber-700 shadow-sm mb-2">
             <Bell className="h-3.5 w-3.5" />
-            Radar de Alertas
+            Monitor inteligente
           </div>
-          <h2 className="text-lg font-black text-slate-900">Notificações proativas de editais</h2>
+          <h2 className="text-lg font-black text-slate-900">Sinais críticos do PNCP</h2>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Configure termos e receba e-mail diário quando novos editais aparecerem no PNCP.
+            Configure termos para receber oportunidades novas antes que elas virem urgência operacional.
           </p>
         </div>
         <button

@@ -274,9 +274,9 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
               <RefreshCw size={18} className="text-white" />
             </div>
             <div>
-              <h3 className="text-sm font-black text-white tracking-tight leading-tight">Radar de Renovações</h3>
+              <h3 className="text-sm font-black text-white tracking-tight leading-tight">Pipeline de renovações</h3>
               <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                Contratos do seu segmento prestes a vencer — futuras oportunidades de edital
+                Antecipe contratos que podem virar nova disputa antes do mercado se mover
               </p>
             </div>
           </div>

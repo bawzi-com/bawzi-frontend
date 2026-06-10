@@ -652,7 +652,40 @@ function DecisionCockpit({
     const nextStatus = {
       ...statusMap,
       [taskId]: {
+        ...statusMap[taskId],
         done: checked,
+        updated_at: new Date().toISOString(),
+      },
+    };
+    setStatusMap(nextStatus);
+    void persistStatus(nextStatus);
+  };
+
+  const updateTaskField = (
+    taskId: string,
+    field: 'responsavel' | 'prazo' | 'nota',
+    value: string,
+  ) => {
+    setStatusMap((current) => ({
+      ...current,
+      [taskId]: {
+        ...current[taskId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const persistTaskField = (
+    taskId: string,
+    field: 'responsavel' | 'prazo' | 'nota',
+  ) => {
+    const current = statusMap[taskId] || {};
+    const value = String(current[field] || '').trim();
+    const nextStatus = {
+      ...statusMap,
+      [taskId]: {
+        ...current,
+        [field]: value || undefined,
         updated_at: new Date().toISOString(),
       },
     };
@@ -704,7 +737,7 @@ function DecisionCockpit({
         {tasks.map((task) => {
           const isDone = !!statusMap[task.id]?.done;
           return (
-            <label
+            <div
               key={task.id}
               className={`group flex items-start gap-4 rounded-2xl border p-4 transition-all ${
                 isDone
@@ -744,8 +777,45 @@ function DecisionCockpit({
                   <strong className="text-slate-700">{task.responsavel}</strong>
                   {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
                 </p>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Responsável
+                    </span>
+                    <input
+                      value={statusMap[task.id]?.responsavel ?? task.responsavel}
+                      onChange={(event) => updateTaskField(task.id, 'responsavel', event.target.value)}
+                      onBlur={() => persistTaskField(task.id, 'responsavel')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Prazo
+                    </span>
+                    <input
+                      value={statusMap[task.id]?.prazo ?? task.prazo}
+                      onChange={(event) => updateTaskField(task.id, 'prazo', event.target.value)}
+                      onBlur={() => persistTaskField(task.id, 'prazo')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      Nota interna
+                    </span>
+                    <input
+                      value={statusMap[task.id]?.nota ?? ''}
+                      onChange={(event) => updateTaskField(task.id, 'nota', event.target.value)}
+                      onBlur={() => persistTaskField(task.id, 'nota')}
+                      placeholder="Ex.: aguardando jurídico, cotação enviada..."
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                </div>
               </div>
-            </label>
+            </div>
           );
         })}
       </div>
@@ -808,6 +878,9 @@ function normalizeCockpitStatus(value: AnalysisResult['cockpit_status']): NonNul
         {
           done: Boolean(state?.done),
           updated_at: state?.updated_at,
+          responsavel: state?.responsavel,
+          prazo: state?.prazo,
+          nota: state?.nota,
         },
       ]),
   );
