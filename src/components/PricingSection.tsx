@@ -148,7 +148,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
   const tiers = [
     {
-      name: "Explorador", badge: "NÍVEL 0", price: "Grátis",
+      name: "Teste", badge: "NÍVEL 0", price: "Grátis",
       features: [
         "Nova Análise — score Go/No-Go",
         "Resumo executivo do edital",
@@ -156,17 +156,17 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 10.000 caracteres",
         "PDF até 3 MB · sem cadastro",
       ],
-      buttonText: "Testar Agora", tierLevel: -1, popular: false,
+      buttonText: "Testar agora", tierLevel: -1, popular: false,
     },
     {
-      name: "Potencial", badge: "NÍVEL 1", price: "Grátis*",
+      name: "Gratuito", badge: "NÍVEL 1", price: "Grátis*",
       features: [
-        "Análise completa (5×/mês)",
+        "Análise completa (5x/mês)",
         "Mapa de riscos jurídicos",
         "Editais até 25.000 caracteres",
         "PDF até 5 MB",
       ],
-      buttonText: "Criar Conta", tierLevel: 1, popular: false,
+      buttonText: "Criar conta", tierLevel: 1, popular: false,
     },
     {
       name: "Essencial", badge: "NÍVEL 2", price: "R$ 79/mês",
@@ -181,7 +181,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       buttonText: "Assinar Essencial", tierLevel: 2, popular: false,
     },
     {
-      name: "Especialista", badge: "NÍVEL 3", price: "R$ 197/mês",
+      name: "Profissional", badge: "NÍVEL 3", price: "R$ 197/mês",
       features: [
         "Para Você — oportunidades por CNAE",
         "Alertas proativos PNCP (e-mail + sino)",
@@ -190,10 +190,10 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 180.000 caracteres",
         "PDF até 30 MB",
       ],
-      buttonText: "Assinar Pro", tierLevel: 3, popular: true,
+      buttonText: "Assinar Profissional", tierLevel: 3, popular: true,
     },
     {
-      name: "Dominador", badge: "NÍVEL 4", price: "R$ 497/mês",
+      name: "Avançado", badge: "NÍVEL 4", price: "R$ 497/mês",
       features: [
         "Renovações — radar de contratos a vencer",
         "War Room de concorrentes",
@@ -201,7 +201,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 400.000 caracteres",
         "PDF até 100 MB · suporte prioritário",
       ],
-      buttonText: "Assinar Elite", tierLevel: 4, popular: false,
+      buttonText: "Assinar Avançado", tierLevel: 4, popular: false,
     },
   ];
 
@@ -223,7 +223,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[12px] font-semibold text-violet-900">
-              Você tem acesso completo ao plano <strong>Dominador</strong> via convite.
+              Você tem acesso completo ao plano <strong>Avançado</strong> via convite.
             </p>
             {promoExpiresAt && (
               <p className="flex items-center gap-1 text-[11px] text-violet-500 font-medium mt-0.5">

@@ -65,7 +65,7 @@ const logout = () => {
   window.location.reload();
 };
 
-const dominadorFeatures = [
+const avancadoFeatures = [
   { title: 'Raio-X de Concorrentes', desc: 'Veja capital social, sócios e volume de vitórias.' },
   { title: 'Engenharia Reversa',     desc: 'Descubra o custo real e a margem de lucro dos seus rivais.' },
   { title: 'Alertas de Vencimento',  desc: 'Saiba 30 dias antes quando o contrato milionário do seu rival vai vencer.' },
@@ -75,8 +75,8 @@ const dominadorFeatures = [
 
 const TIER_NAMES: Record<number, string> = {
   2: 'Essencial',
-  3: 'Pro',
-  4: 'Elite',
+  3: 'Profissional',
+  4: 'Avançado',
 };
 
 function TierGateTab({
@@ -1025,9 +1025,9 @@ export default function AnalysisApp() {
       <UpsellModal
         isOpen={showUpsell}
         onClose={() => setShowUpsell(false)}
-        title="Torne-se um Dominador (Nível 4)"
-        description="Você está a um passo de antecipar o movimento do mercado. Desbloqueie a verdadeira Inteligência Corporativa e destrua a concorrência."
-        features={dominadorFeatures}
+        title="Desbloqueie o plano Avançado (Nível 4)"
+        description="Antecipe movimentos do mercado, acompanhe concorrentes e tenha inteligência operacional para disputar com mais segurança."
+        features={avancadoFeatures}
       />
 
       {/* ── BOTÃO MOBILE SIDEBAR ── */}

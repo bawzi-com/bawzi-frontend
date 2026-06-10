@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
@@ -39,6 +39,9 @@ export interface ConcorrenteData {
   cnpj?: string;
   cleanCnpj?: string;
   uf?: string;
+  uf_disputa?: string;
+  uf_contrato?: string;
+  uf_empresa?: string;
   vitorias?: number | string;
   /** Campo de probabilidade (alias usado em alguns contextos: prob) */
   probabilidade?: string;
@@ -159,6 +162,9 @@ export default function CompetitorWarRoom({
   fullResult = {}
 }: CompetitorWarRoomProps) {
   
+  const warRoomRef = useRef<HTMLDivElement>(null);
+  const operationRef = useRef<HTMLDivElement>(null);
+  const pendingOperationScrollRef = useRef(false);
   const [view, setView] = useState<'radar' | 'operation'>('radar');
   const [abaConcorrentes, setAbaConcorrentes] = useState<'nacional' | 'regional'>('nacional');
   const [target, setTarget] = useState<ConcorrenteData | null>(null);
@@ -290,16 +296,42 @@ export default function CompetitorWarRoom({
       } else {
         nome = item.empresa || item.nome || item.razao_social || "Empresa não identificada";
         vitorias = item.vitorias || item.quantidade_vitorias || "0";
-        cnpj = item.cnpj || item.cnpj_empresa || ""; 
+        cnpj = item.cnpj || item.cnpj_empresa || "";
         porte = item.porte || item.porte_empresa || "DEMAIS";
         municipio = item.municipio || item.cidade || item.municipio_empresa || "Não Informado";
       }
 
-      const cleanCnpj = cnpj ? String(cnpj).replace(/\D/g, '') : "";
+      // Extrair CNPJ (14 dígitos) embutido no nome quando o campo cnpj vem vazio do PNCP
+      let cleanCnpj = cnpj ? String(cnpj).replace(/\D/g, '') : "";
+      if (!cleanCnpj) {
+        const cnpjMatch = nome.match(/\b(\d{14})\b/);
+        if (cnpjMatch) {
+          cleanCnpj = cnpjMatch[1];
+          cnpj = cnpjMatch[1];
+          nome = nome.replace(cnpjMatch[0], '').replace(/\s{2,}/g, ' ').trim();
+        }
+      }
       const numVitorias = parseInt(String(vitorias).replace(/\D/g, ''), 10) || 0;
       const prob = `~${Math.min(95, 18 + (numVitorias * 7))}%`;
+      const ufEmpresa = item.uf || item.uf_empresa || "";
+      const ufDisputa = item.uf_disputa || item.uf_contrato || item.ufOrgao || item.orgao_uf || (tipo === 'regional' ? uf : "");
 
-      return { ...item, nome, cnpj, cleanCnpj, vitorias: numVitorias, prob, tipo, porte, municipio, uf: item.uf || uf, contratos: item.contratos || [], rawDataOriginal: item };
+      return {
+        ...item,
+        nome,
+        cnpj,
+        cleanCnpj,
+        vitorias: numVitorias,
+        prob,
+        tipo,
+        porte,
+        municipio,
+        uf: ufEmpresa || ufDisputa || uf,
+        uf_empresa: ufEmpresa,
+        uf_disputa: ufDisputa,
+        contratos: item.contratos || [],
+        rawDataOriginal: item
+      };
     });
   };
 
@@ -312,6 +344,48 @@ export default function CompetitorWarRoom({
       setAbaConcorrentes('regional');
     }
   }, [abaConcorrentes, listaNacional.length, listaRegional.length]);
+
+  const scrollToOperationTop = (behavior: ScrollBehavior = 'auto') => {
+    if (typeof window === 'undefined') return;
+    const element = operationRef.current || warRoomRef.current;
+    if (!element) return;
+
+    const offset = 96;
+    const absoluteTop = element.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, absoluteTop), behavior });
+
+    let parent = element.parentElement;
+    while (parent && parent !== document.body) {
+      const style = window.getComputedStyle(parent);
+      const canScroll = /(auto|scroll|overlay)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight;
+      if (canScroll) {
+        const parentTop = parent.getBoundingClientRect().top;
+        const targetTop = element.getBoundingClientRect().top - parentTop + parent.scrollTop - 16;
+        parent.scrollTo({ top: Math.max(0, targetTop), behavior });
+      }
+      parent = parent.parentElement;
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (view !== 'operation' || !target || !pendingOperationScrollRef.current) return;
+    scrollToOperationTop('auto');
+  }, [view, target]);
+
+  useEffect(() => {
+    if (view !== 'operation' || !target || !pendingOperationScrollRef.current) return;
+    const frame = requestAnimationFrame(() => scrollToOperationTop('auto'));
+    const timerShort = window.setTimeout(() => scrollToOperationTop('auto'), 80);
+    const timerLong = window.setTimeout(() => {
+      scrollToOperationTop('smooth');
+      pendingOperationScrollRef.current = false;
+    }, 240);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timerShort);
+      window.clearTimeout(timerLong);
+    };
+  }, [view, target]);
 
   // 🟢 A BALA DE PRATA: Baseline de preço a partir de referências explícitas no texto.
   // Usa APENAS preços encontrados via regex (mais confiáveis) e guarda
@@ -516,6 +590,126 @@ export default function CompetitorWarRoom({
       return menor;
   }, [menorRegional, menorRegionalMercado, ultimoVencidoAlvo]);
 
+  const formatarMoeda = (valor: number): string =>
+    valor > 0
+      ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+      : 'Indisponível';
+
+  const getNumeroVitorias = (valor: any): number =>
+    parseInt(String(valor ?? 0).replace(/\D/g, ''), 10) || 0;
+
+  const getUfDisputa = (concorrente: ConcorrenteData): string =>
+    String(concorrente.uf_disputa || concorrente.uf_contrato || concorrente.contratos?.[0]?.uf_disputa || concorrente.contratos?.[0]?.uf || '').toUpperCase();
+
+  const isConcorrenteRegional = (concorrente: ConcorrenteData): boolean =>
+    getUfDisputa(concorrente) === String(uf || '').toUpperCase() || concorrente.tipo === 'regional';
+
+  const getScoreConcorrente = (concorrente: ConcorrenteData): number => {
+    const probOrder: Record<string, number> = { Alta: 3, Média: 2, Media: 2, Baixa: 1 };
+    const forcaOrder: Record<string, number> = { Tubarão: 4, Agressivo: 3, Conservador: 2, Iniciante: 1 };
+    const vitorias = getNumeroVitorias(concorrente.vitorias);
+    const probabilidade = String(concorrente.probabilidade || concorrente.prob || 'Média');
+    const probPercent = Number(probabilidade.match(/(\d+)/)?.[1] || 0);
+    const scoreProbabilidade = probPercent > 0
+      ? probPercent >= 70 ? 3 : probPercent >= 40 ? 2 : 1
+      : probOrder[probabilidade.replace('é', 'e')] ?? 2;
+    const scoreForca = forcaOrder[String(concorrente.forca || '')] ?? 2;
+    const scoreRegional = isConcorrenteRegional(concorrente) ? 5 : 0;
+    return (scoreProbabilidade * 10) + scoreForca + Math.min(vitorias, 20) + scoreRegional;
+  };
+
+  const concorrentesRanqueadosAtivos = useMemo(() => (
+    [...listaAtiva]
+      .map(c => ({ ...c, threatScore: getScoreConcorrente(c) }))
+      .sort((a, b) => b.threatScore - a.threatScore)
+  ), [listaAtiva, uf]);
+
+  const concorrentesRanqueadosTodos = useMemo(() => (
+    [...listaNacional, ...listaRegional]
+      .map(c => ({ ...c, threatScore: getScoreConcorrente(c) }))
+      .sort((a, b) => b.threatScore - a.threatScore)
+  ), [listaNacional, listaRegional, uf]);
+
+  const desagioPrevisto = useMemo(() => {
+    const direto = Number(pricing?.desagioPreditivoOrgao);
+    if (direto > 0) return direto;
+    const texto = String(pricing?.estimated_discount || '').replace(',', '.');
+    const match = texto.match(/(\d+(?:\.\d+)?)/);
+    return match ? Number(match[1]) : 0;
+  }, [pricing]);
+
+  const vereditoCompetitivo = useMemo(() => {
+    const principal = concorrentesRanqueadosTodos[0] || null;
+    const threatPct = principal ? Math.min(100, Math.round((principal.threatScore / 60) * 100)) : 0;
+    const totalConcorrentes = concorrentesRanqueadosTodos.length;
+    const nivelRaw = String(pricing?.nivelAmeaca || '').toUpperCase();
+    const nivel =
+      nivelRaw.includes('ALTO') || threatPct >= 80 ? 'ALTA' :
+      nivelRaw.includes('MODERADO') || nivelRaw.includes('MEDIO') || threatPct >= 55 ? 'MODERADA' :
+      totalConcorrentes > 0 ? 'BAIXA' : 'INDEFINIDA';
+    const faixaMinDesagio = desagioPrevisto > 0 ? Math.max(0, desagioPrevisto - 4) : 0;
+    const faixaMaxDesagio = desagioPrevisto > 0 ? desagioPrevisto + 4 : 0;
+    const precoMin = valorEstimatedSeguro > 0 && faixaMaxDesagio > 0 ? valorEstimatedSeguro * (1 - faixaMaxDesagio / 100) : 0;
+    const precoMax = valorEstimatedSeguro > 0 && faixaMinDesagio > 0 ? valorEstimatedSeguro * (1 - faixaMinDesagio / 100) : 0;
+    const amostra = Number(pricing?.amostraPrecosUnitarios || pricing?.amostraPrecosUnitariosRegional || 0);
+    const fonte = String(pricing?.fonteConfiabilidade || '');
+    const confianca =
+      pricing?.usandoDefaultFallback ? 'Estimativa frágil' :
+      fonte === 'PNCP_HOMOLOGADO' && amostra >= 3 ? 'Alta' :
+      fonte && amostra > 0 ? 'Média' :
+      totalConcorrentes > 0 ? 'Parcial' : 'Baixa';
+
+    const estrategia =
+      nivel === 'ALTA'
+        ? 'Participar somente se o preço mínimo preservar margem e a habilitação estiver blindada.'
+        : nivel === 'MODERADA'
+          ? 'Entrar com preço disciplinado, revisar atestados e monitorar o concorrente principal.'
+          : nivel === 'BAIXA'
+            ? 'Disputa favorável, mas confirme preço de corte e exigências antes de consumir equipe.'
+            : 'Aguardar mais dados de mercado antes de tratar a disputa como previsível.';
+
+    const dadoFragil =
+      pricing?.usandoDefaultFallback
+        ? 'Sem histórico suficiente: o deságio usa premissa padrão e precisa ser validado.'
+        : amostra === 0
+          ? 'Sem amostra de preço unitário confiável para este objeto.'
+          : fonte !== 'PNCP_HOMOLOGADO'
+            ? 'A fonte de preço não é homologada no PNCP; use como orientação, não como certeza.'
+            : 'Amostra baseada em contratos oficiais, ainda sujeita à similaridade do objeto.';
+
+    return {
+      principal,
+      nivel,
+      threatPct,
+      totalConcorrentes,
+      faixaDesagio: desagioPrevisto > 0 ? `${faixaMinDesagio.toFixed(1)}% a ${faixaMaxDesagio.toFixed(1)}%` : 'Sem faixa segura',
+      faixaPreco: precoMin > 0 && precoMax > 0 ? `${formatarMoeda(precoMin)} a ${formatarMoeda(precoMax)}` : 'Depende do orçamento detalhado',
+      confianca,
+      estrategia,
+      dadoFragil,
+    };
+  }, [concorrentesRanqueadosTodos, desagioPrevisto, pricing, valorEstimatedSeguro]);
+
+  const explicarConcorrente = (concorrente: ConcorrenteData): string => {
+    const motivos: string[] = [];
+    const vitorias = getNumeroVitorias(concorrente.vitorias);
+    const ufDisputa = getUfDisputa(concorrente);
+    if (isConcorrenteRegional(concorrente)) motivos.push(`tem histórico na UF do edital${ufDisputa ? ` (${ufDisputa})` : ''}`);
+    if (vitorias > 0) motivos.push(`${vitorias} vitória${vitorias > 1 ? 's' : ''} recente${vitorias > 1 ? 's' : ''}`);
+    if (concorrente.forca) motivos.push(`perfil ${String(concorrente.forca).toLowerCase()}`);
+    if (concorrente.cnae) motivos.push('CNAE informado');
+    if (motivos.length === 0) return 'Há sinais competitivos, mas a base ainda não explica completamente a ameaça.';
+    return motivos.slice(0, 3).join(', ') + '.';
+  };
+
+  const recomendarAcaoConcorrente = (concorrente: ConcorrenteData, posicao: number): string => {
+    const regional = isConcorrenteRegional(concorrente);
+    if (posicao === 0 && regional) return 'Validar preço mínimo, atestados e vantagem regional antes da proposta.';
+    if (posicao === 0) return 'Simular margem contra o deságio provável e revisar habilitação.';
+    if (regional) return 'Monitorar participação local e preparar resposta de preço.';
+    return 'Usar como referência de preço e histórico, sem consumir esforço jurídico pesado.';
+  };
+
   const fetchSancoes = async (cnpjToFind: string) => {
     setSancoesStatus('loading');
     try {
@@ -592,6 +786,10 @@ export default function CompetitorWarRoom({
   };
 
   const handleLockTarget = (competitor: any) => {
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    pendingOperationScrollRef.current = true;
     setTarget(competitor);
     setView('operation');
     const cache = (fullResult?.war_room_cache || {}) as Record<string, AnaliseOfensivaData>;
@@ -618,7 +816,7 @@ export default function CompetitorWarRoom({
   };
 
   const handleOffensiveAttack = async () => {
-    if (!target?.cleanCnpj) { setError("O CNPJ do alvo é inválido para iniciar o ataque."); return; }
+    if (!target?.cleanCnpj) { setError("O CNPJ do concorrente é inválido para iniciar a análise."); return; }
     setIsAnalyzing(true); setOffensiveData(null); setError(null);
     const safeAnalysisId = analysisId || crypto.randomUUID();
 
@@ -646,7 +844,7 @@ export default function CompetitorWarRoom({
       });
       
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Falha na espionagem OSINT');
+      if (!response.ok) throw new Error(data.detail || 'Falha na análise competitiva');
       setOffensiveData(data); 
     } catch (err: any) { 
       setError(`O Backend rejeitou os dados: ${err.message}`); 
@@ -660,21 +858,83 @@ export default function CompetitorWarRoom({
   };
 
   return (
-    <div className="space-y-6 w-full" id="area-resultados">
+    <div ref={warRoomRef} className="space-y-6 w-full" id="area-resultados">
       
       {view === 'radar' && (
-        <div className="flex flex-col gap-6 animate-in fade-in duration-300">
+        <div ref={operationRef} className="flex flex-col gap-6 animate-in fade-in duration-300">
           
           <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm relative flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Target size={20} className="text-rose-500 md:hidden" />
-                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Selecione o seu Alvo</h2>
+                <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">Radar de Estratégia Competitiva</h2>
               </div>
-              <p className="text-slate-500 text-sm font-medium max-w-xl">Escolha uma ameaça no radar para iniciar as investigações e a engenharia reversa.</p>
+              <p className="text-slate-500 text-sm font-medium max-w-2xl">Entenda quem pode disputar com você, qual faixa de preço pressiona a margem e qual resposta reduz risco antes da proposta.</p>
             </div>
             <div className="hidden md:flex items-center justify-center w-14 h-14 bg-rose-50 border border-rose-100 rounded-2xl text-rose-500 shrink-0 shadow-inner">
               <Target size={28} />
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm overflow-hidden relative">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-amber-400" />
+            <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-6">
+              <div className="max-w-2xl">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${
+                    vereditoCompetitivo.nivel === 'ALTA'
+                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                      : vereditoCompetitivo.nivel === 'MODERADA'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : vereditoCompetitivo.nivel === 'BAIXA'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                  }`}>
+                    Ameaça {vereditoCompetitivo.nivel.toLowerCase()}
+                  </span>
+                  <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200">
+                    {vereditoCompetitivo.totalConcorrentes} concorrente{vereditoCompetitivo.totalConcorrentes === 1 ? '' : 's'} mapeado{vereditoCompetitivo.totalConcorrentes === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Veredito competitivo</p>
+                <h3 className="text-2xl md:text-3xl font-black text-slate-950 tracking-tight leading-tight">
+                  {vereditoCompetitivo.principal
+                    ? `${vereditoCompetitivo.principal.nome} é o rival que mais exige atenção.`
+                    : 'Ainda não há concorrente forte o suficiente para orientar a estratégia.'}
+                </h3>
+                <p className="mt-4 text-sm md:text-base font-medium text-slate-600 leading-relaxed">
+                  {vereditoCompetitivo.estrategia}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 w-full xl:w-[420px] shrink-0">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Risco do líder</p>
+                  <p className="text-2xl font-black text-slate-900">
+                    {vereditoCompetitivo.threatPct > 0 ? `${vereditoCompetitivo.threatPct}%` : '—'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Confiança</p>
+                  <p className="text-lg font-black text-slate-900">{vereditoCompetitivo.confianca}</p>
+                </div>
+                <div className="col-span-2 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500 mb-1">Faixa provável para disputar</p>
+                  <p className="text-sm font-black text-indigo-950">{vereditoCompetitivo.faixaPreco}</p>
+                  <p className="text-[10px] font-bold text-indigo-500 mt-1">Deságio estimado: {vereditoCompetitivo.faixaDesagio}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-slate-900 text-white p-5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300 mb-2">Estratégia recomendada</p>
+                <p className="text-sm font-semibold leading-relaxed text-slate-100">{vereditoCompetitivo.estrategia}</p>
+              </div>
+              <div className="rounded-2xl bg-amber-50 border border-amber-100 p-5">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600 mb-2">Dado que merece cautela</p>
+                <p className="text-sm font-semibold leading-relaxed text-amber-950">{vereditoCompetitivo.dadoFragil}</p>
+              </div>
             </div>
           </div>
 
@@ -839,7 +1099,10 @@ export default function CompetitorWarRoom({
           {(() => {
             const todas = [...listaNacional, ...listaRegional];
             const ufMap: Record<string, number> = {};
-            todas.forEach(c => { const u = c.uf || 'BR'; ufMap[u] = (ufMap[u] || 0) + 1; });
+            todas.forEach(c => {
+              const u = getUfDisputa(c) || c.uf || 'BR';
+              ufMap[u] = (ufMap[u] || 0) + 1;
+            });
             const ufEntries = Object.entries(ufMap).sort((a, b) => b[1] - a[1]);
             if (ufEntries.length < 2) return null;
             const maxVal = ufEntries[0][1];
@@ -878,35 +1141,45 @@ export default function CompetitorWarRoom({
 
             {/* ━━━ MATRIZ DE AMEAÇAS ━━━ */}
             {listaAtiva.length > 0 && (() => {
-              const probOrder: Record<string, number> = { Alta: 3, Média: 2, Media: 2, Baixa: 1 };
-              const forcaOrder: Record<string, number> = { Tubarão: 4, Agressivo: 3, Conservador: 2, Iniciante: 1 };
               const forcaIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={14} className="text-red-500" />, Agressivo: <Target size={14} className="text-orange-500" />, Conservador: <Shield size={14} className="text-blue-500" />, Iniciante: <Activity size={14} className="text-green-500" /> };
-              const ranked = [...listaAtiva]
-                .map(c => ({ ...c, threatScore: ((probOrder[c.probabilidade] ?? 2) * 10) + (forcaOrder[c.forca] ?? 2) + Math.min(c.vitorias, 20) }))
-                .sort((a, b) => b.threatScore - a.threatScore);
+              const ranked = concorrentesRanqueadosAtivos;
               const maxScore = ranked[0]?.threatScore || 1;
               return (
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
                     <Target size={14} className="text-slate-600" />
-                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Matriz de Ameaças — Ranqueado</span>
+                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Matriz de Ameaças — com resposta sugerida</span>
                   </div>
                   <div className="divide-y divide-slate-50">
                     {ranked.slice(0, 6).map((item, idx) => {
                       const threatPct = Math.round((item.threatScore / maxScore) * 100);
                       const isTop = idx === 0;
                       return (
-                        <div key={idx} className={`flex items-center gap-3 px-4 py-3 ${isTop ? 'bg-red-50' : 'bg-white'}`}>
+                        <div key={idx} className={`flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-4 ${isTop ? 'bg-red-50' : 'bg-white'}`}>
                           <span className={`text-xs font-black w-5 text-center shrink-0 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>#{idx + 1}</span>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-black text-slate-800 truncate">{item.nome}</p>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[9px] font-bold text-slate-400">{item.uf}</span>
+                              <span className="text-[9px] font-bold text-slate-400">
+                                {getUfDisputa(item) || item.uf}
+                              </span>
+                              {item.uf && getUfDisputa(item) && item.uf !== getUfDisputa(item) && (
+                                <>
+                                  <span className="text-[9px] font-bold text-slate-400">·</span>
+                                  <span className="text-[9px] font-bold text-slate-400">sede {item.uf}</span>
+                                </>
+                              )}
                               <span className="text-[9px] font-bold text-slate-400">·</span>
                               <span className="text-[9px] font-bold text-slate-400">{item.vitorias} vitórias</span>
                               {forcaIcon[item.forca] || <Bot size={14} className="text-slate-400" />}
                               {item.cnpj && <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>}
                             </div>
+                            <p className="text-[11px] font-semibold text-slate-600 leading-snug mt-2">
+                              <span className="font-black text-slate-800">Por que importa:</span> {explicarConcorrente(item)}
+                            </p>
+                            <p className="text-[11px] font-semibold text-indigo-700 leading-snug mt-1">
+                              <span className="font-black">Resposta sugerida:</span> {recomendarAcaoConcorrente(item, idx)}
+                            </p>
                           </div>
                           <div className="w-20 shrink-0">
                             <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -919,9 +1192,9 @@ export default function CompetitorWarRoom({
                               <Eye size={13} />
                               <span className="text-[8px] font-black uppercase tracking-widest leading-none">Dossiê</span>
                             </button>
-                            <button onClick={() => handleLockTarget(item)} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-rose-600 text-white transition-colors" title="Travar Alvo">
+                            <button onClick={() => handleLockTarget(item)} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-indigo-700 text-white transition-colors" title="Gerar estratégia competitiva">
                               <Crosshair size={13} />
-                              <span className="text-[8px] font-black uppercase tracking-widest leading-none">Atacar</span>
+                              <span className="text-[8px] font-black uppercase tracking-widest leading-none">Estratégia</span>
                             </button>
                           </div>
                         </div>
@@ -952,18 +1225,18 @@ export default function CompetitorWarRoom({
                   </a>
                 )}
             </div>
-            <button onClick={() => handleOpenDossie(target)} className="flex items-center gap-1.5 text-xs font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Eye size={14} /> Abrir Raio-X PNCP</button>
+            <button onClick={() => handleOpenDossie(target)} className="flex items-center gap-1.5 text-xs font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-xl hover:bg-indigo-600 hover:text-white transition-all"><Eye size={14} /> Abrir Dossiê PNCP</button>
           </div>
 
           <div className="bg-slate-900 rounded-[2rem] p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden">
             <div className="flex items-center gap-5 relative z-10">
               <div className="w-16 h-16 bg-slate-800 border border-slate-700 rounded-2xl flex items-center justify-center text-rose-500"><Target size={32} /></div>
               <div>
-                <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Alvo Travado</p>
+                <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Concorrente em análise</p>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight">{target.nome}</h2>
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
                   <span className="bg-slate-800 px-2 py-0.5 rounded">CNPJ: {target.cnpj || 'N/A'}</span>
-                  <span>{target.prob} de Ameaça</span>
+                  <span>{target.prob} de ameaça competitiva</span>
                 </div>
               </div>
             </div>
@@ -975,12 +1248,12 @@ export default function CompetitorWarRoom({
                 <CompliancePanel cnpj={target.cleanCnpj} companyName={target.nome} userTier={userTier} onUpgradeClick={() => {}} />
               </div>
               <div className="w-full md:w-1/3 bg-slate-50 rounded-xl border border-slate-200 p-5 shrink-0 flex flex-col justify-center">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5"><Scale size={14} /> Histórico de Sanções Federais</h4>
+                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5"><Scale size={14} /> Sanções federais CGU</h4>
                 {sancoesStatus === 'loading' && ( <div className="flex items-center gap-3 text-slate-500"><span className="animate-spin text-lg">⏳</span><span className="text-[10px] font-bold uppercase tracking-widest">Consultando...</span></div> )}
                 {sancoesStatus === 'clean' && (
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0"><ShieldCheck size={20} /></div>
-                    <div><p className="text-xs font-black text-emerald-700 uppercase">Ficha Limpa</p><p className="text-[10px] text-slate-500 font-medium">Nenhuma sanção ativa detectada.</p></div>
+                    <div><p className="text-xs font-black text-emerald-700 uppercase">Sem sanções encontradas</p><p className="text-[10px] text-slate-500 font-medium">Nada consta nas bases federais consultadas.</p></div>
                   </div>
                 )}
                 {sancoesStatus === 'dirty' && (
@@ -991,7 +1264,7 @@ export default function CompetitorWarRoom({
                 )}
                 {sancoesStatus === 'error' && (
                   <div className="flex flex-col gap-3">
-                    {getSancoesLink(target.cleanCnpj) && ( <a href={getSancoesLink(target.cleanCnpj)!} target="_blank" rel="noopener noreferrer" style={{ color: '#ffffff' }} className="w-full py-2.5 bg-slate-900 !text-white rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-1.5"><ExternalLink size={14} color="#ffffff" /> Consultar Portal</a> )}
+                    {getSancoesLink(target.cleanCnpj) && ( <a href={getSancoesLink(target.cleanCnpj)!} target="_blank" rel="noopener noreferrer" style={{ color: '#ffffff' }} className="w-full py-2.5 bg-slate-900 !text-white rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-1.5"><ExternalLink size={14} color="#ffffff" /> Consultar Portal CGU</a> )}
                   </div>
                 )}
               </div>
@@ -1025,10 +1298,10 @@ export default function CompetitorWarRoom({
             <div className="bg-slate-50 rounded-[2rem] border border-slate-200 p-6 md:p-8 shadow-sm flex flex-col h-max">
               <div className="mb-6 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest flex items-center gap-2"><Scale size={16} /> Varredura Jurídica OSINT</h3>
+                  <h3 className="text-xs font-black text-rose-500 uppercase tracking-widest flex items-center gap-2"><Scale size={16} /> Riscos de Habilitação</h3>
                   {offensiveData && <button onClick={handleClearHistory} className="text-[9px] font-black text-slate-400 hover:text-rose-500 uppercase tracking-widest px-2 py-1 bg-white border border-slate-200 rounded-md shadow-sm">Limpar Histórico</button>}
                 </div>
-                <p className="text-sm font-medium text-slate-500">Gere a peça de inabilitação com base no histórico de vitórias.</p>
+                <p className="text-sm font-medium text-slate-500">Identifique pontos de habilitação, sanções e argumentos técnicos para uma disputa defensável.</p>
               </div>
 
               {error && <div className="p-4 bg-rose-100 text-rose-800 border border-rose-200 rounded-xl text-xs font-bold mb-6 flex items-start gap-3"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><p>{error}</p></div>}
@@ -1037,7 +1310,7 @@ export default function CompetitorWarRoom({
                 <div className="flex-1 flex flex-col items-center justify-center py-10 border-2 border-dashed border-slate-300 rounded-[1.5rem] bg-white text-center px-6">
                   <FileSearch size={40} className="text-slate-300 mb-4" />
                   <button onClick={handleOffensiveAttack} disabled={isAnalyzing} className="w-full py-4 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-rose-600 flex items-center justify-center gap-2 shadow-lg disabled:opacity-50">
-                    {isAnalyzing ? <span className="animate-spin">⌛</span> : <Target size={16} className="text-rose-400" />} {isAnalyzing ? 'Processando OSINT...' : 'Lançar Ataque Jurídico'}
+                    {isAnalyzing ? <span className="animate-spin">⌛</span> : <Target size={16} className="text-rose-400" />} {isAnalyzing ? 'Processando análise...' : 'Gerar Estratégia Jurídica'}
                   </button>
                 </div>
               )}
@@ -1106,7 +1379,10 @@ export default function CompetitorWarRoom({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Vitórias Recentes</span><span className="text-sm font-black text-slate-900">{dossieTarget.vitorias}</span></div>
                 <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">CNPJ</span><span className="text-xs font-black text-slate-900">{dossieTarget.cnpj}</span></div>
-                <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">UF</span><span className="text-sm font-black text-slate-900">{dossieTarget.uf}</span></div>
+                <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">UF da disputa</span><span className="text-sm font-black text-slate-900">{getUfDisputa(dossieTarget) || 'Não informada'}</span></div>
+                {dossieTarget.uf && dossieTarget.uf !== getUfDisputa(dossieTarget) && (
+                  <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">UF da empresa</span><span className="text-sm font-black text-slate-900">{dossieTarget.uf}</span></div>
+                )}
                 <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Porte</span><span className="text-xs font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 mt-1 block w-max">{dossieTarget.porte}</span></div>
                 <div className="col-span-2 bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Município</span><span className="text-xs font-black text-slate-900 block truncate">{dossieTarget.municipio}</span></div>
                 <div className="col-span-3 bg-slate-50 border border-slate-100 p-3 rounded-xl"><span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">CNAE Principal</span><span className="text-xs font-black text-slate-900 block truncate">{dossieTarget.cnae || 'Não Informado'}</span></div>
@@ -1163,7 +1439,7 @@ export default function CompetitorWarRoom({
                           )}
                         </div>
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">
-                          <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Último Vencido (Alvo)</span>
+                          <span className="text-[8px] text-slate-400 uppercase font-bold block mb-1">Último Preço Vencido</span>
                           <span className="text-sm font-black text-amber-400">{ultimoVencidoAlvo > 0 ? ultimoVencidoAlvo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Oculto'}</span>
                         </div>
                         <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/50">

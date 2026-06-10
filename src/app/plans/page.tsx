@@ -4,7 +4,7 @@ import PricingSection from '../../components/PricingSection';
 
 export const metadata: Metadata = {
   title: 'Planos e Preços — Bawzi',
-  description: 'Escolha o plano Bawzi ideal para a sua empresa. De 5 análises gratuitas ao plano Elite com análise ilimitada, War Room de concorrentes e Capital de Giro.',
+  description: 'Escolha o plano Bawzi ideal para decidir melhor em licitações públicas. Teste grátis, Radar PNCP, análise Go/No-Go, CNAE, riscos e inteligência competitiva.',
 };
 
 export default function PlansPage() {
@@ -29,10 +29,10 @@ export default function PlansPage() {
           Planos e preços
         </p>
         <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 mb-4">
-          Escolha o seu nível
+          Escolha pelo ritmo da sua operação
         </h1>
         <p className="text-slate-500 font-medium text-lg">
-          Comece grátis com 5 análises. Sem cartão de crédito. Cancele quando quiser.
+          Comece grátis, valide com editais reais e escale quando sua equipe disputar em volume.
         </p>
       </div>
 
@@ -49,16 +49,16 @@ export default function PlansPage() {
               r: 'Sim. Cancele diretamente pelo painel de perfil, sem necessidade de contato com suporte.',
             },
             {
-              q: 'O que acontece com minhas análises se eu fazer downgrade?',
+              q: 'O que acontece com minhas análises se eu fizer downgrade?',
               r: 'Todo o seu histórico é mantido. Apenas novos limites do plano inferior passam a valer.',
             },
             {
               q: 'Posso ter mais de uma empresa no mesmo plano?',
-              r: 'Plano Pro suporta 2 empresas, Elite suporta 3. Cada empresa tem seu próprio CNPJ monitorado.',
+              r: 'Plano Profissional suporta 2 empresas. Avançado suporta 3. Cada empresa tem seu próprio CNPJ monitorado.',
             },
             {
-              q: 'A análise do PNCP é em tempo real?',
-              r: 'Sim. O Radar conecta diretamente na API pública do PNCP e retorna editais ativos no momento da busca.',
+              q: 'A Bawzi só busca editais no PNCP?',
+              r: 'Não. O Radar encontra oportunidades, mas o produto principal é a decisão: Go/No-Go, aderência ao CNAE, riscos, preço e próximos passos.',
             },
           ].map(({ q, r }) => (
             <div key={q} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">

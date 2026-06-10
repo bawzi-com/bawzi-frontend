@@ -12,6 +12,21 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
 
   const scoreColor = result.score >= 70 ? '#16a34a' : result.score >= 45 ? '#d97706' : '#dc2626';
   const scoreBg    = result.score >= 70 ? '#f0fdf4' : result.score >= 45 ? '#fffbeb' : '#fef2f2';
+  const decision = result.decisao;
+  const decisionVerdict = String(decision?.veredito || '').toUpperCase();
+  const decisionColor = decisionVerdict === 'GO'
+    ? '#16a34a'
+    : decisionVerdict === 'NO_GO'
+      ? '#dc2626'
+      : '#d97706';
+  const decisionBg = decisionVerdict === 'GO'
+    ? '#f0fdf4'
+    : decisionVerdict === 'NO_GO'
+      ? '#fef2f2'
+      : '#fffbeb';
+  const decisionLabel = decision?.rotulo || (
+    decisionVerdict === 'GO' ? 'Participar' : decisionVerdict === 'NO_GO' ? 'Não participar agora' : 'Participar somente após validações'
+  );
 
   const semaforoIcon = (status: string) =>
     status === 'ok' ? '✅' : status === 'alerta' ? '⚠️' : '❌';
@@ -86,6 +101,68 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     }).join('')}</ul>`;
   })();
 
+  const decisionHtml = (() => {
+    if (!decision?.veredito && !decision?.resumo_decisao && !decision?.decisao_executiva) return '';
+    return `
+      <div class="decision-card">
+        <div>
+          <span class="decision-pill">${esc(String(decision?.veredito || 'GO_CONDICIONADO').replace('_', ' '))}</span>
+          <h2>${esc(decisionLabel)}</h2>
+          <p>${esc(decision?.resumo_decisao || decision?.decisao_executiva || result.recommendation || '')}</p>
+        </div>
+        <div class="decision-metrics">
+          <div><strong>${result.score}/100</strong><span>Viabilidade</span></div>
+          <div><strong>${esc(decision?.confianca ?? '—')}%</strong><span>Confiança</span></div>
+        </div>
+      </div>
+    `;
+  })();
+
+  const evidenceHtml = (() => {
+    const evidencias = decision?.evidencias || [];
+    if (!evidencias.length) return '';
+    return evidencias.map((ev) => `
+      <div class="evidence">
+        <div class="evidence-head">
+          <strong>${esc(ev.titulo || 'Evidência')}</strong>
+          <span>${esc(ev.referencia || ev.fonte || ev.categoria || 'Fonte analisada')}</span>
+        </div>
+        ${ev.detalhe ? `<p>${esc(ev.detalhe)}</p>` : ''}
+        ${ev.trecho ? `<blockquote>"${esc(ev.trecho)}"</blockquote>` : ''}
+        ${ev.impacto ? `<p class="impact"><b>Impacto:</b> ${esc(ev.impacto)}</p>` : ''}
+        ${ev.fonte ? `<p class="source"><b>Fonte:</b> ${esc(ev.fonte)}</p>` : ''}
+      </div>
+    `).join('');
+  })();
+
+  const confidenceHtml = (() => {
+    const fatores = decision?.fatores_confianca || [];
+    if (!fatores.length) return '';
+    const rows = fatores.map((f) => `
+      <tr>
+        <td>${esc(f.criterio)}</td>
+        <td><span class="status ${esc(String(f.status || 'parcial'))}">${esc(f.status || 'parcial')}</span></td>
+        <td>${esc(f.detalhe || '')}</td>
+      </tr>
+    `).join('');
+    return `<table><thead><tr><th>Critério</th><th>Status</th><th>Detalhe</th></tr></thead><tbody>${rows}</tbody></table>`;
+  })();
+
+  const actionPlanHtml = (() => {
+    const acoes = decision?.proximas_acoes || [];
+    if (!acoes.length) return '';
+    const rows = acoes.map((acao, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${esc(acao.prazo || 'Hoje')}</td>
+        <td>${esc(acao.acao)}</td>
+        <td>${esc(acao.responsavel || 'Licitações')}</td>
+        <td>${esc(acao.resultado_esperado || '')}</td>
+      </tr>
+    `).join('');
+    return `<table><thead><tr><th>#</th><th>Prazo</th><th>Ação</th><th>Responsável</th><th>Resultado esperado</th></tr></thead><tbody>${rows}</tbody></table>`;
+  })();
+
   const pricingHtml = (() => {
     const p = result.pricing_intelligence;
     if (!p) return '';
@@ -106,7 +183,7 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Parecer Técnico-Jurídico — Bawzi Intelligence</title>
+  <title>Laudo de Decisão Bawzi — Bawzi Intelligence</title>
   <style>
     @page { size: A4; margin: 2cm 2.2cm; }
     * { box-sizing: border-box; }
@@ -122,6 +199,25 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     .score-info h2 { font-size: 15px; font-weight: 900; margin: 0 0 4px; color: #0f172a; }
     .score-info .class { display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; padding: 2px 10px; border-radius: 20px; background: ${scoreColor}; color: #fff; margin-bottom: 4px; }
     .score-info p { font-size: 10px; color: #475569; margin: 0; }
+    .decision-card { display: flex; justify-content: space-between; gap: 20px; border: 1px solid #e2e8f0; border-left: 5px solid ${decisionColor}; border-radius: 8px; padding: 14px 16px; background: ${decisionBg}; margin-bottom: 12px; }
+    .decision-card h2 { font-size: 17px; margin: 6px 0 6px; color: #0f172a; }
+    .decision-card p { margin: 0; text-align: left; }
+    .decision-pill { display: inline-block; font-size: 9px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #fff; background: ${decisionColor}; border-radius: 999px; padding: 2px 9px; }
+    .decision-metrics { display: flex; gap: 8px; min-width: 170px; }
+    .decision-metrics div { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; background: rgba(255,255,255,0.78); padding: 8px; text-align: center; }
+    .decision-metrics strong { display: block; font-size: 17px; color: ${decisionColor}; line-height: 1; }
+    .decision-metrics span { display: block; margin-top: 4px; font-size: 8px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+    .evidence { border: 1px solid #e2e8f0; border-radius: 7px; padding: 10px 12px; margin-bottom: 8px; page-break-inside: avoid; }
+    .evidence-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+    .evidence-head strong { font-size: 11px; color: #0f172a; }
+    .evidence-head span { font-size: 8px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+    blockquote { margin: 7px 0; border-left: 3px solid #94a3b8; background: #f8fafc; padding: 6px 9px; color: #334155; font-size: 10px; }
+    .impact, .source { font-size: 10px; color: #475569; margin: 4px 0 0; }
+    .status { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 8px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; background: #f1f5f9; color: #475569; }
+    .status.confirmado { background: #dcfce7; color: #166534; }
+    .status.parcial { background: #fef3c7; color: #92400e; }
+    .status.ausente { background: #f1f5f9; color: #475569; }
+    .status.risco { background: #fee2e2; color: #991b1b; }
     .section { margin-bottom: 18px; page-break-inside: avoid; }
     h3 { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin: 0 0 10px; }
     p  { font-size: 11px; text-align: justify; margin: 0 0 8px; white-space: pre-wrap; color: #1e293b; }
@@ -146,7 +242,7 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
   <div class="header">
     <div class="header-brand">
       <h1>Bawzi Intelligence</h1>
-      <p>Parecer Técnico-Jurídico Preliminar — Análise de Edital</p>
+      <p>Laudo de Decisão — Go / No-Go de Licitação</p>
     </div>
     <div class="header-meta">
       <strong>${new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}</strong>
@@ -154,7 +250,7 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     </div>
   </div>
   <div class="warning">
-    ⚠️ NOTA DE RESPONSABILIDADE: Este documento foi gerado por Inteligência Artificial para facilitar a triagem de editais. A revisão, validação e assinatura por um profissional habilitado é indispensável antes do uso oficial.
+    NOTA DE RESPONSABILIDADE: Este laudo foi gerado por Inteligência Artificial para apoiar decisão interna de participação. A revisão, validação e assinatura por profissional habilitado continua indispensável antes do uso oficial.
   </div>
   <div class="score-card">
     <div class="score-circle">${result.score}</div>
@@ -164,23 +260,29 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
       <p>${esc(result.recommendation || result.rationale || '')}</p>
     </div>
   </div>
-  ${section('1', 'Resumo Executivo', `<p>${esc(result.summary)}</p>`)}
-  ${semaforoHtml ? section('2', 'Semáforo de Viabilidade', semaforoHtml) : ''}
-  ${datasHtml ? section('3', 'Cronograma Crítico', datasHtml) : ''}
+  ${decisionHtml ? section('1', 'Veredito Executivo', decisionHtml) : ''}
+  ${evidenceHtml ? section('2', 'Evidências que Sustentam a Decisão', evidenceHtml) : ''}
+  ${confidenceHtml ? section('3', 'Base da Confiança', confidenceHtml) : ''}
+  ${decision?.lacunas?.length ? section('4', 'Lacunas e Pontos Não Confirmados', listHtml(decision.lacunas)) : ''}
+  ${decision?.o_que_mudaria_decisao?.length ? section('5', 'O que Mudaria a Decisão', listHtml(decision.o_que_mudaria_decisao)) : ''}
+  ${actionPlanHtml ? section('6', 'Cockpit de Execução', actionPlanHtml) : ''}
+  ${section('7', 'Resumo Executivo do Edital', `<p>${esc(result.summary)}</p>`)}
+  ${semaforoHtml ? section('8', 'Semáforo de Viabilidade', semaforoHtml) : ''}
+  ${datasHtml ? section('9', 'Cronograma Crítico', datasHtml) : ''}
   ${(result.vantagens?.length || result.desvantagens?.length) ? `
   <div class="two-col">
     ${result.vantagens?.length ? `<div class="col-box"><h4>✅ Pontos Favoráveis</h4>${listHtml(result.vantagens)}</div>` : ''}
     ${result.desvantagens?.length ? `<div class="col-box"><h4>❌ Pontos Desfavoráveis</h4>${listHtml(result.desvantagens)}</div>` : ''}
   </div>` : ''}
-  ${riscosHtml ? section('4', 'Matriz de Riscos', riscosHtml) : ''}
-  ${section('5', 'Fundamentação Legal e Parecer Especialista',
+  ${riscosHtml ? section('10', 'Matriz de Riscos', riscosHtml) : ''}
+  ${section('11', 'Fundamentação Legal e Parecer Especialista',
     `<p>${esc(result.parecer_especialista || result.rationale || 'Sem parecer detalhado disponível para esta análise.')}</p>`
   )}
-  ${result.exigencias_criticas?.length ? section('6', 'Exigências Críticas', listHtml(result.exigencias_criticas)) : ''}
-  ${result.documentos_necessarios?.length ? section('7', 'Documentos Necessários', listHtml(result.documentos_necessarios)) : ''}
-  ${checklistHtml ? section('8', 'Checklist de Participação', checklistHtml) : ''}
-  ${pricingHtml ? section('9', 'Inteligência de Preços', pricingHtml) : ''}
-  ${result.criterios_de_julgamento?.length ? section('10', 'Critérios de Julgamento', listHtml(result.criterios_de_julgamento)) : ''}
+  ${result.exigencias_criticas?.length ? section('12', 'Exigências Críticas', listHtml(result.exigencias_criticas)) : ''}
+  ${result.documentos_necessarios?.length ? section('13', 'Documentos Necessários', listHtml(result.documentos_necessarios)) : ''}
+  ${checklistHtml ? section('14', 'Checklist de Participação', checklistHtml) : ''}
+  ${pricingHtml ? section('15', 'Inteligência de Preços', pricingHtml) : ''}
+  ${result.criterios_de_julgamento?.length ? section('16', 'Critérios de Julgamento', listHtml(result.criterios_de_julgamento)) : ''}
   <div class="signature">
     <div class="sig-box">
       <div class="sig-line"></div>

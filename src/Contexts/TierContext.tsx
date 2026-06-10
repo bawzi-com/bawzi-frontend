@@ -52,8 +52,8 @@ export function TierProvider({ children }: { children: ReactNode }) {
           setTierLimits(novosLimites);
           setTierFileLimits(novosLimitesArquivo);
         }
-      } catch (err) {
-        console.error("Erro ao carregar tiers globais:", err);
+      } catch {
+        // Mantém os limites locais quando a API não está disponível.
       } finally {
         setIsLoading(false);
       }

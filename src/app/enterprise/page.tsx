@@ -126,7 +126,7 @@ export default function EnterpriseApiPage() {
           {/* Hero restrito */}
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-black uppercase tracking-widest mb-6">
-              <Lock size={12} /> Plano Dominador — Nível 4
+              <Lock size={12} /> Plano Avançado - Nível 4
             </div>
             <h1 className="text-5xl font-black tracking-tight mb-4">
               Bawzi API <span className="text-violet-400">Enterprise</span>
@@ -136,7 +136,7 @@ export default function EnterpriseApiPage() {
             </p>
             <div className="flex items-center justify-center gap-4 mt-8">
               <Link href="/plans" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-black px-6 py-3 rounded-xl transition-colors shadow-lg shadow-violet-500/20">
-                <Sparkles size={16} /> Fazer upgrade para Dominador
+                <Sparkles size={16} /> Fazer upgrade para Avançado
               </Link>
               <a href="mailto:enterprise@bawzi.com" className="inline-flex items-center gap-2 text-slate-400 hover:text-white font-bold text-sm transition-colors">
                 Falar com vendas <ArrowRight size={14} />
@@ -176,7 +176,7 @@ export default function EnterpriseApiPage() {
           </div>
 
           <p className="text-center text-xs text-slate-600">
-            Documentação interativa completa (Swagger UI) disponível exclusivamente para clientes Dominador.
+            Documentação interativa completa (Swagger UI) disponível exclusivamente para clientes Avançado.
           </p>
         </div>
       </div>

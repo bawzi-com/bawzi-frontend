@@ -871,7 +871,7 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
                     </span>
                   </div>
                   <p className="text-[12px] text-slate-500 leading-relaxed mb-4">
-                    Score de crédito real · Parecer de consultor IA · Probabilidade de aprovação por banco — desbloqueado no plano <strong className="text-slate-700">Dominador</strong>.
+                    Score de crédito real · Parecer de consultor IA · Probabilidade de aprovação por banco — desbloqueado no plano <strong className="text-slate-700">Avançado</strong>.
                   </p>
                   {/* Blocos fantasma dos cards de banco */}
                   <div className="space-y-2 mb-4 opacity-30 pointer-events-none select-none">

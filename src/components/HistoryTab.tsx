@@ -39,6 +39,7 @@ export default function HistoryTab({
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [shareTargetEmail, setShareTargetEmail] = useState('');
   const [isSharingSelected, setIsSharingSelected] = useState(false);
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [selectedAnalysis, setSelectedAnalysis] = useState<SavedAnalysis | null>(null);
 
@@ -183,6 +184,41 @@ export default function HistoryTab({
     if (!selectedAnalysis?.id) return;
     setShareTargetEmail('');
     setIsShareOpen(true);
+  };
+
+  const openAnalysisDetail = async (analysis: SavedAnalysis) => {
+    if (!analysis.id || loadingDetailId) return;
+    setLoadingDetailId(analysis.id);
+    try {
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}`, {
+        headers: { 'Authorization': `Bearer ${tokenLocal}` },
+      });
+
+      if (res.status === 401) {
+        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setNotice({ type: 'error', message: error?.detail || 'Erro ao abrir a análise completa.' });
+        return;
+      }
+
+      const data = await res.json();
+      const fullAnalysis = data.analysis || analysis;
+      setSelectedAnalysis(fullAnalysis);
+      setAnalyses((prev) => prev.map((item) => item.id === analysis.id ? { ...item, ...fullAnalysis } : item));
+      setDetailTab('analise');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setNotice({ type: 'error', message: 'Erro de conexão ao abrir a análise.' });
+    } finally {
+      setLoadingDetailId(null);
+    }
   };
 
   const confirmShareSelectedAnalysis = async () => {
@@ -446,6 +482,15 @@ export default function HistoryTab({
           modelSource={selectedAnalysis.model_source || selectedAnalysis.modelSource || 'Motor Bawzi IA'}
           isCachedResult={false}
           onUpgradeClick={() => setNotice({ type: 'info', message: 'Faça upgrade pelo painel de planos para desbloquear este recurso.' })}
+          onCockpitStatusChange={(status, updatedAnalysis) => {
+            const merged = {
+              ...selectedAnalysis,
+              ...(updatedAnalysis as unknown as SavedAnalysis | undefined),
+              cockpit_status: status,
+            };
+            setSelectedAnalysis(merged);
+            setAnalyses((prev) => prev.map((item) => item.id === selectedAnalysis.id ? { ...item, ...merged } : item));
+          }}
         />
       </div>
     );
@@ -647,6 +692,10 @@ export default function HistoryTab({
             const score = item.score || 0;
             const isFav = favorites.includes(item.id);
             const c = scoreColors(score);
+            const cockpitStatus = item.cockpit_status && typeof item.cockpit_status === 'object'
+              ? Object.values(item.cockpit_status as Record<string, { done?: boolean }>)
+              : [];
+            const cockpitDone = cockpitStatus.filter((state) => state?.done).length;
             const createdDate = isMounted && item.created_at
               ? new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
               : '...';
@@ -654,8 +703,10 @@ export default function HistoryTab({
             return (
               <div
                 key={item.id}
-                onClick={() => setSelectedAnalysis(item)}
-                className="group overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                onClick={() => openAnalysisDetail(item)}
+                className={`group overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md ${
+                  loadingDetailId === item.id ? 'pointer-events-none opacity-70' : ''
+                }`}
               >
                 <div className={`h-1.5 ${c.bar}`} />
                 <div className="grid gap-4 p-4 md:grid-cols-[112px_minmax(0,1fr)_auto] md:items-center md:p-5">
@@ -678,6 +729,11 @@ export default function HistoryTab({
                       {item.model_source && (
                         <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-600">
                           {item.model_source}
+                        </span>
+                      )}
+                      {cockpitStatus.length > 0 && (
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                          Cockpit {cockpitDone}/{cockpitStatus.length}
                         </span>
                       )}
                     </div>
@@ -713,7 +769,7 @@ export default function HistoryTab({
                       type="button"
                       className="inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
                     >
-                      Abrir
+                      {loadingDetailId === item.id ? 'Abrindo...' : 'Abrir'}
                       <ArrowRight size={14} />
                     </button>
                   </div>

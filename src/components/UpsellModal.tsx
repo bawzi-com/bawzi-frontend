@@ -29,7 +29,7 @@ export default function UpsellModal({
   // Benefícios padrão focados no Tier 3 (O Carro-Chefe da Bawzi)
   const defaultFeatures = [
     { title: "Análises Ilimitadas", desc: "Sem travas de quantidade por mês. Analise tudo." },
-    { title: "Motores de Elite", desc: "Acesso total ao GPT-4o e Claude 3.5 Sonnet." },
+    { title: "Motores avançados", desc: "Acesso total ao GPT-4o e Claude 3.5 Sonnet." },
     { title: "Mapeamento de Riscos", desc: "Identificação de pegadinhas e roteiros de impugnação." }
   ];
 

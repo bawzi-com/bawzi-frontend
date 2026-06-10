@@ -48,10 +48,13 @@ export default function ReverseEngineeringBlock({
   const margemSetor = engenhariaData?.margem_media_setor_pct || 20;
   const setorNome = engenhariaData?.setor_identificado || 'Item da Licitação';
 
-  // 🟢 HEURÍSTICA DE LINGUAGEM: Identifica se é Engenharia/Serviço para remover o termo "Embalagem"
-  const isServico = /reforma|engenharia|obra|serviço|construção|repar|locaç/i.test(setorNome);
-  const termoUnidade = isServico ? 'por unidade de medição' : 'por unidade/embalagem';
-  const termoPainel = isServico ? 'ANÁLISE DE VIABILIDADE DA DISPUTA' : 'ANÁLISE DE VIABILIDADE POR EMBALAGEM';
+  const isServico = /reforma|engenharia|obra|servi[çc]o|constru[çc][ãa]o|repar|loca[çc]|manuten[çc][ãa]o/i.test(setorNome);
+  const isSoftwareOuLicenca = /licen[çc]a|software|sistema|windows|cloud|saas|assinatura|suporte|ti\b|tecnologia/i.test(setorNome);
+  const termoUnidade = isServico
+    ? 'por unidade de entrega/medição'
+    : isSoftwareOuLicenca
+      ? 'por licença/item'
+      : 'por unidade/item';
 
   if (isLocked) {
     return (
@@ -94,13 +97,13 @@ export default function ReverseEngineeringBlock({
           <ShoppingBag size={14} className="text-indigo-500" /> Dimensão do Lote Detectada
         </span>
         <span className="text-xs font-black text-slate-800 bg-white border border-slate-200 px-3 py-1 rounded-lg">
-          Volume Estimado: {qtdSegura.toLocaleString('pt-BR')} unidades
+          Volume estimado: {qtdSegura.toLocaleString('pt-BR')} {qtdSegura === 1 ? 'unidade' : 'unidades'}
         </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 relative overflow-hidden">
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">1. Teto de Referência Unitário</span>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">1. Teto unitário do edital</span>
           <h4 className="text-xl font-black text-slate-800 tracking-tight">{formatMoeda(tetoUnitario)}</h4>
           <p className="text-[9px] font-bold text-slate-400 mt-1">Global: {formatMoeda(valorReferencia)}</p>
           <p className="text-[10px] font-bold text-slate-500 mt-3 flex items-center gap-1.5 border-t border-slate-200/60 pt-2 truncate">
@@ -109,14 +112,14 @@ export default function ReverseEngineeringBlock({
         </div>
 
         <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-5 relative overflow-hidden">
-          <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">2. Projeção de Lance Unitário</span>
+          <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">2. Preço provável para competir</span>
           <h4 className="text-xl font-black text-indigo-700 tracking-tight">{formatMoeda(precoPraticadoUnitario)}</h4>
           <p className="text-[9px] font-bold text-indigo-400 mt-1">Global: {formatMoeda(precoPraticadoGlobal)}</p>
           <div className="flex items-center gap-2 mt-3 border-t border-indigo-100/60 pt-2">
             <span className="bg-white text-indigo-600 border border-indigo-200 text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-1">
               <TrendingDown size={10} /> {desagio.toFixed(1)}%
             </span>
-            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Deságio de Mercado</span>
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">Deságio estimado</span>
           </div>
         </div>
       </div>
@@ -125,16 +128,16 @@ export default function ReverseEngineeringBlock({
         <div className="absolute -right-10 -top-10 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl"></div>
         <div className="flex items-center gap-2 mb-3 relative z-10">
           <div className="w-6 h-6 rounded flex items-center justify-center bg-amber-500/20 text-amber-400"><TrendingDown size={14} /></div>
-          <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-widest">{termoPainel}</h4>
+          <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Estratégia de preço para competir</h4>
         </div>
         
         <p className="text-sm text-slate-300 font-medium leading-relaxed relative z-10">
-          Para que um concorrente sustente o lance projetado de <strong>{formatMoeda(precoPraticadoUnitario)}</strong> mantendo a margem líquida estimada de <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded">{margemSetor}%</strong>, o custo real dele de execução/aquisição {termoUnidade} deve ser de no máximo <strong className="text-amber-400 text-base">{formatMoeda(custoRealUnitario)}</strong>.
+          Para disputar contra esse padrão de preço, sua proposta precisa suportar algo próximo de <strong>{formatMoeda(precoPraticadoUnitario)}</strong> {termoUnidade}. Mantendo margem líquida estimada de <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded">{margemSetor}%</strong>, o custo máximo recomendado fica em <strong className="text-amber-400 text-base">{formatMoeda(custoRealUnitario)}</strong> {termoUnidade}.
         </p>
         
         <div className="mt-4 pt-4 border-t border-slate-800 relative z-10">
           <p className="text-xs text-slate-400 font-bold">
-            <strong className="text-white">Cenário Operacional:</strong> Se o seu custo de execução (insumos + frete + mão de obra) para este item for menor do que <span className="text-amber-400">{formatMoeda(custoRealUnitario)}</span>, você consegue cobrir a concorrência com lucro saudável garantido.
+            <strong className="text-white">Leitura para sua decisão:</strong> se o seu custo direto para este item ficar abaixo de <span className="text-amber-400">{formatMoeda(custoRealUnitario)}</span>, a disputa tende a preservar margem. Acima desse ponto, vale revisar preço, escopo ou decidir não entrar.
           </p>
         </div>
       </div>

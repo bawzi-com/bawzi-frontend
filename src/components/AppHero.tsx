@@ -39,9 +39,9 @@ export default function AppHero({
     const displayName = userData.name || userData.nome || 'Estrategista';
     const firstName = displayName.split(' ')[0] || 'Estrategista';
     const tierLabel = currentTier >= 4
-      ? 'Dominador'
+      ? 'Avançado'
       : currentTier >= 3
-        ? 'Especialista'
+        ? 'Profissional'
         : currentTier >= 2
           ? 'Essencial'
           : 'Gratuito';
@@ -312,17 +312,17 @@ export default function AppHero({
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Orquestração multiagente</span>
+            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Modelos líderes em orquestração</span>
           </div>
 
           <h2 className="text-4xl md:text-5xl lg:text-5xl font-black text-slate-900 leading-[1.1] mb-5 tracking-tight">
-            Inteligência para ler editais <br />
+            As maiores IAs trabalhando juntas <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 to-sky-600">
-              e decidir com clareza.
+              para decidir se vale disputar.
             </span>
           </h2>
           <p className="text-slate-500 text-base md:text-lg leading-relaxed font-medium mb-8 max-w-md">
-            A Bawzi organiza riscos jurídicos, viabilidade financeira, sinais de concorrência e próximos passos para você entrar nas oportunidades certas.
+            A Bawzi combina modelos líderes de IA com regras de licitação, PNCP, CNAE, risco jurídico, preço, mercado e compliance para entregar um veredito defensável: participar, condicionar ou não participar.
           </p>
         </div>
 
@@ -346,11 +346,11 @@ export default function AppHero({
           </svg>
 
           {[
-            { top: '0%',  color: 'emerald', Icon: Scale,     label: 'Agente Jurídico',    model: 'Claude 3.5 Sonnet', delay: '' },
-            { top: '26%', color: 'sky',     Icon: ScanSearch, label: 'Agente Auditor',     model: 'OpenAI o3-mini',    delay: '0.2s' },
-            { top: '52%', color: 'emerald', Icon: Banknote,  label: 'Agente Financeiro',  model: 'GPT-4o Omni',       delay: '0.5s' },
-            { top: '78%', color: 'amber',   Icon: Shield,    label: 'Agente Compliance',  model: 'Llama 3 (Local)',   delay: '1s' },
-          ].map(({ top, color, Icon, label, model, delay }) => (
+            { top: '0%',  color: 'emerald', Icon: Scale,     label: 'Jurídico',    signal: 'Cláusulas e impugnação', delay: '' },
+            { top: '26%', color: 'sky',     Icon: ScanSearch, label: 'Auditoria',   signal: 'Evidências e lacunas',   delay: '0.2s' },
+            { top: '52%', color: 'emerald', Icon: Banknote,  label: 'Financeiro',  signal: 'Margem e deságio',       delay: '0.5s' },
+            { top: '78%', color: 'amber',   Icon: Shield,    label: 'Compliance',  signal: 'Habilitação e CNAE',     delay: '1s' },
+          ].map(({ top, color, Icon, label, signal, delay }) => (
             <div
               key={label}
               className="absolute right-0 flex items-center gap-3 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm z-20"
@@ -361,68 +361,98 @@ export default function AppHero({
               </div>
               <div>
                 <span className={`block text-[9px] font-black text-${color}-500 uppercase tracking-widest leading-none mb-1`}>{label}</span>
-                <span className="block text-xs font-bold text-slate-700 leading-none">{model}</span>
+                <span className="block text-xs font-bold text-slate-700 leading-none">{signal}</span>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Right column — marketing proof cards (anonymous view) */}
-      <div className="xl:w-1/3 flex flex-col gap-3">
-        <div className="flex-1 bg-white rounded-3xl p-4 md:p-5 border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 relative overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="relative w-[65px] h-[65px] shrink-0">
-            <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-              <path className="text-slate-100" strokeWidth="3" stroke="currentColor" fill="none" strokeLinecap="round" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-              <path className="text-emerald-500 drop-shadow-[0_2px_4px_rgba(16,185,129,0.3)]" strokeDasharray="98, 100" strokeWidth="3" strokeLinecap="round" fill="none" stroke="currentColor" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" style={{ animation: "draw-arc 1.5s ease-out forwards" }} />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-black text-slate-900 tracking-tighter">98</span>
-            </div>
-          </div>
-          <div>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1">Score Consolidado</p>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 text-[9px] font-bold rounded border border-emerald-100 uppercase mb-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Pronto para Assinar
-            </span>
-          </div>
-        </div>
+      {/* Right column — executive decision brief (anonymous view) */}
+      <div className="xl:w-1/3">
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)]">
+          <div className="h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-amber-400" />
 
-        {[
-          {
-            bg: 'bg-amber-50/50', border: 'border-amber-100', bar: 'bg-amber-400', hover: 'hover:bg-amber-50',
-            Icon: ScanSearch, iconColor: 'text-amber-600', titleColor: 'text-amber-800', badgeBg: 'bg-amber-100', badgeText: 'text-amber-700', badgeBorder: 'border-amber-200',
-            title: 'Armadilha legal detectada', badge: 'Agente Auditor',
-            body: (<>Exigência do Item 9.2 em conflito com o Art. 14 (14.133/21). Risco de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">direcionamento de edital</span>.</>),
-          },
-          {
-            bg: 'bg-sky-50/50', border: 'border-sky-100', bar: 'bg-sky-400', hover: 'hover:bg-sky-50',
-            Icon: Lightbulb, iconColor: 'text-sky-600', titleColor: 'text-sky-800', badgeBg: 'bg-sky-100', badgeText: 'text-sky-700', badgeBorder: 'border-sky-200',
-            title: 'Oportunidade (Alpha)', badge: 'Agente Financeiro',
-            body: (<>A cláusula de reajuste omite o índice base. Indexar ao <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">IPCA</span> blindará a sua margem.</>),
-          },
-          {
-            bg: 'bg-rose-50/50', border: 'border-rose-100', bar: 'bg-rose-400', hover: 'hover:bg-rose-50',
-            Icon: () => <span className="text-rose-600 text-sm font-black">!</span>, iconColor: '', titleColor: 'text-rose-800', badgeBg: 'bg-rose-100', badgeText: 'text-rose-700', badgeBorder: 'border-rose-200',
-            title: 'Risco Contratual Oculto', badge: 'Agente Jurídico',
-            body: (<>Multa rescisória unilateral de <span className="inline-block bg-white text-slate-900 px-1 py-0 rounded text-[10px] font-bold border border-slate-200 shadow-sm">30%</span> (Item 7.4). Defesa técnica já anexada.</>),
-          },
-        ].map(({ bg, border, bar, hover, Icon, iconColor, titleColor, badgeBg, badgeText, badgeBorder, title, badge, body }) => (
-          <div key={title} className={`flex-1 ${bg} rounded-3xl p-4 border ${border} flex flex-col justify-center relative overflow-hidden group ${hover} transition-colors cursor-default`}>
-            <div className={`absolute left-0 top-0 w-1.5 h-full ${bar}`}></div>
-            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2">
-              <div className="flex items-center gap-1.5">
-                <Icon size={14} className={iconColor} />
-                <h5 className={`${titleColor} font-black text-[9px] uppercase tracking-widest`}>{title}</h5>
-              </div>
-              <span className={`text-[7px] ${badgeBg} ${badgeText} px-1.5 py-0.5 rounded uppercase font-black tracking-widest border ${badgeBorder} inline-flex items-center gap-0.5`}>
-                {badge}
+          <div className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-white">
+                <Sparkles size={11} className="text-emerald-300" />
+                Laudo multiagente
+              </span>
+              <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-amber-700 ring-1 ring-amber-200">
+                Go condicionado
               </span>
             </div>
-            <p className="text-slate-600 text-xs leading-relaxed font-medium">{body}</p>
+
+            <h3 className="mt-4 text-xl font-black leading-tight tracking-tight text-slate-950">
+              Entrar só depois de sanar 3 pontos críticos.
+            </h3>
+            <p className="mt-2 text-sm font-medium leading-relaxed text-slate-500">
+              Quatro agentes cruzam edital, PNCP, preço, jurídico e compliance para entregar uma decisão defensável.
+            </p>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-end justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Confiança da decisão</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">Base documental + sinais de mercado</p>
+                </div>
+                <p className="text-3xl font-black leading-none text-emerald-700">98%</p>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full w-[98%] rounded-full bg-gradient-to-r from-emerald-500 to-sky-500" />
+              </div>
+            </div>
           </div>
-        ))}
+
+          <div className="divide-y divide-slate-100 border-t border-slate-100">
+            {[
+              {
+                Icon: ScanSearch,
+                tone: 'text-amber-700 bg-amber-50 ring-amber-100',
+                badge: 'Auditoria',
+                title: 'Risco jurídico',
+                body: 'Item 9.2 exige condição potencialmente restritiva.',
+                action: 'Validar impugnação antes da proposta',
+              },
+              {
+                Icon: Banknote,
+                tone: 'text-sky-700 bg-sky-50 ring-sky-100',
+                badge: 'Financeiro',
+                title: 'Condição financeira',
+                body: 'Reajuste sem índice-base claro no edital.',
+                action: 'Simular margem e pedir esclarecimento',
+              },
+              {
+                Icon: Scale,
+                tone: 'text-rose-700 bg-rose-50 ring-rose-100',
+                badge: 'Jurídico',
+                title: 'Risco contratual',
+                body: 'Multa rescisória unilateral elevada no Item 7.4.',
+                action: 'Revisão jurídica antes do envio',
+              },
+            ].map(({ Icon, tone, badge, title, body, action }) => (
+              <div key={title} className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 px-5 py-4 transition-colors hover:bg-slate-50/70">
+                <div className={`flex h-9 w-9 items-center justify-center rounded-2xl ring-1 ${tone}`}>
+                  <Icon size={16} />
+                </div>
+                <div className="min-w-0">
+                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">{badge}</span>
+                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Ação sugerida</span>
+                  </div>
+                  <h5 className="text-sm font-black leading-tight text-slate-950">{title}</h5>
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{body}</p>
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] font-black uppercase leading-snug tracking-wide text-emerald-700">
+                    <CheckCircle2 size={13} className="mt-0.5 shrink-0" />
+                    {action}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );

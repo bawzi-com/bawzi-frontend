@@ -10,9 +10,9 @@ const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY 
 
 // Classes completas são necessárias para o Tailwind JIT não purgá-las
 const PLAN_INFO: Record<number, { name: string; price: string; headerClass: string }> = {
-  2: { name: 'Essencial', price: 'R$ 97/mês',  headerClass: 'bg-gradient-to-r from-sky-500 to-indigo-500' },
-  3: { name: 'Pro',       price: 'R$ 197/mês', headerClass: 'bg-gradient-to-r from-emerald-500 to-teal-500' },
-  4: { name: 'Elite',     price: 'R$ 397/mês', headerClass: 'bg-gradient-to-r from-amber-500 to-orange-500' },
+  2: { name: 'Essencial',     price: 'R$ 79/mês',  headerClass: 'bg-gradient-to-r from-sky-500 to-indigo-500' },
+  3: { name: 'Profissional',  price: 'R$ 197/mês', headerClass: 'bg-gradient-to-r from-emerald-500 to-teal-500' },
+  4: { name: 'Avançado',      price: 'R$ 497/mês', headerClass: 'bg-gradient-to-r from-amber-500 to-orange-500' },
 };
 
 interface UpgradeModalProps {

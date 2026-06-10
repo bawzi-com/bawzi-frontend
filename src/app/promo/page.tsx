@@ -101,7 +101,7 @@ function PromoActivateContent() {
               {dias} dias de acesso completo!
             </h1>
             <p className="text-slate-400 text-sm leading-relaxed mb-6">
-              Todos os recursos do plano <strong className="text-violet-400">Dominador</strong> estão
+              Todos os recursos do plano <strong className="text-violet-400">Avançado</strong> estão
               disponíveis agora. Aproveite ao máximo!
             </p>
             <div className="space-y-2 text-left mb-7">

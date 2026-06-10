@@ -7,8 +7,9 @@
  * técnico-jurídico, checklist e exportação PDF.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
+import { API_URL } from '@/lib/apiClient';
 import {
   ScanSearch, Radar, Printer, Mail, Zap, Target,
   Gauge, Settings2, Banknote, Scale, FolderOpen,
@@ -17,7 +18,13 @@ import {
   Lock, Crown, AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
 } from 'lucide-react';
-import type { AnalysisResult, DecisionData, DecisionVerdict } from './analysis-types';
+import type {
+  AnalysisResult,
+  DecisionConfidenceFactor,
+  DecisionData,
+  DecisionEvidence,
+  DecisionVerdict,
+} from './analysis-types';
 import { getScoreColor, getScoreBg } from './analysis-types';
 import TacticalSimulator from './TacticalSimulator';
 import PremiumLock from './PremiumLock';
@@ -40,6 +47,7 @@ interface AnalysisResultsProps {
   modelSource: string | null;
   isCachedResult: boolean;
   onUpgradeClick: () => void;
+  onCockpitStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
   /** Abre a aba Capital com o valor do edital pré-preenchido */
   onGoToCapital?: (valor: number) => void;
 }
@@ -61,6 +69,7 @@ export default function AnalysisResults({
   modelSource,
   isCachedResult,
   onUpgradeClick,
+  onCockpitStatusChange,
   onGoToCapital,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
@@ -225,6 +234,13 @@ export default function AnalysisResults({
             result={result}
           />
 
+          <DecisionCockpit
+            result={result}
+            analysisId={analysisId}
+            token={token}
+            onStatusChange={onCockpitStatusChange}
+          />
+
         {/* TABS */}
         <div className="flex flex-wrap gap-3 mb-8 border-b border-slate-200 pb-4 print:hidden">
           <button
@@ -315,6 +331,13 @@ function DecisionSnapshot({
   const reasons = filterCoveredDecisionItems(rawReasons, businessFit, 'reasons');
   const conditions = filterCoveredDecisionItems(rawConditions, businessFit, 'conditions');
   const blockers = filterCoveredDecisionItems(rawBlockers, businessFit, 'blockers');
+  const changeTriggers = decision.o_que_mudaria_decisao.length
+    ? decision.o_que_mudaria_decisao
+    : conditions;
+  const evidenceItems = decision.evidencias.slice(0, 4);
+  const gapItems = decision.lacunas.length
+    ? decision.lacunas
+    : ['Nenhuma lacuna crítica foi identificada na base usada para este veredito.'];
   const decisionColumns = [
     {
       label: 'Motivos',
@@ -323,9 +346,9 @@ function DecisionSnapshot({
       tone: 'text-slate-500',
     },
     {
-      label: 'Condições',
+      label: 'Mudaria a decisão',
       Icon: CircleHelp,
-      items: conditions.slice(0, 3),
+      items: changeTriggers.slice(0, 3),
       tone: 'text-amber-500',
     },
     {
@@ -364,7 +387,7 @@ function DecisionSnapshot({
           </div>
 
           <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese do veredito</p>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">{summaryText}</p>
           </div>
 
@@ -401,6 +424,50 @@ function DecisionSnapshot({
             </div>
           )}
 
+          {evidenceItems.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
+              <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <Shield size={14} className={verdict.text} />
+                Por que a decisão é segura
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                {evidenceItems.map((evidence, index) => (
+                  <div key={`${evidence.titulo}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                        {evidence.categoria || 'Evidência'}
+                      </span>
+                      {(evidence.referencia || evidence.fonte) && (
+                        <span className="inline-block max-w-[14rem] truncate rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400 ring-1 ring-slate-200 md:max-w-[18rem]">
+                          {evidence.referencia || evidence.fonte}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-sm font-black leading-snug text-slate-900">{evidence.titulo}</p>
+                    {evidence.detalhe && (
+                      <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-600">{evidence.detalhe}</p>
+                    )}
+                    {evidence.trecho && (
+                      <blockquote className="mt-3 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
+                        "{evidence.trecho}"
+                      </blockquote>
+                    )}
+                    {evidence.impacto && (
+                      <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-bold leading-relaxed text-slate-500">
+                        Impacto: {evidence.impacto}
+                      </p>
+                    )}
+                    {evidence.fonte && evidence.fonte !== evidence.referencia && (
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Fonte: {evidence.fonte}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
             <div className="grid divide-y divide-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0">
               {decisionColumns.map(({ label, Icon: ColumnIcon, items, tone }) => (
@@ -421,6 +488,21 @@ function DecisionSnapshot({
               ))}
             </div>
           </div>
+
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <SearchX size={14} className={gapItems.length && decision.lacunas.length ? 'text-amber-500' : 'text-emerald-600'} />
+              Lacunas da análise
+            </p>
+            <div className="grid gap-2 md:grid-cols-2">
+              {gapItems.slice(0, 4).map((item, index) => (
+                <div key={`${item}-${index}`} className="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
+                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${decision.lacunas.length ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <p className="text-xs font-semibold leading-relaxed text-slate-600">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0 lg:p-6">
@@ -432,15 +514,15 @@ function DecisionSnapshot({
             <div className="space-y-4">
               <DecisionMetric
                 label="Viabilidade"
-                helper="Bawzi Score"
+                helper="Atratividade da oportunidade para a empresa"
                 value={`${result.score}/100`}
                 percent={result.score}
                 barClass={verdict.bar}
                 valueClass={verdict.text}
               />
               <DecisionMetric
-                label="Confiança na decisão"
-                helper="Segurança do veredito"
+                label="Confiança"
+                helper="Qualidade da base usada para sustentar o veredito"
                 value={`${decision.confianca}%`}
                 percent={decision.confianca}
                 barClass={verdict.bar}
@@ -448,6 +530,33 @@ function DecisionSnapshot({
               />
             </div>
           </div>
+
+          {decision.fatores_confianca.length > 0 && (
+            <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+              <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <FileText size={14} className="text-slate-400" />
+                Base da confiança
+              </p>
+              <div className="space-y-2">
+                {decision.fatores_confianca.slice(0, 5).map((factor, index) => {
+                  const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
+                  return (
+                    <div key={`${factor.criterio}-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="min-w-0 text-xs font-black leading-snug text-slate-800">{factor.criterio}</p>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${status.pill}`}>
+                          {status.label}
+                        </span>
+                      </div>
+                      {factor.detalhe && (
+                        <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">{factor.detalhe}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <p className="mb-5 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
             <ClipboardList size={14} className="text-slate-400" />
@@ -478,6 +587,232 @@ function DecisionSnapshot({
   );
 }
 
+type DecisionCockpitTask = {
+  id: string;
+  prazo: string;
+  acao: string;
+  responsavel: string;
+  resultado_esperado: string;
+  origem: string;
+  prioridade: 'Alta' | 'Média' | 'Normal';
+};
+
+function DecisionCockpit({
+  result,
+  analysisId,
+  token,
+  onStatusChange,
+}: {
+  result: AnalysisResult;
+  analysisId: string | null;
+  token: string | null;
+  onStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
+}) {
+  const decision = normalizeDecision(result);
+  const verdict = decisionUi[decision.veredito];
+  const tasks = useMemo(() => buildDecisionCockpitTasks(decision, result), [decision, result]);
+  const [statusMap, setStatusMap] = useState<NonNullable<AnalysisResult['cockpit_status']>>(() => normalizeCockpitStatus(result.cockpit_status));
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    setStatusMap(normalizeCockpitStatus(result.cockpit_status));
+  }, [result.cockpit_status, analysisId]);
+
+  if (!tasks.length) return null;
+
+  const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
+  const progress = Math.round((completed / tasks.length) * 100);
+
+  const persistStatus = async (nextStatus: NonNullable<AnalysisResult['cockpit_status']>) => {
+    onStatusChange?.(nextStatus);
+    if (!analysisId || !token) return;
+
+    setSaveState('saving');
+    try {
+      const res = await fetch(`${API_URL}/api/analyses/${analysisId}/cockpit`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tasks: nextStatus }),
+      });
+
+      if (!res.ok) throw new Error('Falha ao salvar cockpit');
+      const data = await res.json().catch(() => null);
+      if (data?.analysis) onStatusChange?.(nextStatus, data.analysis);
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 1800);
+    } catch {
+      setSaveState('error');
+    }
+  };
+
+  const toggleTask = (taskId: string, checked: boolean) => {
+    const nextStatus = {
+      ...statusMap,
+      [taskId]: {
+        done: checked,
+        updated_at: new Date().toISOString(),
+      },
+    };
+    setStatusMap(nextStatus);
+    void persistStatus(nextStatus);
+  };
+
+  return (
+    <section className="mb-8 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm print:hidden md:p-7">
+      <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <ClipboardList size={14} className={verdict.text} />
+            Cockpit pós-veredito
+          </p>
+          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">Plano de execução da decisão</h3>
+        </div>
+        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 md:w-72">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Progresso</p>
+            <p className={`text-sm font-black ${verdict.text}`}>{completed}/{tasks.length}</p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div className={`h-full rounded-full ${verdict.bar}`} style={{ width: `${progress}%` }} />
+          </div>
+          <p className={`mt-2 text-[10px] font-black uppercase tracking-widest ${
+            saveState === 'error'
+              ? 'text-red-600'
+              : saveState === 'saving'
+                ? 'text-amber-600'
+                : saveState === 'saved'
+                  ? 'text-emerald-600'
+                  : 'text-slate-400'
+          }`}>
+            {saveState === 'error'
+              ? 'Erro ao salvar'
+              : saveState === 'saving'
+                ? 'Salvando no histórico...'
+                : saveState === 'saved'
+                  ? 'Salvo no histórico'
+                  : analysisId
+                    ? 'Persistido no histórico'
+                    : 'Salvo nesta sessão'}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        {tasks.map((task) => {
+          const isDone = !!statusMap[task.id]?.done;
+          return (
+            <label
+              key={task.id}
+              className={`group flex items-start gap-4 rounded-2xl border p-4 transition-all ${
+                isDone
+                  ? 'border-emerald-200 bg-emerald-50/70'
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={isDone}
+                onChange={(event) => toggleTask(task.id, event.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                    {task.origem}
+                  </span>
+                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                    task.prioridade === 'Alta'
+                      ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
+                      : task.prioridade === 'Média'
+                        ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                        : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200'
+                  }`}>
+                    {task.prioridade}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
+                    <Clock size={10} />
+                    {task.prazo}
+                  </span>
+                </div>
+                <p className={`text-sm font-black leading-snug ${isDone ? 'text-emerald-900 line-through decoration-emerald-500/50' : 'text-slate-900'}`}>
+                  {task.acao}
+                </p>
+                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-500">
+                  <strong className="text-slate-700">{task.responsavel}</strong>
+                  {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
+                </p>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function buildDecisionCockpitTasks(decision: DecisionUiData, result: AnalysisResult): DecisionCockpitTask[] {
+  const tasks: DecisionCockpitTask[] = [];
+
+  decision.proximas_acoes.forEach((action, index) => {
+    const prazo = action.prazo || 'Hoje';
+    const priority: DecisionCockpitTask['prioridade'] =
+      decision.veredito === 'NO_GO' || /agora|hoje/i.test(prazo) ? 'Alta' : 'Média';
+    tasks.push({
+      id: `decision-${index}-${normalizeDecisionText(action.acao).slice(0, 40)}`,
+      prazo,
+      acao: action.acao,
+      responsavel: action.responsavel || 'Licitações',
+      resultado_esperado: action.resultado_esperado || 'Critério objetivo para seguir ou abandonar.',
+      origem: 'Decisão',
+      prioridade: priority,
+    });
+  });
+
+  (result.checklist || []).slice(0, 6).forEach((item, index) => {
+    const record = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {};
+    const acao = shortenDecisionText(record.tarefa || record.descricao || record.label || record.item || item, 180);
+    if (!acao) return;
+    const impacto = String(record.impacto || '').toLowerCase();
+    tasks.push({
+      id: `checklist-${index}-${normalizeDecisionText(acao).slice(0, 40)}`,
+      prazo: shortenDecisionText(record.prazo || record.fase || 'Antes da proposta', 40),
+      acao,
+      responsavel: shortenDecisionText(record.responsavel || 'Licitações', 80),
+      resultado_esperado: shortenDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
+      origem: 'Checklist',
+      prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
+    });
+  });
+
+  const seen = new Set<string>();
+  return tasks
+    .filter((task) => {
+      const key = normalizeDecisionText(`${task.origem}-${task.acao}`);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 8);
+}
+
+function normalizeCockpitStatus(value: AnalysisResult['cockpit_status']): NonNullable<AnalysisResult['cockpit_status']> {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([taskId]) => Boolean(taskId))
+      .map(([taskId, state]) => [
+        taskId,
+        {
+          done: Boolean(state?.done),
+          updated_at: state?.updated_at,
+        },
+      ]),
+  );
+}
+
 function DecisionMetric({
   label,
   helper,
@@ -494,15 +829,15 @@ function DecisionMetric({
   valueClass: string;
 }) {
   return (
-    <div>
-      <div className="flex items-end justify-between gap-3">
+    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-black leading-tight text-slate-800">{label}</p>
-          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{helper}</p>
+          <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
+          <p className="mt-1 text-[11px] font-semibold leading-snug text-slate-500">{helper}</p>
         </div>
-        <p className={`shrink-0 text-lg font-black leading-none ${valueClass}`}>{value}</p>
+        <p className={`shrink-0 text-2xl font-black leading-none ${valueClass}`}>{value}</p>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
         <div className={`h-full rounded-full ${barClass}`} style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
       </div>
     </div>
@@ -642,6 +977,26 @@ type DecisionUiData = {
   }[];
   perguntas_criticas: string[];
   decisao_executiva: string;
+  evidencias: DecisionEvidenceUi[];
+  lacunas: string[];
+  fatores_confianca: DecisionConfidenceFactorUi[];
+  o_que_mudaria_decisao: string[];
+};
+
+type DecisionEvidenceUi = {
+  categoria: string;
+  titulo: string;
+  detalhe: string;
+  fonte: string;
+  referencia: string;
+  trecho: string;
+  impacto: string;
+};
+
+type DecisionConfidenceFactorUi = {
+  criterio: string;
+  status: 'confirmado' | 'parcial' | 'ausente' | 'risco';
+  detalhe: string;
 };
 
 const decisionUi: Record<DecisionVerdict, {
@@ -690,6 +1045,28 @@ const decisionUi: Record<DecisionVerdict, {
   },
 };
 
+const confidenceStatusUi: Record<DecisionConfidenceFactorUi['status'], {
+  label: string;
+  pill: string;
+}> = {
+  confirmado: {
+    label: 'Confirmado',
+    pill: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  },
+  parcial: {
+    label: 'Parcial',
+    pill: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  },
+  ausente: {
+    label: 'Ausente',
+    pill: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
+  },
+  risco: {
+    label: 'Risco',
+    pill: 'bg-red-50 text-red-700 ring-1 ring-red-200',
+  },
+};
+
 function normalizeDecision(result: AnalysisResult): DecisionUiData {
   const raw = result.decisao;
   const score = typeof result.score === 'number' ? result.score : 0;
@@ -730,13 +1107,24 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
     GO_CONDICIONADO: 'A oportunidade pode valer a pena, mas só deve avançar depois de resolver as condições críticas de preço, prazo, documentação ou risco.',
     NO_GO: 'A recomendação é não participar agora: os riscos ou impeditivos detectados superam o retorno provável.',
   };
+  const fallbackLacunas = toDecisionTextList([
+    !result.aderencia_negocio ? 'Perfil/CNAE da empresa não disponível para medir aderência ao negócio.' : '',
+    !result.pricing_intelligence?.financial_verdict ? 'Preço e margem ainda precisam de validação financeira antes da proposta.' : '',
+    !result.concorrentes_provaveis?.length && !result.concorrentes_regionais?.length
+      ? 'Sem histórico concorrencial suficiente para calibrar ameaça de mercado.'
+      : '',
+  ], 5);
+  const lacunas = toDecisionTextList(raw?.lacunas, 7);
+  const oQueMudaria = toDecisionTextList(raw?.o_que_mudaria_decisao, 6);
+  const baseReasons = motivos.length ? motivos : fallbackMotivos;
+  const confidenceFactors = normalizeDecisionConfidenceFactors(raw?.fatores_confianca, result);
 
   return {
     veredito,
     rotulo: shortenDecisionText(raw?.rotulo || rotulos[veredito], 90),
     confianca: clampPercent(raw?.confianca ?? confidenceFallback(veredito, score)),
     resumo_decisao: shortenDecisionText(raw?.resumo_decisao || resumoPadrao[veredito], 430),
-    motivos: motivos.length ? motivos : fallbackMotivos,
+    motivos: baseReasons,
     condicoes_para_participar: condicoes.length
       ? condicoes
       : toDecisionTextList([
@@ -748,7 +1136,163 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
     proximas_acoes: normalizeDecisionActions(raw?.proximas_acoes),
     perguntas_criticas: toDecisionTextList(raw?.perguntas_criticas, 5),
     decisao_executiva: shortenDecisionText(raw?.decisao_executiva || `${rotulos[veredito]} — ${resumoPadrao[veredito]}`, 340),
+    evidencias: normalizeDecisionEvidences(raw?.evidencias, result, baseReasons),
+    lacunas: lacunas.length ? lacunas : fallbackLacunas,
+    fatores_confianca: confidenceFactors,
+    o_que_mudaria_decisao: oQueMudaria.length
+      ? oQueMudaria
+      : toDecisionTextList([
+          ...(condicoes.length ? condicoes : semaforoCondicoes),
+          veredito === 'GO'
+            ? 'A decisão mudaria se surgir impeditivo documental, jurídico, técnico ou margem negativa.'
+            : '',
+        ], 6),
   };
+}
+
+function normalizeDecisionEvidences(
+  raw: DecisionEvidence[] | undefined,
+  result: AnalysisResult,
+  fallbackReasons: string[],
+): DecisionEvidenceUi[] {
+  const rawItems = Array.isArray(raw) ? raw : [];
+  const fallbackItems: DecisionEvidence[] = [
+    result.aderencia_negocio ? {
+      categoria: 'Aderência',
+      titulo: 'Match com o negócio',
+      detalhe: result.aderencia_negocio.justificativa,
+      fonte: 'CNAE / Perfil',
+      impacto: 'Define se a empresa deveria consumir esforço nesta disputa.',
+    } : undefined,
+    result.pricing_intelligence?.financial_verdict ? {
+      categoria: 'Financeiro',
+      titulo: 'Viabilidade econômica',
+      detalhe: String(result.pricing_intelligence.financial_verdict),
+      fonte: 'Preço / Mercado',
+      impacto: 'Ajuda a definir margem, deságio e limite de lance.',
+    } : undefined,
+    ...(result.risks || []).slice(0, 2).map((risk) => {
+      if (typeof risk === 'string') {
+        return {
+          categoria: 'Risco',
+          titulo: risk,
+          detalhe: '',
+          fonte: 'Riscos',
+          impacto: 'Pode alterar ou condicionar o veredito.',
+        };
+      }
+      return {
+        categoria: 'Risco',
+        titulo: risk.titulo,
+        detalhe: risk.descricao,
+        fonte: 'Riscos',
+        impacto: risk.impacto ? `Impacto ${risk.impacto}.` : 'Pode alterar ou condicionar o veredito.',
+      };
+    }),
+    ...fallbackReasons.slice(0, 2).map((reason) => ({
+      categoria: 'Decisão',
+      titulo: reason,
+      detalhe: '',
+      fonte: 'Síntese Bawzi',
+      impacto: 'Sustenta a recomendação executiva.',
+    })),
+  ].filter(Boolean) as DecisionEvidence[];
+
+  const sourceItemsBase = rawItems.length >= 3 ? rawItems : [...rawItems, ...fallbackItems];
+  const hasSpecificBusinessEvidence = sourceItemsBase.some((item) => (
+    normalizeDecisionText(item?.categoria).includes('aderencia')
+    && !normalizeDecisionText(item?.titulo).includes('match com o negocio')
+  ));
+  const sourceItems = sourceItemsBase.filter((item) => !(
+    hasSpecificBusinessEvidence
+    && normalizeDecisionText(item?.categoria).includes('aderencia')
+    && normalizeDecisionText(item?.titulo).includes('match com o negocio')
+  ));
+  const seen = new Set<string>();
+  return sourceItems
+    .map((item) => ({
+      categoria: shortenDecisionText(item?.categoria || 'Evidência', 40),
+      titulo: shortenDecisionText(item?.titulo || item?.detalhe, 120),
+      detalhe: shortenDecisionText(item?.detalhe, 220),
+      fonte: shortenDecisionText(item?.fonte, 64),
+      referencia: shortenDecisionText(item?.referencia, 80),
+      trecho: shortenDecisionText(String(item?.trecho || '').replace(/https?:\/\/\S+/g, '[link oficial]'), 220),
+      impacto: shortenDecisionText(item?.impacto, 160),
+    }))
+    .filter((item) => {
+      if (!item.titulo) return false;
+      const key = `${item.categoria}|${item.titulo}|${item.detalhe}`.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 6);
+}
+
+function normalizeDecisionConfidenceFactors(
+  raw: DecisionConfidenceFactor[] | undefined,
+  result: AnalysisResult,
+): DecisionConfidenceFactorUi[] {
+  const rawItems = Array.isArray(raw) ? raw : [];
+  const semaforoValues = Object.values(result.semaforo || {});
+  const hasRiskSignal = semaforoValues.some((signal) => signal?.status === 'risco');
+  const hasAlertSignal = semaforoValues.some((signal) => signal?.status === 'alerta');
+  const businessStatus = String(result.aderencia_negocio?.status || '');
+  const fallbackItems: DecisionConfidenceFactor[] = [
+    {
+      criterio: 'Aderência ao negócio',
+      status: businessStatus === 'match_forte'
+        ? 'confirmado'
+        : businessStatus === 'sem_match'
+          ? 'risco'
+          : result.aderencia_negocio
+            ? 'parcial'
+            : 'ausente',
+      detalhe: result.aderencia_negocio?.justificativa || 'CNAE/perfil da empresa usado para medir match com o edital.',
+    },
+    {
+      criterio: 'Riscos do edital',
+      status: hasRiskSignal ? 'risco' : hasAlertSignal ? 'parcial' : 'confirmado',
+      detalhe: hasRiskSignal
+        ? 'Há dimensão em risco no semáforo da análise.'
+        : hasAlertSignal
+          ? 'Há alertas que precisam ser resolvidos antes da proposta.'
+          : 'Nenhum risco vermelho foi destacado no semáforo.',
+    },
+    {
+      criterio: 'Preço e margem',
+      status: result.pricing_intelligence?.financial_verdict ? 'confirmado' : 'parcial',
+      detalhe: result.pricing_intelligence?.financial_verdict || 'Preço mínimo e margem ainda dependem de validação financeira.',
+    },
+    {
+      criterio: 'Histórico de mercado',
+      status: result.concorrentes_provaveis?.length || result.concorrentes_regionais?.length ? 'confirmado' : 'ausente',
+      detalhe: result.concorrentes_provaveis?.length || result.concorrentes_regionais?.length
+        ? 'Há sinais de concorrência/histórico para orientar a disputa.'
+        : 'Sem concorrentes prováveis suficientes para calibrar ameaça de mercado.',
+    },
+  ];
+
+  const seen = new Set<string>();
+  return [...rawItems, ...fallbackItems]
+    .map((item) => {
+      const status = String(item?.status || 'parcial').toLowerCase();
+      const normalizedStatus: DecisionConfidenceFactorUi['status'] =
+        status === 'confirmado' || status === 'ausente' || status === 'risco' ? status : 'parcial';
+      return {
+        criterio: shortenDecisionText(item?.criterio, 80),
+        status: normalizedStatus,
+        detalhe: shortenDecisionText(item?.detalhe, 180),
+      };
+    })
+    .filter((item) => {
+      if (!item.criterio) return false;
+      const key = item.criterio.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 6);
 }
 
 function normalizeDecisionVerdict(value: unknown, score: number): DecisionVerdict {
@@ -913,8 +1457,8 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
       {/* EXPORTAR PDF */}
       <PremiumLock
         isLocked={currentTier < 4}
-        featureTitle="Minuta de Parecer Técnico-Jurídico (PDF)"
-        requiredTierName="Nível 4 (Dominador)"
+        featureTitle="Laudo de Decisão Bawzi (PDF)"
+        requiredTierName="Nível 4 (Avançado)"
         onUpgradeClick={onUpgradeClick}
       >
         <PdfExportCard onExportPDF={onExportPDF} />
@@ -1345,7 +1889,7 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
               </div>
               <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
               <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-                O Parecer Jurídico detalhado está disponível apenas para membros <strong className="text-white/80 uppercase">Especialistas</strong> e <strong className="text-amber-400 uppercase">Dominadores</strong>.
+                O Parecer Jurídico detalhado está disponível apenas para membros <strong className="text-white/80 uppercase">Profissionais</strong> e <strong className="text-amber-400 uppercase">Avançados</strong>.
               </p>
               <button
                 onClick={onUpgradeClick}
@@ -1417,20 +1961,20 @@ function PdfExportCard({ onExportPDF }: { onExportPDF: () => void }) {
         </div>
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">Exclusivo Dominador</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">Exclusivo Avançado</span>
           </div>
-          <h3 className="font-black text-white text-xl tracking-tight mb-2 leading-tight">Minuta de Parecer Técnico-Jurídico</h3>
+          <h3 className="font-black text-white text-xl tracking-tight mb-2 leading-tight">Laudo de Decisão Bawzi</h3>
           <p className="text-sm font-medium text-slate-400 leading-relaxed mb-4 max-w-lg">
-            Documento formal gerado pela IA Bawzi com fundamentação na <strong className="text-slate-300">Lei 14.133/2021</strong>. Pronto para anexar a impugnações, recursos administrativos ou dossiês internos.
+            Documento executivo com veredito Go/No-Go, evidências, lacunas, confiança, próximos responsáveis e base para decisão interna.
           </p>
           <div className="flex flex-wrap gap-2 mb-4">
-            {['Semáforo de Viabilidade', 'Matriz de Riscos', 'Cronograma Crítico', 'Parecer Especialista', 'Recomendação Final'].map(item => (
+            {['Veredito Executivo', 'Evidências', 'Base da Confiança', 'Lacunas', 'Cockpit de Execução'].map(item => (
               <span key={item} className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded-lg">✓ {item}</span>
             ))}
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <AlertTriangle size={14} className="text-amber-400" />
-            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Minuta — requer validação por advogado habilitado</span>
+            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Apoio à decisão — requer validação responsável</span>
           </div>
         </div>
       </div>
@@ -1438,7 +1982,7 @@ function PdfExportCard({ onExportPDF }: { onExportPDF: () => void }) {
         onClick={onExportPDF}
         className="relative z-10 w-full md:w-auto px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
       >
-        <FileText size={16} /> Gerar Minuta (PDF)
+        <FileText size={16} /> Gerar Laudo (PDF)
       </button>
     </div>
   );

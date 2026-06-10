@@ -314,7 +314,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
       </div>
       <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400">
         <Bot size={14} />
-        Não consultada
+        Pendente
       </div>
     </div>
   );
@@ -326,10 +326,15 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
       <div className="flex items-center justify-between mb-3 px-2 pt-2 relative z-20">
         <div className="flex items-center gap-2">
           <ShieldCheck size={16} className="text-slate-400" />
-          <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-            Radar de Habilitação 
-            {companyName && <span className="font-bold text-slate-400 truncate max-w-[150px] lowercase capitalize">| {companyName}</span>}
-          </h4>
+          <div>
+            <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              Radar preliminar de habilitação
+              {companyName && <span className="font-bold text-slate-400 truncate max-w-[150px] lowercase capitalize">| {companyName}</span>}
+            </h4>
+            <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+              CEIS/CNEP consultado. Certidões oficiais ficam pendentes até extração.
+            </p>
+          </div>
         </div>
         {!isLocked && (
           <button 
@@ -395,7 +400,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
               </div>
               <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : hasCguSanctions ? 'text-rose-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
                 {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />} 
-                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Ficha Limpa (Nada Consta)' : hasCguSanctions ? 'Sanções Encontradas' : 'Análise Incompleta'}
+                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Sem sanções CGU encontradas' : hasCguSanctions ? 'Sanções encontradas' : 'Análise incompleta'}
               </div>
             </div>
           )}
@@ -416,12 +421,12 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
               {isAnyCertidaoProcessing ? (
                 <>
                   <Bot size={14} className="animate-pulse" />
-                  Extraindo certidões
+                  Extraindo certidões oficiais
                 </>
               ) : (
                 <>
                   <ShieldCheck size={14} />
-                  {hasAnyCertidao ? 'Reverificar certidões' : 'Verificar certidões'}
+                  {hasAnyCertidao ? 'Reverificar certidões oficiais' : 'Verificar certidões oficiais'}
                 </>
               )}
             </button>

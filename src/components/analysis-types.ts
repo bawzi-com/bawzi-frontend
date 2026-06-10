@@ -55,6 +55,22 @@ export interface DecisionAction {
   resultado_esperado?: string;
 }
 
+export interface DecisionEvidence {
+  categoria?: string;
+  titulo: string;
+  detalhe?: string;
+  fonte?: string;
+  referencia?: string;
+  trecho?: string;
+  impacto?: string;
+}
+
+export interface DecisionConfidenceFactor {
+  criterio: string;
+  status?: 'confirmado' | 'parcial' | 'ausente' | 'risco' | string;
+  detalhe?: string;
+}
+
 export interface DecisionData {
   veredito?: DecisionVerdict | string;
   rotulo?: string;
@@ -66,7 +82,18 @@ export interface DecisionData {
   proximas_acoes?: DecisionAction[];
   perguntas_criticas?: string[];
   decisao_executiva?: string;
+  evidencias?: DecisionEvidence[];
+  lacunas?: string[];
+  fatores_confianca?: DecisionConfidenceFactor[];
+  o_que_mudaria_decisao?: string[];
 }
+
+export interface CockpitTaskPersistedState {
+  done?: boolean;
+  updated_at?: string;
+}
+
+export type CockpitStatusMap = Record<string, CockpitTaskPersistedState>;
 
 export interface BusinessFitData {
   status?: 'match_forte' | 'match_parcial' | 'sem_match' | 'indeterminado' | 'sem_cnae' | string;
@@ -136,6 +163,8 @@ export interface AnalysisResult {
   created_at?: string;
   parecer_especialista?: string;
   pegadinha?: PegadinhaData;
+  cockpit_status?: CockpitStatusMap;
+  cockpit_updated_at?: string;
 }
 
 // ─── Funções utilitárias ──────────────────────────────────────────────────────

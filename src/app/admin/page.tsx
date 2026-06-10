@@ -164,7 +164,7 @@ export default function AdminDashboard() {
   // FUNÇÕES DE AÇÃO (API)
   // ==========================================
   const handleTierChange = async (userId: string, userEmail: string, currentTier: number) => {
-    const newTierStr = prompt(`Digite o novo Tier (0 a 4) para ${userEmail}:\nAtual: ${currentTier}\n\n0: Visitante | 1: Grátis | 2: Essencial | 3: Pro | 4: Elite`);
+    const newTierStr = prompt(`Digite o novo Tier (0 a 4) para ${userEmail}:\nAtual: ${currentTier}\n\n0: Visitante | 1: Grátis | 2: Essencial | 3: Profissional | 4: Avançado`);
     if (newTierStr === null || newTierStr === "") return;
     
     const newTier = parseInt(newTierStr);
