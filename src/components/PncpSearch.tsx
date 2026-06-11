@@ -204,9 +204,21 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   };
 
   // 🟢 BUSCA NO RADAR COM "PINÇA" E ORDENAÇÃO ABSOLUTA
-  // runSearch(term, ufVal): núcleo reutilizável — chamado por handleSearch e pela auto-busca.
-  const runSearch = async (term: string, ufVal: string) => {
-    if (!term || term.length < 3) return;
+  // runSearch(term, ufVal, munId?, munNome?): núcleo reutilizável — chamado pelo
+  // submit, pela auto-busca e pelas mudanças de filtro UF/cidade (que disparam
+  // SEMPRE uma nova requisição ao PNCP, nunca apenas um recorte local).
+  const runSearch = async (
+    term: string,
+    ufVal: string,
+    munId: string = municipioId,
+    munNome: string = municipioNome,
+  ) => {
+    const termo = term.trim();
+    // Termo vazio é válido: lista todos os editais vigentes do escopo (Brasil/UF/cidade)
+    if (termo && termo.length < 3) {
+      setError('Digite pelo menos 3 caracteres — ou deixe o campo vazio para listar todos os editais vigentes.');
+      return;
+    }
 
     setIsSearching(true);
     setError('');
@@ -215,8 +227,8 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
     try {
       const ufParam = ufVal ? `&uf=${encodeURIComponent(ufVal)}` : '';
       const exactParam = forceExact ? `&force_exact=true` : '';
-      const munParam = municipioId
-        ? `&municipio_id=${encodeURIComponent(municipioId)}${municipioNome ? `&municipio_nome=${encodeURIComponent(municipioNome)}` : ''}`
+      const munParam = munId
+        ? `&municipio_id=${encodeURIComponent(munId)}${munNome ? `&municipio_nome=${encodeURIComponent(munNome)}` : ''}`
         : '';
 
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
@@ -224,14 +236,17 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       const fetchHeaders = new Headers();
       if (token) fetchHeaders.append('Authorization', `Bearer ${token}`);
 
-      // 1. Busca principal (com filtro de município se selecionado)
-      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(term)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
-      const reqMarket = fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(term)}${ufParam}`).catch(() => null);
+      // 1. Busca principal (UF e cidade viram filtros REAIS na API do PNCP)
+      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
+      // Inteligência de mercado só faz sentido com termo definido
+      const reqMarket = termo
+        ? fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(termo)}${ufParam}`).catch(() => null)
+        : Promise.resolve(null);
 
       // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
       let reqRegional = null;
-      if ((!ufVal || ufVal === '') && ufAtivo && !municipioId && !municipioNome) {
-        reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(term)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
+      if ((!ufVal || ufVal === '') && ufAtivo && !munId && !munNome) {
+        reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
       }
 
       // Dispara tudo
@@ -267,7 +282,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       // ==========================================================
       // 📍 ORDENAÇÃO MILITAR (GARANTIA FINAL)
       // ==========================================================
-      if ((!uf || uf === '') && ufAtivo) {
+      if ((!ufVal || ufVal === '') && ufAtivo) {
         encontrados = encontrados.sort((a, b) => {
           const siglaA = String(a.uf || '').trim().toUpperCase();
           const siglaB = String(b.uf || '').trim().toUpperCase();
@@ -343,8 +358,10 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       if (vivos.length === 0) {
         setError(
           encontrados.length > 0
-            ? 'Nenhuma licitação ativa encontrada para este termo. Os editais encontrados já encerraram o prazo de propostas.'
-            : 'Nenhuma licitação encontrada para este termo. Tente um termo mais amplo ou ative a busca exata.'
+            ? 'Nenhuma licitação ativa encontrada. Os editais encontrados já encerraram o prazo de propostas.'
+            : termo
+              ? 'Nenhuma licitação encontrada para este termo. Tente um termo mais amplo, ative a busca exata ou deixe o campo vazio para ver todos os editais vigentes da região.'
+              : 'Nenhum edital vigente encontrado neste momento para a região selecionada.'
         );
       }
 
@@ -374,6 +391,18 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     await runSearch(searchTerm, uf);
+  };
+
+  /**
+   * Dispara uma NOVA requisição ao PNCP quando os filtros de UF/cidade mudam,
+   * em vez de apenas recortar os dados já listados. Termo vazio é válido
+   * (lista todos os editais vigentes do escopo).
+   */
+  const autoSearchOnFilter = (ufVal: string, munId: string, munNome: string) => {
+    const t = searchTerm.trim();
+    if (t.length === 0 || t.length >= 3) {
+      runSearch(searchTerm, ufVal, munId, munNome);
+    }
   };
 
   /**
@@ -407,10 +436,14 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       let detalhamentoTecnico = dataTexto.texto || "Detalhes técnicos não fornecidos pela API.";
       const historicoPrecos = dataMedia.texto || "Sem histórico recente para estabelecer média.";
 
+  const termoAlvo = searchTerm.trim()
+    ? `"${searchTerm.trim().toUpperCase()}"`
+    : 'BUSCA GERAL DE EDITAIS VIGENTES (FOCAR NO OBJETO DO EDITAL ABAIXO)';
+
   const cabecalhoPrompt = `
   DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
   ===================================================================
-  🎯 TERMO ALVO DA BUSCA DO CLIENTE: "${searchTerm.toUpperCase()}"
+  🎯 TERMO ALVO DA BUSCA DO CLIENTE: ${termoAlvo}
   (A IA DEVE FOCAR A SUA ANÁLISE E PRECIFICAÇÃO PRIORITARIAMENTE NESTE ITEM/SERVIÇO)
   ===================================================================
 
@@ -513,7 +546,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               Busque oportunidades abertas e decida se vale participar.
             </h2>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Pesquise por segmento, órgão, cidade ou palavra-chave. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para o veredito Go/No-Go.
+              Pesquise por segmento, órgão, cidade ou palavra-chave — ou deixe o campo vazio para varrer todos os editais vigentes do Brasil, de um estado ou de uma cidade. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para o veredito Go/No-Go.
             </p>
           </div>
 
@@ -563,7 +596,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
               type="text" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Busque por termos, materiais ou serviços..." 
+              placeholder="Busque por termos, materiais ou serviços — ou deixe vazio para ver todos os editais vigentes"
               className="block w-full h-full pl-11 pr-4 bg-transparent border-none text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-0 sm:text-sm"
             />
           </div>
@@ -572,11 +605,14 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             <select
               value={uf}
               onChange={(e) => {
-                setUf(e.target.value);
+                const novaUf = e.target.value;
+                setUf(novaUf);
                 // Limpa cidade ao trocar estado
                 setMunicipioId('');
                 setMunicipioNome('');
-                if (onUfChange) onUfChange(e.target.value);
+                if (onUfChange) onUfChange(novaUf);
+                // 🔄 Nova requisição dedicada ao PNCP para o estado escolhido
+                autoSearchOnFilter(novaUf, '', '');
               }}
               className="appearance-none block w-full h-full pl-4 pr-10 bg-transparent border-none text-slate-700 font-medium focus:outline-none focus:ring-0 sm:text-sm cursor-pointer"
             >
@@ -622,8 +658,19 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                   value={municipioNome}
                   uf={uf}
                   apiUrl={API_URL}
-                  onSelect={(id, nome) => { setMunicipioId(id); setMunicipioNome(nome); }}
-                  onClear={() => { setMunicipioId(''); setMunicipioNome(''); }}
+                  onSelect={(id, nome) => {
+                    setMunicipioId(id);
+                    setMunicipioNome(nome);
+                    // 🔄 Nova requisição dedicada ao PNCP para a cidade escolhida
+                    autoSearchOnFilter(uf, id, nome);
+                  }}
+                  onClear={() => {
+                    const tinhaCidade = !!municipioId;
+                    setMunicipioId('');
+                    setMunicipioNome('');
+                    // Removeu a cidade → volta a buscar o estado inteiro
+                    if (tinhaCidade) autoSearchOnFilter(uf, '', '');
+                  }}
                   placeholder="Filtrar por cidade..."
                   className="h-full"
                   variant="light"

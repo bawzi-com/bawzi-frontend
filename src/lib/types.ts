@@ -18,6 +18,14 @@ export interface Empresa {
   enquadramento?: string;
   cnae_principal?: string;
   cnae_descricao?: string;
+  core_business?: string;
+  produtos_servicos?: string[];
+  regioes_atendidas?: string[];
+  capacidade_operacional?: string;
+  margem_minima_pct?: string;
+  limite_contrato?: string;
+  observacoes_operacionais?: string;
+  historico_vitorias?: string;
   situacao_cadastral?: string;
   [key: string]: unknown;
 }
@@ -67,6 +75,28 @@ export interface SavedAnalysis {
   cockpit_updated_at?: string;
   workflow_status?: string;
   workflow_updated_at?: string;
+  empresa_contexto?: {
+    cnpj?: string;
+    razao_social?: string;
+    nome?: string;
+    nome_fantasia?: string;
+    cnae_principal?: string;
+    cnae_descricao?: string;
+    uf?: string;
+    municipio?: string;
+  } | null;
+  company_cnpj?: string | null;
+  company_name?: string | null;
+  reviewed_at?: string;
+  decision_reviews?: Record<string, unknown>[];
+  decision_learning?: {
+    participou?: boolean;
+    resultado?: string;
+    preco_final?: string;
+    vencedor?: string;
+    observacao?: string;
+    updated_at?: string;
+  };
   /** Campos extras da IA (riscos, semáforo, etc.) */
   [key: string]: unknown;
 }

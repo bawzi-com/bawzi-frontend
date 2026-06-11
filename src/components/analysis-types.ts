@@ -129,6 +129,18 @@ export interface AnalysisResult {
   recommendation: string;
   rationale: string;
   decisao?: DecisionData;
+  decision_reviews?: Array<Record<string, unknown>>;
+  reviewed_at?: string;
+  pncp_ref?: {
+    cnpj?: string;
+    ano?: string;
+    sequencial?: string;
+  } | null;
+  pncp_cnpj?: string | null;
+  pncp_ano?: string | null;
+  pncp_sequencial?: string | null;
+  pncp_monitor?: Record<string, unknown> | null;
+  pncp_monitor_events?: Array<Record<string, unknown>>;
   aderencia_negocio?: BusinessFitData;
   // New structured dates (replaces datas_criticas_extraidas)
   datas_criticas?: DataCritica[];

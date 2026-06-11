@@ -170,6 +170,11 @@ export default function Header() {
               Histórico
             </Link>
           )}
+          {token && (
+            <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+              Gestão
+            </Link>
+          )}
           <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
             Planos
           </Link>

@@ -15,16 +15,29 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   
   const [view, setView] = useState<'list' | 'form'>('list');
   const [companiesList, setCompaniesList] = useState<any[]>([]);
+  const [produtosServicosText, setProdutosServicosText] = useState('');
+  const [regioesAtendidasText, setRegioesAtendidasText] = useState('');
 
   const [formData, setFormData] = useState<{
     _id: string; cnpj: string; razao_social: string; enquadramento: string;
     capital_social: string; cnae_principal: string; cnae_descricao: string;
     cnaes_secundarios: { codigo: string; descricao: string }[];
     uf: string; municipio: string;
+    core_business: string;
+    produtos_servicos: string[];
+    regioes_atendidas: string[];
+    capacidade_operacional: string;
+    margem_minima_pct: string;
+    limite_contrato: string;
+    historico_vitorias: string;
+    observacoes_operacionais: string;
   }>({
     _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
     cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [],
     uf: '', municipio: '',
+    core_business: '', produtos_servicos: [], regioes_atendidas: [],
+    capacidade_operacional: '', margem_minima_pct: '', limite_contrato: '',
+    historico_vitorias: '', observacoes_operacionais: '',
   });
 
   const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
@@ -77,7 +90,15 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   }, [companyData, token, API_URL]);
 
   const handleAddNew = () => {
-    setFormData({ _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '', cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [], uf: '', municipio: '' });
+    setFormData({
+      _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
+      cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [], uf: '', municipio: '',
+      core_business: '', produtos_servicos: [], regioes_atendidas: [],
+      capacidade_operacional: '', margem_minima_pct: '', limite_contrato: '',
+      historico_vitorias: '', observacoes_operacionais: '',
+    });
+    setProdutosServicosText('');
+    setRegioesAtendidasText('');
     setView('form');
   };
 
@@ -93,7 +114,17 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       cnaes_secundarios: emp.cnaes_secundarios || [],
       uf: emp.uf || '',
       municipio: emp.municipio || '',
+      core_business: emp.core_business || emp.descricao || '',
+      produtos_servicos: Array.isArray(emp.produtos_servicos) ? emp.produtos_servicos : [],
+      regioes_atendidas: Array.isArray(emp.regioes_atendidas) ? emp.regioes_atendidas : [],
+      capacidade_operacional: emp.capacidade_operacional || '',
+      margem_minima_pct: emp.margem_minima_pct || '',
+      limite_contrato: emp.limite_contrato || '',
+      historico_vitorias: emp.historico_vitorias || '',
+      observacoes_operacionais: emp.observacoes_operacionais || '',
     });
+    setProdutosServicosText(Array.isArray(emp.produtos_servicos) ? emp.produtos_servicos.join(', ') : '');
+    setRegioesAtendidasText(Array.isArray(emp.regioes_atendidas) ? emp.regioes_atendidas.join(', ') : '');
     setView('form');
   };
 
@@ -143,7 +174,11 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       const res = await fetch(`${API_URL}/api/workspace/company`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          produtos_servicos: splitList(produtosServicosText),
+          regioes_atendidas: splitList(regioesAtendidasText),
+        })
       });
       
       const resData = await res.json();
@@ -182,6 +217,13 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       if (onUpdate) await onUpdate(); // Reverte a UI se falhar
     }
   };
+
+  const splitList = (value: string) =>
+    value
+      .split(/[,;\n]/)
+      .map(item => item.trim())
+      .filter(Boolean)
+      .slice(0, 20);
 
   const inputStyle = "w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-800 focus:bg-white focus:border-indigo-500 outline-none transition-all";
   const labelStyle = "block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1";
@@ -255,6 +297,30 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                         {(emp.cnaes_secundarios || []).length > 3 && (
                           <span className="text-[9px] font-bold text-slate-400 px-1 py-0.5">
                             +{emp.cnaes_secundarios.length - 3} outros
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {(emp.produtos_servicos?.length || emp.regioes_atendidas?.length || emp.margem_minima_pct || emp.limite_contrato) && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(emp.produtos_servicos || []).slice(0, 3).map((item: string) => (
+                          <span key={item} className="rounded-md border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">
+                            {item}
+                          </span>
+                        ))}
+                        {(emp.regioes_atendidas || []).slice(0, 2).map((item: string) => (
+                          <span key={item} className="rounded-md border border-sky-100 bg-sky-50 px-2 py-0.5 text-[9px] font-bold text-sky-700">
+                            {item}
+                          </span>
+                        ))}
+                        {emp.margem_minima_pct && (
+                          <span className="rounded-md border border-amber-100 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-700">
+                            Margem mín. {emp.margem_minima_pct}
+                          </span>
+                        )}
+                        {emp.limite_contrato && (
+                          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-600">
+                            Limite {emp.limite_contrato}
                           </span>
                         )}
                       </div>
@@ -409,6 +475,90 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="w-full md:col-span-2">
+              <label className={labelStyle}>Core business</label>
+              <textarea
+                className={`${inputStyle} min-h-[92px] resize-none leading-relaxed`}
+                placeholder="Descreva em uma frase o que a empresa realmente entrega."
+                value={formData.core_business}
+                onChange={e => setFormData({ ...formData, core_business: e.target.value })}
+              />
+            </div>
+
+            <div className="w-full md:col-span-2">
+              <label className={labelStyle}>Produtos e serviços</label>
+              <textarea
+                className={`${inputStyle} min-h-[96px] resize-none leading-relaxed`}
+                placeholder="Ex.: desenvolvimento de software, suporte técnico, licenças Microsoft"
+                value={produtosServicosText}
+                onChange={e => setProdutosServicosText(e.target.value)}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Regiões atendidas</label>
+              <input
+                type="text"
+                className={inputStyle}
+                placeholder="Ex.: SP, RJ, Nacional"
+                value={regioesAtendidasText}
+                onChange={e => setRegioesAtendidasText(e.target.value)}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Capacidade operacional</label>
+              <input
+                type="text"
+                className={inputStyle}
+                placeholder="Ex.: até 3 projetos simultâneos"
+                value={formData.capacidade_operacional}
+                onChange={e => setFormData({ ...formData, capacidade_operacional: e.target.value })}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Margem mínima</label>
+              <input
+                type="text"
+                className={inputStyle}
+                placeholder="Ex.: 18%"
+                value={formData.margem_minima_pct}
+                onChange={e => setFormData({ ...formData, margem_minima_pct: e.target.value })}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Limite operacional</label>
+              <input
+                type="text"
+                className={inputStyle}
+                placeholder="Ex.: contratos até R$ 500 mil"
+                value={formData.limite_contrato}
+                onChange={e => setFormData({ ...formData, limite_contrato: e.target.value })}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Histórico de vitórias</label>
+              <textarea
+                className={`${inputStyle} min-h-[96px] resize-none leading-relaxed`}
+                placeholder="Ex.: venceu contratos de software em prefeituras, ticket médio R$ 120 mil"
+                value={formData.historico_vitorias}
+                onChange={e => setFormData({ ...formData, historico_vitorias: e.target.value })}
+              />
+            </div>
+
+            <div className="w-full">
+              <label className={labelStyle}>Observações operacionais</label>
+              <textarea
+                className={`${inputStyle} min-h-[96px] resize-none leading-relaxed`}
+                placeholder="Ex.: não atende presencial fora do Sudeste, depende de estoque sob demanda"
+                value={formData.observacoes_operacionais}
+                onChange={e => setFormData({ ...formData, observacoes_operacionais: e.target.value })}
+              />
             </div>
           </div>
 

@@ -17,6 +17,7 @@ import {
   ClipboardList, Pin, ThumbsUp, ThumbsDown, FileText,
   Lock, Crown, AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
+  RefreshCw, History, CheckCircle2,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -73,6 +74,11 @@ export default function AnalysisResults({
   onGoToCapital,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
+  const [liveResult, setLiveResult] = useState(result);
+
+  useEffect(() => {
+    setLiveResult(result);
+  }, [result]);
 
   const handleCopyLink = async () => {
     try {
@@ -231,11 +237,18 @@ export default function AnalysisResults({
           </div>
 
           <DecisionSnapshot
-            result={result}
+            result={liveResult}
+          />
+
+          <DecisionVersionMonitor
+            result={liveResult}
+            analysisId={analysisId}
+            token={token}
+            onAnalysisUpdate={(updated) => setLiveResult(updated)}
           />
 
           <DecisionCockpit
-            result={result}
+            result={liveResult}
             analysisId={analysisId}
             token={token}
             onStatusChange={onCockpitStatusChange}
@@ -584,6 +597,211 @@ function DecisionSnapshot({
         </aside>
       </div>
     </section>
+  );
+}
+
+function DecisionVersionMonitor({
+  result,
+  analysisId,
+  token,
+  onAnalysisUpdate,
+}: {
+  result: AnalysisResult;
+  analysisId: string | null;
+  token: string | null;
+  onAnalysisUpdate: (analysis: AnalysisResult) => void;
+}) {
+  const [isChecking, setIsChecking] = useState(false);
+  const [reviewingIndex, setReviewingIndex] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const monitor = toUiRecord(result.pncp_monitor);
+  const ref = toUiRecord(result.pncp_ref);
+  const hasPncpRef = Boolean(ref.cnpj || result.pncp_cnpj) && Boolean(ref.ano || result.pncp_ano) && Boolean(ref.sequencial || result.pncp_sequencial);
+  const events = toUiRecords(result.pncp_monitor_events).slice().reverse();
+  const reviews = toUiRecords(result.decision_reviews).slice().reverse();
+  const files = toUiRecords(monitor.files);
+  const lastChecked = formatVersionDate(monitor.last_checked_at);
+
+  const checkPncp = async () => {
+    if (!analysisId || !token || isChecking) return;
+    setIsChecking(true);
+    setNotice(null);
+    try {
+      const response = await fetch(`${API_URL}/api/analyses/${analysisId}/pncp-monitor/check`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setNotice(data?.detail || 'Não foi possível verificar o PNCP agora.');
+        return;
+      }
+      if (data?.analysis) onAnalysisUpdate(data.analysis as AnalysisResult);
+      setNotice(data?.changed ? 'Mudança oficial detectada no PNCP.' : 'PNCP verificado: sem mudanças oficiais.');
+    } catch {
+      setNotice('Erro de conexão ao verificar o PNCP.');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const reviewFromEvent = async (event: Record<string, unknown>, index: number) => {
+    if (!analysisId || !token || reviewingIndex !== null) return;
+    const payload = toUiRecord(event.review_payload);
+    const fallbackContent = [
+      String(event.titulo || 'Mudança detectada no PNCP'),
+      String(event.descricao || ''),
+      ...toUiRecords(event.added_files).map((file) => `- ${file.titulo || 'Arquivo'}: ${file.link || ''}`),
+    ].join('\n');
+
+    setReviewingIndex(index);
+    setNotice(null);
+    try {
+      const response = await fetch(`${API_URL}/api/analyses/${analysisId}/review`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tipo: String(payload.tipo || 'alteracao_edital'),
+          titulo: String(payload.titulo || event.titulo || 'Mudança detectada no PNCP'),
+          conteudo: String(payload.conteudo || fallbackContent),
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setNotice(data?.detail || 'Não foi possível revisar a decisão.');
+        return;
+      }
+      if (data?.analysis) onAnalysisUpdate(data.analysis as AnalysisResult);
+      setNotice('Decisão revisada e versão salva no laudo.');
+    } catch {
+      setNotice('Erro de conexão ao revisar a decisão.');
+    } finally {
+      setReviewingIndex(null);
+    }
+  };
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
+      <div className="border-b border-slate-100 bg-slate-50 p-5 md:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <History size={14} />
+              Monitor PNCP e versões
+            </p>
+            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">Validade contínua da decisão</h3>
+          </div>
+          <button
+            type="button"
+            onClick={checkPncp}
+            disabled={!hasPncpRef || !token || !analysisId || isChecking}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isChecking ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+            Verificar PNCP
+          </button>
+        </div>
+        {notice && (
+          <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-bold text-sky-800">
+            {notice}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-4 p-5 md:grid-cols-3 md:p-6">
+        <VersionMetric icon={<RefreshCw size={15} />} label="Status PNCP" value={hasPncpRef ? String(monitor.status || 'monitorado') : 'sem origem PNCP'} />
+        <VersionMetric icon={<FileText size={15} />} label="Arquivos oficiais" value={hasPncpRef ? `${Number(monitor.files_count || files.length || 0)} arquivo(s)` : 'não monitorado'} />
+        <VersionMetric icon={<Clock size={15} />} label="Última checagem" value={lastChecked || 'ainda não verificado'} />
+      </div>
+
+      {(events.length > 0 || reviews.length > 0 || files.length > 0) && (
+        <div className="grid gap-4 border-t border-slate-100 p-5 md:grid-cols-[1.15fr_0.85fr] md:p-6">
+          <div className="space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Linha do tempo da decisão</p>
+            {reviews.length === 0 && events.length === 0 ? (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-bold text-slate-500">
+                Nenhuma revisão ou mudança oficial registrada ainda.
+              </div>
+            ) : (
+              [...events.map((item, index) => ({ kind: 'event', item, index })), ...reviews.map((item, index) => ({ kind: 'review', item, index }))]
+                .slice(0, 6)
+                .map((entry) => (
+                  <div key={`${entry.kind}-${entry.index}`} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${
+                          entry.kind === 'event' ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                        }`}>
+                          {entry.kind === 'event' ? 'Mudança PNCP' : 'Revisão'}
+                        </span>
+                        <p className="mt-2 text-sm font-black leading-snug text-slate-900">
+                          {String(entry.item.titulo || entry.item.title || 'Versão registrada')}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
+                          {String(entry.item.descricao || entry.item.conteudo || entry.item.previous_decision || 'Decisão atualizada.')}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-black uppercase text-slate-400">
+                        {formatVersionDate(entry.item.created_at)}
+                      </span>
+                    </div>
+                    {entry.kind === 'event' && (
+                      <button
+                        type="button"
+                        onClick={() => reviewFromEvent(entry.item, entry.index)}
+                        disabled={!token || reviewingIndex !== null}
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black uppercase text-sky-700 transition-all hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {reviewingIndex === entry.index ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                        Revisar com esta mudança
+                      </button>
+                    )}
+                  </div>
+                ))
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Snapshot oficial</p>
+            {files.length === 0 ? (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-bold text-slate-500">
+                Nenhum arquivo oficial salvo no snapshot atual.
+              </div>
+            ) : files.slice(0, 5).map((file, index) => (
+              <div key={`${file.link || file.titulo || index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <p className="line-clamp-2 text-xs font-black leading-snug text-slate-800">{String(file.titulo || 'Arquivo oficial')}</p>
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  {String(file.tipo || 'Documento')} {file.data_publicacao ? `· ${file.data_publicacao}` : ''}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VersionMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+      <div className="mb-2 flex items-center gap-2 text-slate-400">
+        {icon}
+        <p className="text-[10px] font-black uppercase tracking-widest">{label}</p>
+      </div>
+      <p className="break-words text-sm font-black leading-snug text-slate-900">{value}</p>
+    </div>
   );
 }
 
@@ -2059,6 +2277,26 @@ function PdfExportCard({ onExportPDF }: { onExportPDF: () => void }) {
       </button>
     </div>
   );
+}
+
+function toUiRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function toUiRecords(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function formatVersionDate(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
 // ─── Layout de impressão ──────────────────────────────────────────────────────

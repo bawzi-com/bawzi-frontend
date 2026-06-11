@@ -206,8 +206,17 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
     setLoading(false);
   }, []);
 
-  const buscar = useCallback(async () => {
+  const buscar = useCallback(async (
+    ufOverride?: string,
+    munIdOverride?: string,
+    munNomeOverride?: string,
+  ) => {
     if (!termo.trim() || termo.trim().length < 2) return;
+
+    // Filtros efetivos: override (mudança de filtro recém-aplicada) ou estado atual
+    const ufAtiva      = ufOverride      !== undefined ? ufOverride      : uf;
+    const munIdAtivo   = munIdOverride   !== undefined ? munIdOverride   : municipioId;
+    const munNomeAtivo = munNomeOverride !== undefined ? munNomeOverride : municipioNome;
 
     // Cancela qualquer busca anterior em curso
     abortRef.current?.abort();
@@ -220,9 +229,10 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
 
     try {
       const params = new URLSearchParams({ q: termo.trim(), dias: String(dias) });
-      if (uf && uf !== 'BR') params.set('uf', uf);
+      if (ufAtiva && ufAtiva !== 'BR') params.set('uf', ufAtiva);
       if (homeUf) params.set('home_uf', homeUf);
-      if (municipioId) params.set('municipio_id', municipioId);
+      if (munIdAtivo) params.set('municipio_id', munIdAtivo);
+      if (munNomeAtivo) params.set('municipio_nome', munNomeAtivo);
 
       const res = await fetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -243,7 +253,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
     } finally {
       setLoading(false);
     }
-  }, [termo, uf, municipioId, dias, token]);
+  }, [termo, uf, municipioId, municipioNome, dias, token]);
 
   // Auto-busca quando a janela de dias muda — só se já houve uma busca prévia
   useEffect(() => {
@@ -301,84 +311,115 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
       </div>
 
       {/* ── Barra de busca ── */}
-      <div className="px-6 py-4 flex flex-col sm:flex-row gap-2.5 border-b border-slate-100 bg-slate-50/60">
-        {/* Termo */}
-        <div className="flex-1 flex flex-col gap-1">
-          <div className="relative">
-            <Tag size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={termo}
-              onChange={(e) => { setTermo(e.target.value); setTermoEditado(true); }}
-              onKeyDown={handleKeyDown}
-              placeholder={cnaeLoading ? 'Identificando segmento...' : 'Ex: limpeza, TI, manutenção predial...'}
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 placeholder:font-normal placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all"
-            />
-          </div>
-          {/* Hint CNAE */}
+      <div className="border-b border-slate-100 bg-slate-50/70 p-4 sm:p-5">
+        <div className={`grid gap-3 ${cnaeLoading || cnaeDescricao ? 'xl:grid-cols-[310px_minmax(0,1fr)]' : ''}`}>
           {(cnaeLoading || cnaeDescricao) && (
-            <p className="text-[10px] font-medium text-slate-400 ml-1 flex items-center gap-1.5">
+            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  <Building2 size={11} className="text-indigo-500" />
+                  CNAE da empresa
+                </span>
+                {cnaeCodigo && (
+                  <span className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-700">
+                    {cnaeCodigo}
+                  </span>
+                )}
+              </div>
               {cnaeLoading ? (
-                <><Loader2 size={10} className="animate-spin shrink-0" /> A identificar CNAE da empresa...</>
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                  <Loader2 size={13} className="animate-spin text-indigo-500" />
+                  Identificando segmento...
+                </div>
               ) : (
-                <><Building2 size={10} className="shrink-0 text-slate-400" />
-                  {cnaeCodigo && <span className="font-black text-slate-500">CNAE {cnaeCodigo}:</span>}
-                  <span className="truncate max-w-[320px]">{cnaeDescricao}</span>
-                </>
+                <p className="line-clamp-2 text-sm font-black leading-snug text-slate-800">
+                  {cnaeDescricao}
+                </p>
               )}
-            </p>
+            </div>
           )}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
+            <div className="flex flex-col gap-2 lg:flex-row">
+              <div className="relative min-w-0 flex-1">
+                <Tag size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={termo}
+                  onChange={(e) => { setTermo(e.target.value); setTermoEditado(true); }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={cnaeLoading ? 'Identificando segmento...' : 'Ex: limpeza, TI, manutenção predial...'}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 text-sm font-semibold text-slate-700 outline-none transition-all placeholder:font-normal placeholder:text-slate-400 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30"
+                />
+              </div>
+
+              <select
+                value={uf}
+                onChange={(e) => {
+                  const novaUf = e.target.value;
+                  setUf(novaUf);
+                  setMunicipioId('');
+                  setMunicipioNome('');
+                  // 🔄 Nova requisição imediata com o novo estado (não apenas filtro local)
+                  if (buscado && termo.trim().length >= 2) buscar(novaUf, '', '');
+                }}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none transition-all cursor-pointer focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30 lg:w-32"
+              >
+                <option value="">Todos UFs</option>
+                {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+
+              {uf && (
+                <MunicipioAutocomplete
+                  value={municipioNome}
+                  uf={uf}
+                  apiUrl={API_URL}
+                  onSelect={(id, nome) => {
+                    setMunicipioId(id);
+                    setMunicipioNome(nome);
+                    // 🔄 Nova requisição imediata para a cidade escolhida
+                    if (buscado && termo.trim().length >= 2) buscar(uf, id, nome);
+                  }}
+                  onClear={() => {
+                    const tinhaCidade = !!municipioId;
+                    setMunicipioId('');
+                    setMunicipioNome('');
+                    // Removeu a cidade → volta a buscar o estado inteiro
+                    if (tinhaCidade && buscado && termo.trim().length >= 2) buscar(uf, '', '');
+                  }}
+                  placeholder="Filtrar por cidade..."
+                  className="w-full lg:w-56"
+                  inputClassName="h-11 w-full pl-9 pr-8 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all placeholder:font-normal placeholder:text-slate-400"
+                  variant="slate"
+                />
+              )}
+
+              {loading ? (
+                <button
+                  onClick={cancelar}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-700 px-5 text-xs font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-slate-600 active:scale-[0.98] lg:w-auto"
+                >
+                  <Loader2 size={13} className="animate-spin" />
+                  Cancelar
+                </button>
+              ) : (
+                <button
+                  onClick={() => buscar()}
+                  disabled={termo.trim().length < 2}
+                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-orange-200/60 transition-all hover:from-amber-600 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] lg:w-auto"
+                >
+                  <Search size={13} /> Buscar
+                </button>
+              )}
+            </div>
+
+            <p className="mt-2 text-[10px] font-bold text-slate-400">
+              Use o termo derivado do CNAE ou ajuste manualmente para encontrar contratos próximos do vencimento.
+            </p>
+          </div>
         </div>
-
-        {/* UF */}
-        <select
-          value={uf}
-          onChange={(e) => {
-            setUf(e.target.value);
-            setMunicipioId('');
-            setMunicipioNome('');
-          }}
-          className="w-28 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all cursor-pointer"
-        >
-          <option value="">Todos UFs</option>
-          {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-
-        {/* Cidade — só aparece após selecionar UF */}
-        {uf && (
-          <MunicipioAutocomplete
-            value={municipioNome}
-            uf={uf}
-            apiUrl={API_URL}
-            onSelect={(id, nome) => { setMunicipioId(id); setMunicipioNome(nome); }}
-            onClear={() => { setMunicipioId(''); setMunicipioNome(''); }}
-            placeholder="Filtrar por cidade..."
-            className="w-44"
-            inputClassName="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 transition-all placeholder:font-normal placeholder:text-slate-400"
-            variant="slate"
-          />
-        )}
-
-        {/* Botão buscar / cancelar */}
-        {loading ? (
-          <button
-            onClick={cancelar}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all active:scale-[0.98] whitespace-nowrap"
-          >
-            <Loader2 size={13} className="animate-spin" />
-            Cancelar
-          </button>
-        ) : (
-          <button
-            onClick={buscar}
-            disabled={termo.trim().length < 2}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md shadow-orange-200/60 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] whitespace-nowrap"
-          >
-            <Search size={13} /> Buscar
-          </button>
-        )}
       </div>
 
       {/* ── Resultados ── */}
@@ -421,13 +462,13 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
             </p>
             <div className="flex items-center gap-2 mt-1">
               <button
-                onClick={() => { setMunicipioId(''); setMunicipioNome(''); }}
+                onClick={() => { setMunicipioId(''); setMunicipioNome(''); buscar(uf, '', ''); }}
                 className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-sky-700 bg-sky-50 border border-sky-200 rounded-xl hover:bg-sky-100 transition-all"
               >
                 Ver {ufSolicitada || 'o estado'}
               </button>
               <button
-                onClick={() => { setUf(''); setMunicipioId(''); setMunicipioNome(''); }}
+                onClick={() => { setUf(''); setMunicipioId(''); setMunicipioNome(''); buscar('', '', ''); }}
                 className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all"
               >
                 Ver todo o Brasil
@@ -448,7 +489,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
               Tente ampliar a janela de dias ou remover o filtro de estado.
             </p>
             <button
-              onClick={() => { setUf(''); setMunicipioId(''); setMunicipioNome(''); }}
+              onClick={() => { setUf(''); setMunicipioId(''); setMunicipioNome(''); buscar('', '', ''); }}
               className="mt-1 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-50 border border-amber-200 rounded-xl hover:bg-amber-100 transition-all"
             >
               Ver todo o Brasil

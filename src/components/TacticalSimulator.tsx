@@ -16,6 +16,11 @@ export default function TacticalSimulator({
 }: TacticalSimulatorProps) {
   
   const [modo, setModo] = useState<'CONSERVADOR' | 'SNIPER' | 'KAMIKAZE'>('SNIPER');
+  const [custoBase, setCustoBase] = useState('');
+  const [frete, setFrete] = useState('');
+  const [equipe, setEquipe] = useState('');
+  const [impostosPct, setImpostosPct] = useState('');
+  const [margemMinimaPct, setMargemMinimaPct] = useState('12');
   const isLocked = userTier < 4;
 
   const extrairValorExato = (textoBase: any): number => {
@@ -100,6 +105,12 @@ export default function TacticalSimulator({
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
   };
 
+  const parseNumero = (valor: string) => {
+    const limpo = valor.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    const numero = Number(limpo);
+    return Number.isFinite(numero) ? numero : 0;
+  };
+
   if (isLocked) {
     return (
       <div className="border border-slate-200 rounded-[2rem] bg-slate-50 p-8 text-center">
@@ -125,6 +136,18 @@ export default function TacticalSimulator({
   
   const custoMaximoOperacional = precoAlvoVencedor * (1 - (margemAtual / 100));
   const lucroLimpo = precoAlvoVencedor - custoMaximoOperacional;
+  const impostoEstimado = precoAlvoVencedor * (parseNumero(impostosPct) / 100);
+  const custoRealInformado = parseNumero(custoBase) + parseNumero(frete) + parseNumero(equipe) + impostoEstimado;
+  const lucroReal = precoAlvoVencedor - custoRealInformado;
+  const margemRealPct = precoAlvoVencedor > 0 ? (lucroReal / precoAlvoVencedor) * 100 : 0;
+  const margemMinima = parseNumero(margemMinimaPct);
+  const decisaoFinanceira = custoRealInformado <= 0
+    ? { label: 'Simule seus custos', className: 'border-slate-200 bg-slate-50 text-slate-600' }
+    : margemRealPct >= margemMinima
+      ? { label: 'Financeiramente defensável', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
+      : margemRealPct >= 0
+        ? { label: 'Go condicionado por margem', className: 'border-amber-200 bg-amber-50 text-amber-700' }
+        : { label: 'No-Go financeiro', className: 'border-red-200 bg-red-50 text-red-700' };
 
   return (
     <div className="bg-white border border-slate-200 rounded-[2rem] p-6 space-y-6 shadow-sm">
@@ -157,6 +180,45 @@ export default function TacticalSimulator({
         </div>
       </div>
 
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Simulador de proposta</p>
+            <p className="mt-1 text-sm font-black text-slate-900">Custo real da sua empresa</p>
+          </div>
+          <span className={`w-fit rounded-full border px-3 py-1 text-[10px] font-black uppercase ${decisaoFinanceira.className}`}>
+            {decisaoFinanceira.label}
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-5">
+          <SimulatorInput label="Custo / compra" value={custoBase} onChange={setCustoBase} placeholder="R$ 0,00" />
+          <SimulatorInput label="Frete / logística" value={frete} onChange={setFrete} placeholder="R$ 0,00" />
+          <SimulatorInput label="Equipe / execução" value={equipe} onChange={setEquipe} placeholder="R$ 0,00" />
+          <SimulatorInput label="Impostos" value={impostosPct} onChange={setImpostosPct} placeholder="%" />
+          <SimulatorInput label="Margem mínima" value={margemMinimaPct} onChange={setMargemMinimaPct} placeholder="%" />
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-white bg-white p-3 shadow-sm">
+            <span className="block text-[8px] font-black uppercase text-slate-400">Custo total informado</span>
+            <span className="mt-1 block text-sm font-black text-slate-900">{formatMoeda(custoRealInformado)}</span>
+          </div>
+          <div className="rounded-xl border border-white bg-white p-3 shadow-sm">
+            <span className="block text-[8px] font-black uppercase text-slate-400">Margem real no lance alvo</span>
+            <span className={`mt-1 block text-sm font-black ${margemRealPct >= margemMinima ? 'text-emerald-700' : margemRealPct >= 0 ? 'text-amber-700' : 'text-red-700'}`}>
+              {custoRealInformado > 0 ? `${margemRealPct.toFixed(1)}%` : 'Simule'}
+            </span>
+          </div>
+          <div className="rounded-xl border border-white bg-white p-3 shadow-sm">
+            <span className="block text-[8px] font-black uppercase text-slate-400">Lucro no cenário alvo</span>
+            <span className={`mt-1 block text-sm font-black ${lucroReal >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+              {custoRealInformado > 0 ? formatMoeda(lucroReal) : 'Simule'}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-slate-900 rounded-xl p-5 text-white relative overflow-hidden shadow-inner">
         <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">📊 Margem de Jogo: {margemAtual.toFixed(1)}%</p>
         <p className="text-[11px] text-slate-400 leading-relaxed mb-4">Margem de lucro embutida no volume total do contrato.</p>
@@ -176,5 +238,29 @@ export default function TacticalSimulator({
         </div>
       </div>
     </div>
+  );
+}
+
+function SimulatorInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-[8px] font-black uppercase tracking-widest text-slate-400">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-black text-slate-800 outline-none placeholder:text-slate-300 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/10"
+      />
+    </label>
   );
 }

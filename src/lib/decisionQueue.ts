@@ -1,6 +1,6 @@
 import type { SavedAnalysis } from '@/lib/types';
 
-export type DecisionQueueKey = 'not_started' | 'triage' | 'pending' | 'proposal' | 'submitted' | 'executed';
+export type DecisionQueueKey = 'not_started' | 'triage' | 'pending' | 'proposal' | 'submitted' | 'won' | 'lost' | 'abandoned' | 'executed';
 export type DecisionQueueFilter = 'all' | DecisionQueueKey;
 
 export type DecisionQueueTask = {
@@ -57,6 +57,24 @@ export const decisionQueueStages: Record<DecisionQueueKey, {
     className: 'border-violet-100 bg-violet-50 text-violet-700',
     dotClass: 'bg-violet-500',
   },
+  won: {
+    label: 'Ganho',
+    helper: 'Aprender e executar',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    dotClass: 'bg-emerald-600',
+  },
+  lost: {
+    label: 'Perdido',
+    helper: 'Aprender preço',
+    className: 'border-rose-100 bg-rose-50 text-rose-700',
+    dotClass: 'bg-rose-500',
+  },
+  abandoned: {
+    label: 'Abandonado',
+    helper: 'Decisão preservada',
+    className: 'border-slate-200 bg-slate-100 text-slate-600',
+    dotClass: 'bg-slate-500',
+  },
   executed: {
     label: 'Executado',
     helper: 'Fluxo encerrado',
@@ -71,6 +89,9 @@ export const decisionQueueOrder: DecisionQueueKey[] = [
   'pending',
   'proposal',
   'submitted',
+  'won',
+  'lost',
+  'abandoned',
   'executed',
 ];
 
@@ -81,6 +102,12 @@ export function getDecisionQueueStage(
 ): { key: DecisionQueueKey } {
   const explicitStage = normalizeDecisionWorkflowStatus(analysis.workflow_status);
   if (explicitStage) return { key: explicitStage };
+
+  const learning = asRecord(analysis.decision_learning);
+  const learningResult = normalizeDecisionQueueText(learning.resultado);
+  if (learningResult === 'won') return { key: 'won' };
+  if (learningResult === 'lost') return { key: 'lost' };
+  if (learningResult === 'abandoned' || learningResult === 'not_participated') return { key: 'abandoned' };
 
   const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
   const hasStarted = Object.values(statusMap).some((state) => state?.done || state?.updated_at || state?.responsavel || state?.prazo || state?.nota);

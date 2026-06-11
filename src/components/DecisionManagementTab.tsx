@@ -15,13 +15,18 @@ import {
   FileText,
   Loader2,
   RefreshCw,
+  RotateCcw,
+  Save,
   Search,
+  SlidersHorizontal,
+  Trophy,
   UserRound,
   X,
+  XCircle,
 } from 'lucide-react';
 import { API_URL } from '@/lib/apiClient';
 import { getCachedTier } from '@/lib/tier';
-import type { SavedAnalysis } from '@/lib/types';
+import type { Empresa, SavedAnalysis } from '@/lib/types';
 import type { AnalysisResult } from './analysis-types';
 import AnalysisResults from './AnalysisResults';
 import {
@@ -36,6 +41,12 @@ import {
 } from '@/lib/decisionQueue';
 
 type NoticeState = { type: 'success' | 'error' | 'info'; message: string } | null;
+type VerdictFilter = 'all' | 'go' | 'attention' | 'nogo';
+type UrgencyFilter = 'all' | 'late' | 'urgent' | 'week';
+type MonitorFilter = 'all' | 'changed' | 'monitored' | 'unmonitored';
+type ActivityFilter = 'all' | 'active' | 'finalized';
+type SortFilter = 'recent' | 'deadline' | 'score_desc' | 'score_asc';
+type CompanyFilter = 'all' | 'unlinked' | string;
 
 type DecisionQueueCardModel = {
   analysis: SavedAnalysis;
@@ -58,14 +69,26 @@ export default function DecisionManagementTab({
   userTier?: number;
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
+  const [companies, setCompanies] = useState<Empresa[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
+  const [stageFilter, setStageFilter] = useState<'all' | DecisionQueueKey>('all');
+  const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all');
+  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>('all');
+  const [monitorFilter, setMonitorFilter] = useState<MonitorFilter>('all');
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('active');
+  const [sortFilter, setSortFilter] = useState<SortFilter>('recent');
   const [notice, setNotice] = useState<NoticeState>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [savingStageId, setSavingStageId] = useState<string | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [selectedAnalysis, setSelectedAnalysis] = useState<SavedAnalysis | null>(null);
   const [summaryModal, setSummaryModal] = useState<DecisionQueueCardModel | null>(null);
+  const [reviewModal, setReviewModal] = useState<DecisionQueueCardModel | null>(null);
+  const [learningModal, setLearningModal] = useState<DecisionQueueCardModel | null>(null);
+  const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
+  const [savingLearningId, setSavingLearningId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'analise' | 'concorrentes'>('analise');
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
   const [boardScroll, setBoardScroll] = useState({ left: false, right: false });
@@ -73,18 +96,28 @@ export default function DecisionManagementTab({
   useEffect(() => {
     const loadData = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/analyses/history`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
+        const headers = { 'Authorization': `Bearer ${token}` };
+        const [historyRes, workspaceRes] = await Promise.all([
+          fetch(`${API_URL}/api/analyses/history`, { headers }),
+          fetch(`${API_URL}/api/workspace/details`, { headers }),
+        ]);
 
-        if (res.status === 401) {
+        if (historyRes.status === 401 || workspaceRes.status === 401) {
           window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
           return;
         }
 
-        const data = await res.json();
+        const data = await historyRes.json();
         const history = data.history || (Array.isArray(data) ? data : []);
         if (Array.isArray(history)) setAnalyses(history);
+
+        if (workspaceRes.ok) {
+          const workspaceData = await workspaceRes.json().catch(() => null);
+          const workspaceCompanies = Array.isArray(workspaceData?.companies)
+            ? workspaceData.companies
+            : [];
+          setCompanies(workspaceCompanies.filter((company: Empresa) => company?.cnpj));
+        }
       } catch {
         setNotice({ type: 'error', message: 'Erro ao carregar a gestão de decisões.' });
       } finally {
@@ -96,7 +129,23 @@ export default function DecisionManagementTab({
     else setIsLoading(false);
   }, [token]);
 
-  const filteredAnalyses = useMemo(() => {
+  const companyOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return companies.filter((company) => {
+      const cnpj = cleanCnpj(company.cnpj);
+      if (!cnpj || seen.has(cnpj)) return false;
+      seen.add(cnpj);
+      return true;
+    });
+  }, [companies]);
+
+  useEffect(() => {
+    if (companyFilter === 'all' || companyFilter === 'unlinked') return;
+    const stillExists = companyOptions.some((company) => cleanCnpj(company.cnpj) === companyFilter);
+    if (!stillExists) setCompanyFilter('all');
+  }, [companyFilter, companyOptions]);
+
+  const searchFilteredAnalyses = useMemo(() => {
     const search = searchText.toLowerCase().trim();
     if (!search) return analyses;
 
@@ -107,6 +156,8 @@ export default function DecisionManagementTab({
         item.recommendation,
         item.termo_busca_pncp,
         item.classification,
+        getAnalysisCompanyName(item),
+        getAnalysisCompanyCnpj(item),
         item.uf,
         item.estado,
       ].filter(Boolean).join(' ').toLowerCase();
@@ -114,7 +165,7 @@ export default function DecisionManagementTab({
     });
   }, [analyses, searchText]);
 
-  const queueCards = useMemo<DecisionQueueCardModel[]>(() => filteredAnalyses.map((analysis) => {
+  const allQueueCards = useMemo<DecisionQueueCardModel[]>(() => searchFilteredAnalyses.map((analysis) => {
     const tasks = buildDecisionQueueTasks(analysis);
     const statusMap = normalizeDecisionCockpitStatus(analysis.cockpit_status);
     const done = tasks.filter((task) => statusMap[task.id]?.done).length;
@@ -131,7 +182,64 @@ export default function DecisionManagementTab({
       nextTask,
       stage,
     };
-  }), [filteredAnalyses]);
+  }), [searchFilteredAnalyses]);
+
+  const queueCards = useMemo<DecisionQueueCardModel[]>(() => {
+    const finalStages: DecisionQueueKey[] = ['won', 'lost', 'abandoned', 'executed'];
+    const now = Date.now();
+    const selectedCompany = companyFilter === 'all' || companyFilter === 'unlinked'
+      ? null
+      : companyOptions.find((company) => cleanCnpj(company.cnpj) === companyFilter) || null;
+
+    const filtered = allQueueCards.filter((card) => {
+      if (companyFilter === 'unlinked' && getLinkedCompanyForAnalysis(card.analysis, companyOptions)) return false;
+      if (companyFilter !== 'all' && companyFilter !== 'unlinked') {
+        if (!selectedCompany || !analysisMatchesCompany(card.analysis, selectedCompany)) return false;
+      }
+
+      if (stageFilter !== 'all' && card.stage !== stageFilter) return false;
+
+      const score = Number(card.analysis.score || 0);
+      if (verdictFilter === 'go' && score < 70) return false;
+      if (verdictFilter === 'attention' && !(score >= 45 && score < 70)) return false;
+      if (verdictFilter === 'nogo' && score >= 45) return false;
+
+      const isFinal = finalStages.includes(card.stage);
+      if (activityFilter === 'active' && isFinal) return false;
+      if (activityFilter === 'finalized' && !isFinal) return false;
+
+      const monitor = asRecord(card.analysis.pncp_monitor);
+      const hasEvents = Array.isArray(card.analysis.pncp_monitor_events) && card.analysis.pncp_monitor_events.length > 0;
+      const hasPncpRef = Boolean(asRecord(card.analysis.pncp_ref).cnpj || card.analysis.pncp_cnpj);
+      if (monitorFilter === 'changed' && !hasEvents && monitor.status !== 'mudanca_detectada') return false;
+      if (monitorFilter === 'monitored' && !hasPncpRef) return false;
+      if (monitorFilter === 'unmonitored' && hasPncpRef) return false;
+
+      if (urgencyFilter !== 'all') {
+        const deadline = getCriticalDeadline(asRecord(card.analysis), card.nextTask).date;
+        if (!deadline) return false;
+        const diffDays = Math.ceil((deadline.getTime() - now) / (24 * 60 * 60 * 1000));
+        if (urgencyFilter === 'late' && diffDays >= 0) return false;
+        if (urgencyFilter === 'urgent' && !(diffDays >= 0 && diffDays <= 1)) return false;
+        if (urgencyFilter === 'week' && !(diffDays >= 0 && diffDays <= 7)) return false;
+      }
+
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      if (sortFilter === 'score_desc') return Number(b.analysis.score || 0) - Number(a.analysis.score || 0);
+      if (sortFilter === 'score_asc') return Number(a.analysis.score || 0) - Number(b.analysis.score || 0);
+      if (sortFilter === 'deadline') {
+        const da = getCriticalDeadline(asRecord(a.analysis), a.nextTask).date?.getTime() || Number.MAX_SAFE_INTEGER;
+        const db = getCriticalDeadline(asRecord(b.analysis), b.nextTask).date?.getTime() || Number.MAX_SAFE_INTEGER;
+        return da - db;
+      }
+      const ca = parseOperationalDate(a.analysis.created_at)?.getTime() || 0;
+      const cb = parseOperationalDate(b.analysis.created_at)?.getTime() || 0;
+      return cb - ca;
+    });
+  }, [activityFilter, allQueueCards, companyFilter, companyOptions, monitorFilter, sortFilter, stageFilter, urgencyFilter, verdictFilter]);
 
   const counts = queueCards.reduce<Record<DecisionQueueKey, number>>((acc, card) => {
     acc[card.stage] += 1;
@@ -142,6 +250,9 @@ export default function DecisionManagementTab({
     pending: 0,
     proposal: 0,
     submitted: 0,
+    won: 0,
+    lost: 0,
+    abandoned: 0,
     executed: 0,
   });
 
@@ -179,6 +290,28 @@ export default function DecisionManagementTab({
       behavior: 'smooth',
     });
     window.setTimeout(updateBoardScrollState, 320);
+  };
+
+  const hasActiveFilters = Boolean(
+    searchText.trim()
+    || companyFilter !== 'all'
+    || stageFilter !== 'all'
+    || verdictFilter !== 'all'
+    || urgencyFilter !== 'all'
+    || monitorFilter !== 'all'
+    || activityFilter !== 'active'
+    || sortFilter !== 'recent',
+  );
+
+  const resetFilters = () => {
+    setSearchText('');
+    setCompanyFilter('all');
+    setStageFilter('all');
+    setVerdictFilter('all');
+    setUrgencyFilter('all');
+    setMonitorFilter('all');
+    setActivityFilter('active');
+    setSortFilter('recent');
   };
 
   const openAnalysisDetail = async (analysis: SavedAnalysis) => {
@@ -349,6 +482,98 @@ export default function DecisionManagementTab({
     }
   };
 
+  const reviewDecision = async (
+    card: DecisionQueueCardModel,
+    payload: { tipo: string; titulo: string; conteudo: string },
+  ) => {
+    if (!card.analysis.id || savingReviewId) return;
+
+    setSavingReviewId(card.analysis.id);
+    try {
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      const res = await fetch(`${API_URL}/api/analyses/${card.analysis.id}/review`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenLocal}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 401) {
+        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setNotice({ type: 'error', message: error?.detail || 'Não foi possível revisar a decisão.' });
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      if (data?.analysis) {
+        setAnalyses((prev) => prev.map((item) => (
+          item.id === card.analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
+        )));
+      }
+      setReviewModal(null);
+      setNotice({ type: 'success', message: 'Decisão revisada e salva. O edital voltou para triagem.' });
+    } catch {
+      setNotice({ type: 'error', message: 'Erro de conexão ao revisar a decisão.' });
+    } finally {
+      setSavingReviewId(null);
+    }
+  };
+
+  const saveLearning = async (
+    card: DecisionQueueCardModel,
+    payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string },
+  ) => {
+    if (!card.analysis.id || savingLearningId) return;
+
+    setSavingLearningId(card.analysis.id);
+    try {
+      const tokenLocal = localStorage.getItem('bawzi_token') || token;
+      const res = await fetch(`${API_URL}/api/analyses/${card.analysis.id}/learning`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${tokenLocal}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 401) {
+        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
+        localStorage.clear();
+        window.location.reload();
+        return;
+      }
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setNotice({ type: 'error', message: error?.detail || 'Não foi possível registrar o resultado.' });
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      if (data?.analysis) {
+        setAnalyses((prev) => prev.map((item) => (
+          item.id === card.analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
+        )));
+      }
+      setLearningModal(null);
+      setNotice({ type: 'success', message: 'Resultado registrado. A Bawzi usará esse histórico nas próximas decisões.' });
+    } catch {
+      setNotice({ type: 'error', message: 'Erro de conexão ao registrar o resultado.' });
+    } finally {
+      setSavingLearningId(null);
+    }
+  };
+
   const scoreColors = (score: number) =>
     score >= 70
       ? { bar: 'bg-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-50', border: 'border-emerald-100', label: 'Go' }
@@ -451,6 +676,30 @@ export default function DecisionManagementTab({
           }}
           onComplete={completeNextTask}
           onStageChange={updateWorkflowStage}
+          onReviewRequest={(card) => {
+            setSummaryModal(null);
+            setReviewModal(card);
+          }}
+          onLearningRequest={(card) => {
+            setSummaryModal(null);
+            setLearningModal(card);
+          }}
+        />
+      )}
+      {reviewModal && (
+        <DecisionReviewModal
+          card={reviewModal}
+          isSaving={savingReviewId === reviewModal.analysis.id}
+          onClose={() => setReviewModal(null)}
+          onSubmit={reviewDecision}
+        />
+      )}
+      {learningModal && (
+        <LearningModal
+          card={learningModal}
+          isSaving={savingLearningId === learningModal.analysis.id}
+          onClose={() => setLearningModal(null)}
+          onSubmit={saveLearning}
         />
       )}
 
@@ -467,7 +716,7 @@ export default function DecisionManagementTab({
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6 md:min-w-[560px]">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 md:min-w-[720px]">
             {columnOrder.map((key) => {
               const stage = decisionQueueStages[key];
               return (
@@ -480,17 +729,148 @@ export default function DecisionManagementTab({
           </div>
         </div>
 
-        <div className="border-t border-slate-100 bg-white p-3">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
-              placeholder="Buscar por título, órgão, UF, termo ou decisão..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-xs font-medium text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-            />
+        <div className="border-t border-slate-100 bg-white p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder="Buscar por título, órgão, UF, termo ou decisão..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-xs font-medium text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              />
+            </div>
+
+            <div className="inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-black uppercase text-slate-500">
+              <span className="inline-flex items-center gap-2">
+                <SlidersHorizontal size={13} className="text-emerald-600" />
+                Filtros
+              </span>
+              <span className="rounded-full bg-white px-2 py-0.5 text-slate-700 shadow-sm">
+                {queueCards.length} de {analyses.length}
+              </span>
+            </div>
           </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
+              <select
+                value={companyFilter}
+                onChange={(event) => setCompanyFilter(event.target.value as CompanyFilter)}
+                disabled={companyOptions.length === 0}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="all">{companyOptions.length ? 'Todas' : 'Sem empresas'}</option>
+                {companyOptions.map((company) => {
+                  const cnpj = cleanCnpj(company.cnpj);
+                  return (
+                    <option key={cnpj} value={cnpj}>
+                      {getCompanyLabel(company)}
+                    </option>
+                  );
+                })}
+                <option value="unlinked">Sem vínculo</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Etapa</span>
+              <select
+                value={stageFilter}
+                onChange={(event) => setStageFilter(event.target.value as 'all' | DecisionQueueKey)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="all">Todas</option>
+                {columnOrder.map((key) => (
+                  <option key={key} value={key}>{decisionQueueStages[key].label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Status</span>
+              <select
+                value={activityFilter}
+                onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="active">Ativos</option>
+                <option value="finalized">Finalizados</option>
+                <option value="all">Todos</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Decisão</span>
+              <select
+                value={verdictFilter}
+                onChange={(event) => setVerdictFilter(event.target.value as VerdictFilter)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="all">Todas</option>
+                <option value="go">Go</option>
+                <option value="attention">Atenção</option>
+                <option value="nogo">No-Go</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
+              <select
+                value={urgencyFilter}
+                onChange={(event) => setUrgencyFilter(event.target.value as UrgencyFilter)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="all">Todos</option>
+                <option value="late">Vencidos</option>
+                <option value="urgent">Hoje/amanhã</option>
+                <option value="week">Próx. 7 dias</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">PNCP</span>
+              <select
+                value={monitorFilter}
+                onChange={(event) => setMonitorFilter(event.target.value as MonitorFilter)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="all">Todos</option>
+                <option value="changed">Com mudança</option>
+                <option value="monitored">Monitorados</option>
+                <option value="unmonitored">Sem monitor</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Ordenar</span>
+              <select
+                value={sortFilter}
+                onChange={(event) => setSortFilter(event.target.value as SortFilter)}
+                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="recent">Mais recentes</option>
+                <option value="deadline">Prazo crítico</option>
+                <option value="score_desc">Maior score</option>
+                <option value="score_asc">Menor score</option>
+              </select>
+            </label>
+          </div>
+
+          {hasActiveFilters && (
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              >
+                <RotateCcw size={12} />
+                Limpar filtros
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -537,7 +917,7 @@ export default function DecisionManagementTab({
           )}
 
           <div ref={boardScrollRef} className="overflow-x-auto scroll-smooth pb-3">
-            <div className="grid min-w-[1500px] grid-cols-6 gap-3">
+            <div className="grid min-w-[2250px] grid-cols-9 gap-3">
             {columnOrder.map((stageKey) => {
               const stage = decisionQueueStages[stageKey];
               const cards = queueCards.filter((card) => card.stage === stageKey);
@@ -618,6 +998,7 @@ function DecisionQueueCard({
   const workflowTaskId = `${card.analysis.id}-workflow`;
   const nextStage = getNextDecisionQueueStage(card.stage);
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
+  const learnedResult = getResultLabel(card.analysis);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -670,6 +1051,12 @@ function DecisionQueueCard({
             </span>
           </span>
         </button>
+
+        {learnedResult && (
+          <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-[11px] font-black leading-snug text-emerald-800">
+            {learnedResult}
+          </div>
+        )}
 
         {card.nextTask ? (
           <div className="rounded-xl border border-slate-100 bg-white p-2.5">
@@ -749,6 +1136,8 @@ function OperationalSummaryModal({
   onOpenLaudo,
   onComplete,
   onStageChange,
+  onReviewRequest,
+  onLearningRequest,
 }: {
   card: DecisionQueueCardModel;
   savingTaskId: string | null;
@@ -757,6 +1146,8 @@ function OperationalSummaryModal({
   onOpenLaudo: (analysis: SavedAnalysis) => void;
   onComplete: (analysis: SavedAnalysis, task: DecisionQueueTask) => void;
   onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
+  onReviewRequest: (card: DecisionQueueCardModel) => void;
+  onLearningRequest: (card: DecisionQueueCardModel) => void;
 }) {
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
   const stage = decisionQueueStages[card.stage];
@@ -775,10 +1166,14 @@ function OperationalSummaryModal({
   const nextStage = getNextDecisionQueueStage(card.stage);
   const workflowTaskId = `${card.analysis.id}-workflow`;
   const quickTaskId = card.nextTask ? `${card.analysis.id}-${card.nextTask.id}` : '';
+  const headerOffset = useStickyHeaderOffset();
 
   return (
-    <div className="fixed inset-0 z-[140] flex items-center justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4">
-      <div className="flex max-h-[calc(100dvh-24px)] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:max-h-[calc(100dvh-32px)] sm:rounded-[2rem]">
+    <div
+      className="fixed inset-x-0 bottom-0 z-[140] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
+      style={{ top: headerOffset }}
+    >
+      <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]">
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 p-4 sm:p-5">
           <div className="min-w-0">
             <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -916,6 +1311,22 @@ function OperationalSummaryModal({
           </button>
           <button
             type="button"
+            onClick={() => onReviewRequest(card)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-black text-sky-700 transition-all hover:bg-sky-100"
+          >
+            <RotateCcw size={15} />
+            Revisar decisão
+          </button>
+          <button
+            type="button"
+            onClick={() => onLearningRequest(card)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 transition-all hover:bg-emerald-100"
+          >
+            <Trophy size={15} />
+            Registrar resultado
+          </button>
+          <button
+            type="button"
             onClick={() => onOpenLaudo(card.analysis)}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800"
           >
@@ -924,6 +1335,265 @@ function OperationalSummaryModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function DecisionReviewModal({
+  card,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  card: DecisionQueueCardModel;
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (card: DecisionQueueCardModel, payload: { tipo: string; titulo: string; conteudo: string }) => void;
+}) {
+  const headerOffset = useStickyHeaderOffset();
+  const [tipo, setTipo] = useState('resposta_orgao');
+  const [titulo, setTitulo] = useState('');
+  const [conteudo, setConteudo] = useState('');
+  const canSubmit = conteudo.trim().length >= 20 && !isSaving;
+
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-[150] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
+      style={{ top: headerOffset }}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!canSubmit) return;
+          onSubmit(card, { tipo, titulo: titulo.trim() || 'Revisão de decisão', conteudo: conteudo.trim() });
+        }}
+        className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]"
+      >
+        <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-sky-50 p-4 sm:p-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Revisar decisão</p>
+            <h3 className="mt-1 line-clamp-2 text-lg font-black leading-tight text-slate-950">
+              {card.analysis.title || 'Análise de edital'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar revisão"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:text-slate-950"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+          <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Tipo</label>
+              <select
+                value={tipo}
+                onChange={(event) => setTipo(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-800 outline-none focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+              >
+                <option value="resposta_orgao">Resposta do órgão</option>
+                <option value="novo_documento">Novo documento</option>
+                <option value="alteracao_edital">Alteração do edital</option>
+                <option value="nova_cotacao">Nova cotação</option>
+                <option value="decisao_interna">Decisão interna</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Título</label>
+              <input
+                value={titulo}
+                onChange={(event) => setTitulo(event.target.value)}
+                placeholder="Ex.: resposta ao pedido de esclarecimento"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-800 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Novo fato para reprocessar</label>
+            <textarea
+              value={conteudo}
+              onChange={(event) => setConteudo(event.target.value)}
+              rows={9}
+              placeholder="Cole aqui o trecho novo do edital, resposta do órgão, anexo publicado, cotação ou decisão interna que pode mudar o Go/No-Go."
+              className="min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+            />
+          </div>
+
+          <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4 text-xs font-bold leading-relaxed text-sky-800">
+            A revisão atualiza o laudo, registra o histórico da mudança e move o edital de volta para triagem.
+          </div>
+        </div>
+
+        <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:justify-end sm:p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? <Loader2 size={15} className="animate-spin" /> : <RotateCcw size={15} />}
+            Revisar agora
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function LearningModal({
+  card,
+  isSaving,
+  onClose,
+  onSubmit,
+}: {
+  card: DecisionQueueCardModel;
+  isSaving: boolean;
+  onClose: () => void;
+  onSubmit: (card: DecisionQueueCardModel, payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string }) => void;
+}) {
+  const headerOffset = useStickyHeaderOffset();
+  const learning = card.analysis.decision_learning || {};
+  const [participou, setParticipou] = useState(Boolean(learning.participou ?? true));
+  const [resultado, setResultado] = useState(String(learning.resultado || 'won'));
+  const [precoFinal, setPrecoFinal] = useState(String(learning.preco_final || ''));
+  const [vencedor, setVencedor] = useState(String(learning.vencedor || ''));
+  const [observacao, setObservacao] = useState(String(learning.observacao || ''));
+  const finalResult = participou ? resultado : 'not_participated';
+
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-[150] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
+      style={{ top: headerOffset }}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit(card, {
+            participou,
+            resultado: finalResult,
+            preco_final: precoFinal.trim(),
+            vencedor: vencedor.trim(),
+            observacao: observacao.trim(),
+          });
+        }}
+        className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]"
+      >
+        <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-emerald-50 p-4 sm:p-5">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Memória de aprendizado</p>
+            <h3 className="mt-1 line-clamp-2 text-lg font-black leading-tight text-slate-950">
+              {card.analysis.title || 'Análise de edital'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar resultado"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition-all hover:border-slate-300 hover:text-slate-950"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => {
+                setParticipou(true);
+                setResultado('won');
+              }}
+              className={`rounded-2xl border p-4 text-left transition-all ${participou && resultado === 'won' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              <Trophy size={18} />
+              <p className="mt-3 text-sm font-black">Ganhou</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setParticipou(true);
+                setResultado('lost');
+              }}
+              className={`rounded-2xl border p-4 text-left transition-all ${participou && resultado === 'lost' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              <XCircle size={18} />
+              <p className="mt-3 text-sm font-black">Perdeu</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setParticipou(false);
+                setResultado('abandoned');
+              }}
+              className={`rounded-2xl border p-4 text-left transition-all ${!participou ? 'border-slate-300 bg-slate-100 text-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+            >
+              <AlertTriangle size={18} />
+              <p className="mt-3 text-sm font-black">Não participou</p>
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Preço final</label>
+              <input
+                value={precoFinal}
+                onChange={(event) => setPrecoFinal(event.target.value)}
+                placeholder="Ex.: R$ 187.000,00"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Quem venceu</label>
+              <input
+                value={vencedor}
+                onChange={(event) => setVencedor(event.target.value)}
+                placeholder="Empresa vencedora"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Observação</label>
+            <textarea
+              value={observacao}
+              onChange={(event) => setObservacao(event.target.value)}
+              rows={4}
+              placeholder="Ex.: perdemos por preço, decidimos não participar por prazo, concorrente regional recorrente venceu..."
+              className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium leading-relaxed text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+            />
+          </div>
+        </div>
+
+        <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:justify-end sm:p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+            Salvar aprendizado
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -950,6 +1620,31 @@ function SummaryField({
       <p className="whitespace-pre-wrap break-words text-sm font-black leading-relaxed text-slate-900">{value}</p>
     </div>
   );
+}
+
+function useStickyHeaderOffset(defaultOffset = 80) {
+  const [headerOffset, setHeaderOffset] = useState(defaultOffset);
+
+  useEffect(() => {
+    const measureHeader = () => {
+      const header = document.querySelector('header');
+      const wrapper = header?.parentElement || header;
+      const rect = wrapper?.getBoundingClientRect();
+      const bottom = rect?.bottom || rect?.height || 72;
+      setHeaderOffset(Math.max(64, Math.ceil(bottom) + 8));
+    };
+
+    measureHeader();
+    const timer = window.setTimeout(measureHeader, 120);
+    window.addEventListener('resize', measureHeader);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', measureHeader);
+    };
+  }, []);
+
+  return headerOffset;
 }
 
 function getOperationalContext(
@@ -1076,12 +1771,31 @@ function getStageReason(
     pending: `Acompanhar dependência externa. ${prazo.label}.`,
     proposal: 'Proposta pronta para montagem ou revisão final.',
     submitted: 'Proposta enviada. Acompanhar sessão, disputa e homologação.',
+    won: 'Resultado ganho registrado. Transformar aprendizado em execução e referência futura.',
+    lost: 'Resultado perdido registrado. Usar preço final e vencedor para calibrar próximas disputas.',
+    abandoned: 'Participação abandonada ou não realizada. Decisão preservada para aprendizado.',
     executed: 'Fluxo encerrado na Bawzi. Registrar resultado final quando aplicável.',
   };
   return fallback[stage];
 }
 
 function getResultLabel(analysis: SavedAnalysis) {
+  const learning = asRecord(analysis.decision_learning);
+  const learnedResult = firstText(learning.resultado);
+  if (learnedResult) {
+    const labels: Record<string, string> = {
+      won: 'Ganho',
+      lost: 'Perdido',
+      abandoned: 'Abandonado',
+      not_participated: 'Não participou',
+      unknown: 'Resultado registrado',
+    };
+    const label = labels[learnedResult] || learnedResult;
+    const winner = firstText(learning.vencedor);
+    const price = firstText(learning.preco_final);
+    return [label, winner && `Vencedor: ${winner}`, price && `Preço: ${price}`].filter(Boolean).join(' · ');
+  }
+
   const result = firstText(
     analysis.resultado_final,
     analysis.resultado,
@@ -1094,7 +1808,9 @@ function getResultLabel(analysis: SavedAnalysis) {
 function formatLastUpdate(analysis: SavedAnalysis) {
   const raw = firstText(
     analysis.workflow_updated_at,
+    analysis.reviewed_at,
     analysis.cockpit_updated_at,
+    asRecord(analysis.decision_learning).updated_at,
     analysis.updated_at,
     analysis.created_at,
   );
@@ -1140,4 +1856,89 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function cleanCnpj(value: unknown) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function formatCnpj(value: unknown) {
+  const cnpj = cleanCnpj(value);
+  if (cnpj.length !== 14) return cnpj;
+  return `${cnpj.slice(0, 2)}.${cnpj.slice(2, 5)}.${cnpj.slice(5, 8)}/${cnpj.slice(8, 12)}-${cnpj.slice(12)}`;
+}
+
+function normalizeCompanyText(value: unknown) {
+  return firstText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\b(ltda|eireli|mei|me|epp|sa|s a|servicos|comercio|industria)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getCompanyLabel(company: Empresa) {
+  const label = firstText(company.nome_fantasia, company.razao_social, company.nome, company.name, 'Empresa');
+  const cnpj = formatCnpj(company.cnpj);
+  return cnpj ? `${label} - ${cnpj}` : label;
+}
+
+function getAnalysisCompanyCnpj(analysis: SavedAnalysis) {
+  const context = asRecord(analysis.empresa_contexto);
+  const legacyContext = asRecord(analysis.company_context);
+  return cleanCnpj(
+    context.cnpj
+    || legacyContext.cnpj
+    || analysis.company_cnpj
+    || analysis.empresa_cnpj
+    || analysis.cnpj_empresa
+    || analysis.cnpj_empresa_analisada,
+  );
+}
+
+function getAnalysisCompanyName(analysis: SavedAnalysis) {
+  const context = asRecord(analysis.empresa_contexto);
+  const legacyContext = asRecord(analysis.company_context);
+  const aderencia = asRecord(analysis.aderencia_negocio);
+  return firstText(
+    context.nome_fantasia,
+    context.razao_social,
+    context.nome,
+    legacyContext.nome_fantasia,
+    legacyContext.razao_social,
+    legacyContext.nome,
+    analysis.company_name,
+    analysis.empresa_nome,
+    analysis.nome_empresa,
+    aderencia.empresa,
+  );
+}
+
+function analysisMatchesCompany(analysis: SavedAnalysis, company: Empresa) {
+  const analysisCnpj = getAnalysisCompanyCnpj(analysis);
+  const companyCnpj = cleanCnpj(company.cnpj);
+  if (analysisCnpj && companyCnpj) return analysisCnpj === companyCnpj;
+
+  const analysisName = normalizeCompanyText(getAnalysisCompanyName(analysis));
+  if (!analysisName) return false;
+
+  return [
+    company.nome_fantasia,
+    company.razao_social,
+    company.nome,
+    company.name,
+  ].some((name) => {
+    const normalized = normalizeCompanyText(name);
+    return normalized && (
+      normalized === analysisName
+      || normalized.includes(analysisName)
+      || analysisName.includes(normalized)
+    );
+  });
+}
+
+function getLinkedCompanyForAnalysis(analysis: SavedAnalysis, companies: Empresa[]) {
+  return companies.find((company) => analysisMatchesCompany(analysis, company)) || null;
 }

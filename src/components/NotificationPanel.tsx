@@ -9,7 +9,7 @@ import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRi
 // ─────────────────────────────────────────────
 export interface Notificacao {
   _id: string;
-  tipo: 'compliance' | 'matchmaker' | 'renovacao' | 'oportunidade';
+  tipo: 'compliance' | 'matchmaker' | 'renovacao' | 'oportunidade' | 'prazo' | 'decisao' | 'pncp_mudanca';
   prioridade: 1 | 2 | 3;
   icone: string;
   titulo: string;
@@ -83,6 +83,30 @@ const TIPO_CONFIG: Record<string, {
     ctaHover: 'hover:bg-emerald-100 hover:border-emerald-400',
     label:    'Oportunidade',
   },
+  prazo: {
+    accent:   'border-red-400',
+    badge:    'bg-red-100 text-red-700',
+    iconBg:   'bg-red-500',
+    cta:      'bg-red-50 border-red-200 text-red-700',
+    ctaHover: 'hover:bg-red-100 hover:border-red-400',
+    label:    'Prazo crítico',
+  },
+  decisao: {
+    accent:   'border-sky-400',
+    badge:    'bg-sky-100 text-sky-700',
+    iconBg:   'bg-sky-500',
+    cta:      'bg-sky-50 border-sky-200 text-sky-700',
+    ctaHover: 'hover:bg-sky-100 hover:border-sky-400',
+    label:    'Decisão',
+  },
+  pncp_mudanca: {
+    accent:   'border-sky-400',
+    badge:    'bg-sky-100 text-sky-700',
+    iconBg:   'bg-sky-500',
+    cta:      'bg-sky-50 border-sky-200 text-sky-700',
+    ctaHover: 'hover:bg-sky-100 hover:border-sky-400',
+    label:    'PNCP',
+  },
 };
 
 function TipoIcon({ tipo }: { tipo: string }) {
@@ -92,6 +116,9 @@ function TipoIcon({ tipo }: { tipo: string }) {
   if (tipo === 'matchmaker')   return <Zap         size={sz} className={cls} />;
   if (tipo === 'renovacao')    return <RefreshCw   size={sz} className={cls} />;
   if (tipo === 'oportunidade') return <Sparkles    size={sz} className={cls} />;
+  if (tipo === 'prazo')        return <BellRing    size={sz} className={cls} />;
+  if (tipo === 'decisao')      return <CheckCircle2 size={sz} className={cls} />;
+  if (tipo === 'pncp_mudanca') return <RefreshCw   size={sz} className={cls} />;
   return <ShieldAlert size={sz} className={cls} />;
 }
 
@@ -126,6 +153,9 @@ const CTA_LABEL: Record<string, string> = {
   matchmaker:   'Ver editais',
   renovacao:    'Ver contratos',
   oportunidade: 'Ver oportunidade',
+  prazo:        'Abrir gestão',
+  decisao:      'Revisar decisão',
+  pncp_mudanca: 'Abrir gestão',
 };
 
 // ─────────────────────────────────────────────
