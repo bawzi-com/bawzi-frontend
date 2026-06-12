@@ -6,8 +6,8 @@
  * da empresa cadastrada pelo usuário.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin, Globe } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin, Globe, Info } from 'lucide-react';
 import CnaePriceTrendChart from './CnaePriceTrendChart';
 
 interface CnaeOportunidadesProps {
@@ -84,12 +84,24 @@ export default function CnaeOportunidades({
     empresaLocalizacao: Record<string, { uf: string; municipio: string }>;
     empresa: string;
     empresas: string[];
+    empresasDetalhe: { nome: string; cnae?: string | null; termo?: string | null; uf?: string | null; municipio?: string | null }[];
     termos: string[];
   } | null>(null);
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null);
   const [mensagemServidor, setMensagemServidor] = useState('');
   const [mounted, setMounted] = useState(false);
   const [erroEdital, setErroEdital] = useState<string | null>(null);
+
+  // Transparência da busca ao vivo: fonte, hora, resposta parcial e delta
+  const [feedMeta, setFeedMeta] = useState<{
+    geradoEm: number | null;
+    fonte: string;
+    parcial: boolean;
+    buscasOk: number;
+    buscasTotal: number;
+  } | null>(null);
+  const [delta, setDelta] = useState<{ novos: number; sairam: number } | null>(null);
+  const prevUidsRef = useRef<Set<string> | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -112,9 +124,31 @@ export default function CnaeOportunidades({
       }
       const data = await res.json();
       setStatus(data.status);
-      setEditais(data.data || []);
+      const lista: EditalCnae[] = data.data || [];
+      setEditais(lista);
       setMensagemServidor(data.message || '');
       setEmpresaFiltro(null); // reset filtro ao recarregar
+
+      // ── Delta entre atualizações: torna a variação da contagem legível ──
+      const uidOf = (e: EditalCnae) => String(e.numero_controle_pncp || e.id || '');
+      const uidsAtuais = new Set(lista.map(uidOf).filter(Boolean));
+      if (forceRefresh && prevUidsRef.current && prevUidsRef.current.size > 0) {
+        const prev = prevUidsRef.current;
+        const novos  = [...uidsAtuais].filter(u => !prev.has(u)).length;
+        const sairam = [...prev].filter(u => !uidsAtuais.has(u)).length;
+        setDelta(novos > 0 || sairam > 0 ? { novos, sairam } : null);
+      } else {
+        setDelta(null);
+      }
+      prevUidsRef.current = uidsAtuais;
+
+      setFeedMeta({
+        geradoEm: typeof data.gerado_em === 'number' ? data.gerado_em : null,
+        fonte: data.fonte || 'ao_vivo',
+        parcial: !!data.parcial,
+        buscasOk: data.buscas_ok ?? 0,
+        buscasTotal: data.buscas_total ?? 0,
+      });
       // Sempre atualiza cnaeInfo (nunca deixa estado stale se data.cnae vier vazio)
       setCnaeInfo(data.cnae ? {
         cnae: data.cnae,
@@ -125,6 +159,7 @@ export default function CnaeOportunidades({
         empresaLocalizacao: data.empresa_localizacao || {},
         empresa: data.empresa || '',
         empresas: data.empresas || [],
+        empresasDetalhe: data.empresas_detalhe || [],
         termos: data.termos_usados || [],
       } : null);
     } catch {
@@ -353,6 +388,14 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                   {cnaeInfo.empresas.length > 1
                     ? `${cnaeInfo.empresas.length} empresas · ${editais.length} editais`
                     : `${editais.length} editais encontrados`}
+                  {feedMeta && (
+                    <span className="text-slate-300">
+                      {feedMeta.fonte === 'cache' ? ' · em cache' : ' · ao vivo do PNCP'}
+                      {feedMeta.geradoEm
+                        ? ` · ${new Date(feedMeta.geradoEm * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                        : ''}
+                    </span>
+                  )}
                 </p>
               )}
             </div>
@@ -429,18 +472,61 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
         )}
       </div>
 
-      {/* ── Inteligência de Preços por CNAE ──────────────────────────────────── */}
-      {cnaeInfo && cnaeInfo.cnae && (
-        <div className="mb-4">
-          <CnaePriceTrendChart
-            token={token}
-            cnae={cnaeInfo.cnae}
-            uf={cnaeInfo.ufEmpresa || undefined}
-            meses={12}
-            labelSegmento={cnaeInfo.termos[0]}
-          />
+      {/* ── Transparência da busca ao vivo ───────────────────────────────────── */}
+      {status === 'success' && (feedMeta || delta) && (
+        <div className="mb-4 space-y-2">
+          {/* Resposta parcial do PNCP — a lista pode estar incompleta */}
+          {feedMeta?.parcial && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] font-semibold text-amber-800">
+              <span className="text-sm leading-none">⚠️</span>
+              <span>
+                O PNCP respondeu parcialmente ({feedMeta.buscasOk} de {feedMeta.buscasTotal} buscas concluídas) —
+                alguns editais podem não estar listados. Clique em <strong>Atualizar</strong> para tentar completar.
+              </span>
+            </div>
+          )}
+
+          {/* Por que a contagem varia + delta da última atualização */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-1 text-[11px] font-medium text-slate-400">
+            <Info size={12} className="shrink-0" />
+            <span>
+              Feed consultado em tempo real no PNCP: editais novos entram e encerrados saem — a contagem pode mudar a cada atualização.
+            </span>
+            {delta && (delta.novos > 0 || delta.sairam > 0) && (
+              <span className="rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 font-black text-teal-700">
+                {delta.novos > 0 && `+${delta.novos} novo${delta.novos > 1 ? 's' : ''}`}
+                {delta.novos > 0 && delta.sairam > 0 && ' · '}
+                {delta.sairam > 0 && `${delta.sairam} ${delta.sairam > 1 ? 'saíram' : 'saiu'}`}
+                {' '}desde a última atualização
+              </span>
+            )}
+          </div>
         </div>
       )}
+
+      {/* ── Inteligência de Preços por CNAE ──────────────────────────────────── */}
+      {/* O gráfico segue o filtro de empresa: ao selecionar uma empresa, mostra a
+          tendência do CNAE/UF/termo DELA (antes ficava preso à empresa primária) */}
+      {cnaeInfo && cnaeInfo.cnae && (() => {
+        const det = empresaFiltro
+          ? cnaeInfo.empresasDetalhe.find(d => d.nome === empresaFiltro)
+          : null;
+        const chartCnae  = det?.cnae || cnaeInfo.cnae;
+        const chartUf    = ((det ? det.uf : cnaeInfo.ufEmpresa) || '').toUpperCase() || undefined;
+        const chartLabel = det?.termo || cnaeInfo.termos[0];
+        return (
+          <div className="mb-4">
+            <CnaePriceTrendChart
+              key={`${chartCnae}-${chartUf || 'BR'}`}
+              token={token}
+              cnae={chartCnae}
+              uf={chartUf}
+              meses={12}
+              labelSegmento={chartLabel}
+            />
+          </div>
+        );
+      })()}
 
       {/* ── Filtro por empresa ────────────────────────────────────────────────── */}
       {cnaeInfo && cnaeInfo.empresas.length > 1 && (
@@ -500,9 +586,14 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
           <h3 className="text-base font-black text-slate-700 mb-2">
             {empresaFiltro ? `Nenhum edital para ${empresaFiltro.split(' ')[0]}` : 'Nenhum edital ativo no momento'}
           </h3>
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">
             {empresaFiltro
-              ? 'Tente selecionar outra empresa ou ver todas as oportunidades.'
+              ? (() => {
+                  const det = cnaeInfo?.empresasDetalhe.find(d => d.nome === empresaFiltro);
+                  return det?.termo
+                    ? `Nenhuma licitação vigente encontrada para o termo "${det.termo}"${det.uf ? ` (nem em ${det.uf}, nem no Brasil)` : ''}. O termo é derivado do CNAE — experimente buscar manualmente no Radar PNCP com palavras do seu dia a dia (ex.: serviços específicos que a empresa presta).`
+                    : 'Tente selecionar outra empresa ou ver todas as oportunidades.';
+                })()
               : 'Não encontramos licitações abertas para o seu CNAE agora. Volte amanhã ou ajuste o CNAE no perfil.'}
           </p>
         </div>
@@ -656,29 +747,39 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                   )}
                 </div>
 
-                {/* Radar Preditivo */}
+                {/* Prazo da proposta — sempre baseado em dados reais do PNCP */}
                 {(() => {
-                  const fimRaw = edital.dataEncerramentoProposta || edital.dataFimRecebimentoProposta;
-                  let radarMsg = '📡 Padrão sazonal identificado · Monitorando';
+                  const fimRaw = edital.dataEncerramentoProposta
+                    || edital.dataFimRecebimentoProposta
+                    || (edital as Record<string, unknown>).data_fim_vigencia as string | undefined;
+                  let radarMsg = 'Prazo não informado · confira no edital original';
                   let radarColor = 'bg-slate-50 text-slate-500 border-slate-200';
                   if (fimRaw) {
                     try {
                       const dias = Math.ceil((new Date(String(fimRaw)).getTime() - Date.now()) / 86400000);
-                      if (dias <= 3) {
-                        radarMsg = '⚡ Encerramento iminente · Atue agora';
-                        radarColor = 'bg-red-50 text-red-700 border-red-200';
-                      } else if (dias <= 7) {
-                        radarMsg = `🔔 Encerra em ${dias} dias · Janela se fechando`;
-                        radarColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                      if (Number.isFinite(dias)) {
+                        if (dias <= 0) {
+                          radarMsg = 'Encerra hoje · Última chamada';
+                          radarColor = 'bg-red-50 text-red-700 border-red-200';
+                        } else if (dias <= 3) {
+                          radarMsg = `Encerra em ${dias} dia${dias === 1 ? '' : 's'} · Atue agora`;
+                          radarColor = 'bg-red-50 text-red-700 border-red-200';
+                        } else if (dias <= 7) {
+                          radarMsg = `Encerra em ${dias} dias · Janela se fechando`;
+                          radarColor = 'bg-amber-50 text-amber-700 border-amber-200';
+                        } else {
+                          radarMsg = `Encerra em ${dias} dias · Tempo para preparar proposta`;
+                          radarColor = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                        }
                       }
                     } catch { /* ignora */ }
                   }
                   return (
                     <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[11px] font-semibold mb-4 ${radarColor}`}>
-                      <Target className="w-3 h-3 shrink-0" />
-                      <span>Radar Preditivo</span>
+                      <Timer className="w-3 h-3 shrink-0" />
+                      <span>Prazo</span>
                       <span className="mx-1 text-current opacity-30">·</span>
-                      <span className="font-medium opacity-90">{radarMsg.replace(/^[^\s]+\s/, '')}</span>
+                      <span className="font-medium opacity-90">{radarMsg}</span>
                     </div>
                   );
                 })()}

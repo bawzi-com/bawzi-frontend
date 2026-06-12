@@ -60,10 +60,12 @@ interface AnaliseInstituicoesResponse {
   capital_social: number;
   valor_solicitado: number;
   score_geral: number;
+  score_componentes?: { fator: string; pontos: number; max: number }[];
   situacao_cadastral: string;
   opcao_simples: boolean;
   instituicoes: InstituicaoPreQualificacao[];
   resumo_consultor: string;
+  metodologia?: string;
 }
 
 interface Empresa {
@@ -81,6 +83,8 @@ interface Props {
   tier?: number;
   /** Valor pré-preenchido vindo de uma análise (ex: resultado.estimated_value parseado) */
   defaultValorEdital?: number;
+  /** Objeto do edital pré-preenchido (ex: vindo do botão "Medir fôlego" do Radar) */
+  defaultObjeto?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,6 +96,7 @@ const TIPO_LABEL: Record<string, { label: string; color: string }> = {
   capital_giro: { label: 'Capital de Giro',        color: 'bg-violet-50 text-violet-700 border-violet-200' },
   antecipacao:  { label: 'Antecipação',            color: 'bg-amber-50 text-amber-700 border-amber-200' },
   fintech:      { label: 'Fintech / Privado',      color: 'bg-slate-50 text-slate-600 border-slate-200' },
+  garantia:     { label: 'Garantia / Seguro',      color: 'bg-teal-50 text-teal-700 border-teal-200' },
 };
 
 const ADEQUACAO_CONFIG = {
@@ -102,7 +107,7 @@ const ADEQUACAO_CONFIG = {
 
 const STATUS_CONFIG = {
   PRE_QUALIFICADO:   {
-    label: 'Pré-qualificado',
+    label: 'Perfil compatível',
     badgeClass: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     barClass: 'bg-emerald-500',
     icon: CheckCircle2,
@@ -303,8 +308,8 @@ function CardBanco({ inst, isRealApi = false, isLoading = false }: {
                   style={{ width: `${inst.probabilidade_aprovacao}%` }}
                 />
               </div>
-              <span className="text-[11px] font-black text-slate-600 whitespace-nowrap">
-                {inst.probabilidade_aprovacao}% aprovação
+              <span className="text-[11px] font-black text-slate-600 whitespace-nowrap" title="Compatibilidade estimada do perfil com os critérios públicos da instituição — não é probabilidade real de aprovação">
+                {inst.probabilidade_aprovacao}% compatibilidade
               </span>
             </div>
           </div>
@@ -312,8 +317,8 @@ function CardBanco({ inst, isRealApi = false, isLoading = false }: {
 
         <div className="flex items-center gap-3 flex-shrink-0">
           {inst.valor_pre_aprovado > 0 && (
-            <div className="text-right hidden sm:block">
-              <p className="text-[10px] text-slate-400 font-medium">Pré-aprovado</p>
+            <div className="text-right hidden sm:block" title="Estimativa Bawzi com base em dados públicos do CNPJ — não é oferta da instituição">
+              <p className="text-[10px] text-slate-400 font-medium">Crédito estimado</p>
               <p className="text-sm font-black text-slate-800">{fmt(inst.valor_pre_aprovado)}</p>
             </div>
           )}
@@ -332,7 +337,7 @@ function CardBanco({ inst, isRealApi = false, isLoading = false }: {
             {[
               { icon: DollarSign, label: 'Taxa', value: inst.taxa_estimada },
               { icon: Clock,      label: 'Prazo', value: inst.prazo_maximo },
-              { icon: BarChart3,  label: 'Pré-aprovado', value: inst.valor_pre_aprovado > 0 ? fmt(inst.valor_pre_aprovado) : '—' },
+              { icon: BarChart3,  label: 'Crédito estimado', value: inst.valor_pre_aprovado > 0 ? fmt(inst.valor_pre_aprovado) : '—' },
             ].map(({ icon: Icon, label, value }) => (
               <div key={label} className="bg-slate-50 rounded-xl p-3 text-center">
                 <Icon size={14} className="text-slate-400 mx-auto mb-1" />
@@ -487,7 +492,7 @@ function _celcoinApiToInstituicao(data: {
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf = '', companies = [], tier = 3, defaultValorEdital }: Props) {
+export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf = '', companies = [], tier = 3, defaultValorEdital, defaultObjeto }: Props) {
   // Domínio .bawzi.com → apenas empresas cadastradas; outros → livre
   const isBawziDomain = typeof window !== 'undefined' && window.location.hostname.endsWith('.bawzi.com');
 
@@ -508,7 +513,7 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
     return (Number(num) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   });
 
-  const [objeto, setObjeto]         = useState('');
+  const [objeto, setObjeto]         = useState(defaultObjeto || '');
   const [loading, setLoading]             = useState(false);
   const [resultado, setResultado]         = useState<RecomendacaoCapital | null>(null);
   const [analise, setAnalise]             = useState<AnaliseInstituicoesResponse | null>(null);
@@ -821,6 +826,26 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
                     </div>
                   </div>
 
+                  {/* Decomposição do score — por que tirou esta nota e o que melhorar */}
+                  {analise.score_componentes && analise.score_componentes.length > 0 && (
+                    <div className="mb-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                      {analise.score_componentes.map((c) => (
+                        <div key={c.fator} className="flex items-center gap-2">
+                          <span className="w-32 shrink-0 text-[10px] font-bold text-slate-500">{c.fator}</span>
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full ${c.pontos >= c.max * 0.75 ? 'bg-emerald-500' : c.pontos >= c.max * 0.4 ? 'bg-amber-400' : 'bg-red-400'}`}
+                              style={{ width: `${(c.pontos / c.max) * 100}%` }}
+                            />
+                          </div>
+                          <span className="w-10 shrink-0 text-right text-[10px] font-black text-slate-500">
+                            {c.pontos}/{c.max}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {analise.resumo_consultor && (
                     <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
                       <p className="text-[11px] font-black text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
@@ -833,12 +858,16 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
 
                 {/* Cards de cada banco */}
                 <div>
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-1">
                     <Building2 size={15} className="text-slate-400" />
                     <p className="text-sm font-black text-slate-700">
-                      Pré-qualificação em {analise.instituicoes.length} instituições parceiras
+                      Simulação de elegibilidade · {analise.instituicoes.length} instituições parceiras
                     </p>
                   </div>
+                  <p className="mb-3 text-[11px] font-medium leading-relaxed text-slate-400">
+                    {analise.metodologia ||
+                      'Estimativas calculadas com dados públicos do CNPJ — não são ofertas nem pré-aprovações formais das instituições.'}
+                  </p>
                   <div className="space-y-3">
                     {analise.instituicoes
                       .sort((a, b) => b.probabilidade_aprovacao - a.probabilidade_aprovacao)
@@ -865,7 +894,7 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <p className="text-[13px] font-black text-slate-700">Pré-qualificação em 3 instituições parceiras</p>
+                    <p className="text-[13px] font-black text-slate-700">Simulação de elegibilidade em 4 instituições parceiras</p>
                     <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">
                       Nível 4
                     </span>

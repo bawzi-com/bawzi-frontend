@@ -148,6 +148,7 @@ export default function AnalysisApp() {
   const [activeTab, setActiveTab]       = useState<string>('workspace');
   // Valor pré-preenchido para Capital (vindo de uma análise)
   const [capitalPrefilledValor, setCapitalPrefilledValor] = useState<number>(0);
+  const [capitalPrefilledObjeto, setCapitalPrefilledObjeto] = useState<string>('');
   const [showAuthModal, setShowAuthModal]   = useState(false);
   const [authMode, setAuthMode]         = useState<'login' | 'register'>('register');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -626,9 +627,22 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch
                             token={token}
-                            userUf={userData?.companies?.[0]?.uf || userData?.company?.uf}
+                            userUf={
+                              // UF da empresa do CONTEXTO ATIVO (não da primeira da lista)
+                              userData?.companies?.find((c: { cnpj?: string; uf?: string }) => c.cnpj === userData?.active_cnpj)?.uf
+                              || userData?.companies?.[0]?.uf
+                              || userData?.company?.uf
+                            }
                             initialQuery={initialPncpQuery}
                             initialUf={initialPncpUf}
+                            onMedirFolego={(valor, objeto) => {
+                              setCapitalPrefilledValor(valor || 0);
+                              setCapitalPrefilledObjeto(objeto || '');
+                              setActiveTab('capital');
+                              setTimeout(() => {
+                                document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }, 150);
+                            }}
                             onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
                               setResult(null);
                               setError(null);
@@ -774,6 +788,7 @@ export default function AnalysisApp() {
                       defaultCnpj={userData?.companies?.[0]?.cnpj || userData?.company?.cnpj || ''}
                       defaultUf={userData?.companies?.[0]?.uf || userData?.company?.uf || ''}
                       defaultValorEdital={capitalPrefilledValor || undefined}
+                      defaultObjeto={capitalPrefilledObjeto || undefined}
                     />
                   )}
                 </div>

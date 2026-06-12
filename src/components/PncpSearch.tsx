@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit, TrendingUp,
+  Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit,
   Search, MapPin, SlidersHorizontal, Layers, X, Zap,
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
@@ -42,9 +42,11 @@ interface PncpSearchProps {
   initialQuery?: string;
   /** UF pré-carregada junto com o initialQuery */
   initialUf?: string;
+  /** Abre a aba Capital com valor e objeto do edital pré-preenchidos */
+  onMedirFolego?: (valor: number, objeto: string) => void;
 }
 
-export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf, initialQuery, initialUf }: PncpSearchProps) {
+export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf, initialQuery, initialUf, onMedirFolego }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
   const [municipioId, setMunicipioId]   = useState('');
@@ -58,6 +60,13 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
   
   const [detectedUf, setDetectedUf] = useState('');
   const [marketData, setMarketData] = useState<any>(null);
+
+  // Objeto expandido por card (ver descrição completa)
+  const [objetoExpandido, setObjetoExpandido] = useState<string | null>(null);
+
+  // 💧 Hidratação lazy: dispara a fila de detalhes após cada nova busca
+  const [hydrationKey, setHydrationKey] = useState(0);
+  const hydrationCtl = useRef<{ cancel: boolean } | null>(null);
 
   // ── Modo de seleção (bulk) ───────────────────────────────────────────────
   const [bulkMode, setBulkMode]         = useState(false);
@@ -98,16 +107,18 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       return ESTADOS_BR[limpo] || '';
     };
 
-    // Prioridade 1: UF da empresa cadastrada (mais confiável)
-    if (userUf) {
-      setDetectedUf(extrairSiglaUF(userUf));
+    // Prioridade 1: correção MANUAL do usuário (✎) — nunca é sobrescrita.
+    // (Antes a UF da empresa vinha primeiro, e a correção do usuário era
+    // ignorada a cada recarregamento — a "UF errada" sempre voltava.)
+    const ufSalva = localStorage.getItem('bawzi_uf_override');
+    if (ufSalva && (ESTADOS_BR[ufSalva.toUpperCase()] !== undefined || ufSalva.trim().length === 2)) {
+      setDetectedUf(ufSalva.trim().toUpperCase());
       return;
     }
 
-    // Prioridade 2: UF salva manualmente pelo usuário
-    const ufSalva = localStorage.getItem('bawzi_uf_override');
-    if (ufSalva && ESTADOS_BR[ufSalva] !== undefined || ufSalva?.length === 2) {
-      setDetectedUf(ufSalva.toUpperCase());
+    // Prioridade 2: UF da empresa cadastrada (contexto ativo)
+    if (userUf) {
+      setDetectedUf(extrairSiglaUF(userUf));
       return;
     }
 
@@ -150,10 +161,12 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       } catch { /* fallback */ }
 
       try {
-        const res = await fetch('https://ip-api.com/json/?fields=region,regionName');
+        // ip-api.com gratuito é HTTP-only → falhava silenciosamente em página
+        // HTTPS (mixed content). ipwho.is oferece HTTPS grátis.
+        const res = await fetch('https://ipwho.is/');
         const data = await res.json();
-        const candidato = data.regionName || data.region || '';
-        const ufLimpo = extrairSiglaUF(candidato);
+        const candidato = data.region_code || data.region || '';
+        const ufLimpo = extrairSiglaUF(String(candidato));
         if (ufLimpo) setDetectedUf(ufLimpo);
       } catch {
         console.warn('⚠️ [GEO] Nenhuma localização detectada.');
@@ -355,6 +368,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       });
 
       setResults([...vivos]);
+      setHydrationKey(k => k + 1); // inicia a hidratação lazy dos cards
       if (vivos.length === 0) {
         setError(
           encontrados.length > 0
@@ -419,6 +433,73 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
     setTimeout(() => runSearch(initialQuery, initialUf || ''), 80);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, initialQuery, initialUf]);
+
+  /**
+   * 💧 HIDRATAÇÃO LAZY DOS CARDS
+   * O WAF do PNCP só tolera ~2 chamadas de detalhe em sequência rápida, então
+   * a lista volta "crua" e cada card é enriquecido (valor, plataforma, datas)
+   * um a um, em fila lenta, via /api/pncp/card-detalhe (cacheado 6h no backend).
+   */
+  useEffect(() => {
+    if (hydrationKey === 0 || results.length === 0) return;
+
+    // Cancela fila anterior (nova busca = nova fila)
+    if (hydrationCtl.current) hydrationCtl.current.cancel = true;
+    const ctl = { cancel: false };
+    hydrationCtl.current = ctl;
+
+    // O PNCP permite ~1-2 consultas de detalhe por janela de tempo (por IP).
+    // Fila curta e LENTA: 8 cards, 1 a cada 15s — os chips vão aparecendo ao
+    // longo de ~2 min e o cache de 6h no backend acumula entre buscas.
+    const fila = results
+      .filter(e =>
+        e.cnpj && e.ano && e.sequencial &&
+        (!e.plataforma || !((e.valor ?? 0) > 0))
+      )
+      .slice(0, 8);
+
+    (async () => {
+      // Respiro inicial: deixa a janela de rate-limit do PNCP reabrir após a busca
+      await new Promise(res => setTimeout(res, 4000));
+      let falhasSeguidas = 0;
+      for (const ed of fila) {
+        if (ctl.cancel) return;
+        try {
+          const r = await fetch(
+            `${API_URL}/api/pncp/card-detalhe?cnpj=${ed.cnpj}&ano=${ed.ano}&seq=${ed.sequencial}`
+          );
+          if (r.ok) {
+            const d = await r.json();
+            if (ctl.cancel) return;
+            if (d.status === 'success') {
+              falhasSeguidas = 0;
+              setResults(prev => prev.map(item => {
+                if (item.id !== ed.id) return item;
+                const temDataValida = (s?: string) => /\d{2}\/\d{2}\/\d{4}/.test(String(s || ''));
+                return {
+                  ...item,
+                  valor: (item.valor ?? 0) > 0 ? item.valor : (d.valor || item.valor),
+                  plataforma: item.plataforma || d.plataforma || '',
+                  link_sistema_origem: item.link_sistema_origem || d.link_sistema_origem || '',
+                  data_fim: !temDataValida(item.data_fim) && d.data_fim ? d.data_fim : item.data_fim,
+                  data_inicio: !temDataValida(item.data_inicio) && d.data_inicio ? d.data_inicio : item.data_inicio,
+                };
+              }));
+            } else {
+              // Disjuntor: 2 falhas seguidas = PNCP em cooldown → para a fila
+              falhasSeguidas++;
+              if (falhasSeguidas >= 2) return;
+            }
+          }
+        } catch { /* segue para o próximo card */ }
+        // Conta-gotas: 1 chamada a cada 15s respeita o orçamento do PNCP
+        await new Promise(res => setTimeout(res, 15000));
+      }
+    })();
+
+    return () => { ctl.cancel = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrationKey]);
 
   const handleDeepAnalyze = async (edital: PncpItem) => {
     setLoadingId(edital.id);
@@ -558,11 +639,21 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                 UF detectada: {detectedUf}
                 <button
                   type="button"
-                  title="Clique para corrigir a UF detectada"
+                  title="Clique para corrigir a UF detectada (a correção fica salva)"
                   onClick={() => {
-                    const nova = prompt(`UF detectada incorretamente como "${detectedUf}".\nDigite a sigla correta (ex: GO, SP, RJ):`);
-                    if (nova && nova.trim().length === 2) {
-                      const sig = nova.trim().toUpperCase();
+                    const nova = prompt(
+                      `UF detectada como "${detectedUf}".\n` +
+                      `Digite a sigla correta (ex: GO, SP, RJ) — a correção fica salva.\n` +
+                      `Digite AUTO para voltar à detecção automática.`
+                    );
+                    if (!nova) return;
+                    const sig = nova.trim().toUpperCase();
+                    if (sig === 'AUTO') {
+                      localStorage.removeItem('bawzi_uf_override');
+                      window.location.reload();
+                      return;
+                    }
+                    if (sig.length === 2) {
                       setDetectedUf(sig);
                       localStorage.setItem('bawzi_uf_override', sig);
                     }
@@ -862,24 +953,39 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       {results.length > 0 && (
         <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pr-3 pb-8 custom-scrollbar relative z-10">
           {results.map((edital, index) => {
-            const isRecorrente = index % 3 === 0;
-            const diasPredicao = 30 + (index * 12);
-
-            // Detecta se data_fim não é uma data real (metadata noise do PNCP)
-            const dataFimRaw = edital.data_fim || '';
-            const dataFimIlegivel = dataFimRaw && !/\d{2}\/\d{2}\/\d{4}/.test(dataFimRaw) && !/\d{4}-\d{2}-\d{2}/.test(dataFimRaw);
-
-            // Classifica a ausência de data: edital recente (PNCP sem metadado) ou genuinamente suspeito
+            // ── Janela de propostas REAL (substitui o antigo "Radar Preditivo" simulado) ──
+            const parseDataBR = (s?: string): Date | null => {
+              if (!s) return null;
+              const m = String(s).match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}))?/);
+              if (!m) return null;
+              const d = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '23:59'}:00`);
+              return isNaN(d.getTime()) ? null : d;
+            };
             const agoraRender = new Date();
-            const divulgacaoMatch = (edital.data_divulgacao || '').match(/(\d{2})\/(\d{2})\/(\d{4})/);
-            const diasDesdePublicacao = divulgacaoMatch
-              ? Math.floor((agoraRender.getTime() - new Date(`${divulgacaoMatch[3]}-${divulgacaoMatch[2]}-${divulgacaoMatch[1]}`).getTime()) / 86400000)
-              : 999;
-            // Se publicado há < 45 dias sem data → plataforma externa não sincronizou com PNCP
-            const semDataRecente = dataFimIlegivel && diasDesdePublicacao < 45;
+            const fimDate = parseDataBR(edital.data_fim);
+            const iniDate = parseDataBR(edital.data_inicio);
+            const diasRestantes = fimDate
+              ? Math.ceil((fimDate.getTime() - agoraRender.getTime()) / 86400000)
+              : null;
+            // % da janela início→fim já decorrida (para a barra de progresso)
+            let progressoJanela: number | null = null;
+            if (fimDate && iniDate && fimDate.getTime() > iniDate.getTime()) {
+              progressoJanela = Math.min(100, Math.max(0,
+                ((agoraRender.getTime() - iniDate.getTime()) / (fimDate.getTime() - iniDate.getTime())) * 100
+              ));
+            }
+            const prazoCor = diasRestantes !== null && diasRestantes <= 3
+              ? { box: 'border-red-200 bg-red-50', txt: 'text-red-700', bar: 'bg-red-500', trk: 'bg-red-100' }
+              : diasRestantes !== null && diasRestantes <= 7
+                ? { box: 'border-amber-200 bg-amber-50', txt: 'text-amber-700', bar: 'bg-amber-500', trk: 'bg-amber-100' }
+                : { box: 'border-emerald-200 bg-emerald-50', txt: 'text-emerald-700', bar: 'bg-emerald-500', trk: 'bg-emerald-100' };
+
+            const valorNum = edital.valor || edital.valor_total_estimado || edital.valorEstimado || edital.valor_global || 0;
 
             const editalKey = edital.id || edital.link || String(index);
             const isSelected = selected.has(editalKey);
+            const isExpandido = objetoExpandido === editalKey;
+            const objetoLongo = String(edital.objeto || '').length > 160;
 
             return (
               <div
@@ -903,8 +1009,40 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       </div>
                     )}
                     <span className="text-[10px] font-black text-slate-700 bg-slate-100 px-2 py-1 rounded-md uppercase border border-slate-200">
-                      {edital.uf} • {edital.ano}
+                      {edital.uf}{edital.municipio ? ` · ${edital.municipio}` : ''} • {edital.ano}
                     </span>
+                    {edital.modalidade && (
+                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md uppercase border border-indigo-100">
+                        {edital.modalidade}
+                      </span>
+                    )}
+                    {/* Plataforma onde a disputa acontece (pregão eletrônico etc.) */}
+                    {edital.plataforma && (
+                      edital.link_sistema_origem ? (
+                        <a
+                          href={edital.link_sistema_origem}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Plataforma onde a disputa acontece — clique para abrir"
+                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200 hover:bg-teal-100 hover:border-teal-300 transition-colors"
+                        >
+                          🌐 {edital.plataforma} ↗
+                        </a>
+                      ) : (
+                        <span
+                          title="Plataforma onde a disputa acontece"
+                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200"
+                        >
+                          🌐 {edital.plataforma}
+                        </span>
+                      )
+                    )}
+                    {edital.tipo && edital.tipo !== 'Edital' && (
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-1 rounded-md border border-sky-100">
+                        {edital.tipo}
+                      </span>
+                    )}
                     {/* ========================================== */}
                     {/* 📍 A ETIQUETA INTELIGENTE NOS CARDS          */}
                     {/* ========================================== */}
@@ -920,13 +1058,36 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       </span>
                     )}
                   </div>
-                  <span className="text-sm font-black text-slate-900 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg shadow-sm">
-                    {formatCurrency(edital.valor || edital.valor_total_estimado || edital.valorEstimado || edital.valor_global || 0)}
-                  </span>
+                  {valorNum > 0 ? (
+                    <span className="text-sm font-black text-slate-900 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg shadow-sm shrink-0">
+                      {formatCurrency(valorNum)}
+                    </span>
+                  ) : (
+                    <span
+                      title="O órgão não divulgou o valor estimado — consulte o edital original"
+                      className="text-[10px] font-bold text-slate-400 bg-slate-50 border border-dashed border-slate-200 px-2.5 py-1 rounded-lg shrink-0"
+                    >
+                      Orçamento sigiloso
+                    </span>
+                  )}
                 </div>
                 
                 <h3 className="font-bold text-slate-800 text-sm mb-2 line-clamp-1 pr-4">{edital.orgao}</h3>
-                <p className="text-slate-500 text-xs font-medium line-clamp-2 mb-2">{edital.objeto}</p>
+                <p className={`text-slate-500 text-xs font-medium mb-1 ${isExpandido ? '' : 'line-clamp-2'}`}>
+                  {edital.objeto}
+                </p>
+                {objetoLongo && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setObjetoExpandido(isExpandido ? null : editalKey);
+                    }}
+                    className="mb-2 text-[10px] font-black uppercase tracking-wide text-emerald-600 hover:text-emerald-800 transition-colors"
+                  >
+                    {isExpandido ? '− Ver menos' : '+ Ver descrição completa'}
+                  </button>
+                )}
                 
                 {/* TIMELINE */}
                 <div className="mt-4 mb-5 flex flex-wrap gap-3 border-t border-slate-100 pt-4">
@@ -964,27 +1125,30 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                   )}
                 </div>
 
-                {/* PREDICTIVE RADAR */}
-                {isRecorrente && (
-                <div className="mb-5 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200/60 rounded-xl p-4 flex items-start gap-3 relative overflow-hidden shadow-inner">
-                  
-                  <div className="w-8 h-8 bg-white border border-orange-100 rounded-full flex items-center justify-center shrink-0 shadow-sm z-10">
-                    <Timer className="w-4 h-4 text-orange-500" strokeWidth={2.5} />
-                  </div>
-
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="text-[10px] font-black text-orange-800 uppercase tracking-widest flex items-center gap-1.5">
-                        <TrendingUp className="w-3.5 h-3.5 text-orange-600" strokeWidth={3} />
-                        Radar Preditivo
-                      </h4>
+                {/* JANELA DE PROPOSTAS — contagem real baseada nas datas do PNCP */}
+                {diasRestantes !== null && diasRestantes >= 0 && (
+                  <div className={`mb-5 rounded-xl border p-3.5 ${prazoCor.box}`}>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${prazoCor.txt}`}>
+                        <Timer className="w-3.5 h-3.5" strokeWidth={2.5} />
+                        Janela de propostas
+                      </span>
+                      <span className={`text-xs font-black ${prazoCor.txt}`}>
+                        {diasRestantes === 0
+                          ? 'Encerra hoje'
+                          : `Encerra em ${diasRestantes} dia${diasRestantes === 1 ? '' : 's'}`}
+                      </span>
                     </div>
-                    <p className="text-xs text-orange-900/80 font-medium">
-                      Padrão sazonal identificado. Novo edital estimado em <strong className="font-black text-orange-600">{diasPredicao} dias</strong>.
-                    </p>
+                    {progressoJanela !== null && (
+                      <div className={`h-1.5 w-full rounded-full overflow-hidden ${prazoCor.trk}`}>
+                        <div
+                          className={`h-full rounded-full transition-all ${prazoCor.bar}`}
+                          style={{ width: `${progressoJanela}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
                 
                 {/* BOTÕES DE AÇÃO */}
                 <div className="flex flex-col sm:flex-row gap-3 mt-auto">
@@ -1007,10 +1171,35 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
                       <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Extraindo PDF...</>
                     ) : 'Extrair e Analisar IA ⚡'}
                   </button>
+                  {edital.link_sistema_origem && (
+                    <a
+                      href={edital.link_sistema_origem}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      title={`Abrir a disputa${edital.plataforma ? ` na ${edital.plataforma}` : ' na plataforma de origem'}`}
+                      className="sm:w-auto px-5 py-3 bg-teal-50 text-teal-700 font-black rounded-xl text-xs border border-teal-200 hover:bg-teal-100 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      Ir para a disputa ↗
+                    </a>
+                  )}
+                  {onMedirFolego && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onMedirFolego(valorNum || 0, String(edital.objeto || ''));
+                      }}
+                      title="Abre o Fôlego Financeiro com o valor e o objeto deste edital já preenchidos"
+                      className="sm:w-auto px-5 py-3 bg-amber-50 text-amber-700 font-black rounded-xl text-xs border border-amber-200 hover:bg-amber-100 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      💰 Medir fôlego
+                    </button>
+                  )}
                   {edital.link && (
-                    <a 
-                      href={edital.link} 
-                      target="_blank" 
+                    <a
+                      href={edital.link}
+                      target="_blank"
                       rel="noreferrer"
                       className="sm:w-auto px-6 py-3 bg-white text-slate-700 font-bold rounded-xl text-xs border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center"
                     >

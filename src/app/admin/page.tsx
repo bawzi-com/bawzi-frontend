@@ -63,6 +63,8 @@ export default function AdminDashboard() {
   const [consultaUfUfs, setConsultaUfUfs] = useState('');
   const [consultaUfJanelas, setConsultaUfJanelas] = useState('5');
   const [enrichViaConsultaUfs, setEnrichViaConsultaUfs] = useState('');
+  const [editaisDetalheUfs, setEditaisDetalheUfs] = useState('');
+  const [itensContratosUfs, setItensContratosUfs] = useState('');
   const [schedulerStatus, setSchedulerStatus] = useState<any>(null);
 
   // Estados de Convites Promo
@@ -495,6 +497,74 @@ export default function AdminDashboard() {
       if (!res.ok) {
         const err = await res.json();
         alert(`Erro: ${err.detail || res.statusText}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerEditaisDetalhe = async () => {
+    const ufsLabel = editaisDetalheUfs.trim() || 'todas as 27 UFs + nacional';
+    if (!confirm(
+      `Pré-aquecer detalhes de editais para: ${ufsLabel}?\n\n` +
+      `Este worker:\n` +
+      `  1. Lista os editais VIGENTES mais recentes via /api/search\n` +
+      `  2. Consulta o detalhe de cada um em conta-gotas (20s entre chamadas)\n` +
+      `  3. Grava plataforma de disputa, valor e datas no cache persistente\n\n` +
+      `Os cards do Radar passam a mostrar plataforma/valor instantaneamente.\n` +
+      `Tempo: ~120 editais × 20s ≈ 40 min (roda sozinho às 06:00 BRT)`
+    )) return;
+    setWorkerAction('editais_detalhe');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = new URLSearchParams();
+      if (editaisDetalheUfs.trim()) qs.set('ufs', editaisDetalheUfs.trim());
+      const qsStr = qs.toString();
+      const res = await fetch(`${baseUrl}/api/admin/workers/editais-detalhe${qsStr ? '?' + qsStr : ''}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        setTimeout(loadPncpData, 1500);
+      } else {
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
+      }
+    } finally {
+      setWorkerAction(null);
+    }
+  };
+
+  const triggerWorkerItensContratos = async () => {
+    const ufsLabel = itensContratosUfs.trim() || 'todas as UFs';
+    if (!confirm(
+      `Preencher itens homologados para: ${ufsLabel}?\n\n` +
+      `Este worker:\n` +
+      `  1. Varre os contratos locais SEM o campo 'itens'\n` +
+      `  2. Resolve a compra-mãe de cada contrato no PNCP\n` +
+      `  3. Grava os itens com valorUnitarioHomologado (preço real, Lei 14.133)\n\n` +
+      `É o que dá assertividade ao preço unitário do radar de concorrentes.\n` +
+      `Tempo: ~150 contratos × 18s ≈ 45 min (roda sozinho às 00:45 BRT)`
+    )) return;
+    setWorkerAction('itens_contratos');
+    try {
+      const token = localStorage.getItem('bawzi_token');
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = new URLSearchParams();
+      if (itensContratosUfs.trim()) qs.set('ufs', itensContratosUfs.trim());
+      const qsStr = qs.toString();
+      const res = await fetch(`${baseUrl}/api/admin/workers/itens-contratos${qsStr ? '?' + qsStr : ''}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ ${data.message}`);
+        setTimeout(loadPncpData, 1500);
+      } else {
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } finally {
       setWorkerAction(null);
@@ -984,29 +1054,56 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {[
                 {
-                  id: 'contratos',
+                  id: 'itens_contratos_diario',
+                  resKey: 'itens_contratos',
+                  label: 'Itens Homologados',
+                  hora: '00:45',
+                  desc: 'Preço unitário real · ~45 min',
+                  cor: 'rose',
+                },
+                {
+                  id: 'contratos_diario',
+                  resKey: 'contratos',
                   label: 'Contratos sem_termo',
                   hora: '02:00',
                   desc: '~10k contratos novos · ~3 min',
                   cor: 'violet',
                 },
                 {
-                  id: 'enrich',
+                  id: 'enrich_via_consulta_diario',
+                  resKey: 'enrich_via_consulta',
+                  label: 'Enrich via Consulta',
+                  hora: '02:30',
+                  desc: 'Match por NCP em massa · ~30-90 min',
+                  cor: 'sky',
+                },
+                {
+                  id: 'enrich_fornecedor_diario',
+                  resKey: 'enrich',
                   label: 'Enrich Fornecedor',
                   hora: '03:00',
                   desc: 'Próximos 730 dias · ~10-30 min',
                   cor: 'amber',
                 },
                 {
-                  id: 'consulta_uf',
+                  id: 'consulta_uf_diario',
+                  resKey: 'consulta_uf',
                   label: 'Consulta UF',
                   hora: '04:00',
                   desc: '5-6 UFs rotativas · ~1-2h',
                   cor: 'emerald',
                 },
-              ].map(({ id, label, hora, desc, cor }) => {
+                {
+                  id: 'editais_detalhe_diario',
+                  resKey: 'editais_detalhe',
+                  label: 'Detalhes de Editais',
+                  hora: '06:00',
+                  desc: 'Plataforma/valor p/ o Radar · ~40 min',
+                  cor: 'teal',
+                },
+              ].map(({ id, resKey, label, hora, desc, cor }) => {
                 const jobProx  = schedulerStatus?.jobs_proximas_exec?.find((j: any) => j.id.startsWith(id));
-                const jobRes   = schedulerStatus?.jobs_resultados?.[id];
+                const jobRes   = schedulerStatus?.jobs_resultados?.[resKey];
                 const proxData = jobProx?.proxima_exec ? new Date(jobProx.proxima_exec) : null;
                 return (
                   <div key={id} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 space-y-2">
@@ -1258,6 +1355,146 @@ export default function AdminDashboard() {
                   {workerAction === 'consulta_uf'
                     ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
                     : <><Play size={14} /> Indexar por UF (curl_cffi)</>
+                  }
+                </button>
+              </div>
+            </div>
+
+            {/* WORKER ITENS HOMOLOGADOS */}
+            <div className="bg-slate-900/40 border border-rose-500/15 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-rose-500/10 rounded-xl"><RefreshCw size={20} className="text-rose-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Itens Homologados</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Preço unitário real (Lei 14.133) para o radar de concorrentes</p>
+                </div>
+              </div>
+
+              <div className="mb-5 px-3 py-2.5 rounded-xl bg-rose-500/5 border border-rose-500/15 text-xs text-rose-300/80">
+                <span className="font-black text-rose-400">Por quê?</span> O preço unitário real vem dos
+                <code className="text-slate-300"> itens</code> com <code className="text-slate-300">valorUnitarioHomologado</code> —
+                mas a maioria dos contratos locais não os tem. Este worker resolve a compra-mãe de cada um e preenche.
+              </div>
+
+              {/* Status (com progresso ao vivo) */}
+              {workersStatus?.itens_contratos && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.itens_contratos.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.itens_contratos.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.itens_contratos.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.itens_contratos.running
+                    ? <><Loader2 size={13} className="animate-spin" />
+                        A correr{workersStatus.itens_contratos.progresso
+                          ? ` · ${workersStatus.itens_contratos.progresso.processados}/${workersStatus.itens_contratos.progresso.fila} (${workersStatus.itens_contratos.progresso.com_itens} c/ itens)`
+                          : '...'}</>
+                    : workersStatus.itens_contratos.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.itens_contratos.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.itens_contratos.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> {workersStatus.itens_contratos.ultimo_resultado.com_itens} contratos preenchidos · {workersStatus.itens_contratos.ultimo_resultado.sem_itens} sem itens</>
+                        : <><Clock size={13} /> Nunca executado</>
+                  }
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                    UFs a processar (vazio = todas)
+                  </label>
+                  <input
+                    type="text"
+                    value={itensContratosUfs}
+                    onChange={e => setItensContratosUfs(e.target.value.toUpperCase())}
+                    placeholder="Ex: GO,SP"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all font-mono text-sm"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-600">~150 contratos × 18s ≈ 45 min · agendado diariamente às 00:45 BRT</p>
+
+                <button
+                  onClick={triggerWorkerItensContratos}
+                  disabled={!!workerAction || workersStatus?.itens_contratos?.running}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
+                    bg-rose-700 hover:bg-rose-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {workerAction === 'itens_contratos'
+                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
+                    : <><Play size={14} /> Preencher itens homologados</>
+                  }
+                </button>
+              </div>
+            </div>
+
+            {/* WORKER DETALHES DE EDITAIS */}
+            <div className="bg-slate-900/40 border border-teal-500/15 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-teal-500/10 rounded-xl"><RefreshCw size={20} className="text-teal-400" /></div>
+                <div>
+                  <h3 className="text-lg font-black text-white">Worker · Detalhes de Editais</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Plataforma de disputa, valor e datas para os cards do Radar</p>
+                </div>
+              </div>
+
+              <div className="mb-5 px-3 py-2.5 rounded-xl bg-teal-500/5 border border-teal-500/15 text-xs text-teal-300/80">
+                <span className="font-black text-teal-400">Por quê?</span> O PNCP limita as consultas de detalhe a ~1-2 por janela de tempo.
+                Este worker varre os editais vigentes em conta-gotas e grava no cache persistente —
+                o Radar mostra <code className="text-slate-300">plataforma</code> e <code className="text-slate-300">valor</code> na hora.
+              </div>
+
+              {/* Status (com progresso ao vivo) */}
+              {workersStatus?.editais_detalhe && (
+                <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
+                  workersStatus.editais_detalhe.running
+                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                    : workersStatus.editais_detalhe.ultimo_erro
+                      ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                      : workersStatus.editais_detalhe.ultimo_resultado
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                }`}>
+                  {workersStatus.editais_detalhe.running
+                    ? <><Loader2 size={13} className="animate-spin" />
+                        A correr{workersStatus.editais_detalhe.progresso
+                          ? ` · ${workersStatus.editais_detalhe.progresso.processados}/${workersStatus.editais_detalhe.progresso.fila} (${workersStatus.editais_detalhe.progresso.sucesso} ok)`
+                          : '...'}</>
+                    : workersStatus.editais_detalhe.ultimo_erro
+                      ? <><XCircle size={13} /> Erro: {workersStatus.editais_detalhe.ultimo_erro.slice(0, 60)}</>
+                      : workersStatus.editais_detalhe.ultimo_resultado
+                        ? <><CheckCircle2 size={13} /> {workersStatus.editais_detalhe.ultimo_resultado.sucesso} detalhes gravados · {workersStatus.editais_detalhe.ultimo_resultado.ja_frescos} já em cache</>
+                        : <><Clock size={13} /> Nunca executado</>
+                  }
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                    UFs a processar (vazio = todas + nacional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editaisDetalheUfs}
+                    onChange={e => setEditaisDetalheUfs(e.target.value.toUpperCase())}
+                    placeholder="Ex: GO,SP"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all font-mono text-sm"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-600">~120 editais × 20s ≈ 40 min · agendado diariamente às 06:00 BRT</p>
+
+                <button
+                  onClick={triggerWorkerEditaisDetalhe}
+                  disabled={!!workerAction || workersStatus?.editais_detalhe?.running}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
+                    bg-teal-700 hover:bg-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {workerAction === 'editais_detalhe'
+                    ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
+                    : <><Play size={14} /> Pré-aquecer detalhes</>
                   }
                 </button>
               </div>
