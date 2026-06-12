@@ -341,17 +341,33 @@ function DecisionSnapshot({
   const rawReasons = decision.motivos.length > 0
     ? decision.motivos
     : ['A decisão foi derivada do score, semáforo, riscos e recomendação estratégica disponíveis.'];
-  const reasons = filterCoveredDecisionItems(rawReasons, businessFit, 'reasons');
   const conditions = filterCoveredDecisionItems(rawConditions, businessFit, 'conditions');
-  const blockers = filterCoveredDecisionItems(rawBlockers, businessFit, 'blockers');
-  const changeTriggers = decision.o_que_mudaria_decisao.length
-    ? decision.o_que_mudaria_decisao
-    : conditions;
+
+  // ── Deduplicação entre seções: a IA tende a repetir o mesmo fato em
+  // Impedimentos, Motivos e Lacunas. Impedimentos têm prioridade (são o
+  // conteúdo acionável); o que já apareceu não se repete nas demais.
+  const _vistosDedup: string[] = [];
+  const blockers = dedupTextos(filterCoveredDecisionItems(rawBlockers, businessFit, 'blockers'), _vistosDedup);
+  const reasons = dedupTextos(filterCoveredDecisionItems(rawReasons, businessFit, 'reasons'), _vistosDedup);
+  const changeTriggers = dedupTextos(
+    decision.o_que_mudaria_decisao.length ? decision.o_que_mudaria_decisao : conditions,
+    _vistosDedup,
+  );
   const evidenceItems = decision.evidencias.slice(0, 4);
-  const gapItems = decision.lacunas.length
-    ? decision.lacunas
-    : ['Nenhuma lacuna crítica foi identificada na base usada para este veredito.'];
+  const gapItems = dedupTextos(decision.lacunas, _vistosDedup);
+
+  // Detalhes da "Base da confiança" que apenas repetem evidências são omitidos
+  const _evidenciaTextos = evidenceItems.map(e => `${e.titulo || ''} ${e.detalhe || ''}`);
+  const detalheJaCoberto = (txt?: string) =>
+    !!txt && _evidenciaTextos.some(ev => textosSimilares(ev, txt));
+
   const decisionColumns = [
+    {
+      label: 'Impedimentos',
+      Icon: AlertTriangle,
+      items: blockers.slice(0, 3),
+      tone: decision.impeditivos.length ? 'text-red-500' : 'text-slate-400',
+    },
     {
       label: 'Motivos',
       Icon: Target,
@@ -364,13 +380,11 @@ function DecisionSnapshot({
       items: changeTriggers.slice(0, 3),
       tone: 'text-amber-500',
     },
-    {
-      label: 'Impedimentos',
-      Icon: AlertTriangle,
-      items: blockers.slice(0, 3),
-      tone: decision.impeditivos.length ? 'text-red-500' : 'text-slate-400',
-    },
-  ];
+  ].filter(col => col.items.length > 0);
+  const decisionColsClass =
+    decisionColumns.length === 1 ? 'md:grid-cols-1'
+    : decisionColumns.length === 2 ? 'md:grid-cols-2'
+    : 'md:grid-cols-3';
 
   return (
     <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
@@ -482,7 +496,7 @@ function DecisionSnapshot({
           )}
 
           <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-            <div className="grid divide-y divide-slate-200 md:grid-cols-3 md:divide-x md:divide-y-0">
+            <div className={`grid divide-y divide-slate-200 md:divide-x md:divide-y-0 ${decisionColsClass}`}>
               {decisionColumns.map(({ label, Icon: ColumnIcon, items, tone }) => (
                 <div key={label} className="bg-white px-5 py-4">
                   <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -502,20 +516,23 @@ function DecisionSnapshot({
             </div>
           </div>
 
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-              <SearchX size={14} className={gapItems.length && decision.lacunas.length ? 'text-amber-500' : 'text-emerald-600'} />
-              Lacunas da análise
-            </p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {gapItems.slice(0, 4).map((item, index) => (
-                <div key={`${item}-${index}`} className="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
-                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${decision.lacunas.length ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                  <p className="text-xs font-semibold leading-relaxed text-slate-600">{item}</p>
-                </div>
-              ))}
+          {gapItems.length > 0 && (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+              <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <SearchX size={14} className="text-amber-500" />
+                Lacunas da análise
+                <span className="font-medium normal-case tracking-normal text-slate-400">· o que ainda não está coberto acima</span>
+              </p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {gapItems.slice(0, 4).map((item, index) => (
+                  <div key={`${item}-${index}`} className="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                    <p className="text-xs font-semibold leading-relaxed text-slate-600">{item}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0 lg:p-6">
@@ -561,7 +578,8 @@ function DecisionSnapshot({
                           {status.label}
                         </span>
                       </div>
-                      {factor.detalhe && (
+                      {/* Detalhe omitido quando apenas repete uma evidência já exibida */}
+                      {factor.detalhe && !detalheJaCoberto(factor.detalhe) && (
                         <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">{factor.detalhe}</p>
                       )}
                     </div>
@@ -571,29 +589,39 @@ function DecisionSnapshot({
             </div>
           )}
 
-          <p className="mb-5 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
             <ClipboardList size={14} className="text-slate-400" />
-            Próximas ações
+            Próxima ação
           </p>
-          <div className="space-y-4">
-            {decision.proximas_acoes.slice(0, 3).map((action, index) => (
-              <div key={`${action.acao}-${index}`} className="relative pl-9">
-                {index < Math.min(decision.proximas_acoes.length, 3) - 1 && (
-                  <span className="absolute left-[13px] top-7 h-[calc(100%+0.75rem)] w-px bg-slate-200" />
-                )}
-                <span className={`absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-black text-white ${verdict.bar}`}>
-                  {index + 1}
-                </span>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{action.prazo || 'Agora'}</p>
-                <p className="mt-1 text-sm font-black leading-snug text-slate-900">{action.acao}</p>
-                {(action.responsavel || action.resultado_esperado) && (
+          {decision.proximas_acoes.length > 0 ? (
+            <div className="space-y-3">
+              {/* Só a 1ª ação aqui — o plano completo (com responsável, prazo e
+                  nota) vive no Cockpit, sem duplicar a lista inteira */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {decision.proximas_acoes[0].prazo || 'Agora'}
+                </p>
+                <p className="mt-1 text-sm font-black leading-snug text-slate-900">
+                  {decision.proximas_acoes[0].acao}
+                </p>
+                {(decision.proximas_acoes[0].responsavel || decision.proximas_acoes[0].resultado_esperado) && (
                   <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-500">
-                    {action.responsavel ? `${action.responsavel}: ` : ''}{action.resultado_esperado}
+                    {decision.proximas_acoes[0].responsavel ? `${decision.proximas_acoes[0].responsavel}: ` : ''}
+                    {decision.proximas_acoes[0].resultado_esperado}
                   </p>
                 )}
               </div>
-            ))}
-          </div>
+              <button
+                type="button"
+                onClick={() => document.getElementById('cockpit-pos-veredito')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className={`w-full rounded-xl px-4 py-2.5 text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
+              >
+                Plano completo no Cockpit ({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs font-medium text-slate-400">Sem ações pendentes registradas.</p>
+          )}
         </aside>
       </div>
     </section>
@@ -811,6 +839,8 @@ type DecisionCockpitTask = {
   acao: string;
   responsavel: string;
   resultado_esperado: string;
+  /** Impacto do item (vindo do roadmap — exibido no card) */
+  impacto?: string;
   origem: string;
   prioridade: 'Alta' | 'Média' | 'Normal';
 };
@@ -913,7 +943,7 @@ function DecisionCockpit({
 
   return (
     <section className="mb-8 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm print:hidden md:p-7">
-      <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div id="cockpit-pos-veredito" className="mb-5 flex flex-col gap-4 scroll-mt-24 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
             <ClipboardList size={14} className={verdict.text} />
@@ -995,6 +1025,11 @@ function DecisionCockpit({
                   <strong className="text-slate-700">{task.responsavel}</strong>
                   {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
                 </p>
+                {task.impacto && (
+                  <p className="mt-1.5 text-[11px] font-bold leading-relaxed text-amber-700/80">
+                    Impacto: {task.impacto}
+                  </p>
+                )}
 
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <label className="block">
@@ -1070,6 +1105,8 @@ function buildDecisionCockpitTasks(decision: DecisionUiData, result: AnalysisRes
       acao,
       responsavel: shortenDecisionText(record.responsavel || 'Licitações', 80),
       resultado_esperado: shortenDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
+      // Impacto do roadmap migrou para cá — a seção duplicada foi removida
+      impacto: shortenDecisionText(record.impacto || '', 120) || undefined,
       origem: 'Checklist',
       prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
     });
@@ -1663,6 +1700,47 @@ function confidenceFallback(veredito: DecisionVerdict, score: number) {
   return Math.min(85, Math.max(55, score));
 }
 
+// ─── Deduplicação de conteúdo (a IA repete os mesmos fatos em várias seções) ──
+
+function _tokensDedup(s: unknown): Set<string> {
+  const txt = String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]/g, ' ');
+  return new Set(txt.split(/\s+/).filter(t => t.length >= 4));
+}
+
+/** Similaridade Jaccard de tokens — true quando dois textos dizem a mesma coisa. */
+function textosSimilares(a: unknown, b: unknown, limiar = 0.5): boolean {
+  const ta = _tokensDedup(a);
+  const tb = _tokensDedup(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  let inter = 0;
+  ta.forEach(t => { if (tb.has(t)) inter += 1; });
+  const uniao = ta.size + tb.size - inter;
+  return uniao > 0 && inter / uniao >= limiar;
+}
+
+/** Remove itens repetidos OU muito similares aos já vistos (set compartilhado entre seções). */
+function dedupTextos(itens: string[], vistos: string[]): string[] {
+  const out: string[] = [];
+  for (const item of itens) {
+    const txt = String(item || '').trim();
+    if (!txt) continue;
+    if (vistos.some(v => textosSimilares(v, txt)) || out.some(o => textosSimilares(o, txt))) continue;
+    out.push(txt);
+  }
+  vistos.push(...out);
+  return out;
+}
+
+/** Veredito No-Go (campo da decisão ou score muito baixo). */
+function isNoGoVerdict(result: AnalysisResult): boolean {
+  const decisao = (result as unknown as { decisao?: { veredito?: string } }).decisao;
+  const v = String(decisao?.veredito || '').toUpperCase();
+  if (v) return v === 'NO_GO';
+  return (result.score ?? 100) < 40;
+}
+
 function semaforoLabel(key: string) {
   const labels: Record<string, string> = {
     tecnica: 'Técnica',
@@ -1709,14 +1787,24 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
         </div>
       </div>
 
-      {/* SIMULADOR TÁTICO */}
-      {result.pricing_intelligence && (
+      {/* SIMULADOR TÁTICO — oculto em No-Go: simular lance para um edital
+          que a própria análise mandou evitar é ruído de decisão */}
+      {result.pricing_intelligence && !isNoGoVerdict(result) && (
         <div className="space-y-4 print:hidden mb-12">
           <TacticalSimulator
             pricing={result.pricing_intelligence}
             fullResult={result}
             userTier={userTier}
           />
+        </div>
+      )}
+      {result.pricing_intelligence && isNoGoVerdict(result) && (
+        <div className="mb-12 flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
+          <span className="text-lg leading-none">🎯</span>
+          <p className="text-sm font-medium leading-relaxed text-slate-500">
+            <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
+            proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
+          </p>
         </div>
       )}
 
@@ -1740,10 +1828,9 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
         </div>
       </div>
 
-      {/* ROADMAP / CHECKLIST */}
-      {result.checklist && result.checklist.length > 0 && (
-        <ChecklistSection result={result} />
-      )}
+      {/* ROADMAP / CHECKLIST — removido: os mesmos itens vivem no Cockpit
+          pós-veredito (com responsável, prazo, nota e impacto), que é a fonte
+          operacional única. Duplicar a lista aqui só inflava o relatório. */}
 
       {/* EXPORTAR PDF */}
       <PremiumLock
@@ -1876,8 +1963,9 @@ function ScoreHeader({ result }: { result: AnalysisResult }) {
         </div>
       </div>
 
-      {/* Datas críticas */}
-      <DatasBlock result={result} isExpired={isExpired} />
+      {/* Datas críticas — só no formato legado (sem datas_criticas estruturadas);
+          no formato novo, o Cronograma Crítico logo abaixo é a fonte única */}
+      {!result.datas_criticas && <DatasBlock result={result} isExpired={isExpired} />}
     </div>
   );
 }
@@ -2114,6 +2202,14 @@ function RisksSection({ result }: { result: AnalysisResult }) {
       {result.risks && result.risks.length > 0 ? (
         <div className="space-y-3 mt-2">
           {[...result.risks]
+            // Dedup: a IA frequentemente lista o mesmo risco 2x com títulos
+            // diferentes (ex: "Sem aderência ao CNAE" e "Desalinhamento de
+            // CNAE — Impeditivo Estrutural"). Mantém o primeiro de cada tema.
+            .filter((risk, idx, arr) =>
+              arr.findIndex(r =>
+                textosSimilares(`${r.titulo || ''} ${r.descricao || ''}`, `${risk.titulo || ''} ${risk.descricao || ''}`, 0.45)
+              ) === idx
+            )
             .sort((a, b) => {
               const order: Record<string, number> = { alto: 0, medio: 1, baixo: 2 };
               return (order[a.impacto ?? 'medio'] ?? 1) - (order[b.impacto ?? 'medio'] ?? 1);

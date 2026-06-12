@@ -57,6 +57,8 @@ interface UseAnalysisReturn {
   loadingProgress: number;
   loadingRemainingSeconds: number;
   loadingEstimateSeconds: number;
+  /** true quando o backend está reportando a etapa real (polling conectado) */
+  progressoAoVivo: boolean;
   // Setters expostos
   setResult: (r: AnalysisResult | null) => void;
   setError: (e: string | null) => void;
@@ -70,15 +72,47 @@ interface UseAnalysisReturn {
 
 // ─── Mensagens de progresso ────────────────────────────────────────────────────
 
+// Ordem REAL do pipeline do backend (cada etapa é reportada ao vivo via
+// /analyze/progress/{token}): extração → LLM principal → mercado/financeiro
+// → jurídico → consolidação. Antes a ordem era inventada e não batia.
 const LOADING_MESSAGES = [
-  { title: 'Preparando leitura multiagente', desc: 'Organizando o edital, os anexos e os sinais principais para iniciar a análise.' },
-  { title: 'Agente jurídico em leitura',     desc: 'Verificando habilitação, prazos, exigências fiscais e pontos que podem gerar risco.' },
-  { title: 'Agente financeiro calculando viabilidade', desc: 'Estimando margem, pressão por preço, deságio provável e esforço de execução.' },
-  { title: 'Agente de mercado rastreando concorrência', desc: 'Mapeando fornecedores recorrentes, histórico semelhante e agressividade local.' },
-  { title: 'Consolidando veredito Go/No-Go', desc: 'Cruzando score, alertas, radar de concorrentes e próximos passos em linguagem direta.' },
+  { title: 'Preparando o edital',                       desc: 'Extraindo texto, anexos e dados do PNCP para a leitura dos agentes.' },
+  { title: 'Agente analista lendo o edital',            desc: 'O motor principal cruza exigências, valores, riscos e aderência ao seu perfil.' },
+  { title: 'Agentes de mercado e financeiro',           desc: 'Concorrentes recorrentes, preços históricos, deságio provável e war room.' },
+  { title: 'Agente jurídico em parecer',                desc: 'Habilitação, prazos, cláusulas sensíveis e fundamentos da Lei 14.133/21.' },
+  { title: 'Consolidando veredito e salvando',          desc: 'Score final, Go/No-Go, próximos passos e gravação no histórico.' },
 ];
 
 export { LOADING_MESSAGES };
+
+// ─── ETA adaptativo: mediana das últimas análises com o mesmo perfil ─────────
+const DURACOES_KEY = 'bawzi_analysis_durations_v1';
+
+function _bucketTamanho(chars: number): string {
+  if (chars > 80000) return 'xl';
+  if (chars > 30000) return 'l';
+  return 'm';
+}
+
+function lerEstimativaHistorica(perfil: string): number | null {
+  try {
+    const mapa = JSON.parse(localStorage.getItem(DURACOES_KEY) || '{}');
+    const arr: number[] = mapa[perfil];
+    if (!arr || arr.length === 0) return null;
+    const ordenado = [...arr].sort((a, b) => a - b);
+    return ordenado[Math.floor(ordenado.length / 2)];
+  } catch {
+    return null;
+  }
+}
+
+function gravarDuracaoReal(perfil: string, segundos: number) {
+  try {
+    const mapa = JSON.parse(localStorage.getItem(DURACOES_KEY) || '{}');
+    mapa[perfil] = [...(mapa[perfil] || []), Math.round(segundos)].slice(-5);
+    localStorage.setItem(DURACOES_KEY, JSON.stringify(mapa));
+  } catch { /* localStorage indisponível */ }
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -112,7 +146,11 @@ export function useAnalysis({
 
   const abortRef = useRef<AbortController | null>(null);
 
-  // ── Progresso temporal ────────────────────────────────────────────────────
+  // 📡 Progresso REAL: etapa reportada pelo backend via polling
+  const realStepRef = useRef<number | null>(null);
+  const [progressoAoVivo, setProgressoAoVivo] = useState(false);
+
+  // ── Progresso temporal (suavização) + etapa real quando disponível ────────
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isAnalyzing) {
@@ -127,10 +165,23 @@ export function useAnalysis({
       interval = setInterval(() => {
         const elapsedSeconds = (Date.now() - startedAt) / 1000;
         const ratio = elapsedSeconds / estimate;
-        const progress = ratio <= 1
+        let progress = ratio <= 1
           ? Math.min(94, Math.max(4, Math.round(ratio * 94)))
           : Math.min(99, 94 + Math.floor((elapsedSeconds - estimate) / 6));
-        const nextStep = Math.min(totalSteps - 1, Math.floor((progress / 100) * totalSteps));
+
+        const realStep = realStepRef.current;
+        let nextStep: number;
+        if (realStep !== null) {
+          // Etapa REAL do backend: a barra anda dentro dos limites da etapa
+          // atual (nunca corre na frente da realidade, nem trava no visual).
+          nextStep = Math.min(totalSteps - 1, realStep);
+          const piso = Math.round((realStep / totalSteps) * 94) + 2;
+          const teto = Math.round(((realStep + 1) / totalSteps) * 94);
+          progress = Math.min(Math.max(progress, piso), teto);
+        } else {
+          nextStep = Math.min(totalSteps - 1, Math.floor((progress / 100) * totalSteps));
+        }
+
         setLoadingProgress(progress);
         setLoadingRemainingSeconds(Math.max(0, Math.ceil(estimate - elapsedSeconds)));
         setLoadingStep(nextStep);
@@ -150,7 +201,20 @@ export function useAnalysis({
     setTimeout(() => setSuccessMsg(null), ms);
   }, []);
 
+  /** Perfil da análise — chave do histórico de durações reais. */
+  const getPerfilAnalise = useCallback((motor: Motor): string => {
+    const runsMarketAgents = Boolean(token) && userTier >= 2;
+    return `${motor}:${userTier}:${runsMarketAgents ? 1 : 0}:${_bucketTamanho(text.length)}:${pncpData ? 1 : 0}`;
+  }, [token, userTier, text.length, pncpData]);
+
   const getEstimateSeconds = useCallback((motor: Motor): number => {
+    // 1º: mediana das últimas análises REAIS com o mesmo perfil (tier, motor,
+    // tamanho, PNCP). Só cai na fórmula estática quando não há histórico.
+    const historica = lerEstimativaHistorica(getPerfilAnalise(motor));
+    if (historica && historica >= 6) {
+      return Math.min(historica, 240);
+    }
+
     const loggedIn = Boolean(token);
     const runsMarketAgents = loggedIn && userTier >= 2;
 
@@ -166,7 +230,7 @@ export function useAnalysis({
     const pncpPenalty = pncpData && runsMarketAgents ? 12 : 0;
 
     return Math.min(base + filePenalty + textPenalty + pncpPenalty, runsMarketAgents ? 130 : 45);
-  }, [token, userTier, files.length, text.length, pncpData]);
+  }, [token, userTier, files.length, text.length, pncpData, getPerfilAnalise]);
 
   // ── handleCancelAnalysis ──────────────────────────────────────────────────
   const handleCancelAnalysis = useCallback(() => {
@@ -202,6 +266,29 @@ export function useAnalysis({
       if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 100, behavior: 'smooth' });
     }, 50);
 
+    // 📡 Progresso real: token aleatório que o backend usa para reportar etapas
+    const progressToken =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    realStepRef.current = null;
+    setProgressoAoVivo(false);
+    const inicioAnalise = Date.now();
+    const baseUrl = apiUrl.replace(/\/$/, '');
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const r = await fetch(`${baseUrl}/api/analyze/progress/${progressToken}`);
+        if (!r.ok) return;
+        const p = await r.json();
+        if (p.status === 'ok' && typeof p.etapa === 'number') {
+          // Monotônico: nunca regride (etapas condicionais podem ser puladas)
+          realStepRef.current = Math.max(realStepRef.current ?? 0, p.etapa);
+          setProgressoAoVivo(true);
+        }
+      } catch { /* polling é melhor-esforço */ }
+    }, 1500);
+
     try {
       const formData = new FormData();
       if (text.trim()) formData.set('raw_text', text.trim());
@@ -209,6 +296,7 @@ export function useAnalysis({
       formData.set('uf', uf && uf.trim() !== '' ? uf.trim().toUpperCase() : 'BR');
       formData.set('force_exact', forceExact ? 'true' : 'false');
       formData.set('provider', motor);
+      formData.set('progress_token', progressToken);
       if (pncpData) {
         formData.set('pncp_cnpj', pncpData.cnpj);
         formData.set('pncp_ano', pncpData.ano.toString());
@@ -216,7 +304,7 @@ export function useAnalysis({
         if (pncpData.uf) formData.set('uf', pncpData.uf);
       }
 
-      const response = await apiFetch(`${apiUrl.replace(/\/$/, '')}/api/analyze`, {
+      const response = await apiFetch(`${baseUrl}/api/analyze`, {
         method: 'POST',
         body: formData,
         signal: abortRef.current.signal,
@@ -252,6 +340,12 @@ export function useAnalysis({
       setModelSource(data.source || data.model_source || 'Motor Bawzi IA');
       setIsCachedResult(data.is_cached || false);
 
+      // 📊 Grava a duração REAL — vira a estimativa das próximas análises
+      // (resultados de cache voltam em segundos e poluiriam a mediana)
+      if (!data.is_cached) {
+        gravarDuracaoReal(getPerfilAnalise(motor), (Date.now() - inicioAnalise) / 1000);
+      }
+
       setTimeout(() => {
         const el = document.getElementById('area-resultados');
         if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 50, behavior: 'smooth' });
@@ -275,18 +369,20 @@ export function useAnalysis({
           : msg || 'Ocorreu um erro inesperado. Por favor, tente novamente.';
       setError(display);
     } finally {
+      clearInterval(pollInterval);
+      realStepRef.current = null;
       setIsAnalyzing(false);
     }
   }, [
     text, files, uf, forceExact, pncpData, userTier, isOverLimit,
-    apiUrl, token, getEstimateSeconds, showError,
+    apiUrl, token, getEstimateSeconds, getPerfilAnalise, showError,
     onUpgradeNeeded, onUpsellNeeded, onFreeTrialUsed,
   ]);
 
   return {
     result, isAnalyzing, error, successMsg, modelSource, isCachedResult,
     analysisId, impugnacaoText, loadingStep, loadingProgress,
-    loadingRemainingSeconds, loadingEstimateSeconds,
+    loadingRemainingSeconds, loadingEstimateSeconds, progressoAoVivo,
     setResult, setError, setImpugnacaoText,
     handleAnalyze, handleCancelAnalysis, showError, showSuccess,
   };

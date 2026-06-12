@@ -189,7 +189,7 @@ export default function AnalysisApp() {
     modelSource, isCachedResult,
     analysisId,
     impugnacaoText, setImpugnacaoText,
-    loadingStep, loadingProgress, loadingRemainingSeconds, loadingEstimateSeconds,
+    loadingStep, loadingProgress, loadingRemainingSeconds, loadingEstimateSeconds, progressoAoVivo,
     handleAnalyze,
     handleCancelAnalysis,
   } = useAnalysis({
@@ -700,6 +700,7 @@ export default function AnalysisApp() {
                       loadingProgress={loadingProgress}
                       remainingSeconds={loadingRemainingSeconds}
                       estimatedSeconds={loadingEstimateSeconds}
+                      isLive={progressoAoVivo}
                       onCancel={handleCancelAnalysis}
                     />
                   ) : result ? (

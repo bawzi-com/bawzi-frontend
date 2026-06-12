@@ -21,6 +21,8 @@ interface AnalysisLoadingOverlayProps {
   loadingProgress: number;
   remainingSeconds: number;
   estimatedSeconds: number;
+  /** true = etapas reportadas ao vivo pelo backend; false = estimativa local */
+  isLive?: boolean;
   onCancel: () => void;
 }
 
@@ -30,6 +32,7 @@ export default function AnalysisLoadingOverlay({
   loadingProgress,
   remainingSeconds,
   estimatedSeconds,
+  isLive = false,
   onCancel,
 }: AnalysisLoadingOverlayProps) {
   const totalSteps = Math.max(loadingMessages.length, 1);
@@ -48,11 +51,12 @@ export default function AnalysisLoadingOverlay({
   const isExternalFinalizing = remainingSeconds <= 0 && progress >= 94;
   const remainingLabel = remainingSeconds > 0 ? `~${formatSeconds(remainingSeconds)} restantes` : 'Conferindo dados externos';
   const estimateLabel = isExternalFinalizing ? 'PNCP pode levar mais alguns segundos' : `Estimativa ${formatSeconds(estimatedSeconds)}`;
+  // Ordem REAL do pipeline (reportada pelo backend etapa a etapa)
   const steps = [
     { label: 'Documento', icon: FileSearch },
+    { label: 'Analista IA', icon: Gauge },
+    { label: 'Mercado & Financeiro', icon: Radar },
     { label: 'Jurídico', icon: Scale },
-    { label: 'Financeiro', icon: Gauge },
-    { label: 'Mercado', icon: Radar },
     { label: 'Veredito', icon: CheckCircle2 },
   ];
 
@@ -97,8 +101,24 @@ export default function AnalysisLoadingOverlay({
               key={safeStep}
               className="mx-auto max-w-xl animate-in fade-in slide-in-from-bottom-2 duration-500"
             >
-              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">
+              <p className="mb-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">
                 Etapa {safeStep + 1} de {totalSteps}
+                {isLive ? (
+                  <span
+                    title="O backend está reportando a etapa real da análise"
+                    className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 tracking-widest text-emerald-700"
+                  >
+                    <span className="h-1 w-1 animate-pulse rounded-full bg-emerald-500" />
+                    ao vivo
+                  </span>
+                ) : (
+                  <span
+                    title="Progresso estimado — o backend ainda não reportou a etapa real"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 tracking-widest text-slate-400"
+                  >
+                    estimado
+                  </span>
+                )}
               </p>
               <h3 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                 {currentMessage.title}
