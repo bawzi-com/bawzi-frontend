@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 
 interface TeamMember {
   id: string;
@@ -106,17 +107,17 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   };
 
   return (
-    <div className="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200 relative">
+    <div className="relative">
       {notice && (
-        <div className={`fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl ${notice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+        <div className={`fixed bottom-5 right-5 z-[200] max-w-sm rounded-lg border px-4 py-3 text-sm font-semibold shadow-xl ${notice.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
           {notice.msg}
         </div>
       )}
       
       {/* HEADER DA SECÇÃO */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+      <div className="mb-5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h3 className="text-xl font-black text-slate-900 mb-1">Equipe Estratégica</h3>
+          <h3 className="mb-1 text-sm font-black text-slate-900">Membros do workspace</h3>
           <p className="text-xs font-medium text-slate-500">
             Gerenciar acessos e membros do workspace. <strong className={currentUsers >= maxUsers ? 'text-red-500' : 'text-emerald-500'}>{currentUsers}/{maxUsers} vagas</strong> utilizadas.
           </p>
@@ -126,9 +127,9 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
           <button 
             onClick={() => setShowAddModal(true)}
             disabled={currentUsers >= maxUsers}
-            className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-wider rounded-xl hover:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            className="flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-[11px] font-black uppercase tracking-wider text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span className="text-sm">➕</span> 
+            <UserPlus size={14} />
             {currentUsers >= maxUsers ? 'Limite Atingido' : 'Convidar Membro'}
           </button>
         )}
@@ -137,10 +138,10 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
       {/* LISTA DE MEMBROS */}
       <div className="space-y-3">
         {members.map((member) => (
-          <div key={member.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-2xl group hover:border-violet-200 transition-colors">
+          <div key={member.id} className="group flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-emerald-200 hover:bg-white">
             
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-500 to-indigo-500 text-white flex items-center justify-center font-black text-lg overflow-hidden shrink-0 shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-tr from-emerald-600 to-sky-600 text-lg font-black text-white shadow-sm">
                 {member.avatar_url ? (
                   <img src={`${API_URL}${member.avatar_url}`} alt={member.name} className="w-full h-full object-cover" />
                 ) : (
@@ -162,7 +163,7 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
 
                   {/* 🟢 TAG: ADMIN */}
                   {member.is_admin && !member.is_owner && (
-                    <span className="text-[8px] font-black bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-700">
                       Admin
                     </span>
                   )}
@@ -180,18 +181,20 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
 
             {/* AÇÕES (Só visíveis para admins) */}
             {is_admin && !member.is_owner && !member.is_me && (
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-2 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                 <button 
                   onClick={() => handleToggleAdmin(member.email)}
-                  className="text-[10px] font-bold text-slate-500 hover:text-violet-600 px-2 py-1 bg-white border border-slate-200 rounded-lg shadow-sm"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-500 shadow-sm transition-colors hover:text-emerald-700"
                   title="Alterar permissões"
                 >
+                  <ShieldCheck size={12} />
                   {member.is_admin ? 'Despromover' : 'Promover'}
                 </button>
                 <button 
                   onClick={() => handleRemoveUser(member.email)}
-                  className="text-[10px] font-bold text-red-500 hover:text-white hover:bg-red-500 px-2 py-1 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors"
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-red-500 shadow-sm transition-colors hover:bg-red-500 hover:text-white"
                 >
+                  <Trash2 size={12} />
                   Remover
                 </button>
               </div>
@@ -203,7 +206,7 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
       {/* MODAL DE ADICIONAR UTILIZADOR */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-200">
+          <div className="w-full max-w-sm rounded-lg border border-slate-100 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
             <h3 className="text-xl font-black text-slate-900 mb-2">Convidar Colaborador</h3>
             <p className="text-xs text-slate-400 font-medium mb-6">Insira o e-mail do seu colega para lhe dar acesso à plataforma.</p>
             
@@ -213,7 +216,7 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
                 <input 
                   type="email" 
                   placeholder="exemplo@empresa.com"
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-violet-500/20 text-sm font-bold text-slate-700 placeholder:font-medium"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-sm font-bold text-slate-700 outline-none transition-all placeholder:font-medium focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   required
@@ -224,14 +227,14 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
                 <button 
                   type="button" 
                   onClick={() => setShowAddModal(false)} 
-                  className="flex-1 py-3 text-[10px] font-black text-slate-500 uppercase hover:bg-slate-50 rounded-xl transition-colors"
+                  className="flex-1 rounded-lg py-3 text-[10px] font-black uppercase text-slate-500 transition-colors hover:bg-slate-50"
                 >
                   Cancelar
                 </button>
                 <button 
                   type="submit" 
                   disabled={loading || !newEmail}
-                  className="flex-1 py-3 bg-violet-600 text-white text-[10px] font-black rounded-xl uppercase shadow-lg shadow-violet-200 disabled:opacity-50 transition-transform active:scale-95"
+                  className="flex-1 rounded-lg bg-slate-950 py-3 text-[10px] font-black uppercase text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {loading ? 'A Convidar...' : 'Enviar Convite'}
                 </button>

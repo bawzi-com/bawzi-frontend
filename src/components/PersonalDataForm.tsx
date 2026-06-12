@@ -16,8 +16,8 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
   });
 
   // ESTILOS PADRONIZADOS
-  const inputStyle = "w-full px-5 py-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-slate-700 focus:ring-4 focus:ring-violet-500/10 focus:border-violet-500 focus:bg-white outline-none transition-all disabled:opacity-50 disabled:bg-slate-100 disabled:cursor-not-allowed";
-  const labelStyle = "block text-[11px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3 ml-1";
+  const inputStyle = "w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3.5 font-bold text-slate-700 outline-none transition-all focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:opacity-50";
+  const labelStyle = "mb-2 block text-[10px] font-black uppercase tracking-[0.15em] text-slate-400";
 
   // FUNÇÃO: ATUALIZAR PERFIL
   const handleProfileSubmit = async (e: React.FormEvent) => {
@@ -55,9 +55,9 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
   }, [userData]);
 
   return (
-    <form onSubmit={handleProfileSubmit} className="flex flex-col gap-8">
+    <form onSubmit={handleProfileSubmit} className="flex flex-col gap-6">
       {message && (
-        <div className={`p-5 rounded-2xl flex items-center gap-3 text-sm font-bold border-2 animate-in fade-in slide-in-from-top-2 ${
+        <div className={`flex items-center gap-3 rounded-lg border p-4 text-sm font-bold animate-in fade-in slide-in-from-top-2 ${
           message.type === 'success' ? 'bg-emerald-50 text-emerald-900 border-emerald-100' : 'bg-red-50 text-red-900 border-red-100'
         }`}>
           {message.type === 'success' ? <CheckCircle2 size={20} className="text-emerald-500" /> : <AlertTriangle size={20} className="text-red-500" />}
@@ -85,11 +85,11 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
         />
       </div>
       
-      <div className="flex justify-end pt-4 border-t border-slate-50">
+      <div className="flex justify-end border-t border-slate-200 pt-5">
         <button 
           type="submit" 
           disabled={isLoading} 
-          className="w-full md:w-auto px-12 py-5 bg-slate-900 text-white hover:bg-violet-600 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3"
+          className="flex w-full items-center justify-center gap-3 rounded-lg bg-slate-950 px-8 py-3.5 text-xs font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60 md:w-auto"
         >
           {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Save size={18} />}
           Guardar Perfil

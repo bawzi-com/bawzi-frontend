@@ -15,7 +15,10 @@ interface AuthModalProps {
 // 1. O COMPONENTE DE CONTEÚDO (Lógica e Visual do Modal)
 // ============================================================================
 function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }: AuthModalProps) {
-  const [view, setView] = useState<'login' | 'register' | 'forgot-password'>(defaultView);
+  const [view, setView] = useState<'login' | 'register' | 'forgot-password' | '2fa'>(defaultView);
+  // 2FA: pré-token emitido após a senha correta (vale 5 min, só para a etapa do código)
+  const [preToken2FA, setPreToken2FA] = useState('');
+  const [code2FA, setCode2FA] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nome, setNome] = useState('');
@@ -79,6 +82,15 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
         const data = await res.json();
 
+        // 🔐 Conta com 2FA ativo → mesma etapa de código do login por senha
+        if (data.requires_2fa && data.pre_token) {
+          setPreToken2FA(data.pre_token);
+          setCode2FA('');
+          setView('2fa');
+          setLoading(false);
+          return;
+        }
+
         setAccessToken(data.access_token);
         localStorage.setItem('bawzi_token', data.access_token); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
@@ -138,13 +150,22 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
       const data = await response.json();
 
+      // 🔐 Conta com 2FA ativo → etapa do código do app autenticador
+      if (data.requires_2fa && data.pre_token) {
+        setPreToken2FA(data.pre_token);
+        setCode2FA('');
+        setView('2fa');
+        setLoading(false);
+        return;
+      }
+
       const tokenToSave = data.access_token || data.token;
       if (tokenToSave) {
         setAccessToken(tokenToSave);
         localStorage.setItem('bawzi_token', tokenToSave); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
-        
+
         if (onSuccess) onSuccess();
         onClose();
       } else {
@@ -158,7 +179,99 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
     }
   };
 
+  // Etapa 2 do login com 2FA: valida o código TOTP (ou código de backup)
+  const handleSubmit2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/api/auth/login/2fa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pre_token: preToken2FA, code: code2FA }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'Código inválido.');
+
+      const tokenToSave = data.access_token;
+      if (!tokenToSave) throw new Error('Token não recebido do servidor.');
+      setAccessToken(tokenToSave);
+      localStorage.setItem('bawzi_token', tokenToSave);
+      if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
+      if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
+      if (typeof data.backup_codes_restantes === 'number' && data.backup_codes_restantes <= 2) {
+        alert(`⚠️ Você usou um código de backup. Restam apenas ${data.backup_codes_restantes}. Gere novos no Perfil → Segurança.`);
+      }
+      if (onSuccess) onSuccess();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Erro ao validar o código.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  // ---- VIEW: CÓDIGO 2FA (após senha correta) ----
+  if (view === '2fa') {
+    return (
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
+          <button
+            onClick={onClose}
+            className="absolute top-6 right-6 z-10 w-8 h-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors text-xl font-bold"
+          >
+            &times;
+          </button>
+          <div className="p-8 md:p-10">
+            <div className="flex flex-col items-center text-center mb-8">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100 text-2xl">
+                🔐
+              </div>
+              <h2 className="text-2xl font-black text-slate-900">Verificação em 2 fatores</h2>
+              <p className="mt-2 text-sm font-medium text-slate-500">
+                Digite o código de 6 dígitos do seu app autenticador — ou um código de backup (XXXX-XXXX).
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit2FA} className="space-y-4">
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+                value={code2FA}
+                onChange={(e) => setCode2FA(e.target.value)}
+                placeholder="000000"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-center text-2xl font-black tracking-[0.4em] text-slate-900 placeholder-slate-300 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+              />
+              {error && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">{error}</p>
+              )}
+              <button
+                type="submit"
+                disabled={loading || code2FA.trim().length < 6}
+                className="w-full rounded-xl bg-slate-900 py-3.5 font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {loading ? 'Verificando…' : 'Confirmar e entrar'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setView('login'); setError(''); setCode2FA(''); }}
+                className="w-full text-center text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                ← Voltar ao login
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ---- VIEW: ESQUECEU A SENHA ----
   if (view === 'forgot-password') {

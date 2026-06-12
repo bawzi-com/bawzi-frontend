@@ -21,7 +21,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Sparkles } from 'lucide-react';
-import { initSession, clearSession, apiFetch, API_URL } from '@/lib/apiClient';
+import { initSession, clearSession, apiFetch, API_URL, startSessionKeepAlive } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent } from '@/lib/types';
 import { useAnalysis, LOADING_MESSAGES } from '@/hooks/useAnalysis';
@@ -261,6 +261,10 @@ export default function AnalysisApp() {
   }, []);
 
   // ─── useEffect: carga de dados unificada ────────────────────────────────────
+  // 🔐 Sessão deslizante: renova o access token enquanto a aba estiver aberta
+  // (evita expiração no meio de uma análise ou da leitura de um laudo)
+  useEffect(() => startSessionKeepAlive(), []);
+
   useEffect(() => {
     const loadUnifiedData = async () => {
       const savedToken = await initSession();

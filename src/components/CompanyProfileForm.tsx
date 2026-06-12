@@ -225,16 +225,16 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       .filter(Boolean)
       .slice(0, 20);
 
-  const inputStyle = "w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-800 focus:bg-white focus:border-indigo-500 outline-none transition-all";
-  const labelStyle = "block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 ml-1";
+  const inputStyle = "w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3.5 text-sm font-bold text-slate-800 outline-none transition-all focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10";
+  const labelStyle = "mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400";
 
   return (
     <div className="space-y-6">
       
       {/* 📊 PAINEL DE SLOTS */}
-      <div className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-2xl p-4">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white rounded-xl shadow-sm text-indigo-600 border border-slate-100">
+          <div className="rounded-lg border border-slate-200 bg-white p-2.5 text-emerald-600 shadow-sm">
             <Zap size={18} fill="currentColor" />
           </div>
           <div>
@@ -250,7 +250,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       </div>
 
       {message && (
-        <div className={`p-4 rounded-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 ${
+        <div className={`flex items-start gap-3 rounded-lg p-4 animate-in fade-in slide-in-from-top-2 ${
           message.type === 'success' ? 'bg-emerald-50 border border-emerald-100 text-emerald-700' : 'bg-rose-50 border border-rose-100 text-rose-700'
         }`}>
           <div className="mt-0.5">
@@ -266,7 +266,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
           {companiesList.map((emp) => (
             <div 
               key={emp.cnpj} 
-              className="group bg-white border border-slate-200 rounded-[1.5rem] p-5 flex flex-col gap-4 hover:border-indigo-300 hover:shadow-md transition-all duration-300"
+              className="group flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 transition-all duration-300 hover:border-emerald-200 hover:shadow-sm"
             >
               
               {/* === LINHA 1: DADOS E BOTÕES === */}
@@ -274,7 +274,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 
                 {/* Dados da Empresa */}
                 <div className="flex items-center gap-4">
-                  <div className="min-w-[48px] w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
+                  <div className="flex h-12 w-12 min-w-[48px] items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400 transition-colors group-hover:bg-emerald-50 group-hover:text-emerald-600">
                     <Building2 size={22} />
                   </div>
                   <div>
@@ -304,7 +304,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                     {(emp.produtos_servicos?.length || emp.regioes_atendidas?.length || emp.margem_minima_pct || emp.limite_contrato) && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {(emp.produtos_servicos || []).slice(0, 3).map((item: string) => (
-                          <span key={item} className="rounded-md border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[9px] font-bold text-indigo-700">
+                          <span key={item} className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
                             {item}
                           </span>
                         ))}
@@ -329,37 +329,26 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 </div>
                 
                 {/* Botões de Ação */}
-                <div className="flex items-center gap-2 w-full md:w-auto justify-end border-t border-slate-100 md:border-t-0 pt-4 md:pt-0">
-                  {/* === LINHA 1: DADOS E BOTÕES === */}
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      
-                      {/* Dados da Empresa... */}
-
-                      <div className="flex items-center gap-2 w-full md:w-auto justify-end border-t border-slate-100 md:border-t-0 pt-4 md:pt-0">
-                        <button 
-                          onClick={() => {
-                            // 🟢 3. AÇÃO DUPLA: Atualiza o estado e Redireciona
-                            if (onCnpjDetected) onCnpjDetected(emp.cnpj); 
-                            router.push('/workspace'); 
-                          }} 
-                          className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-indigo-600 hover:text-white transition-all flex-1 md:flex-none whitespace-nowrap"
-                        >
-                          <Activity size={16} /> Ver Radar
-                        </button>
-                        
-                        {/* Botões Editar e Remover... */}
-                      </div>
-                    </div>
+                <div className="flex w-full items-center justify-end gap-2 border-t border-slate-100 pt-4 md:w-auto md:border-t-0 md:pt-0">
+                  <button
+                    onClick={() => {
+                      if (onCnpjDetected) onCnpjDetected(emp.cnpj);
+                      router.push('/workspace');
+                    }}
+                    className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white md:flex-none"
+                  >
+                    <Activity size={16} /> Ver Radar
+                  </button>
                   <button 
                     onClick={() => handleEdit(emp)} 
-                    className="flex items-center justify-center p-2.5 bg-slate-50 text-slate-500 rounded-xl hover:bg-slate-200 hover:text-slate-800 transition-all shrink-0"
+                    className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-500 transition-all hover:bg-slate-200 hover:text-slate-800"
                     title="Editar"
                   >
                     <Edit3 size={18} />
                   </button>
                   <button 
                     onClick={() => handleDelete(emp.cnpj)} 
-                    className="flex items-center justify-center p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-rose-100 hover:text-rose-600 transition-all shrink-0"
+                    className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-400 transition-all hover:bg-rose-100 hover:text-rose-600"
                     title="Remover Empresa"
                   >
                     <Trash2 size={18} />
@@ -382,8 +371,8 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
           {/* BOTÃO + CNPJ */}
           {slotsOcupados < vagasTotais && (
-            <button onClick={handleAddNew} className="w-full border-2 border-dashed border-slate-200 rounded-[1.5rem] p-5 flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all mt-2">
-              <div className="p-2 bg-slate-100 rounded-full"><Plus size={20} /></div>
+            <button onClick={handleAddNew} className="mt-2 flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 p-5 text-slate-400 transition-all hover:border-emerald-300 hover:bg-emerald-50/40 hover:text-emerald-700">
+              <div className="rounded-lg bg-slate-100 p-2"><Plus size={20} /></div>
               <span className="text-[10px] font-black uppercase tracking-[0.2em]">Adicionar Nova Empresa</span>
             </button>
           )}
@@ -392,7 +381,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
       {/* VIEW: FORMULÁRIO DE ADIÇÃO/EDIÇÃO */}
       {view === 'form' && (
-        <form onSubmit={handleSubmit} className="animate-in fade-in slide-in-from-bottom-4 duration-300 border border-slate-200 p-6 rounded-[2rem] bg-white">
+        <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-5 animate-in fade-in slide-in-from-bottom-4 duration-300 sm:p-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-900">Configurar Monitorização</h3>
             <button type="button" onClick={() => setView('list')} className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600">Cancelar</button>
@@ -403,7 +392,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
               <label className={labelStyle}>CNPJ da Organização</label>
               <div className="relative group">
                 <input type="text" className={`${inputStyle} pr-14`} placeholder="00.000.000/0000-00" value={formData.cnpj} onChange={handleCnpjChange} />
-                <button type="button" onClick={handleFetchCnpj} disabled={isSearchingCnpj} className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50">
+                <button type="button" onClick={handleFetchCnpj} disabled={isSearchingCnpj} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-emerald-600 p-2.5 text-white transition-all hover:bg-emerald-700 disabled:opacity-50">
                   <Search size={18} className={isSearchingCnpj ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -563,7 +552,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
           </div>
 
           <div className="flex gap-3 mt-8">
-            <button type="submit" disabled={isLoading} className="flex-1 px-8 py-4 bg-slate-900 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-[0.98] transition-all">
+            <button type="submit" disabled={isLoading} className="flex-1 rounded-lg bg-slate-950 px-8 py-3.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60">
               {isLoading ? 'A Processar...' : 'Confirmar Monitorização ↗'}
             </button>
           </div>

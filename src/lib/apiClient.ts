@@ -91,8 +91,62 @@ async function doRefresh(): Promise<string | null> {
 // Wrapper que evita refreshes paralelos (race condition em tabs/requests simultâneos)
 async function renewToken(): Promise<string | null> {
   if (_refreshPromise) return _refreshPromise;
-  _refreshPromise = doRefresh().finally(() => { _refreshPromise = null; });
+  _refreshPromise = doRefresh()
+    .then((tok) => {
+      if (tok) {
+        _accessToken = tok;
+        // Sincroniza com componentes legacy que ainda leem localStorage —
+        // sem isto, eles continuavam usando o token antigo após a renovação.
+        if (typeof window !== 'undefined') localStorage.setItem('bawzi_token', tok);
+      }
+      return tok;
+    })
+    .finally(() => { _refreshPromise = null; });
   return _refreshPromise;
+}
+
+/**
+ * Garante que a sessão cobre os próximos `bufferSeconds` (renova se preciso).
+ * Use antes de operações longas — ex: análises de até 2 min — para o token
+ * não expirar no meio do fluxo.
+ */
+export async function ensureSessionFor(bufferSeconds: number): Promise<string | null> {
+  if (!_accessToken) return null;
+  if (!isTokenExpiringSoon(_accessToken, bufferSeconds)) return _accessToken;
+  return renewToken();
+}
+
+// ─── Keep-alive: sessão deslizante enquanto a aba estiver aberta ─────────────
+let _keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Renova o access token automaticamente enquanto a aba estiver visível
+ * (a cada 4 min, quando faltarem < 10 min de validade) e ao voltar para a
+ * aba. Com o refresh cookie de 30 dias, a sessão nunca expira no meio do
+ * trabalho — só quando o usuário some por semanas.
+ * Idempotente: chamadas repetidas não criam timers duplicados.
+ */
+export function startSessionKeepAlive(
+  intervalMs = 4 * 60 * 1000,
+  bufferSeconds = 10 * 60,
+): () => void {
+  if (typeof window === 'undefined' || _keepAliveTimer) return () => {};
+
+  const renovarSePreciso = () => {
+    if (document.visibilityState !== 'visible') return;
+    if (_accessToken && isTokenExpiringSoon(_accessToken, bufferSeconds)) {
+      void renewToken();
+    }
+  };
+
+  _keepAliveTimer = setInterval(renovarSePreciso, intervalMs);
+  document.addEventListener('visibilitychange', renovarSePreciso);
+
+  return () => {
+    if (_keepAliveTimer) clearInterval(_keepAliveTimer);
+    _keepAliveTimer = null;
+    document.removeEventListener('visibilitychange', renovarSePreciso);
+  };
 }
 
 // ─── Limpar sessão ────────────────────────────────────────────────────────────

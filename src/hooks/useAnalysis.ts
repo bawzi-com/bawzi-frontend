@@ -11,7 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { apiFetch } from '@/lib/apiClient';
+import { apiFetch, ensureSessionFor } from '@/lib/apiClient';
 import type { AnalysisResult } from '@/components/analysis-types';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -265,6 +265,11 @@ export function useAnalysis({
       const el = document.getElementById('area-loading');
       if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 100, behavior: 'smooth' });
     }, 50);
+
+    // 🔐 Garante sessão válida para TODA a janela da análise (até ~2 min de
+    // pipeline + ações pós-veredito). Sem isto, um token com <2 min de vida
+    // podia expirar no meio do fluxo.
+    await ensureSessionFor(15 * 60).catch(() => null);
 
     // 📡 Progresso real: token aleatório que o backend usa para reportar etapas
     const progressToken =
