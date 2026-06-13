@@ -11,6 +11,24 @@ interface AuthModalProps {
   onSuccess?: () => void;
 }
 
+const PASSWORD_REQUIREMENTS = [
+  { id: 'length', label: '8 caracteres ou mais', test: (value: string) => value.length >= 8 },
+  { id: 'uppercase', label: 'uma letra maiúscula', test: (value: string) => /[A-Z]/.test(value) },
+  { id: 'number', label: 'um número', test: (value: string) => /[0-9]/.test(value) },
+  { id: 'special', label: 'um caractere especial, como @, #, ! ou %', test: (value: string) => /[^A-Za-z0-9]/.test(value) },
+] as const;
+
+const PASSWORD_GUIDANCE = 'Use uma senha com 8 caracteres ou mais, uma letra maiúscula, um número e um caractere especial.';
+
+const getMissingPasswordRequirements = (value: string) =>
+  PASSWORD_REQUIREMENTS.filter((requirement) => !requirement.test(value));
+
+const buildPasswordError = (value: string) => {
+  const missing = getMissingPasswordRequirements(value);
+  if (!missing.length) return '';
+  return `Sua senha ainda precisa de ${missing.map((item) => item.label).join(', ')}.`;
+};
+
 // ============================================================================
 // 1. O COMPONENTE DE CONTEÚDO (Lógica e Visual do Modal)
 // ============================================================================
@@ -26,6 +44,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   const [error, setError] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const missingPasswordRequirements = getMissingPasswordRequirements(password);
+  const isRegisterPasswordValid = missingPasswordRequirements.length === 0;
 
   useEffect(() => {
     if (isOpen) {
@@ -72,12 +92,13 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
         const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',  // grava o cookie de refresh (ver nota no handleSubmit)
           body: JSON.stringify({ token: tokenResponse.access_token }),
         });
 
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || "Erro ao validar com o Google");
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(parseApiError(errData, 'Erro ao validar com o Google'));
         }
 
         const data = await res.json();
@@ -107,10 +128,45 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
     onError: () => setError('A Autenticação com o Google falhou.'),
   });
 
+  /**
+   * Erros de validação do FastAPI (422) chegam como ARRAY de objetos em
+   * `detail` — antes o código assumia string, quebrava no .toLowerCase() e o
+   * usuário via um erro genérico em vez de "Senha: deve conter maiúscula".
+   */
+  const parseApiError = (errorData: unknown, fallback: string): string => {
+    const d = (errorData as { detail?: unknown })?.detail;
+    if (typeof d === 'string' && d.trim()) {
+      const message = d.trim();
+      return view === 'register' && message.toLowerCase().includes('senha') ? PASSWORD_GUIDANCE : message;
+    }
+    if (Array.isArray(d)) {
+      const nomes: Record<string, string> = { password: 'Senha', email: 'E-mail', name: 'Nome' };
+      const msgs = d.map((e) => {
+        const item = e as { loc?: unknown[]; msg?: string };
+        const campo = Array.isArray(item.loc) ? String(item.loc[item.loc.length - 1]) : '';
+        let m = String(item.msg || '')
+          .replace(/^Value error,\s*/i, '')
+          .replace(/^String should have at least (\d+) characters$/i, 'deve ter ao menos $1 caracteres')
+          .replace(/^value is not a valid email address.*$/i, 'endereço inválido');
+        if (!m) return '';
+        if (campo === 'password') return `Senha: ${buildPasswordError(password) || PASSWORD_GUIDANCE}`;
+        return campo && nomes[campo] ? `${nomes[campo]}: ${m}` : m;
+      }).filter(Boolean);
+      if (msgs.length) return msgs.join(' · ');
+    }
+    return fallback;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+
+    if (view === 'register' && !isRegisterPasswordValid) {
+      setError(buildPasswordError(password) || PASSWORD_GUIDANCE);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const endpoint = view === 'login' ? '/api/auth/login' : '/api/auth/register';
@@ -124,12 +180,16 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       const response = await fetch(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // credentials: SEM isto o browser descarta o Set-Cookie do refresh
+        // (cross-origin) → bawzi_refresh nunca era gravado → todo
+        // /api/auth/refresh devolvia 401 e a sessão morria em 60 min.
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        const msg = errorData.detail || 'Ocorreu um erro na autenticação.';
+        const errorData = await response.json().catch(() => ({}));
+        const msg = parseApiError(errorData, 'Ocorreu um erro na autenticação.');
         // Se estiver no register e email já existe → switch automático para login
         if (view === 'register' && (
           msg.toLowerCase().includes('já cadastrado') ||
@@ -412,10 +472,32 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={view === 'register' && password.length > 0 && !isRegisterPasswordValid}
+                aria-describedby={view === 'register' ? 'password-requirements' : undefined}
                 className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
             </div>
+
+            {view === 'register' && (
+              <div id="password-requirements" className="-mt-1 space-y-2 px-1 text-xs">
+                <p className="font-bold text-slate-500">Sua senha precisa ter:</p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {PASSWORD_REQUIREMENTS.map((requirement) => {
+                    const met = requirement.test(password);
+                    return (
+                      <span
+                        key={requirement.id}
+                        className={`flex min-h-5 items-start gap-2 leading-snug ${met ? 'text-emerald-700' : 'text-slate-500'}`}
+                      >
+                        <span className={`mt-1 h-1.5 w-1.5 flex-shrink-0 rounded-full ${met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        {requirement.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {view === 'login' && (
               <div className="text-right -mt-1">
