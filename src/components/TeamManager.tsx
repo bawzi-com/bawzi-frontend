@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Save, ShieldCheck, Trash2, UserPlus, UsersRound } from 'lucide-react';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 interface TeamMember {
   id: string;
@@ -18,6 +19,7 @@ interface TeamManagerProps {
   tier: number;
   members: TeamMember[];
   is_admin: boolean;
+  workspaceName?: string;
   onUpdate: () => void;
 }
 
@@ -25,19 +27,60 @@ const WORKSPACE_LIMITS: Record<number, number> = {
   1: 1, 2: 2, 3: 5, 4: 10
 };
 
-export default function TeamManager({ userToken, tier, members = [], is_admin, onUpdate }: TeamManagerProps) {
+export default function TeamManager({ userToken, tier, members = [], is_admin, workspaceName = 'Meu Workspace', onUpdate }: TeamManagerProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmail, setNewEmail] = useState('');
+  const [workspaceNameDraft, setWorkspaceNameDraft] = useState(workspaceName);
   const [loading, setLoading] = useState(false);
+  const [savingWorkspaceName, setSavingWorkspaceName] = useState(false);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const maxUsers = WORKSPACE_LIMITS[tier] || 1;
   const currentUsers = members.length;
+  const trimmedWorkspaceName = workspaceNameDraft.trim();
+  const workspaceNameChanged = trimmedWorkspaceName !== workspaceName.trim();
+
+  useEffect(() => {
+    setWorkspaceNameDraft(workspaceName);
+  }, [workspaceName]);
 
   const showNotice = (type: 'success' | 'error', msg: string) => {
     setNotice({ type, msg });
     setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handleSaveWorkspaceName = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!workspaceNameChanged || savingWorkspaceName) return;
+
+    if (trimmedWorkspaceName.length < 3) {
+      showNotice('error', 'Informe um nome com pelo menos 3 caracteres.');
+      return;
+    }
+
+    setSavingWorkspaceName(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/workspace/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedWorkspaceName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showNotice('success', data.message || 'Workspace atualizado com sucesso.');
+        setWorkspaceNameDraft(data.workspace_name || trimmedWorkspaceName);
+        onUpdate();
+      } else {
+        showNotice('error', data.detail || 'Erro ao atualizar workspace.');
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
+      showNotice('error', 'Erro de ligação ao servidor.');
+    } finally {
+      setSavingWorkspaceName(false);
+    }
   };
 
   // ==========================================
@@ -47,9 +90,9 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/workspace/invite`, {
+      const res = await apiFetch(`${API_URL}/api/workspace/invite`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: newEmail }),
       });
       const data = await res.json();
@@ -60,7 +103,8 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
       } else {
         showNotice('error', data.detail || 'Erro ao adicionar colaborador.');
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       showNotice('error', 'Erro de ligação ao servidor.');
     } finally {
       setLoading(false);
@@ -73,14 +117,15 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   const handleRemoveUser = async (email: string) => {
     if (!confirm(`Tem certeza que deseja remover ${email} do workspace?`)) return;
     try {
-      const res = await fetch(`${API_URL}/api/workspace/remove-user`, {
+      const res = await apiFetch(`${API_URL}/api/workspace/remove-user`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
       if (res.ok) onUpdate();
       else showNotice('error', 'Erro ao remover usuário.');
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       showNotice('error', 'Erro de ligação ao servidor.');
     }
   };
@@ -90,9 +135,9 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
   // ==========================================
   const handleToggleAdmin = async (email: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/workspace/toggle-admin`, {
+      const res = await apiFetch(`${API_URL}/api/workspace/toggle-admin`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${userToken}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
       if (res.ok) {
@@ -101,7 +146,8 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
         const data = await res.json();
         showNotice('error', data.detail || 'Erro ao alterar privilégios.');
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       showNotice('error', 'Erro de ligação ao servidor.');
     }
   };
@@ -114,6 +160,49 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, o
         </div>
       )}
       
+      {/* CONFIGURAÇÕES DO WORKSPACE */}
+      <form onSubmit={handleSaveWorkspaceName} className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm">
+              <UsersRound size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="workspace-name" className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Nome do workspace
+              </label>
+              {is_admin ? (
+                <input
+                  id="workspace-name"
+                  type="text"
+                  value={workspaceNameDraft}
+                  onChange={(e) => setWorkspaceNameDraft(e.target.value)}
+                  maxLength={80}
+                  className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-black text-slate-900 outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  placeholder="Ex: Equipe Bawzi Licitações"
+                />
+              ) : (
+                <p className="mt-2 truncate text-lg font-black text-slate-950">{workspaceName}</p>
+              )}
+              <p className="mt-2 text-xs font-medium leading-5 text-slate-500">
+                Esse nome identifica o ambiente compartilhado para membros, análises e empresas monitoradas.
+              </p>
+            </div>
+          </div>
+
+          {is_admin && (
+            <button
+              type="submit"
+              disabled={!workspaceNameChanged || savingWorkspaceName}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-[11px] font-black uppercase tracking-wider text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <Save size={14} />
+              {savingWorkspaceName ? 'Salvando...' : 'Salvar nome'}
+            </button>
+          )}
+        </div>
+      </form>
+
       {/* HEADER DA SECÇÃO */}
       <div className="mb-5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>

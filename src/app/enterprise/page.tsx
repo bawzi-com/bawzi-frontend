@@ -9,6 +9,7 @@ import {
   Sparkles, ArrowRight, BookOpen,
 } from 'lucide-react';
 import Link from 'next/link';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 const SwaggerUI = dynamic(() => import('swagger-ui-react'), { ssr: false });
 import 'swagger-ui-react/swagger-ui.css';
@@ -99,14 +100,16 @@ export default function EnterpriseApiPage() {
 
   useEffect(() => {
     const tier  = Number(localStorage.getItem('bawzi_tier') || '1');
-    const token = localStorage.getItem('bawzi_token') || '';
 
     if (tier >= 4) {
       setIsAuthorized(true);
-      fetch('/api/swagger', { headers: { Authorization: `Bearer ${token}` } })
+      apiFetch('/api/swagger')
         .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
         .then(data => setSpec(data))
-        .catch(err => console.error('Erro ao carregar spec:', err));
+        .catch(err => {
+          if (err instanceof SessionExpiredError) return;
+          console.error('Erro ao carregar spec:', err);
+        });
     } else {
       setIsAuthorized(false);
     }

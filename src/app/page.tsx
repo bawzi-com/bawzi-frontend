@@ -21,6 +21,7 @@ import {
   SearchCheck,
   UsersRound,
 } from 'lucide-react';
+import { getAuthToken } from '@/lib/apiClient';
 
 const DECISION_SIGNALS = [
   {
@@ -139,7 +140,7 @@ export default function LandingPage() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('bawzi_token');
+    const token = getAuthToken();
     if (token) {
       router.replace('/workspace');
     } else {
@@ -186,9 +187,9 @@ export default function LandingPage() {
 
           <div className="mt-5 grid w-full max-w-4xl gap-3 text-left sm:grid-cols-3">
             {[
-              ['2-4h', 'economizadas por edital analisado'],
-              ['CNAE + PNCP', 'match antes da proposta'],
-              ['Go/No-Go', 'decisão explicável para diretoria'],
+              ['Minutos', 'do edital à decisão Go/No-Go'],
+              ['4 agentes', 'jurídico, CNAE, preço e concorrência'],
+              ['PNCP oficial', 'fonte do governo federal, em tempo real'],
             ].map(([value, label]) => (
               <div key={value} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
                 <p className="text-2xl font-black text-white">{value}</p>
@@ -198,6 +199,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      <TrustBar />
 
       <section id="problema" className="scroll-mt-24 bg-white py-16 md:py-20">
         <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.78fr_1fr] lg:items-center">
@@ -253,8 +256,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      <SavingsCalculator />
 
       <section id="como-funciona" className="scroll-mt-24 bg-white py-16 md:py-20">
         <div className="mx-auto max-w-[1180px] px-6">
@@ -321,23 +322,38 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="bg-slate-950 py-20 text-white md:py-24">
-        <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.9fr_1fr] lg:items-center">
+      <section className="bg-slate-950 py-16 text-white md:py-20">
+        <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.88fr_1fr] lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Para diretoria, licitações e financeiro</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Uma resposta que vira ação.</h2>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Quem usa a Bawzi</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Cada área recebe o que precisa para agir.</h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-300">
-              A Bawzi não para no resumo do edital. Ela organiza os sinais em decisão, explica por que chegou nela e indica o que fazer em seguida.
+              A decisão é uma, mas o que cada papel precisa para agir é diferente. A Bawzi entrega tudo junto, sem precisar distribuir manualmente.
             </p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-3">
+              {[
+                ['Decisão', 'Go/No-Go com justificativa'],
+                ['Evidências', 'riscos, fit e preço'],
+                ['Execução', 'checklist e próximos passos'],
+              ].map(([title, desc]) => (
+                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
+                  <p className="text-sm font-black text-white">{title}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              ['Diretoria', 'Go/No-Go, confiança e justificativa executiva.'],
-              ['Licitações', 'Checklist de habilitação, prazos e documentos críticos.'],
-              ['Jurídico', 'Cláusulas sensíveis, riscos e pontos de esclarecimento.'],
-              ['Financeiro', 'Preço limite, margem provável e capital de giro.'],
-            ].map(([title, desc]) => (
-              <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
+              ['Diretoria', 'Veredito claro, nível de confiança e justificativa para aprovar ou recusar sem precisar ler o edital inteiro.'],
+              ['Licitações', 'Checklist de habilitação, documentos críticos, prazos e ações prioritárias antes do protocolo.'],
+              ['Jurídico', 'Cláusulas sensíveis, penalidades elevadas, pontos de esclarecimento e riscos contratuais mapeados.'],
+              ['Financeiro', 'Preço limite estimado, margem provável, deságio esperado e pressão competitiva do histórico PNCP.'],
+            ].map(([title, desc], index) => (
+              <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 transition-colors hover:bg-white/[0.09]">
+                <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-[10px] font-black text-emerald-200">
+                  {index + 1}
+                </span>
                 <h3 className="text-sm font-black text-white">{title}</h3>
                 <p className="mt-2 text-sm font-medium leading-6 text-slate-400">{desc}</p>
               </div>
@@ -346,16 +362,19 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="bg-white py-20 md:py-24" id="planos">
+      <SavingsCalculator />
+
+      <section className="scroll-mt-24 bg-white py-16 md:py-20" id="planos">
         <div className="mx-auto max-w-[1180px] px-6">
-          <div className="mb-14 text-center">
+          <div className="mb-10 text-center">
             <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Planos e preços</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Comece pequeno. Escale quando disputar em volume.</h2>
             <p className="mt-4 text-slate-500 font-medium">Teste grátis, sem cartão. Depois escolha o plano pelo ritmo da sua operação.</p>
           </div>
-          <div className="mx-auto grid max-w-5xl gap-5 md:grid-cols-3">
+          <div className="mx-auto grid max-w-5xl gap-4 md:grid-cols-3">
             {PLANOS.map(({ nome, publico, preco, nivel, cor, destaque, itens }) => (
-              <div key={nome} className={`flex flex-col rounded-2xl border p-6 ${destaque ? 'border-emerald-300 shadow-xl shadow-emerald-100 ring-2 ring-emerald-300' : 'border-slate-200 shadow-sm'}`}>
+              <div key={nome} className={`relative flex flex-col overflow-hidden rounded-[1.5rem] border bg-white p-5 ${destaque ? 'border-emerald-300 shadow-xl shadow-emerald-100 ring-2 ring-emerald-300' : 'border-slate-200 shadow-sm'}`}>
+                <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${cor}`} />
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{nivel}</span>
                   {destaque && (
@@ -378,7 +397,7 @@ export default function LandingPage() {
                   ))}
                 </ul>
                 <Link href="/login" className={`w-full rounded-xl py-3 text-center text-sm font-black transition-all ${destaque ? `bg-gradient-to-r ${cor} text-white shadow-md` : 'border border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'}`}>
-                  Começar agora
+                  Escolher {nome}
                 </Link>
               </div>
             ))}
@@ -390,18 +409,119 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="bg-emerald-600 py-20 text-white">
-        <div className="mx-auto max-w-[820px] px-6 text-center">
-          <h2 className="text-3xl font-black tracking-tight md:text-4xl">Leve um edital real para a Bawzi decidir.</h2>
-          <p className="mt-4 text-base font-medium leading-8 text-emerald-50">
-            Em vez de ler tudo primeiro, descubra se a oportunidade merece sua equipe, seu preço e seu risco.
-          </p>
-          <Link href="/login" className="mt-9 inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-8 text-sm font-black text-white shadow-lg shadow-emerald-950/25 transition-all hover:bg-slate-900">
-            Criar conta gratuitamente <ArrowRight size={17} />
-          </Link>
+      <FAQ />
+
+      <section className="bg-white px-6 pb-16 md:pb-20">
+        <div className="mx-auto grid max-w-[1180px] gap-8 rounded-[2rem] bg-slate-950 p-6 text-white shadow-2xl shadow-slate-200 md:p-10 lg:grid-cols-[1fr_0.78fr] lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Próximo edital</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Leve um edital real para a Bawzi decidir.</h2>
+            <p className="mt-4 max-w-2xl text-base font-medium leading-8 text-slate-300">
+              Em vez de ler tudo primeiro, descubra se a oportunidade merece sua equipe, seu preço e seu risco.
+            </p>
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-lg shadow-emerald-950/25 transition-all hover:bg-emerald-400">
+                Criar conta gratuitamente <ArrowRight size={17} />
+              </Link>
+              <Link href="/#como-funciona" className="inline-flex h-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 px-7 text-sm font-bold text-white transition-all hover:bg-white/15">
+                Rever como funciona
+              </Link>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Antes de mobilizar proposta</p>
+            <div className="mt-4 space-y-3">
+              {[
+                'Confirme se o objeto conversa com seu CNAE.',
+                'Veja documentos eliminatórios e cláusulas sensíveis.',
+                'Defina margem mínima antes de entrar no pregão.',
+              ].map((item) => (
+                <div key={item} className="flex gap-3 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-3">
+                  <Check size={16} className="mt-0.5 shrink-0 text-emerald-300" />
+                  <p className="text-sm font-semibold leading-6 text-slate-300">{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
     </div>
+  );
+}
+
+function TrustBar() {
+  const items = [
+    { icon: '🔗', text: 'Conectado ao PNCP oficial' },
+    { icon: '🔒', text: 'Edital nunca sai do seu ambiente' },
+    { icon: '⚡', text: 'Análise em minutos' },
+    { icon: '↩', text: 'Cancele quando quiser' },
+  ];
+  return (
+    <div className="border-b border-slate-100 bg-slate-50">
+      <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 py-4">
+        {items.map(({ icon, text }) => (
+          <span key={text} className="flex items-center gap-2 text-[12px] font-semibold text-slate-500">
+            <span>{icon}</span>
+            {text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FAQ() {
+  const items = [
+    {
+      q: 'A análise substitui um advogado ou especialista em licitações?',
+      a: 'Não. A Bawzi faz triagem — mapeia riscos, aponta cláusulas sensíveis e organiza documentos críticos. Decisões contratuais complexas ainda exigem revisão jurídica especializada. O objetivo é eliminar o trabalho repetitivo e dar à sua equipe um ponto de partida qualificado.',
+    },
+    {
+      q: 'Preciso enviar documentos internos ou sigilosos?',
+      a: 'Não. A análise é feita sobre o edital público e os dados do PNCP, que são fontes abertas do governo federal. Nenhum documento interno da empresa precisa ser enviado.',
+    },
+    {
+      q: 'Funciona com qualquer modalidade de licitação?',
+      a: 'Funciona melhor com pregão eletrônico e RDC, que são os mais estruturados no PNCP. Também analisa dispensa, concorrência e outros formatos quando o edital é enviado diretamente.',
+    },
+    {
+      q: 'Os dados do PNCP estão sempre atualizados?',
+      a: 'Sim. O Radar PNCP consulta a API oficial do governo em tempo real. Editais abertos, prazos e histórico de resultados refletem o estado atual do portal.',
+    },
+    {
+      q: 'Posso cancelar a assinatura a qualquer momento?',
+      a: 'Sim, sem fidelidade e sem multa. O cancelamento pode ser feito pelo painel de conta com efeito imediato no ciclo de faturamento.',
+    },
+    {
+      q: 'O que acontece com os meus editais e análises se eu cancelar?',
+      a: 'Você mantém acesso de leitura ao histórico de análises por 30 dias após o cancelamento, com opção de exportar em PDF.',
+    },
+  ];
+
+  return (
+    <section className="bg-slate-50 py-16 md:py-20">
+      <div className="mx-auto max-w-[780px] px-6">
+        <div className="mb-10 text-center">
+          <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Dúvidas frequentes</p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Perguntas antes de assinar.</h2>
+        </div>
+        <div className="divide-y divide-slate-200 rounded-[1.5rem] border border-slate-200 bg-white overflow-hidden shadow-sm">
+          {items.map(({ q, a }) => (
+            <details key={q} className="group px-6 py-5">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
+                <span className="text-sm font-black text-slate-900">{q}</span>
+                <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 p-1 text-slate-400 transition-transform group-open:rotate-45">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </span>
+              </summary>
+              <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{a}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

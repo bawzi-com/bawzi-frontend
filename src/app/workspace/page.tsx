@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import AnalysisApp from '../../components/analysis-app';
 import ErrorBoundary from '../../components/ErrorBoundary';
-import { apiFetch, API_URL } from '@/lib/apiClient';
+import { apiFetch, API_URL, getAuthToken } from '@/lib/apiClient';
 
 export default function WorkspacePage() {
   
@@ -22,18 +22,16 @@ export default function WorkspacePage() {
 
     const poll = async () => {
       attempts++;
-      const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+      const token = getAuthToken();
       if (!token) return;
 
       try {
-        const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
         // Força sync com Stripe antes de ler os dados
-        await fetch(`${API_URL}/api/billing/sync`, { headers }).catch(() => {});
+        await apiFetch(`${API_URL}/api/billing/sync`).catch(() => {});
 
         const [userRes, wsRes] = await Promise.all([
-          fetch(`${API_URL}/api/users/me`, { headers }),
-          fetch(`${API_URL}/api/workspace/details`, { headers }),
+          apiFetch(`${API_URL}/api/users/me`),
+          apiFetch(`${API_URL}/api/workspace/details`),
         ]);
 
         if (userRes.ok && wsRes.ok) {

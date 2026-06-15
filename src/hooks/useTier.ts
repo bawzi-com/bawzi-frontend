@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { resolveEffectiveTier } from '@/lib/tier';
+import { getAuthToken } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -31,7 +32,7 @@ export function useTier(): TierState {
   const [isLoading, setIsLoading]           = useState(false);
 
   const refresh = useCallback(async () => {
-    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+    const token = getAuthToken();
     if (!token) return;
 
     setIsLoading(true);

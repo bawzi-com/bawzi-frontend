@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, BookOpen, CheckCircle2, FileText, LockKeyhole, Sparkles } from 'lucide-react';
 import HistoryTab from '../../components/HistoryTab';
 import AuthModal from '../../components/AuthModal';
+import { getAuthToken } from '@/lib/apiClient';
 
 export default function HistoryPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -12,7 +13,7 @@ export default function HistoryPage() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
   useEffect(() => {
-    setToken(localStorage.getItem('bawzi_token'));
+    setToken(getAuthToken());
 
     const handleOpenAuth = (event: Event) => {
       const mode = (event as CustomEvent<'login' | 'register'>).detail || 'login';
@@ -137,7 +138,7 @@ export default function HistoryPage() {
         onClose={() => setShowAuthModal(false)}
         defaultView={authMode}
         onSuccess={() => {
-          setToken(localStorage.getItem('bawzi_token'));
+          setToken(getAuthToken());
           setShowAuthModal(false);
         }}
       />

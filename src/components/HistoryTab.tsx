@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { getCachedTier } from '@/lib/tier';
-import { API_URL } from '@/lib/apiClient';
+import { API_URL, apiFetch, clearSession, SessionExpiredError } from '@/lib/apiClient';
 import {
   ArrowRight,
   CalendarDays,
@@ -62,14 +62,7 @@ export default function HistoryTab({
     
     const loadData = async () => {
       try {
-        const res = await fetch(`${API_URL}/api/analyses/history`, {
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
-
-        if (res.status === 401) {
-          window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
-          return;
-        }
+        const res = await apiFetch(`${API_URL}/api/analyses/history`);
 
         const data = await res.json();
         const historicoReal = data.history || (Array.isArray(data) ? data : []);
@@ -78,6 +71,7 @@ export default function HistoryTab({
         const savedFavs = localStorage.getItem('bawzi_favorites');
         if (savedFavs) setFavorites(JSON.parse(savedFavs));
       } catch (err) {
+        if (err instanceof SessionExpiredError) return;
         console.error("Erro ao carregar histórico:", err);
       } finally {
         setIsLoading(false);
@@ -106,18 +100,9 @@ export default function HistoryTab({
 
     setIsDeletingOne(true);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${deleteTargetId}`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${deleteTargetId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${tokenLocal}` }
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (res.ok) {
         setAnalyses(prev => prev.filter(item => item.id !== deleteTargetId));
@@ -129,6 +114,7 @@ export default function HistoryTab({
         setNotice({ type: 'error', message: error.detail || 'Erro ao excluir a análise.' });
       }
     } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
     } finally {
       setIsDeletingOne(false);
@@ -146,18 +132,9 @@ export default function HistoryTab({
 
     setIsDeletingAll(true);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/history/all`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/history/all`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${tokenLocal}` }
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -174,6 +151,7 @@ export default function HistoryTab({
       setDeleteAllText('');
       setNotice({ type: 'success', message: 'Histórico excluído com sucesso.' });
     } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
     } finally {
       setIsDeletingAll(false);
@@ -190,17 +168,7 @@ export default function HistoryTab({
     if (!analysis.id || loadingDetailId) return;
     setLoadingDetailId(analysis.id);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}`, {
-        headers: { 'Authorization': `Bearer ${tokenLocal}` },
-      });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}`);
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -214,7 +182,8 @@ export default function HistoryTab({
       setAnalyses((prev) => prev.map((item) => item.id === analysis.id ? { ...item, ...fullAnalysis } : item));
       setDetailTab('analise');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setNotice({ type: 'error', message: 'Erro de conexão ao abrir a análise.' });
     } finally {
       setLoadingDetailId(null);
@@ -226,13 +195,9 @@ export default function HistoryTab({
 
     setIsSharingSelected(true);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${selectedAnalysis.id}/share`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${selectedAnalysis.id}/share`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_email: shareTargetEmail }),
       });
 
@@ -245,7 +210,8 @@ export default function HistoryTab({
       setIsShareOpen(false);
       setShareTargetEmail('');
       setNotice({ type: 'success', message: 'Análise compartilhada com sucesso.' });
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setNotice({ type: 'error', message: 'Erro de conexão. Tente novamente.' });
     } finally {
       setIsSharingSelected(false);

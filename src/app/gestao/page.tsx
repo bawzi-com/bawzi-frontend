@@ -7,6 +7,7 @@ import { ArrowRight, CheckCircle2, ClipboardList, FileText, LockKeyhole, Sparkle
 import DecisionManagementTab from '../../components/DecisionManagementTab';
 import AuthModal from '../../components/AuthModal';
 import type { BawziUpdateEvent } from '@/lib/types';
+import { getAuthToken, initSession } from '@/lib/apiClient';
 
 export default function GestaoPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -15,13 +16,18 @@ export default function GestaoPage() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
   useEffect(() => {
-    const syncSession = () => {
-      setToken(localStorage.getItem('bawzi_token'));
+    let mounted = true;
+
+    const syncSession = async () => {
+      const sessionToken = getAuthToken() || await initSession();
+      if (!mounted) return;
+
+      setToken(sessionToken);
       const tier = Number(localStorage.getItem('bawzi_tier') || 1);
       setUserTier(Number.isFinite(tier) ? tier : 1);
     };
 
-    syncSession();
+    void syncSession();
 
     const handleOpenAuth = (event: Event) => {
       const mode = (event as CustomEvent<'login' | 'register'>).detail || 'login';
@@ -37,6 +43,7 @@ export default function GestaoPage() {
     window.addEventListener('bawzi_open_auth', handleOpenAuth);
     window.addEventListener('bawzi_update', handleGlobalUpdate);
     return () => {
+      mounted = false;
       window.removeEventListener('bawzi_open_auth', handleOpenAuth);
       window.removeEventListener('bawzi_update', handleGlobalUpdate);
     };
@@ -150,7 +157,7 @@ export default function GestaoPage() {
         onClose={() => setShowAuthModal(false)}
         defaultView={authMode}
         onSuccess={() => {
-          setToken(localStorage.getItem('bawzi_token'));
+          setToken(getAuthToken());
           const tier = Number(localStorage.getItem('bawzi_tier') || 1);
           setUserTier(Number.isFinite(tier) ? tier : 1);
           setShowAuthModal(false);

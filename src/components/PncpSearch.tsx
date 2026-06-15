@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
+import ActiveContextSwitcher from './ActiveContextSwitcher';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import type { Empresa } from '@/lib/types';
 
 interface PncpItem {
   id: string;
@@ -42,11 +45,26 @@ interface PncpSearchProps {
   initialQuery?: string;
   /** UF pré-carregada junto com o initialQuery */
   initialUf?: string;
+  contextCompanies?: Empresa[];
+  activeCnpj?: string;
+  onActiveCnpjChange?: (cnpj: string, company: Empresa | null) => void;
   /** Abre a aba Capital com valor e objeto do edital pré-preenchidos */
   onMedirFolego?: (valor: number, objeto: string) => void;
 }
 
-export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onUfChange, token, userUf, initialQuery, initialUf, onMedirFolego }: PncpSearchProps) {
+export default function PncpSearch({
+  onAnalyzeOportunity,
+  charLimit = 30000,
+  onUfChange,
+  token,
+  userUf,
+  initialQuery,
+  initialUf,
+  contextCompanies = [],
+  activeCnpj,
+  onActiveCnpjChange,
+  onMedirFolego,
+}: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
   const [municipioId, setMunicipioId]   = useState('');
@@ -246,11 +264,8 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
 
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
 
-      const fetchHeaders = new Headers();
-      if (token) fetchHeaders.append('Authorization', `Bearer ${token}`);
-
       // 1. Busca principal (UF e cidade viram filtros REAIS na API do PNCP)
-      const reqNacional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${exactParam}`, { headers: fetchHeaders });
+      const reqNacional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${exactParam}`);
       // Inteligência de mercado só faz sentido com termo definido
       const reqMarket = termo
         ? fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(termo)}${ufParam}`).catch(() => null)
@@ -259,7 +274,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
       let reqRegional = null;
       if ((!ufVal || ufVal === '') && ufAtivo && !munId && !munNome) {
-        reqRegional = fetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${exactParam}`, { headers: fetchHeaders }).catch(() => null);
+        reqRegional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${exactParam}`).catch(() => null);
       }
 
       // Dispara tudo
@@ -395,6 +410,7 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
       }
 
     } catch (err: any) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setError(err.message);
     } finally {
       setIsSearching(false);
@@ -631,7 +647,17 @@ export default function PncpSearch({ onAnalyzeOportunity, charLimit = 30000, onU
             </p>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-stretch gap-2 md:max-w-[360px] md:justify-end">
+            {contextCompanies.length > 0 && (
+              <ActiveContextSwitcher
+                companies={contextCompanies}
+                activeCnpj={activeCnpj}
+                label="Empresa analisada"
+                compact
+                onChange={onActiveCnpjChange}
+                className="min-w-[240px] border-emerald-100 bg-white/90 shadow-sm"
+              />
+            )}
             <PncpStatusBadge />
             {detectedUf && !uf && (
               <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-[10px] font-black uppercase text-sky-700">

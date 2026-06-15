@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 import { useTier } from '@/hooks/useTier';
+import { getAuthToken } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -35,7 +36,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
 
   // Sync forçado com Stripe (após portal ou retorno de checkout)
   const forceManualSync = async () => {
-    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+    const token = getAuthToken();
     if (!token) return;
     setIsSyncing(true);
     try {
@@ -72,7 +73,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   const handleManageSubscription = async () => {
     setIsCheckoutLoading(true);
     try {
-      const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+      const token = getAuthToken();
       const res = await fetch(`${API_URL}/api/billing/customer-portal`, {
         method: 'POST',
         headers: { 
@@ -96,7 +97,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   };
 
   const handleUpgradeClick = async (tier: number) => {
-    const token = localStorage.getItem('bawzi_token') || localStorage.getItem('token');
+    const token = getAuthToken();
     if (!token) {
       router.push('/login');
       return;

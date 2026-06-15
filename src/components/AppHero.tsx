@@ -11,8 +11,8 @@
 import React from 'react';
 import {
   ScanSearch, ChevronRight, Crown, Sparkles, MapPin,
-  BookOpen, Scale, Cpu,
-  Banknote, Shield, Lightbulb, UploadCloud, CheckCircle2,
+  BookOpen, Scale,
+  Banknote, Shield, UploadCloud, CheckCircle2,
 } from 'lucide-react';
 
 interface AppHeroProps {
@@ -76,226 +76,67 @@ export default function AppHero({
       }, 80);
     };
 
-    const guideSteps = [
-      {
-        Icon: ScanSearch,
-        step: '1',
-        title: 'Busque no Radar PNCP',
-        desc: 'Encontre oportunidades por palavra-chave, UF, órgão ou segmento.',
-      },
-      {
-        Icon: UploadCloud,
-        step: '2',
-        title: 'Envie ou cole o edital',
-        desc: 'Use PDF, texto extraído ou uma oportunidade escolhida no radar.',
-      },
-      {
-        Icon: CheckCircle2,
-        step: '3',
-        title: 'Receba um veredito claro',
-        desc: 'Veja score, riscos, pontos críticos e próximos passos em linguagem direta.',
-      },
-    ];
-
-    const focusAreas = [
-      {
-        Icon: Scale,
-        title: 'Jurídico',
-        desc: 'Exigências, riscos fiscais, habilitação e pontos que podem eliminar sua empresa.',
-        shell: 'border-amber-100 bg-amber-50',
-        icon: 'text-amber-600',
-      },
-      {
-        Icon: CheckCircle2,
-        title: 'Viabilidade',
-        desc: 'Aderência ao perfil da empresa, complexidade, prazo e capacidade de execução.',
-        shell: 'border-emerald-100 bg-emerald-50',
-        icon: 'text-emerald-600',
-      },
-      {
-        Icon: ScanSearch,
-        title: 'Concorrência',
-        desc: 'Sinais de fornecedores recorrentes, histórico semelhante e contexto competitivo.',
-        shell: 'border-sky-100 bg-sky-50',
-        icon: 'text-sky-600',
-      },
-      {
-        Icon: Cpu,
-        title: 'Decisão',
-        desc: 'Score Go/No-Go, semáforo de risco e recomendação objetiva.',
-        shell: 'border-sky-100 bg-sky-50',
-        icon: 'text-sky-600',
-      },
-    ];
-
-    const proofItems = [
-      'Score de viabilidade da oportunidade',
-      'Sinais de risco jurídico, fiscal e documental',
-      'Radar de concorrentes e fornecedores recorrentes',
-      'Estimativa de pressão por preço e deságio',
-      'Alertas de oportunidades compatíveis com seu perfil',
-    ];
-
     return (
-      <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_18px_60px_-36px_rgba(15,23,42,0.32)]">
-        <div className="relative overflow-hidden bg-gradient-to-br from-white via-emerald-50/35 to-sky-50/45 text-slate-900">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-emerald-300/70 to-transparent" />
+      <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
 
-          <div className="relative z-10 flex flex-col gap-3 border-b border-slate-200/70 bg-white/70 px-5 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-7">
-            <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-[13px] font-black text-emerald-800 shadow-sm select-none">
-                {displayName.charAt(0).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-black leading-none text-slate-950">Olá, {firstName}</p>
-                <p className="mt-1 hidden text-[11px] leading-none text-slate-500 sm:block">Sessão pronta para encontrar oportunidades</p>
-              </div>
-              <div className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold ${tierClass}`}>
-                {currentTier >= 4 ? <Crown size={12} className="text-amber-600" /> : <Sparkles size={12} />}
-                {tierLabel}
-              </div>
-              {userData?.company?.uf && (
-                <span className="hidden items-center gap-1 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-slate-500 sm:flex">
-                  <MapPin size={11} /> {userData.company.uf}
-                </span>
-              )}
+          {/* Identity */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-[13px] font-black text-emerald-800 select-none">
+              {displayName.charAt(0).toUpperCase()}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-45"></span>
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-none text-slate-950">Olá, {firstName}</p>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${tierClass}`}>
+                  {currentTier >= 4 ? <Crown size={10} className="text-amber-600" /> : <Sparkles size={10} />}
+                  {tierLabel}
                 </span>
-                PNCP ativo
-              </div>
-              <button
-                onClick={onGoToHistory}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/80 px-3.5 py-2 text-[12px] font-semibold text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-white hover:text-slate-950"
-              >
-                <BookOpen size={13} /> Histórico
-              </button>
-            </div>
-          </div>
-
-          <div className="relative z-10 grid gap-8 px-5 py-8 sm:px-8 sm:py-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(340px,0.72fr)] lg:items-start lg:px-10 lg:py-12">
-            <div className="min-w-0 max-w-2xl pt-2">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white/85 px-3.5 py-2 shadow-sm">
-                <Sparkles size={13} className="text-emerald-600" />
-                <span className="text-[11px] font-black uppercase text-slate-500">
-                  Inteligência para licitações públicas
-                </span>
-              </div>
-
-              <h2 className="text-4xl font-black leading-[1.04] text-slate-950 sm:text-5xl lg:text-[3.2rem]">
-                Analise editais.
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-teal-600 to-sky-600">
-                  Decida se vale participar.
-                </span>
-              </h2>
-
-              <p className="mt-5 text-[15px] font-medium leading-7 text-slate-600">
-                Comece pelo Radar PNCP ou envie um PDF. A Bawzi transforma editais e oportunidades públicas em uma análise clara de viabilidade, riscos, concorrência e próximos passos.
-              </p>
-
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button
-                  onClick={focusRadar}
-                  className="inline-flex h-12 items-center justify-center gap-2.5 rounded-2xl bg-emerald-600 px-5 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(5,150,105,0.65)] transition-all hover:bg-emerald-500 active:scale-[0.98] sm:px-6"
-                >
-                  <ScanSearch size={17} />
-                  Buscar editais no Radar PNCP
-                  <ChevronRight size={16} />
-                </button>
-                <button
-                  onClick={focusAnalise}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-emerald-300 hover:bg-emerald-50/40 hover:text-emerald-700 active:scale-[0.98]"
-                >
-                  <UploadCloud size={15} className="text-slate-400" />
-                  Enviar PDF ou colar edital
-                  <ChevronRight size={15} />
-                </button>
-              </div>
-            </div>
-
-            <aside className="relative">
-              <div className="rounded-[1.6rem] border border-slate-200 bg-white/90 p-5 shadow-[0_24px_70px_-40px_rgba(15,23,42,0.36)] backdrop-blur-md sm:p-6">
-                <div className="mb-5 flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-[11px] font-black uppercase text-emerald-600">Por onde começar</p>
-                    <h3 className="mt-1 text-lg font-black text-slate-950">Um caminho simples para decidir</h3>
-                  </div>
-                  <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">
-                    pronto
+                {userData?.company?.uf && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-400">
+                    <MapPin size={9} />{userData.company.uf}
                   </span>
-                </div>
-
-                <div className="space-y-4">
-                  {guideSteps.map(({ Icon, step, title, desc }) => (
-                    <div key={title} className="flex gap-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-[12px] font-black text-emerald-700">
-                        {step}
-                      </div>
-                      <div className="min-w-0 pb-4 last:pb-0">
-                        <div className="flex items-center gap-2">
-                          <Icon size={15} className="text-slate-500" />
-                          <p className="text-sm font-black text-slate-900">{title}</p>
-                        </div>
-                        <p className="mt-1 text-[12px] font-medium leading-relaxed text-slate-500">{desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                )}
               </div>
-            </aside>
-          </div>
-
-          <div className="relative z-10 border-t border-emerald-100/70 bg-white/70 px-5 py-5 backdrop-blur-sm sm:px-8 lg:px-10">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <section className="rounded-2xl border border-slate-200 bg-white/85 p-4 shadow-sm">
-                <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <p className="text-[11px] font-black uppercase text-emerald-700">Mapa de decisão</p>
-                    <h3 className="text-base font-black text-slate-950">A análise separa o edital em quatro perguntas</h3>
-                  </div>
-                  <span className="w-max rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">
-                    visão única
-                  </span>
-                </div>
-
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-                  {focusAreas.map(({ Icon, title, desc, shell, icon }) => (
-                    <div key={title} className={`rounded-xl border p-3 ${shell}`}>
-                      <div className="mb-2 flex items-center gap-2">
-                        <Icon size={15} className={icon} />
-                        <p className="text-sm font-black text-slate-900">{title}</p>
-                      </div>
-                      <p className="text-[12px] font-medium leading-relaxed text-slate-600">{desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-black uppercase text-slate-400">Sinais monitorados</p>
-                    <h3 className="text-sm font-black text-slate-900">A Bawzi observa por você</h3>
-                  </div>
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
-                    <CheckCircle2 size={17} />
-                  </div>
-                </div>
-                <div className="grid gap-2">
-                  {proofItems.map((label) => (
-                    <div key={label} className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2">
-                      <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald-600" />
-                      <span className="text-[12px] font-semibold leading-relaxed text-slate-600">{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
             </div>
           </div>
+
+          {/* Primary actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={focusRadar}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-black text-white shadow-sm transition-all hover:bg-emerald-500 active:scale-[0.98]"
+            >
+              <ScanSearch size={14} />
+              Radar PNCP
+            </button>
+            <button
+              onClick={focusAnalise}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98]"
+            >
+              <UploadCloud size={13} className="text-slate-400" />
+              Enviar edital
+            </button>
+            <button
+              onClick={onGoToHistory}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
+            >
+              <BookOpen size={13} />
+              Histórico
+            </button>
+          </div>
+
+          {/* Status */}
+          <div className="hidden sm:flex items-center gap-2 shrink-0">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-45" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              PNCP ativo
+            </div>
+          </div>
+
         </div>
       </div>
     );

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Activity } from 'lucide-react'; // 🟢 1. O ícone foi importado aqui
+import ActiveContextSwitcher from './ActiveContextSwitcher';
+import type { Empresa } from '@/lib/types';
 
 interface UserProfileCardProps {
   user: {
@@ -9,13 +10,14 @@ interface UserProfileCardProps {
     workspace_users_count?: number;
     vagas_totais?: number;
     active_cnpj?: string; // 🟢 2. Avisamos que o active_cnpj existe
-    companies?: any[] | null;
-    company?: any;
+    companies?: Empresa[] | null;
+    company?: Empresa;
   };
   currentTier?: number; 
+  onActiveCnpjChange?: (cnpj: string, company: Empresa | null) => void;
 }
 
-export default function UserProfileCard({ user, currentTier }: UserProfileCardProps) {
+export default function UserProfileCard({ user, currentTier, onActiveCnpjChange }: UserProfileCardProps) {
   
   // LÓGICA DO NÍVEL
   const activeTier = Math.max(Number(currentTier) || 1, Number(user?.tier) || 1);
@@ -45,9 +47,7 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
   // Avatar Dinâmico
   const initial = (user.name || user.email || 'B').charAt(0).toUpperCase();
 
-  // 🟢 3. A LÓGICA DA EMPRESA ATIVA (Prepara a variável que o seu trecho usa)
-  const activeCnpj = user.active_cnpj; 
-  const currentCompany = user.companies?.find(c => c.cnpj === activeCnpj) || user.companies?.[0] || user.company;
+  const contextCompanies = user.companies?.length ? user.companies : user.company ? [user.company] : [];
 
   return (
     <div className="flex flex-col gap-5 w-full">
@@ -118,28 +118,13 @@ export default function UserProfileCard({ user, currentTier }: UserProfileCardPr
       {/* 3. CONTEXTO ATIVO — só tier 2+             */}
       {/* ========================================== */}
       {activeTier >= 2 && (
-        <div className="bg-slate-50 p-3.5 rounded-xl border border-indigo-100 flex items-center justify-between transition-colors bg-gradient-to-r from-indigo-50/50 to-white">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center text-indigo-500 shrink-0 shadow-sm">
-              <Activity size={16} />
-            </div>
-            <div className="flex flex-col min-w-0 justify-center min-h-[32px]">
-              <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">
-                Contexto Ativo (Radar)
-              </span>
-              <span className="text-sm font-bold text-slate-700 truncate">
-                {currentCompany?.nome_fantasia || currentCompany?.razao_social || 'Nenhuma empresa'}
-              </span>
-            </div>
-          </div>
-
-          {/* Badge de Multi-Monitoramento */}
-          {user.companies && user.companies.length > 1 && (
-            <div className="px-2 py-1 bg-slate-900 text-yellow-400 rounded-md text-[8px] font-black tracking-tighter uppercase shrink-0 border border-slate-800">
-              Multi-Slots
-            </div>
-          )}
-        </div>
+        <ActiveContextSwitcher
+          companies={contextCompanies}
+          activeCnpj={user.active_cnpj}
+          label="Contexto ativo"
+          onChange={onActiveCnpjChange}
+          className="border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-white"
+        />
       )}
 
     </div>

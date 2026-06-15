@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { clearSession, API_URL } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 import type { BawziUpdateEvent } from '@/lib/types';
 
 export default function Header() {
@@ -15,13 +15,14 @@ export default function Header() {
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
+  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [promo, setPromo] = useState<{is_promo: boolean; promo_expires_at: string} | null>(null);
 
   useEffect(() => {
 
     // Sincronismo imediato: usa o cache para a UI não piscar.
     const syncFromCache = () => {
-      const savedToken = localStorage.getItem('bawzi_token');
+      const savedToken = getAuthToken();
       const savedTier = localStorage.getItem('bawzi_tier');
       const savedName = localStorage.getItem('user_name') || localStorage.getItem('nome');
       const savedEmail = localStorage.getItem('user_email');
@@ -34,22 +35,18 @@ export default function Header() {
       return savedToken;
     };
 
-    const tokenAtivo = syncFromCache();
-
     // Validação silenciosa no servidor.
-    const validateTierSilently = async (token: string) => {
+    const validateTierSilently = async (_token: string) => {
       try {
-        const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-        
         // Fazemos as mesmas chamadas que o Perfil faz para garantir consistência
         const [userRes, wsRes] = await Promise.all([
-          fetch(`${API_URL}/api/users/me`, { headers }),
-          fetch(`${API_URL}/api/workspace/details`, { headers })
+          apiFetch(`${API_URL}/api/users/me`),
+          apiFetch(`${API_URL}/api/workspace/details`)
         ]);
 
-        if (userRes.ok && wsRes.ok) {
+        if (userRes.ok) {
           const uData = await userRes.json();
-          const wData = await wsRes.json();
+          const wData = wsRes.ok ? await wsRes.json() : {};
 
           // O maior nível entre usuário e empresa vence.
           const nivelReal = Math.max(uData.tier || 1, wData.tier || 1);
@@ -67,6 +64,7 @@ export default function Header() {
 
           setUserTier(nivelString);
           setUserData({ name: uData.name || uData.nome || '', email: uData.email });
+          setIsGlobalAdmin(Boolean(uData.is_admin));
 
           // Promo
           if (uData.promo_expires_at) {
@@ -81,11 +79,23 @@ export default function Header() {
           localStorage.setItem('user_email', uData.email || '');
         }
       } catch (err) {
+        if (err instanceof SessionExpiredError) return;
         console.error("Erro na sincronização silenciosa do Header:", err);
       }
     };
 
-    if (tokenAtivo) validateTierSilently(tokenAtivo);
+    const hydrateSession = async () => {
+      const tokenAtivo = syncFromCache() || await initSession();
+
+      if (tokenAtivo) {
+        setToken(tokenAtivo);
+        await validateTierSilently(tokenAtivo);
+      } else {
+        setIsGlobalAdmin(false);
+      }
+    };
+
+    hydrateSession();
 
     // Escuta atualizações vindas de outras telas.
     const handleGlobalUpdate = (e: Event) => {
@@ -104,6 +114,7 @@ export default function Header() {
     } catch { /* silencioso — sessão local sempre é limpa */ }
     clearSession();
     setToken(null);
+    setIsGlobalAdmin(false);
     router.push('/');
     window.location.reload();
   };
@@ -202,6 +213,18 @@ export default function Header() {
         <div>
           {token ? (
             <div className="flex items-center gap-3 sm:gap-4">
+              {isGlobalAdmin && (
+                <Link
+                  href="/admin"
+                  className={`inline-flex h-10 items-center justify-center rounded-xl border px-3 text-xs font-black uppercase tracking-wider transition-colors ${
+                    pathname === '/admin'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  Admin
+                </Link>
+              )}
               
               <div className="relative group cursor-pointer">
                 <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-emerald-500/15">
@@ -236,7 +259,7 @@ export default function Header() {
           ) : (
             <div className="flex items-center gap-2">
               {isLanding && (
-                <Link href="/#planos" className="hidden rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-50 sm:inline-flex">
+                <Link href="/#planos" className="hidden rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-50 sm:inline-flex md:hidden">
                   Planos
                 </Link>
               )}

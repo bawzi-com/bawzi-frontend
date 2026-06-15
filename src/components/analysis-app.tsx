@@ -56,6 +56,14 @@ import UpsellModal from './UpsellModal';
 import { useTierConfig } from '../Contexts/TierContext';
 import { AnalysisResult } from './analysis-types';
 import { resolveEffectiveTier } from '@/lib/tier';
+import {
+  ACTIVE_CONTEXT_EVENT,
+  getPreferredActiveCnpj,
+  orderCompaniesByActive,
+  resolveActiveCompany,
+  setActiveCompanyContext,
+  type ActiveContextEventDetail,
+} from '@/lib/activeContext';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -199,6 +207,7 @@ export default function AnalysisApp() {
     uf,
     forceExact,
     pncpData,
+    activeCnpj: userData?.active_cnpj || '',
     userTier,
     isOverLimit: false, // calculado abaixo e reatribuído dinamicamente
     apiUrl: API_URL,
@@ -266,6 +275,19 @@ export default function AnalysisApp() {
   useEffect(() => startSessionKeepAlive(), []);
 
   useEffect(() => {
+    const handleContextUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveContextEventDetail>).detail;
+      if (!detail?.active_cnpj) return;
+
+      setUserData(prev => prev ? { ...prev, active_cnpj: detail.active_cnpj } : prev);
+      setRenovacoesCount(null);
+    };
+
+    window.addEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
+    return () => window.removeEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
+  }, []);
+
+  useEffect(() => {
     const loadUnifiedData = async () => {
       const savedToken = await initSession();
       if (!savedToken) { setIsCheckingAuth(false); return; }
@@ -314,14 +336,18 @@ export default function AnalysisApp() {
             setSelectedTier(nivelFinal);
             localStorage.setItem('bawzi_tier', nivelFinal.toString());
 
+            const companiesArr: Empresa[] = (wData.companies ?? []).length > 0 ? (wData.companies as Empresa[]) : (uData.company ? [uData.company as Empresa] : []);
+            const activeCnpj = getPreferredActiveCnpj(companiesArr, uData.active_cnpj as string | undefined);
+            if (activeCnpj) setActiveCompanyContext(activeCnpj, false);
+
             const blendedUserData = {
               ...uData,
               name: uData.name || uData.nome,
               tier: nivelFinal,
               workspace_users_count: wData.workspace_users_count,
               vagas_totais: wData.vagas_totais,
-              companies: wData.companies || [],
-              active_cnpj: wData.companies?.[0]?.cnpj || uData.company?.cnpj,
+              companies: companiesArr,
+              active_cnpj: activeCnpj,
             };
 
             setUserData(blendedUserData);
@@ -344,9 +370,8 @@ export default function AnalysisApp() {
             }
 
             // Contagem silenciosa de contratos a vencer (só tier 4)
-            const companiesArr: Empresa[] = (wData.companies ?? []).length > 0 ? (wData.companies as Empresa[]) : (uData.company ? [uData.company as Empresa] : []);
             if (nivelFinal >= 4 && companiesArr.length > 0) {
-              const companies = companiesArr;
+              const companies = orderCompaniesByActive(companiesArr, activeCnpj);
               const cnpjs = companies.map((c: Empresa) => c.cnpj).filter(Boolean);
               if (cnpjs.length > 0) {
                 try {
@@ -553,6 +578,11 @@ export default function AnalysisApp() {
   };
 
   // ─── Renderização ────────────────────────────────────────────────────────────
+  const contextCompanies = userData?.companies?.length
+    ? userData.companies
+    : userData?.company ? [userData.company] : [];
+  const activeCompany = resolveActiveCompany(contextCompanies, userData?.active_cnpj);
+  const activeOrderedCompanies = orderCompaniesByActive(contextCompanies, userData?.active_cnpj);
 
   // ─── Banner de sessão expirada ───────────────────────────────────────────────
   if (sessionExpired) {
@@ -631,12 +661,13 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch
                             token={token}
-                            userUf={
-                              // UF da empresa do CONTEXTO ATIVO (não da primeira da lista)
-                              userData?.companies?.find((c: { cnpj?: string; uf?: string }) => c.cnpj === userData?.active_cnpj)?.uf
-                              || userData?.companies?.[0]?.uf
-                              || userData?.company?.uf
-                            }
+                            userUf={activeCompany?.uf || userData?.company?.uf}
+                            contextCompanies={contextCompanies}
+                            activeCnpj={userData?.active_cnpj}
+                            onActiveCnpjChange={(cnpj) => {
+                              setUserData(prev => prev ? { ...prev, active_cnpj: cnpj } : prev);
+                              setRenovacoesCount(null);
+                            }}
                             initialQuery={initialPncpQuery}
                             initialUf={initialPncpUf}
                             onMedirFolego={(valor, objeto) => {
@@ -739,9 +770,7 @@ export default function AnalysisApp() {
 
               {/* Aba Renovações */}
               {activeTab === 'renovacoes' && (() => {
-                const companies = userData?.companies?.length
-                  ? (userData.companies ?? [])
-                  : userData?.company ? [userData.company] : [];
+                const companies = activeOrderedCompanies;
 
                 if (!companies.length) {
                   return (
@@ -772,7 +801,7 @@ export default function AnalysisApp() {
                     <ContratosVencendo
                       token={token ?? ''}
                       companies={companies}
-                      defaultUf={userData?.company?.uf || ''}
+                      defaultUf={activeCompany?.uf || userData?.company?.uf || ''}
                     />
                   </div>
                 );
@@ -789,9 +818,9 @@ export default function AnalysisApp() {
                     <CapitalIntelligence
                       token={token ?? ''}
                       tier={currentTier}
-                      companies={userData?.companies?.length ? userData.companies : userData?.company ? [userData.company] : []}
-                      defaultCnpj={userData?.companies?.[0]?.cnpj || userData?.company?.cnpj || ''}
-                      defaultUf={userData?.companies?.[0]?.uf || userData?.company?.uf || ''}
+                      companies={activeOrderedCompanies}
+                      defaultCnpj={activeCompany?.cnpj || userData?.company?.cnpj || ''}
+                      defaultUf={activeCompany?.uf || userData?.company?.uf || ''}
                       defaultValorEdital={capitalPrefilledValor || undefined}
                       defaultObjeto={capitalPrefilledObjeto || undefined}
                     />

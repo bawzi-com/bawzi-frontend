@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import CguCompliancePanel from './CompliancePanel';
 import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
+import { setActiveCompanyContext } from '@/lib/activeContext';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
   const router = useRouter();
@@ -54,9 +56,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
         if (precisaEnriquecer) {
           try {
             const cnpjLimpo = emp.cnpj.replace(/\D/g, '');
-            const res = await fetch(`${API_URL}/api/company/search/${cnpjLimpo}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+            const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
             if (!res.ok) return;
             const data = await res.json();
             if (!data.cnae_principal) return;
@@ -71,9 +71,9 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
             };
 
             // Salva o enriquecimento no backend
-            await fetch(`${API_URL}/api/workspace/company`, {
+            await apiFetch(`${API_URL}/api/workspace/company`, {
               method: 'PUT',
-              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(enriched),
             });
 
@@ -142,9 +142,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     }
     setIsSearchingCnpj(true);
     try {
-      const res = await fetch(`${API_URL}/api/company/search/${cnpjLimpo}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Erro ao buscar CNPJ');
       
@@ -161,6 +159,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       });
             
     } catch (error: any) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: error.message });
     } finally {
       setIsSearchingCnpj(false);
@@ -171,9 +170,9 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     e.preventDefault();
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/workspace/company`, {
+      const res = await apiFetch(`${API_URL}/api/workspace/company`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
           produtos_servicos: splitList(produtosServicosText),
@@ -189,6 +188,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       if (onUpdate) await onUpdate();
       setView('list');
     } catch (error: any) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: error.message });
     } finally {
       setIsLoading(false);
@@ -203,9 +203,8 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     
     try {
       const cnpjLimpo = cnpj.replace(/\D/g, '');
-      const res = await fetch(`${API_URL}/api/workspace/company/${cnpjLimpo}`, {
+      const res = await apiFetch(`${API_URL}/api/workspace/company/${cnpjLimpo}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
       });
       
       if (!res.ok) throw new Error('Erro ao remover empresa do servidor.');
@@ -213,6 +212,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       setMessage({ type: 'success', text: 'Empresa removida com sucesso!' });
       if (onUpdate) await onUpdate(); // Sincroniza o estado global
     } catch (error: any) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: error.message });
       if (onUpdate) await onUpdate(); // Reverte a UI se falhar
     }
@@ -332,7 +332,8 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 <div className="flex w-full items-center justify-end gap-2 border-t border-slate-100 pt-4 md:w-auto md:border-t-0 md:pt-0">
                   <button
                     onClick={() => {
-                      if (onCnpjDetected) onCnpjDetected(emp.cnpj);
+                      const activeCnpj = setActiveCompanyContext(emp.cnpj);
+                      if (onCnpjDetected) onCnpjDetected(activeCnpj);
                       router.push('/workspace');
                     }}
                     className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white md:flex-none"

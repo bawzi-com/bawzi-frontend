@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 interface PasswordChangeFormProps {
   token: string;
@@ -38,10 +39,9 @@ export default function PasswordChangeForm({ token }: PasswordChangeFormProps) {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/users/update-password`, {
+      const res = await apiFetch(`${API_URL}/api/users/update-password`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -59,6 +59,7 @@ export default function PasswordChangeForm({ token }: PasswordChangeFormProps) {
       setMessage({ type: 'success', text: 'Senha atualizada com sucesso!' });
       setPasswords({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error: any) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: error.message });
     } finally {
       setIsLoading(false);

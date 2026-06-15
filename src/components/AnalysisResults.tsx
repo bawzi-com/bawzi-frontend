@@ -9,7 +9,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
-import { API_URL } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 import {
   ScanSearch, Radar, Printer, Mail, Zap, Target,
   Gauge, Settings2, Banknote, Scale, FolderOpen,
@@ -655,9 +655,8 @@ function DecisionVersionMonitor({
     setIsChecking(true);
     setNotice(null);
     try {
-      const response = await fetch(`${API_URL}/api/analyses/${analysisId}/pncp-monitor/check`, {
+      const response = await apiFetch(`${API_URL}/api/analyses/${analysisId}/pncp-monitor/check`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
@@ -666,7 +665,8 @@ function DecisionVersionMonitor({
       }
       if (data?.analysis) onAnalysisUpdate(data.analysis as AnalysisResult);
       setNotice(data?.changed ? 'Mudança oficial detectada no PNCP.' : 'PNCP verificado: sem mudanças oficiais.');
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setNotice('Erro de conexão ao verificar o PNCP.');
     } finally {
       setIsChecking(false);
@@ -685,12 +685,9 @@ function DecisionVersionMonitor({
     setReviewingIndex(index);
     setNotice(null);
     try {
-      const response = await fetch(`${API_URL}/api/analyses/${analysisId}/review`, {
+      const response = await apiFetch(`${API_URL}/api/analyses/${analysisId}/review`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tipo: String(payload.tipo || 'alteracao_edital'),
           titulo: String(payload.titulo || event.titulo || 'Mudança detectada no PNCP'),
@@ -704,7 +701,8 @@ function DecisionVersionMonitor({
       }
       if (data?.analysis) onAnalysisUpdate(data.analysis as AnalysisResult);
       setNotice('Decisão revisada e versão salva no laudo.');
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setNotice('Erro de conexão ao revisar a decisão.');
     } finally {
       setReviewingIndex(null);
@@ -877,12 +875,9 @@ function DecisionCockpit({
 
     setSaveState('saving');
     try {
-      const res = await fetch(`${API_URL}/api/analyses/${analysisId}/cockpit`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysisId}/cockpit`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tasks: nextStatus }),
       });
 
@@ -891,7 +886,8 @@ function DecisionCockpit({
       if (data?.analysis) onStatusChange?.(nextStatus, data.analysis);
       setSaveState('saved');
       setTimeout(() => setSaveState('idle'), 1800);
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setSaveState('error');
     }
   };

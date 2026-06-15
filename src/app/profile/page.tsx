@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   Users,
-  Activity,
   Crown,
 } from 'lucide-react';
 
@@ -26,7 +25,16 @@ import PersonalDataForm from '../../components/PersonalDataForm';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TwoFactorSettings from '../../components/TwoFactorSettings';
 import TeamManager from '../../components/TeamManager';
+import ActiveContextSwitcher from '../../components/ActiveContextSwitcher';
+import {
+  ACTIVE_CONTEXT_EVENT,
+  getPreferredActiveCnpj,
+  getStoredActiveCnpj,
+  setActiveCompanyContext,
+  type ActiveContextEventDetail,
+} from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
+import { apiFetch, getAuthToken, clearSession, SessionExpiredError } from '@/lib/apiClient';
 
 type ProfileIcon = React.ComponentType<{ size?: number; className?: string }>;
 type SectionTone = 'emerald' | 'sky' | 'slate' | 'amber' | 'red';
@@ -93,7 +101,7 @@ function ProfileContent() {
   const [isLoading, setIsLoading] = useState(true);
   
   // Estado para controlar qual CNPJ o painel da CGU deve analisar em tempo real
-  const [activeCnpj, setActiveCnpj] = useState<string>('');
+  const [activeCnpj, setActiveCnpj] = useState<string>(() => getStoredActiveCnpj());
   
   const [members, setMembers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -103,6 +111,19 @@ function ProfileContent() {
   // UX: seção ativa no menu (scroll-spy) + status 2FA no card do avatar
   const [activeSection, setActiveSection] = useState('sec-perfil');
   const [twoFAOn, setTwoFAOn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const handleContextUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveContextEventDetail>).detail;
+      if (!detail?.active_cnpj) return;
+
+      setActiveCnpj(detail.active_cnpj);
+      setUserData((prev: any) => prev ? { ...prev, active_cnpj: detail.active_cnpj } : prev);
+    };
+
+    window.addEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
+    return () => window.removeEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
+  }, []);
 
   // Scroll-spy: destaca no menu a seção visível
   useEffect(() => {
@@ -127,7 +148,7 @@ function ProfileContent() {
   // Status do 2FA para o chip do avatar
   useEffect(() => {
     if (!authToken) return;
-    fetch(`${API_URL}/api/auth/2fa/status`, { headers: { Authorization: `Bearer ${authToken}` } })
+    apiFetch(`${API_URL}/api/auth/2fa/status`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => setTwoFAOn(d ? !!d.ativo : null))
       .catch(() => setTwoFAOn(null));
@@ -136,21 +157,17 @@ function ProfileContent() {
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const fetchData = async () => {
-    const token = localStorage.getItem('bawzi_token');
+    const token = getAuthToken();
     if (!token) { router.push('/'); return; }
     setAuthToken(token);
 
     try {
-      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-
       const [userRes, wsRes, membersRes, invRes] = await Promise.all([
-        fetch(`${API_URL}/api/users/me`, { headers }),
-        fetch(`${API_URL}/api/workspace/details`, { headers }),
-        fetch(`${API_URL}/api/workspace/members`, { headers }),
-        fetch(`${API_URL}/api/billing/invoices`, { headers })
+        apiFetch(`${API_URL}/api/users/me`),
+        apiFetch(`${API_URL}/api/workspace/details`),
+        apiFetch(`${API_URL}/api/workspace/members`),
+        apiFetch(`${API_URL}/api/billing/invoices`),
       ]);
-
-      if (userRes.status === 401) { localStorage.clear(); router.push('/'); return; }
 
       if (userRes.ok && wsRes.ok) {
         const uData = await userRes.json();
@@ -158,17 +175,19 @@ function ProfileContent() {
 
         const companies = wData.companies || (wData.company ? [wData.company] : []);
         const nivelAtualizado = resolveEffectiveTier(uData.tier, wData.tier);
+        const nextActiveCnpj = getPreferredActiveCnpj(companies, activeCnpj);
+        if (nextActiveCnpj) setActiveCompanyContext(nextActiveCnpj, false);
 
-        setUserData({ 
-          ...uData, 
-          workspace_users_count: wData.workspace_users_count, 
-          vagas_totais: wData.vagas_totais, 
-          companies: companies 
+        setUserData({
+          ...uData,
+          workspace_users_count: wData.workspace_users_count,
+          vagas_totais: wData.vagas_totais,
+          workspace_name: wData.workspace_name,
+          companies: companies,
+          active_cnpj: nextActiveCnpj,
         });
 
-        if (companies.length > 0 && !activeCnpj) {
-          setActiveCnpj(companies[0].cnpj);
-        }
+        if (nextActiveCnpj) setActiveCnpj(nextActiveCnpj);
 
         setUserTier(nivelAtualizado);
         setIsAdmin(wData.is_admin);
@@ -181,15 +200,15 @@ function ProfileContent() {
 
         // 🟢 3. AUTO-SYNC À PROVA DE FALHAS:
         // 1. Manda o backend verificar o Stripe e actualizar workspace + user
-        fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, { headers })
+        apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`)
           .then(async (res) => {
             if (!res.ok) return;
 
             // 2. Re-busca TANTO workspace COMO user — igual à lógica inicial.
             //    Só workspace.tier causava regressão: se ws=1 mas user=4, ficava em 1.
             const [checkWsRes, checkUserRes] = await Promise.all([
-              fetch(`${API_URL}/api/workspace/details`, { headers }),
-              fetch(`${API_URL}/api/users/me`, { headers }),
+              apiFetch(`${API_URL}/api/workspace/details`),
+              apiFetch(`${API_URL}/api/users/me`),
             ]);
             if (!checkWsRes.ok || !checkUserRes.ok) return;
 
@@ -213,6 +232,7 @@ function ProfileContent() {
       if (invRes && invRes.ok) setInvoices(await invRes.json());
       
     } catch (error) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
       console.error("Erro ao sincronizar dados:", error);
     } finally {
       setIsLoading(false);
@@ -226,18 +246,16 @@ function ProfileContent() {
 
       const waitForWebhookAndReload = async () => {
         attempts++;
-        const token = localStorage.getItem('bawzi_token');
+        const token = getAuthToken();
         if (!token) return;
 
         try {
-          const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-
           // Força o sync com Stripe antes de ler os dados
-          await fetch(`${API_URL}/api/billing/sync`, { headers }).catch(() => {});
+          await apiFetch(`${API_URL}/api/billing/sync`).catch(() => {});
 
           const [userRes, wsRes] = await Promise.all([
-            fetch(`${API_URL}/api/users/me`, { headers }),
-            fetch(`${API_URL}/api/workspace/details`, { headers })
+            apiFetch(`${API_URL}/api/users/me`),
+            apiFetch(`${API_URL}/api/workspace/details`),
           ]);
 
           if (userRes.ok && wsRes.ok) {
@@ -267,9 +285,7 @@ function ProfileContent() {
 
   const handleManageSubscription = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/billing/customer-portal`, {
-        method: 'POST', headers: { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' }
-      });
+      const res = await apiFetch(`${API_URL}/api/billing/customer-portal`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.url) window.location.href = data.url;
     } catch (error) { alert("Erro ao aceder ao faturamento."); }
@@ -278,8 +294,8 @@ function ProfileContent() {
   const forceManualSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
-        headers: { 'Authorization': `Bearer ${authToken}`, 'Cache-Control': 'no-cache' }
+      const res = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
+        headers: { 'Cache-Control': 'no-cache' },
       });
       const data = await res.json();
       if (res.ok) window.location.reload(); 
@@ -291,10 +307,8 @@ function ProfileContent() {
     if (!window.confirm("Eliminar conta permanentemente?")) return;
     setIsDeleting(true);
     try {
-      const res = await fetch(`${API_URL}/api/users/me`, {
-        method: 'DELETE', headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) { localStorage.clear(); window.location.href = '/'; } 
+      const res = await apiFetch(`${API_URL}/api/users/me`, { method: 'DELETE' });
+      if (res.ok) { clearSession(); window.location.href = '/'; } 
     } catch (error) { setIsDeleting(false); }
   };
 
@@ -331,8 +345,6 @@ function ProfileContent() {
   const memberCount = members.length || userData?.workspace_users_count || 1;
   const seatLimit = userData?.vagas_totais || getFallbackSeats(userTier);
   const seatPercent = Math.min(Math.round((memberCount / seatLimit) * 100), 100);
-  const activeCompany = companies.find((company: any) => company.cnpj === activeCnpj) || companies[0] || userData?.company;
-  const companyName = activeCompany?.nome_fantasia || activeCompany?.razao_social || 'Nenhuma empresa ativa';
   const planName = getTierName(userTier);
 
   const summaryCards = [
@@ -425,13 +437,16 @@ function ProfileContent() {
                   </span>
                 </div>
                 <p className="mt-1 truncate text-sm font-medium text-slate-500">{userData?.email}</p>
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-                    <Activity size={13} />
-                    Contexto ativo
-                  </div>
-                  <p className="mt-2 truncate text-sm font-black text-slate-800">{companyName}</p>
-                </div>
+                <ActiveContextSwitcher
+                  companies={companies}
+                  activeCnpj={activeCnpj}
+                  compact
+                  onChange={(cnpj) => {
+                    setActiveCnpj(cnpj);
+                    setUserData((prev: any) => prev ? { ...prev, active_cnpj: cnpj } : prev);
+                  }}
+                  className="mt-4"
+                />
               </div>
             </div>
           </div>
@@ -523,8 +538,9 @@ function ProfileContent() {
                   userTier={userTier}
                   companyData={userData?.companies}
                   onCnpjDetected={(cnpj: string) => {
-                    setActiveCnpj(cnpj);
-                    localStorage.setItem('bawzi_active_cnpj', cnpj);
+                    const nextCnpj = setActiveCompanyContext(cnpj);
+                    setActiveCnpj(nextCnpj);
+                    setUserData((prev: any) => prev ? { ...prev, active_cnpj: nextCnpj } : prev);
                   }}
                   onUpdate={fetchData}
                 />
@@ -544,7 +560,14 @@ function ProfileContent() {
             <section id="sec-equipe" className={panelClass}>
               <SectionHeading icon={Users} title="Equipe" eyebrow="Acessos e permissões do workspace" tone="emerald" />
               <div className="p-5 sm:p-6">
-                <TeamManager userToken={authToken} tier={userTier} members={members} is_admin={isAdmin} onUpdate={fetchData} />
+                <TeamManager
+                  userToken={authToken}
+                  tier={userTier}
+                  members={members}
+                  is_admin={isAdmin}
+                  workspaceName={userData?.workspace_name}
+                  onUpdate={fetchData}
+                />
               </div>
             </section>
 

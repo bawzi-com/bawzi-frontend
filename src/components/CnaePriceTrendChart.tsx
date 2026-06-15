@@ -18,6 +18,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, AlertCircle } from 'lucide-react';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
 
@@ -115,16 +116,15 @@ export default function CnaePriceTrendChart({
     try {
       const params = new URLSearchParams({ cnae, meses: String(janela) });
       if (uf) params.set('uf', uf);
-      const res = await fetch(`${API_URL}/api/pncp/preco-historico-cnae?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${API_URL}/api/pncp/preco-historico-cnae?${params}`);
       if (!res.ok) {
         setErro('Não foi possível carregar os dados de tendência.');
         return;
       }
       const json: RespostaAPI = await res.json();
       setDados(json);
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setErro('Erro de conexão ao buscar tendência de preços.');
     } finally {
       setLoading(false);

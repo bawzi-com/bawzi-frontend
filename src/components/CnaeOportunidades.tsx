@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin, Globe, Info } from 'lucide-react';
 import CnaePriceTrendChart from './CnaePriceTrendChart';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 interface CnaeOportunidadesProps {
   token: string | null;
@@ -115,9 +116,7 @@ export default function CnaeOportunidades({
       const url = forceRefresh
         ? `${API_URL}/api/pncp/feed-cnae?force_refresh=true`
         : `${API_URL}/api/pncp/feed-cnae`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(url);
       if (!res.ok) {
         setStatus('error');
         return;
@@ -162,7 +161,8 @@ export default function CnaeOportunidades({
         empresasDetalhe: data.empresas_detalhe || [],
         termos: data.termos_usados || [],
       } : null);
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setStatus('error');
     } finally {
       setLoading(false);

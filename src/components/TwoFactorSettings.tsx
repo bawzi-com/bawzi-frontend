@@ -8,9 +8,9 @@
  * Desativação exige senha + código (TOTP ou backup).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldCheck, ShieldOff, Loader2, Copy, Check } from 'lucide-react';
-import { API_URL, getAuthToken } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 type Etapa = 'idle' | 'qr' | 'backup';
 
@@ -29,61 +29,68 @@ export default function TwoFactorSettings() {
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
 
-  const authHeaders = useCallback((): Record<string, string> => ({
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${getAuthToken() || ''}`,
-  }), []);
-
   // Estado inicial
   useEffect(() => {
-    fetch(`${API_URL}/api/auth/2fa/status`, { headers: authHeaders() })
+    apiFetch(`${API_URL}/api/auth/2fa/status`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (d) { setAtivo(!!d.ativo); setBackupRestantes(d.backup_codes_restantes ?? 0); }
         else setAtivo(false);
       })
-      .catch(() => setAtivo(false));
-  }, [authHeaders]);
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) { clearSession(); return; }
+        setAtivo(false);
+      });
+  }, []);
 
   const iniciarSetup = async () => {
     setLoading(true); setErro('');
     try {
-      const r = await fetch(`${API_URL}/api/auth/2fa/setup`, { method: 'POST', headers: authHeaders() });
+      const r = await apiFetch(`${API_URL}/api/auth/2fa/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Falha ao gerar o QR.');
       setQrBase64(d.qr_png_base64); setSegredoManual(d.segredo_manual); setCodigo('');
       setEtapa('qr');
-    } catch (e) { setErro(e instanceof Error ? e.message : 'Erro inesperado.'); }
+    } catch (e) {
+      if (e instanceof SessionExpiredError) { clearSession(); return; }
+      setErro(e instanceof Error ? e.message : 'Erro inesperado.');
+    }
     finally { setLoading(false); }
   };
 
   const confirmarAtivacao = async () => {
     setLoading(true); setErro('');
     try {
-      const r = await fetch(`${API_URL}/api/auth/2fa/activate`, {
-        method: 'POST', headers: authHeaders(), body: JSON.stringify({ code: codigo }),
+      const r = await apiFetch(`${API_URL}/api/auth/2fa/activate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: codigo }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Código inválido.');
       setBackupCodes(d.backup_codes || []);
       setAtivo(true); setBackupRestantes((d.backup_codes || []).length);
       setEtapa('backup');
-    } catch (e) { setErro(e instanceof Error ? e.message : 'Erro inesperado.'); }
+    } catch (e) {
+      if (e instanceof SessionExpiredError) { clearSession(); return; }
+      setErro(e instanceof Error ? e.message : 'Erro inesperado.');
+    }
     finally { setLoading(false); }
   };
 
   const desativar = async () => {
     setLoading(true); setErro('');
     try {
-      const r = await fetch(`${API_URL}/api/auth/2fa/disable`, {
-        method: 'POST', headers: authHeaders(),
+      const r = await apiFetch(`${API_URL}/api/auth/2fa/disable`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: senhaDisable, code: codigoDisable }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Falha ao desativar.');
       setAtivo(false); setMostrarDisable(false); setSenhaDisable(''); setCodigoDisable('');
       setEtapa('idle');
-    } catch (e) { setErro(e instanceof Error ? e.message : 'Erro inesperado.'); }
+    } catch (e) {
+      if (e instanceof SessionExpiredError) { clearSession(); return; }
+      setErro(e instanceof Error ? e.message : 'Erro inesperado.');
+    }
     finally { setLoading(false); }
   };
 

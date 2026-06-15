@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { getAuthToken } from '@/lib/apiClient';
 
 type Status = 'loading' | 'activated' | 'pending_registration' | 'error' | 'already_used';
 
@@ -34,7 +35,7 @@ function PromoActivateContent() {
           if (msg.toLowerCase().includes('já foi utilizado')) {
             // Pode ser auto-ativação durante o cadastro — se há token no localStorage,
             // o promo já foi aplicado; tratar como sucesso e redirecionar.
-            const hasSession = !!localStorage.getItem('bawzi_token');
+            const hasSession = !!getAuthToken();
             if (hasSession) {
               localStorage.setItem('bawzi_tier', '4');
               window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: 4 } }));
@@ -64,7 +65,7 @@ function PromoActivateContent() {
         window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: 4 } }));
 
         // Se já está logado vai direto ao workspace; senão manda para login com redirect
-        const hasSession = !!localStorage.getItem('bawzi_token');
+        const hasSession = !!getAuthToken();
         const dest = hasSession ? '/workspace' : '/login?redirect=/workspace';
         setTimeout(() => router.replace(dest), 3000);
       } catch {
@@ -113,15 +114,15 @@ function PromoActivateContent() {
               ))}
             </div>
             <p className="text-xs text-slate-500 mb-4">
-              {typeof window !== 'undefined' && localStorage.getItem('bawzi_token')
+              {getAuthToken()
                 ? 'Redirecionando para o workspace…'
                 : 'Redirecionando para o login…'}
             </p>
             <Link
-              href={typeof window !== 'undefined' && localStorage.getItem('bawzi_token') ? '/workspace' : '/login?redirect=/workspace'}
+              href={getAuthToken() ? '/workspace' : '/login?redirect=/workspace'}
               className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-black px-6 py-3 rounded-xl text-sm transition-colors"
             >
-              {typeof window !== 'undefined' && localStorage.getItem('bawzi_token') ? 'Ir para o workspace' : 'Fazer login'} <ArrowRight size={14} />
+              {getAuthToken() ? 'Ir para o workspace' : 'Fazer login'} <ArrowRight size={14} />
             </Link>
           </>
         )}

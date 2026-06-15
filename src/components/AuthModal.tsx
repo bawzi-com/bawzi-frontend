@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
-import { setAccessToken } from '@/lib/apiClient';
+import { API_URL, setAccessToken } from '@/lib/apiClient';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -69,8 +69,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
     setLoading(true);
     setError('');
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/forgot-password`, {
+      const res = await fetch(`${API_URL}/api/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -92,9 +91,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
     onSuccess: async (tokenResponse) => {
       setLoading(true);
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        
-        const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/google`, {
+        const res = await fetch(`${API_URL}/api/auth/google`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',  // grava o cookie de refresh (ver nota no handleSubmit)
@@ -118,7 +115,6 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
         }
 
         setAccessToken(data.access_token);
-        localStorage.setItem('bawzi_token', data.access_token); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
@@ -179,10 +175,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       const payload = view === 'login' 
         ? { email: email, password: password } 
         : { email: email, password: password, name: nome };
-        
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${endpoint}`, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // credentials: SEM isto o browser descarta o Set-Cookie do refresh
@@ -227,7 +221,6 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       const tokenToSave = data.access_token || data.token;
       if (tokenToSave) {
         setAccessToken(tokenToSave);
-        localStorage.setItem('bawzi_token', tokenToSave); // sync legacy
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
@@ -250,8 +243,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
     setLoading(true);
     setError('');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const response = await fetch(`${baseUrl}/api/auth/login/2fa`, {
+      const response = await fetch(`${API_URL}/api/auth/login/2fa`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -263,7 +255,6 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       const tokenToSave = data.access_token;
       if (!tokenToSave) throw new Error('Token não recebido do servidor.');
       setAccessToken(tokenToSave);
-      localStorage.setItem('bawzi_token', tokenToSave);
       if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
       if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
       if (typeof data.backup_codes_restantes === 'number' && data.backup_codes_restantes <= 2) {

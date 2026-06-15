@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef, useLayoutEffect } from 're
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -713,18 +714,18 @@ export default function CompetitorWarRoom({
   const fetchSancoes = async (cnpjToFind: string) => {
     setSancoesStatus('loading');
     try {
-        const token = localStorage.getItem('bawzi_token') || '';
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/fornecedor/sancoes/${cnpjToFind}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/fornecedor/sancoes/${cnpjToFind}`);
         if (!res.ok) throw new Error("Falha");
         const json = await res.json();
         if (json?.possui_sancoes || (json?.sancoes && json.sancoes.length > 0)) {
             setSancoesStatus('dirty');
             setSancoesLista(json.sancoes || []);
         } else { setSancoesStatus('clean'); }
-    } catch (e) { setSancoesStatus('error'); }
+    } catch (e) {
+        if (e instanceof SessionExpiredError) { clearSession(); return; }
+        setSancoesStatus('error');
+    }
   };
 
   const normalizarTexto = (texto: any): string =>
@@ -804,14 +805,16 @@ export default function CompetitorWarRoom({
     if (!confirm("Deseja apagar o histórico e forçar varredura OSINT deste CNPJ?")) return;
     setIsAnalyzing(true);
     try {
-        const token = localStorage.getItem('bawzi_token');
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        await fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${safeAnalysisId}/${target!.cleanCnpj}`, {
-            method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+        await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${safeAnalysisId}/${target!.cleanCnpj}`, {
+            method: 'DELETE',
         });
         setOffensiveData(null);
         handleOffensiveAttack();
-    } catch (err) { setError("Erro ao limpar histórico. Tente novamente."); }
+    } catch (err) {
+        if (err instanceof SessionExpiredError) { clearSession(); return; }
+        setError("Erro ao limpar histórico. Tente novamente.");
+    }
     finally { setIsAnalyzing(false); }
   };
 
@@ -835,21 +838,21 @@ export default function CompetitorWarRoom({
     };
 
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/offensive-intel`, {
+      const response = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/offensive-intel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || 'Falha na análise competitiva');
-      setOffensiveData(data); 
-    } catch (err: any) { 
-      setError(`O Backend rejeitou os dados: ${err.message}`); 
-    } finally { 
-      setIsAnalyzing(false); 
+      setOffensiveData(data);
+    } catch (err: any) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
+      setError(`O Backend rejeitou os dados: ${err.message}`);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 

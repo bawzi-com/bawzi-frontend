@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import { Bell, Plus, Trash2, ToggleLeft, ToggleRight, MapPin, Search } from 'lucide-react';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 interface Alerta {
   id: string;
@@ -41,8 +42,6 @@ export default function RadarAlertas({ token }: Props) {
   const [saving, setSaving]       = useState(false);
   const [notice, setNotice]       = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
-  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-
   const showNotice = (type: 'success' | 'error', msg: string) => {
     setNotice({ type, msg });
     setTimeout(() => setNotice(null), 4000);
@@ -51,10 +50,12 @@ export default function RadarAlertas({ token }: Props) {
   const carregar = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/alertas`, { headers });
+      const res = await apiFetch(`${API_URL}/api/alertas`);
       if (res.ok) setAlertas(await res.json());
-    } catch { /* silencioso */ }
-    finally { setLoading(false); }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { carregar(); }, []);
@@ -67,9 +68,9 @@ export default function RadarAlertas({ token }: Props) {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/api/alertas`, {
+      const res = await apiFetch(`${API_URL}/api/alertas`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ termo: termo.trim(), uf: uf || null }),
       });
       const data = await res.json();
@@ -82,7 +83,8 @@ export default function RadarAlertas({ token }: Props) {
       } else {
         showNotice('error', data.detail || 'Erro ao criar alerta.');
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       showNotice('error', 'Erro de conexão.');
     } finally {
       setSaving(false);
@@ -92,22 +94,28 @@ export default function RadarAlertas({ token }: Props) {
   const remover = async (id: string, termoAlerta: string) => {
     if (!confirm(`Remover alerta "${termoAlerta}"?`)) return;
     try {
-      const res = await fetch(`${API_URL}/api/alertas/${id}`, { method: 'DELETE', headers });
+      const res = await apiFetch(`${API_URL}/api/alertas/${id}`, { method: 'DELETE' });
       if (res.ok || res.status === 204) {
         setAlertas(prev => prev.filter(a => a.id !== id));
         showNotice('success', 'Alerta removido.');
       }
-    } catch { showNotice('error', 'Erro ao remover.'); }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      showNotice('error', 'Erro ao remover.');
+    }
   };
 
   const toggle = async (id: string) => {
     try {
-      const res = await fetch(`${API_URL}/api/alertas/${id}/toggle`, { method: 'PATCH', headers });
+      const res = await apiFetch(`${API_URL}/api/alertas/${id}/toggle`, { method: 'PATCH' });
       if (res.ok) {
         const updated: Alerta = await res.json();
         setAlertas(prev => prev.map(a => a.id === id ? updated : a));
       }
-    } catch { showNotice('error', 'Erro ao atualizar.'); }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      showNotice('error', 'Erro ao atualizar.');
+    }
   };
 
   return (

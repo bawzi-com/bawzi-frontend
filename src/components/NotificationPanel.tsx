@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -172,15 +173,17 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
     if (!token) return;
     if (!silent) setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/notifications/check`, {
+      const res = await apiFetch(`${API_URL}/api/notifications/check`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return;
       const data: Notificacao[] = await res.json();
       setNotifs(data);
       onCountChange?.(data.filter(n => !n.lida).length);
-    } catch { /* silencioso */ } finally {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    } finally {
       if (!silent) setLoading(false);
       setChecked(true);
     }
@@ -196,16 +199,18 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
   // Marca como lida (mantém na lista)
   const marcarLida = useCallback(async (id: string) => {
     try {
-      await fetch(`${API_URL}/api/notifications/${id}/read`, {
+      await apiFetch(`${API_URL}/api/notifications/${id}/read`, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}` },
       });
       setNotifs(prev => {
         const updated = prev.map(n => n._id === id ? { ...n, lida: true } : n);
         onCountChange?.(updated.filter(n => !n.lida).length);
         return updated;
       });
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
   }, [token, onCountChange]);
 
   // Marca como lida + registra como "aberto" (quando o CTA é clicado)
@@ -217,23 +222,27 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
   // Marca todas como lidas (mantém na lista)
   const marcarTodasLidas = useCallback(async () => {
     try {
-      await fetch(`${API_URL}/api/notifications/read-all`, {
+      await apiFetch(`${API_URL}/api/notifications/read-all`, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${token}` },
       });
       setNotifs(prev => prev.map(n => ({ ...n, lida: true })));
       onCountChange?.(0);
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
   }, [token, onCountChange]);
 
   // Remove uma notificação individualmente
   const remover = useCallback(async (id: string) => {
     try {
-      await fetch(`${API_URL}/api/notifications/${id}`, {
+      await apiFetch(`${API_URL}/api/notifications/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
     setNotifs(prev => {
       const updated = prev.filter(n => n._id !== id);
       onCountChange?.(updated.filter(n => !n.lida).length);
@@ -245,11 +254,13 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
   // Remove todas as notificações
   const removerTodas = useCallback(async () => {
     try {
-      await fetch(`${API_URL}/api/notifications`, {
+      await apiFetch(`${API_URL}/api/notifications`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
     setNotifs([]);
     setAbertos(new Set());
     onCountChange?.(0);

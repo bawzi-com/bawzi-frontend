@@ -7,6 +7,8 @@ import {
   Minus, Star, BarChart3, FileCheck, AlertCircle,
 } from 'lucide-react';
 
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -504,6 +506,10 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
   const [cnpj, setCnpj]             = useState(initialCnpj);
   const [useCustomCnpj, setCustom]  = useState(false); // "Outro CNPJ" só em domínios internos
 
+  useEffect(() => {
+    if (!useCustomCnpj) setCnpj(initialCnpj);
+  }, [initialCnpj, useCustomCnpj]);
+
   // Inicialização direta com lazy initializer — garante que o campo está preenchido
   // no primeiro render, mesmo que `defaultValorEdital` chegue junto com a montagem.
   const [valorEdital, setValor] = useState<string>(() => {
@@ -560,33 +566,36 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
     setCelcoinReal(null);
     setCelcoinLoad(true);
 
-    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const jsonHeaders = { 'Content-Type': 'application/json' };
 
     // Lança a consulta real à Celcoin em paralelo, de forma independente.
     // Se falhar (sem credenciais, timeout), não bloqueia os outros resultados.
-    fetch(`${API_URL}/api/celcoin/pre-qualificacao`, {
+    apiFetch(`${API_URL}/api/celcoin/pre-qualificacao`, {
       method: 'POST',
-      headers,
+      headers: jsonHeaders,
       body: JSON.stringify({ cnpj: cnpjLimpo, valor_solicitado: valor }),
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) setCelcoinReal(_celcoinApiToInstituicao(data));
       })
-      .catch(() => { /* silencioso — fallback mantém o card simulado */ })
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) { clearSession(); }
+        /* silencioso — fallback mantém o card simulado */
+      })
       .finally(() => setCelcoinLoad(false));
 
     try {
       // Chama os dois endpoints em paralelo
       const [resRec, resQual] = await Promise.all([
-        fetch(`${API_URL}/api/capital/recomendar`, {
+        apiFetch(`${API_URL}/api/capital/recomendar`, {
           method: 'POST',
-          headers,
+          headers: jsonHeaders,
           body: JSON.stringify({ cnpj: cnpjLimpo, valor_edital: valor, objeto, uf: defaultUf }),
         }),
-        fetch(`${API_URL}/api/capital/pre-qualificar`, {
+        apiFetch(`${API_URL}/api/capital/pre-qualificar`, {
           method: 'POST',
-          headers,
+          headers: jsonHeaders,
           body: JSON.stringify({ cnpj: cnpjLimpo, valor_edital: valor }),
         }),
       ]);
@@ -603,6 +612,7 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
       }
       // pré-qualificação falhar não bloqueia o resultado principal
     } catch (e: any) {
+      if (e instanceof SessionExpiredError) { clearSession(); return; }
       setErro(e.message || 'Erro ao buscar recomendações.');
     } finally {
       setLoading(false);

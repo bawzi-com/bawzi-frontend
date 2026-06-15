@@ -2,6 +2,7 @@
 
 import { useState, useEffect} from 'react';
 import { Save, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 export default function PersonalDataForm({ userData, token, onUpdate }: any) {
   // 🟢 Proteção da URL
@@ -25,9 +26,9 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
     setIsLoading(true);
     setMessage(null);
     try {
-      const res = await fetch(`${API_URL}/api/users/me`, {
+      const res = await apiFetch(`${API_URL}/api/users/me`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: profileData.name })
       });
       
@@ -39,6 +40,7 @@ export default function PersonalDataForm({ userData, token, onUpdate }: any) {
       if (onUpdate) await onUpdate(); 
 
     } catch (err: any) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: err.message });
     } finally {
       setIsLoading(false);

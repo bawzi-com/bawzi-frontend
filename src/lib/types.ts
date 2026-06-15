@@ -49,6 +49,7 @@ export interface UserProfile {
 export interface UserData extends UserProfile {
   workspace_users_count?: number;
   vagas_totais?: number;
+  workspace_name?: string;
   active_cnpj?: string;
   active_workspace?: { tier?: number };
   is_promo?: boolean;

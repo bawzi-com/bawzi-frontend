@@ -24,7 +24,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { API_URL } from '@/lib/apiClient';
+import { API_URL, apiFetch, clearSession, SessionExpiredError, startSessionKeepAlive } from '@/lib/apiClient';
 import { getCachedTier } from '@/lib/tier';
 import type { Empresa, SavedAnalysis } from '@/lib/types';
 import type { AnalysisResult } from './analysis-types';
@@ -93,19 +93,22 @@ export default function DecisionManagementTab({
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
   const [boardScroll, setBoardScroll] = useState({ left: false, right: false });
 
+  const CARDS_PER_COLUMN = 20;
+  const [expandedColumns, setExpandedColumns] = useState<Partial<Record<DecisionQueueKey, boolean>>>({});
+  const toggleColumnExpand = (key: DecisionQueueKey) =>
+    setExpandedColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  // Renova o access token proativamente enquanto o usuário estiver na gestão.
+  // Sem isso, o token de 60 min expira e a próxima ação retorna 401.
+  useEffect(() => startSessionKeepAlive(), []);
+
   useEffect(() => {
     const loadData = async () => {
       try {
-        const headers = { 'Authorization': `Bearer ${token}` };
         const [historyRes, workspaceRes] = await Promise.all([
-          fetch(`${API_URL}/api/analyses/history`, { headers }),
-          fetch(`${API_URL}/api/workspace/details`, { headers }),
+          apiFetch(`${API_URL}/api/analyses/history`),
+          apiFetch(`${API_URL}/api/workspace/details`),
         ]);
-
-        if (historyRes.status === 401 || workspaceRes.status === 401) {
-          window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
-          return;
-        }
 
         const data = await historyRes.json();
         const history = data.history || (Array.isArray(data) ? data : []);
@@ -118,7 +121,8 @@ export default function DecisionManagementTab({
             : [];
           setCompanies(workspaceCompanies.filter((company: Empresa) => company?.cnpj));
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof SessionExpiredError) return;
         setNotice({ type: 'error', message: 'Erro ao carregar a gestão de decisões.' });
       } finally {
         setIsLoading(false);
@@ -241,7 +245,12 @@ export default function DecisionManagementTab({
     });
   }, [activityFilter, allQueueCards, companyFilter, companyOptions, monitorFilter, sortFilter, stageFilter, urgencyFilter, verdictFilter]);
 
-  const counts = queueCards.reduce<Record<DecisionQueueKey, number>>((acc, card) => {
+  const activeSummaryCard = useMemo(() => {
+    if (!summaryModal) return null;
+    return allQueueCards.find((card) => card.analysis.id === summaryModal.analysis.id) || summaryModal;
+  }, [allQueueCards, summaryModal]);
+
+  const counts = useMemo(() => queueCards.reduce<Record<DecisionQueueKey, number>>((acc, card) => {
     acc[card.stage] += 1;
     return acc;
   }, {
@@ -254,7 +263,7 @@ export default function DecisionManagementTab({
     lost: 0,
     abandoned: 0,
     executed: 0,
-  });
+  }), [queueCards]);
 
   const updateBoardScrollState = () => {
     const el = boardScrollRef.current;
@@ -312,6 +321,7 @@ export default function DecisionManagementTab({
     setMonitorFilter('all');
     setActivityFilter('active');
     setSortFilter('recent');
+    setExpandedColumns({});
   };
 
   const openAnalysisDetail = async (analysis: SavedAnalysis) => {
@@ -319,17 +329,7 @@ export default function DecisionManagementTab({
 
     setLoadingDetailId(analysis.id);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}`, {
-        headers: { 'Authorization': `Bearer ${tokenLocal}` },
-      });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}`);
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -343,7 +343,8 @@ export default function DecisionManagementTab({
       setAnalyses((prev) => prev.map((item) => item.id === analysis.id ? { ...item, ...fullAnalysis } : item));
       setDetailTab('analise');
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao abrir o laudo.' });
     } finally {
       setLoadingDetailId(null);
@@ -378,22 +379,11 @@ export default function DecisionManagementTab({
     )));
 
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}/cockpit`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}/cockpit`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tasks: nextStatus }),
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -411,10 +401,11 @@ export default function DecisionManagementTab({
         )));
       }
       setNotice({ type: 'success', message: 'Ação concluída e salva no histórico.' });
-    } catch {
+    } catch (err) {
       setAnalyses((prev) => prev.map((item) => (
         item.id === analysis.id ? { ...item, cockpit_status: statusBefore } : item
       )));
+      if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao salvar a tarefa.' });
     } finally {
       setSavingTaskId(null);
@@ -439,22 +430,11 @@ export default function DecisionManagementTab({
     )));
 
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${analysis.id}/workflow`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}/workflow`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -471,11 +451,17 @@ export default function DecisionManagementTab({
           item.id === analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
         )));
       }
+      setSummaryModal((prev) => prev?.analysis.id === analysis.id ? null : prev);
+      const finalStages: DecisionQueueKey[] = ['won', 'lost', 'abandoned', 'executed'];
+      if (finalStages.includes(status) && activityFilter === 'active') {
+        setActivityFilter('all');
+      }
       setNotice({ type: 'success', message: `Edital movido para ${decisionQueueStages[status].label}.` });
-    } catch {
+    } catch (err) {
       setAnalyses((prev) => prev.map((item) => (
         item.id === analysis.id ? { ...item, workflow_status: previousStatus } : item
       )));
+      if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao atualizar a etapa.' });
     } finally {
       setSavingStageId(null);
@@ -490,22 +476,11 @@ export default function DecisionManagementTab({
 
     setSavingReviewId(card.analysis.id);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${card.analysis.id}/review`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${card.analysis.id}/review`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -514,14 +489,20 @@ export default function DecisionManagementTab({
       }
 
       const data = await res.json().catch(() => null);
-      if (data?.analysis) {
+      const updated = data?.analysis as SavedAnalysis | undefined;
+      if (updated) {
         setAnalyses((prev) => prev.map((item) => (
-          item.id === card.analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
+          item.id === card.analysis.id ? { ...item, ...updated } : item
         )));
       }
       setReviewModal(null);
-      setNotice({ type: 'success', message: 'Decisão revisada e salva. O edital voltou para triagem.' });
-    } catch {
+      const newScore = updated?.score != null ? ` Novo score: ${updated.score}.` : '';
+      setNotice({
+        type: 'success',
+        message: `IA reprocessou o laudo e atualizou a recomendação.${newScore} O edital voltou para triagem.`,
+      });
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao revisar a decisão.' });
     } finally {
       setSavingReviewId(null);
@@ -536,22 +517,11 @@ export default function DecisionManagementTab({
 
     setSavingLearningId(card.analysis.id);
     try {
-      const tokenLocal = localStorage.getItem('bawzi_token') || token;
-      const res = await fetch(`${API_URL}/api/analyses/${card.analysis.id}/learning`, {
+      const res = await apiFetch(`${API_URL}/api/analyses/${card.analysis.id}/learning`, {
         method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${tokenLocal}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      if (res.status === 401) {
-        setNotice({ type: 'error', message: 'Sua sessão expirou por segurança. Faça login novamente.' });
-        localStorage.clear();
-        window.location.reload();
-        return;
-      }
 
       if (!res.ok) {
         const error = await res.json().catch(() => null);
@@ -567,7 +537,8 @@ export default function DecisionManagementTab({
       }
       setLearningModal(null);
       setNotice({ type: 'success', message: 'Resultado registrado. A Bawzi usará esse histórico nas próximas decisões.' });
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao registrar o resultado.' });
     } finally {
       setSavingLearningId(null);
@@ -664,9 +635,9 @@ export default function DecisionManagementTab({
   return (
     <div className="animate-in fade-in duration-500 space-y-5">
       {renderNotice()}
-      {summaryModal && (
+      {activeSummaryCard && (
         <OperationalSummaryModal
-          card={summaryModal}
+          card={activeSummaryCard}
           savingTaskId={savingTaskId}
           savingStageId={savingStageId}
           onClose={() => setSummaryModal(null)}
@@ -916,21 +887,67 @@ export default function DecisionManagementTab({
             </>
           )}
 
+          {/* Stage flow legend */}
+          <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
+            {/* Active pipeline */}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-400 mr-0.5">Fluxo</span>
+              <span className="shrink-0 text-slate-200 mr-0.5">·</span>
+              {(['not_started', 'triage', 'pending', 'proposal', 'submitted'] as const).map((key, i, arr) => (
+                <span key={key} className="flex items-center gap-1">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages[key].className}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages[key].dotClass}`} />
+                    {i + 1}. {decisionQueueStages[key].label}
+                  </span>
+                  {i < arr.length - 1 && <ChevronRight size={9} className="shrink-0 text-slate-300" />}
+                </span>
+              ))}
+            </div>
+            {/* Outcome branch */}
+            <div className="flex flex-wrap items-center gap-1 border-l-2 border-slate-200 pl-2 ml-1">
+              <span className="text-[11px] text-slate-400 mr-0.5">↳</span>
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-400 mr-0.5">Resultado</span>
+              <span className="shrink-0 text-slate-200 mr-0.5">·</span>
+              {(['won', 'lost', 'abandoned'] as const).map((key, i, arr) => (
+                <span key={key} className="flex items-center gap-1">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages[key].className}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages[key].dotClass}`} />
+                    {decisionQueueStages[key].label}
+                  </span>
+                  {i < arr.length - 1 && <span className="text-[9px] text-slate-300">/</span>}
+                </span>
+              ))}
+              <ChevronRight size={9} className="shrink-0 text-slate-300" />
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages.executed.className}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages.executed.dotClass}`} />
+                {decisionQueueStages.executed.label}
+              </span>
+            </div>
+          </div>
+
           <div ref={boardScrollRef} className="overflow-x-auto scroll-smooth pb-3">
             <div className="grid min-w-[2250px] grid-cols-9 gap-3">
             {columnOrder.map((stageKey) => {
               const stage = decisionQueueStages[stageKey];
               const cards = queueCards.filter((card) => card.stage === stageKey);
+              const isExpanded = expandedColumns[stageKey] ?? false;
+              const visibleCards = isExpanded ? cards : cards.slice(0, CARDS_PER_COLUMN);
+              const hiddenCount = cards.length - visibleCards.length;
+              const stageIndex = decisionQueueOrder.indexOf(stageKey) + 1;
+              const isFinalStage = ['won', 'lost', 'abandoned', 'executed'].includes(stageKey);
 
               return (
-                <section key={stageKey} className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-3">
+                <section key={stageKey} className={`min-w-0 rounded-[1.5rem] border p-3 ${isFinalStage ? 'border-zinc-200 bg-zinc-50/60' : 'border-slate-200 bg-slate-50/70'}`}>
                   <div className="mb-3 flex items-center justify-between gap-2 px-1">
                     <div>
-                      <p className="flex items-center gap-2 text-[11px] font-black uppercase text-slate-700">
+                      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase text-slate-700">
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black ${isFinalStage ? 'bg-slate-200 text-slate-500' : 'bg-slate-800 text-white'}`}>
+                          {stageIndex}
+                        </span>
                         <span className={`h-2 w-2 rounded-full ${stage.dotClass}`} />
                         {stage.label}
                       </p>
-                      <p className="mt-0.5 text-[10px] font-bold uppercase text-slate-400">{stage.helper}</p>
+                      <p className="mt-1 text-[10px] font-semibold text-slate-500">{stage.helper}</p>
                     </div>
                     <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-500 shadow-sm">
                       {cards.length}
@@ -942,7 +959,7 @@ export default function DecisionManagementTab({
                       <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-[11px] font-bold text-slate-400">
                         Sem itens nesta fase
                       </div>
-                    ) : cards.map((card) => (
+                    ) : visibleCards.map((card) => (
                       <DecisionQueueCard
                         key={card.analysis.id}
                         card={card}
@@ -956,6 +973,24 @@ export default function DecisionManagementTab({
                         scoreColors={scoreColors}
                       />
                     ))}
+                    {hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleColumnExpand(stageKey)}
+                        className="w-full rounded-2xl border border-slate-200 bg-white py-2 text-[11px] font-black text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                      >
+                        Ver mais {hiddenCount} edita{hiddenCount === 1 ? 'l' : 'is'} ↓
+                      </button>
+                    )}
+                    {isExpanded && cards.length > CARDS_PER_COLUMN && (
+                      <button
+                        type="button"
+                        onClick={() => toggleColumnExpand(stageKey)}
+                        className="w-full rounded-2xl border border-slate-200 bg-white py-2 text-[11px] font-black text-slate-400 transition-colors hover:bg-slate-50"
+                      >
+                        Recolher ↑
+                      </button>
+                    )}
                   </div>
                 </section>
               );
@@ -1060,7 +1095,18 @@ function DecisionQueueCard({
 
         {card.nextTask ? (
           <div className="rounded-xl border border-slate-100 bg-white p-2.5">
-            <p className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Próxima ação</p>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Próxima ação</p>
+              <button
+                type="button"
+                title={`Concluir: ${card.nextTask.acao}`}
+                onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
+                disabled={savingTaskId === quickTaskId}
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {savingTaskId === quickTaskId ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
+              </button>
+            </div>
             <p className="line-clamp-2 text-xs font-black leading-snug text-slate-800">
               {card.nextTask.acao}
             </p>
@@ -1081,46 +1127,35 @@ function DecisionQueueCard({
           </span>
         </div>
 
-        <div className="mt-2 grid gap-2">
-          <div className="grid grid-cols-2 gap-2">
-            {nextStage ? (
-              <button
-                type="button"
-                onClick={() => onStageChange(card.analysis, nextStage)}
-                disabled={savingStageId === workflowTaskId}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2.5 text-[11px] font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {savingStageId === workflowTaskId ? <Loader2 size={12} className="animate-spin" /> : <ArrowRight size={12} />}
-                Avançar
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2.5 text-[11px] font-black text-slate-400"
-              >
-                Finalizado
-              </button>
-            )}
+        <div className="mt-2 flex items-center gap-2">
+          {nextStage ? (
             <button
               type="button"
-              onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
-              disabled={!card.nextTask || savingTaskId === quickTaskId}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[11px] font-black text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+              title={`Avançar para ${decisionQueueStages[nextStage].label}`}
+              onClick={() => onStageChange(card.analysis, nextStage)}
+              disabled={savingStageId === workflowTaskId}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {savingTaskId === quickTaskId ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-              Concluir
+              {savingStageId === workflowTaskId ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
             </button>
-          </div>
+          ) : (
+            <button
+              type="button"
+              title="Etapa final"
+              disabled
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+            >
+              <CheckCircle2 size={13} />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onOpen(card.analysis)}
             disabled={loadingDetailId === card.analysis.id}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[11px] font-black text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[9px] font-medium text-slate-400 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loadingDetailId === card.analysis.id ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-            Abrir laudo
-            <ArrowRight size={12} />
+            {loadingDetailId === card.analysis.id ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
+            Laudo
           </button>
         </div>
       </div>
@@ -1166,6 +1201,8 @@ function OperationalSummaryModal({
   const nextStage = getNextDecisionQueueStage(card.stage);
   const workflowTaskId = `${card.analysis.id}-workflow`;
   const quickTaskId = card.nextTask ? `${card.analysis.id}-${card.nextTask.id}` : '';
+  const isSavingStage = Boolean(savingStageId);
+  const isSavingTask = Boolean(savingTaskId);
   const headerOffset = useStickyHeaderOffset();
 
   return (
@@ -1270,7 +1307,7 @@ function OperationalSummaryModal({
               <select
                 value={card.stage}
                 onChange={(event) => onStageChange(card.analysis, event.target.value as DecisionQueueKey)}
-                disabled={savingStageId === workflowTaskId}
+                disabled={isSavingStage}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black text-slate-800 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {decisionQueueOrder.map((stageKey) => (
@@ -1281,7 +1318,7 @@ function OperationalSummaryModal({
               <button
                 type="button"
                 onClick={() => nextStage && onStageChange(card.analysis, nextStage)}
-                disabled={!nextStage || savingStageId === workflowTaskId}
+                disabled={!nextStage || isSavingStage}
                 className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingStageId === workflowTaskId ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
@@ -1291,7 +1328,7 @@ function OperationalSummaryModal({
               <button
                 type="button"
                 onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
-                disabled={!card.nextTask || savingTaskId === quickTaskId}
+                disabled={!card.nextTask || isSavingTask}
                 className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingTaskId === quickTaskId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
@@ -1833,14 +1870,15 @@ function parseOperationalDate(value: unknown): Date | null {
   const text = firstText(value);
   if (!text) return null;
 
-  const iso = new Date(text);
-  if (!Number.isNaN(iso.getTime())) return iso;
-
   const match = text.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
-  if (!match) return null;
-  const [, day, month, year, hour = '0', minute = '0'] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (match) {
+    const [, day, month, year, hour = '0', minute = '0'] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const iso = new Date(text);
+  return Number.isNaN(iso.getTime()) ? null : iso;
 }
 
 function firstText(...values: unknown[]) {

@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe } from 'lucide-react';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -178,9 +179,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
     if (cnpjLimpo.length !== 14) return;
 
     setCnaeLoading(true);
-    fetch(`${API_URL}/api/company/search/${cnpjLimpo}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`)
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (!data) return;
@@ -196,10 +195,24 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
           }
         }
       })
-      .catch(() => {})
+      .catch((err) => { if (err instanceof SessionExpiredError) return; })
       .finally(() => setCnaeLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, token, termoEditado]);
+
+  useEffect(() => {
+    const nextTermo = (() => {
+      if (!primeiraEmpresa?.cnae_descricao) return '';
+      const kw = derivarKeywordsCnae(primeiraEmpresa.cnae_descricao);
+      return kw.length >= 2 ? kw : '';
+    })();
+
+    if (!termoEditado) setTermo(nextTermo);
+    setCnaeDescricao(primeiraEmpresa?.cnae_descricao || '');
+    setCnaeCodigo(primeiraEmpresa?.cnae_principal || '');
+    setContratos([]);
+    setBuscado(false);
+    setPagina(1);
+  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, primeiraEmpresa?.cnae_principal, termoEditado]);
 
   const cancelar = useCallback(() => {
     abortRef.current?.abort();
@@ -234,8 +247,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
       if (munIdAtivo) params.set('municipio_id', munIdAtivo);
       if (munNomeAtivo) params.set('municipio_nome', munNomeAtivo);
 
-      const res = await fetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await apiFetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`, {
         signal: controller.signal,
       });
 
@@ -247,6 +259,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
       setMunicipioSolicitado(data.municipio_solicitado || '');
       setPagina(1);
     } catch (e: any) {
+      if (e instanceof SessionExpiredError) return;
       if (e.name === 'AbortError') return; // cancelamento intencional — não mostra erro
       setErro(e.message || 'Erro de ligação.');
       setContratos([]);

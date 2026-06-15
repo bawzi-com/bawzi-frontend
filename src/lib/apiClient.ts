@@ -22,7 +22,25 @@
  *   4. Se renovação falha → clearSession() + evento bawzi_session_expired.
  */
 
-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+function resolveApiUrl(rawUrl: string): string {
+  const normalized = rawUrl.replace(/\/$/, '');
+  if (typeof window === 'undefined') return normalized;
+
+  try {
+    const url = new URL(normalized);
+    const localHosts = new Set(['localhost', '127.0.0.1']);
+
+    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) {
+      url.hostname = window.location.hostname;
+    }
+
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return normalized;
+  }
+}
+
+export const API_URL = resolveApiUrl(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
 // ─── Token em memória (não persiste entre reloads — o cookie renova) ──────────
 let _accessToken: string | null = null;
@@ -95,9 +113,6 @@ async function renewToken(): Promise<string | null> {
     .then((tok) => {
       if (tok) {
         _accessToken = tok;
-        // Sincroniza com componentes legacy que ainda leem localStorage —
-        // sem isto, eles continuavam usando o token antigo após a renovação.
-        if (typeof window !== 'undefined') localStorage.setItem('bawzi_token', tok);
       }
       return tok;
     })
@@ -168,15 +183,15 @@ export async function initSession(): Promise<string | null> {
   const token = await renewToken();
   if (token) {
     _accessToken = token;
-    if (typeof window !== 'undefined') localStorage.setItem('bawzi_token', token);
     return token;
   }
-  // 2. Fallback legacy: utilizadores que fizeram login antes do cookie HttpOnly
-  //    ser implementado ainda têm o token no localStorage.
-  //    TODO: remover quando todos os utilizadores tiverem renovado sessão via cookie.
+  // Fallback de transição: utilizadores com sessão aberta antes da migração
+  // ainda podem ter o token no localStorage. Lemos mas nunca mais escrevemos.
   const legacy = typeof window !== 'undefined' ? localStorage.getItem('bawzi_token') : null;
   if (legacy) {
     _accessToken = legacy;
+    // Limpa imediatamente — na próxima renovação fica só em memória
+    localStorage.removeItem('bawzi_token');
     return legacy;
   }
   return null;

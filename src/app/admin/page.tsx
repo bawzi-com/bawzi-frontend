@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, API_URL, setAccessToken } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, API_URL, initSession } from '@/lib/apiClient';
 import {
   Users,
   FileText,
@@ -109,19 +109,19 @@ export default function AdminDashboard() {
   }, [router]);
 
   useEffect(() => {
-    const token = localStorage.getItem('bawzi_token'); 
-    
-    if (!token) {
-      setError("Acesso não autorizado. Redirecionando para o login...");
-      setTimeout(() => router.push('/login'), 3000);
-      setLoading(false);
-      return;
-    }
+    let isMounted = true;
+    let redirectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function loadDashboardData(authToken: string) {
+    async function loadDashboardData() {
       try {
-        // Inicializa o token em memória para que apiFetch possa usá-lo
-        setAccessToken(authToken);
+        const token = await initSession();
+
+        if (!token) {
+          if (!isMounted) return;
+          setError("Acesso não autorizado. Redirecionando para o login...");
+          redirectTimer = setTimeout(() => router.push('/login'), 3000);
+          return;
+        }
 
         const [statsRes, usersRes, smtpRes, templatesRes] = await Promise.all([
           apiFetch(`${API_URL}/api/admin/stats`),
@@ -129,6 +129,8 @@ export default function AdminDashboard() {
           apiFetch(`${API_URL}/api/email/smtp`),
           apiFetch(`${API_URL}/api/admin/email-templates`),
         ]);
+
+        if (!isMounted) return;
 
         if (!statsRes.ok || !usersRes.ok) {
           if (statsRes.status === 403) throw new Error("Acesso negado: Apenas administradores.");
@@ -161,13 +163,18 @@ export default function AdminDashboard() {
         }
 
       } catch (err: any) {
-        setError(err.message);
+        if (isMounted) setError(err.message);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
 
-    loadDashboardData(token);
+    loadDashboardData();
+
+    return () => {
+      isMounted = false;
+      if (redirectTimer) clearTimeout(redirectTimer);
+    };
   }, [router]);
 
   // ==========================================
@@ -184,12 +191,11 @@ export default function AdminDashboard() {
     }
 
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/tier`, {
+
+      const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/tier`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_tier: newTier })
       });
 
@@ -201,6 +207,7 @@ export default function AdminDashboard() {
         alert(`Erro ao atualizar: ${errorData.detail || 'Tente novamente.'}`);
       }
     } catch (e) {
+      if (e instanceof SessionExpiredError) return;
       alert("Erro de comunicação com o servidor.");
     }
   };
@@ -215,12 +222,11 @@ export default function AdminDashboard() {
     }
 
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/email`, {
+
+      const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/email`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ new_email: newEmail })
       });
 
@@ -232,6 +238,7 @@ export default function AdminDashboard() {
         alert(`Erro: ${errorData.detail}`);
       }
     } catch (e) {
+      if (e instanceof SessionExpiredError) return;
       alert("Erro de comunicação com o servidor.");
     }
   };
@@ -239,27 +246,24 @@ export default function AdminDashboard() {
   const executeModerationAction = async () => {
     if (!moderationModal) return;
     const { userId, email, action, banReason } = moderationModal;
-    const token = localStorage.getItem('bawzi_token');
     const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 
     setModerationLoading(true);
     try {
       let res: Response;
       if (action === 'delete') {
-        res = await fetch(`${base}/api/admin/users/${userId}`, {
+        res = await apiFetch(`${base}/api/admin/users/${userId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
         });
       } else if (action === 'ban') {
-        res = await fetch(`${base}/api/admin/users/${userId}/ban`, {
+        res = await apiFetch(`${base}/api/admin/users/${userId}/ban`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ reason: banReason }),
         });
       } else {
-        res = await fetch(`${base}/api/admin/users/${userId}/${action}`, {
+        res = await apiFetch(`${base}/api/admin/users/${userId}/${action}`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
         });
       }
 
@@ -280,7 +284,8 @@ export default function AdminDashboard() {
         const err = await res.json().catch(() => ({}));
         alert(`Erro: ${err.detail || 'Tente novamente.'}`);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       alert('Erro de comunicação com o servidor.');
     } finally {
       setModerationLoading(false);
@@ -289,12 +294,14 @@ export default function AdminDashboard() {
 
   const loadPromoList = async () => {
     setPromoListLoading(true);
-    const token = localStorage.getItem('bawzi_token');
     const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
     try {
-      const res = await fetch(`${base}/api/admin/promo-invites`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await apiFetch(`${base}/api/admin/promo-invites`);
       if (res.ok) setPromoList(await res.json());
-    } catch { /* silencioso */ } finally { setPromoListLoading(false); }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    } finally { setPromoListLoading(false); }
   };
 
   const promoSubmittingRef = useRef(false);
@@ -304,12 +311,11 @@ export default function AdminDashboard() {
     if (!promoEmail.includes('@') || promoSubmittingRef.current) return;
     promoSubmittingRef.current = true;
     setPromoLoading(true); setPromoMsg(null);
-    const token = localStorage.getItem('bawzi_token');
     const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
     try {
-      const res = await fetch(`${base}/api/admin/promo-invite`, {
+      const res = await apiFetch(`${base}/api/admin/promo-invite`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: promoEmail, dias: promoDias }),
       });
       const data = await res.json();
@@ -320,26 +326,27 @@ export default function AdminDashboard() {
       } else {
         setPromoMsg({ text: data.detail || 'Erro ao enviar.', ok: false });
       }
-    } catch { setPromoMsg({ text: 'Erro de conexão.', ok: false }); }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setPromoMsg({ text: 'Erro de conexão.', ok: false });
+    }
     finally { setPromoLoading(false); promoSubmittingRef.current = false; setTimeout(() => setPromoMsg(null), 5000); }
   };
 
   const handleRevogarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Revogar convite de ${email}?`)) return;
-    const token = localStorage.getItem('bawzi_token');
     const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-    await fetch(`${base}/api/admin/promo-invites/${token_promo}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    await apiFetch(`${base}/api/admin/promo-invites/${token_promo}`, {
+      method: 'DELETE',
     });
     loadPromoList();
   };
 
   const handleAtivarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Ativar manualmente o convite de ${email}?`)) return;
-    const token = localStorage.getItem('bawzi_token');
     const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-    const res = await fetch(`${base}/api/admin/promo-invites/${token_promo}/ativar`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    const res = await apiFetch(`${base}/api/admin/promo-invites/${token_promo}/ativar`, {
+      method: 'POST',
     });
     const data = await res.json();
     if (res.ok) {
@@ -352,10 +359,9 @@ export default function AdminDashboard() {
 
   const handleReenviarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Reenviar convite para ${email}? Um novo link será gerado.`)) return;
-    const token = localStorage.getItem('bawzi_token');
     const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-    const res = await fetch(`${base}/api/admin/promo-invites/${token_promo}/reenviar`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` },
+    const res = await apiFetch(`${base}/api/admin/promo-invites/${token_promo}/reenviar`, {
+      method: 'POST',
     });
     const data = await res.json();
     if (res.ok) {
@@ -367,12 +373,9 @@ export default function AdminDashboard() {
   };
 
   const loadTierConfigs = async () => {
-    const token = localStorage.getItem('bawzi_token');
     const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
     try {
-      const res = await fetch(`${baseUrl}/api/admin/tier-configs`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${baseUrl}/api/admin/tier-configs`);
       if (res.ok) {
         const data = await res.json();
         setTierConfigs(data);
@@ -391,19 +394,21 @@ export default function AdminDashboard() {
         });
         setTierEdits(edits);
       }
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
   };
 
   const handleSaveTier = async (tierId: number) => {
-    const token = localStorage.getItem('bawzi_token');
     const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
     setSavingTier(tierId);
     setTierMsg(null);
     try {
       const body = tierEdits[tierId];
-      const res = await fetch(`${baseUrl}/api/admin/tier-configs/${tierId}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/tier-configs/${tierId}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           monthly_limit: Number(body.monthly_limit),
           max_chars:     Number(body.max_chars),
@@ -417,7 +422,8 @@ export default function AdminDashboard() {
         const err = await res.json();
         setTierMsg({ tier_id: tierId, text: err.detail || 'Erro ao salvar.', ok: false });
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setTierMsg({ tier_id: tierId, text: 'Erro de conexão.', ok: false });
     } finally {
       setSavingTier(null);
@@ -427,28 +433,28 @@ export default function AdminDashboard() {
 
   const handleResetTier = async (tierId: number) => {
     if (!confirm(`Restaurar Tier ${tierId} aos valores padrão?`)) return;
-    const token = localStorage.getItem('bawzi_token');
     const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
     try {
-      await fetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
+      await apiFetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       setTierMsg({ tier_id: tierId, text: 'Restaurado aos padrões.', ok: true });
       await loadTierConfigs();
       setTimeout(() => setTierMsg(null), 3000);
-    } catch { /* silencioso */ }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
   };
 
   const handleSaveSMTP = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSmtp(true);
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/email/smtp`, {
+      const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/email/smtp`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: smtpUser, password: smtpPass, from_name: smtpName, from_email: smtpFromEmail })
       });
       if(res.ok) {
@@ -457,6 +463,7 @@ export default function AdminDashboard() {
         alert("Erro ao salvar as configurações SMTP.");
       }
     } catch (e) {
+      if (e instanceof SessionExpiredError) return;
       alert("Erro ao comunicar com o servidor.");
     } finally {
       setSavingSmtp(false);
@@ -469,17 +476,17 @@ export default function AdminDashboard() {
   const loadPncpData = async () => {
     setPncpLoading(true);
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-      const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
       const [statsRes, statusRes, schedulerRes] = await Promise.all([
-        fetch(`${baseUrl}/api/admin/pncp/stats`, { headers }),
-        fetch(`${baseUrl}/api/admin/workers/status`, { headers }),
-        fetch(`${baseUrl}/api/admin/scheduler/status`, { headers }),
+        apiFetch(`${baseUrl}/api/admin/pncp/stats`),
+        apiFetch(`${baseUrl}/api/admin/workers/status`),
+        apiFetch(`${baseUrl}/api/admin/scheduler/status`),
       ]);
       if (statsRes.ok)     setPncpStats(await statsRes.json());
       if (statusRes.ok)    setWorkersStatus(await statusRes.json());
       if (schedulerRes.ok) setSchedulerStatus(await schedulerRes.json());
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setPncpLoading(false);
     }
@@ -489,11 +496,9 @@ export default function AdminDashboard() {
     if (!confirm(`Iniciar worker de contratos em modo "${modo}"?\n\nTempo estimado:\n• sem_termo: ~3 min\n• rapido: ~30s\n• medio: ~10 min\n• maximo: ~45 min\n• completo: ~50 min`)) return;
     setWorkerAction(`contratos-${modo}`);
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
-      const res = await fetch(`${baseUrl}/api/admin/workers/contratos?modo=${modo}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/contratos?modo=${modo}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -502,6 +507,8 @@ export default function AdminDashboard() {
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -512,12 +519,10 @@ export default function AdminDashboard() {
     if (!confirm(`Enriquecer fornecedores para: ${ufsLabel}?\n\nEste worker usa /api/consulta (tem nomeRazaoSocialFornecedor)\ne actualiza os contratos já indexados sem re-indexar.\n\nTempo: ~2-5 min por UF · ~1-2h completo`)) return;
     setWorkerAction('fornecedores');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = fornecedoresUfs.trim() ? `?ufs=${encodeURIComponent(fornecedoresUfs.trim())}` : '';
-      const res = await fetch(`${baseUrl}/api/admin/workers/fornecedores${qs}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/fornecedores${qs}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -526,6 +531,8 @@ export default function AdminDashboard() {
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -544,19 +551,19 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('enrich_via_consulta');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = new URLSearchParams();
       if (enrichViaConsultaUfs.trim()) qs.set('ufs', enrichViaConsultaUfs.trim());
       const qsStr = qs.toString();
-      const res = await fetch(`${baseUrl}/api/admin/workers/enrich-via-consulta${qsStr ? '?' + qsStr : ''}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/enrich-via-consulta${qsStr ? '?' + qsStr : ''}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) {
         const err = await res.json();
         alert(`Erro: ${err.detail || res.statusText}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -575,14 +582,12 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('editais_detalhe');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = new URLSearchParams();
       if (editaisDetalheUfs.trim()) qs.set('ufs', editaisDetalheUfs.trim());
       const qsStr = qs.toString();
-      const res = await fetch(`${baseUrl}/api/admin/workers/editais-detalhe${qsStr ? '?' + qsStr : ''}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/editais-detalhe${qsStr ? '?' + qsStr : ''}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -591,6 +596,8 @@ export default function AdminDashboard() {
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -609,14 +616,12 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('itens_contratos');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = new URLSearchParams();
       if (itensContratosUfs.trim()) qs.set('ufs', itensContratosUfs.trim());
       const qsStr = qs.toString();
-      const res = await fetch(`${baseUrl}/api/admin/workers/itens-contratos${qsStr ? '?' + qsStr : ''}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/itens-contratos${qsStr ? '?' + qsStr : ''}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -625,6 +630,8 @@ export default function AdminDashboard() {
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -642,19 +649,19 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('consulta_uf');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = new URLSearchParams();
       if (consultaUfUfs.trim()) qs.set('ufs', consultaUfUfs.trim());
       qs.set('janelas', String(janelas));
-      const res = await fetch(`${baseUrl}/api/admin/workers/consulta-uf?${qs.toString()}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/consulta-uf?${qs.toString()}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       if (!res.ok) {
         const err = await res.json();
         alert(`Erro: ${err.detail || res.statusText}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -665,12 +672,10 @@ export default function AdminDashboard() {
     if (!confirm(`Iniciar worker de municípios para: ${ufsLabel}?\n\nTempo estimado: ~2-4h para todas as UFs.`)) return;
     setWorkerAction('municipios');
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const qs = municipiosUfs.trim() ? `?ufs=${encodeURIComponent(municipiosUfs.trim())}` : '';
-      const res = await fetch(`${baseUrl}/api/admin/workers/municipios${qs}`, {
+      const res = await apiFetch(`${baseUrl}/api/admin/workers/municipios${qs}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
       });
       const data = await res.json();
       if (res.ok) {
@@ -679,6 +684,8 @@ export default function AdminDashboard() {
       } else {
         alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     } finally {
       setWorkerAction(null);
     }
@@ -700,15 +707,14 @@ export default function AdminDashboard() {
 
     setUploadingImage(true);
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      
+
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/upload-image`, {
+      const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/upload-image`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }, // FormData não precisa de Content-Type explicitado
+        // FormData não precisa de Content-Type explicitado
         body: formData
       });
 
@@ -719,6 +725,7 @@ export default function AdminDashboard() {
         alert("Erro ao fazer upload da imagem.");
       }
     } catch (error) {
+      if (error instanceof SessionExpiredError) return;
       alert("Erro de comunicação com o servidor.");
     } finally {
       setUploadingImage(false);
@@ -727,18 +734,17 @@ export default function AdminDashboard() {
 
   const handleSaveTemplate = async () => {
     if (!selectedTemplate) return;
-    
+
     setSavingTemplate(true);
     try {
-      const token = localStorage.getItem('bawzi_token');
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-      
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/admin/email-templates/${selectedTemplate.slug}`, {
+
+      const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/email-templates/${selectedTemplate.slug}`, {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          subject: templateSubject, 
-          html_content: templateHtml 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: templateSubject,
+          html_content: templateHtml
         })
       });
 
@@ -750,6 +756,7 @@ export default function AdminDashboard() {
         alert("Erro ao salvar o template.");
       }
     } catch (e) {
+      if (e instanceof SessionExpiredError) return;
       alert("Erro ao comunicar com o servidor.");
     } finally {
       setSavingTemplate(false);

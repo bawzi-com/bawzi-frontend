@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 export default function PncpStatusBadge() {
   const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
@@ -9,11 +10,12 @@ export default function PncpStatusBadge() {
   const checkStatus = async () => {
     try {
       const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
-      const res = await fetch(`${API_URL}/api/pncp/status`);
+      const res = await apiFetch(`${API_URL}/api/pncp/status`);
       if (!res.ok) throw new Error("Falha na API");
       const data = await res.json();
       setStatus(data.pncp_state || 'error');
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
       setStatus('error');
     }
   };

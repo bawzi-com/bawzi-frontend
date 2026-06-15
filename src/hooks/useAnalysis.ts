@@ -32,6 +32,7 @@ interface UseAnalysisInput {
   uf: string;
   forceExact: boolean;
   pncpData: PncpData | null;
+  activeCnpj?: string;
   userTier: number;
   isOverLimit: boolean;
   apiUrl: string;
@@ -123,6 +124,7 @@ export function useAnalysis({
   uf,
   forceExact,
   pncpData,
+  activeCnpj,
   userTier,
   isOverLimit,
   apiUrl,
@@ -302,6 +304,7 @@ export function useAnalysis({
       formData.set('force_exact', forceExact ? 'true' : 'false');
       formData.set('provider', motor);
       formData.set('progress_token', progressToken);
+      if (activeCnpj) formData.set('context_cnpj', activeCnpj);
       if (pncpData) {
         formData.set('pncp_cnpj', pncpData.cnpj);
         formData.set('pncp_ano', pncpData.ano.toString());
@@ -379,7 +382,7 @@ export function useAnalysis({
       setIsAnalyzing(false);
     }
   }, [
-    text, files, uf, forceExact, pncpData, userTier, isOverLimit,
+    text, files, uf, forceExact, pncpData, activeCnpj, userTier, isOverLimit,
     apiUrl, token, getEstimateSeconds, getPerfilAnalise, showError,
     onUpgradeNeeded, onUpsellNeeded, onFreeTrialUsed,
   ]);

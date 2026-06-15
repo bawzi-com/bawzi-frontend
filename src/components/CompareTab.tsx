@@ -9,7 +9,7 @@ import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Legend,
 } from 'recharts';
-import { API_URL } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 import { decisionQueueStages } from '@/lib/decisionQueue';
 import type { SavedAnalysis } from '@/lib/types';
 
@@ -313,18 +313,18 @@ export default function CompareTab({ token }: { token: string }) {
   const [copiado, setCopiado]             = useState(false);
 
   useEffect(() => {
-    if (!token) { setIsLoading(false); return; }
-    fetch(`${API_URL}/api/analyses/history`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    setIsLoading(true);
+    apiFetch(`${API_URL}/api/analyses/history`)
       .then(r => r.json())
       .then(data => {
         const list: SavedAnalysis[] = data.history || (Array.isArray(data) ? data : []);
         setAnalyses(list);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (err instanceof SessionExpiredError) { clearSession(); return; }
+      })
       .finally(() => setIsLoading(false));
-  }, [token]);
+  }, []);
 
   const toggle = (item: SavedAnalysis) => {
     setSelected(([a, b]) => {
@@ -353,10 +353,9 @@ export default function CompareTab({ token }: { token: string }) {
 
   // ── Registro de decisão no fluxo de trabalho ─────────────────────────────────
   const patchWorkflow = async (id: string, status: 'proposal' | 'abandoned') => {
-    const tokenLocal = (typeof window !== 'undefined' && localStorage.getItem('bawzi_token')) || token;
-    const res = await fetch(`${API_URL}/api/analyses/${id}/workflow`, {
+    const res = await apiFetch(`${API_URL}/api/analyses/${id}/workflow`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${tokenLocal}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error('Falha ao atualizar o fluxo.');
@@ -387,7 +386,8 @@ export default function CompareTab({ token }: { token: string }) {
           : it
       ));
       setDecisao(escolha);
-    } catch {
+    } catch (err) {
+      if (err instanceof SessionExpiredError) { clearSession(); return; }
       setErroDecisao('Não foi possível registrar a decisão. Verifique a ligação e tente novamente.');
     } finally {
       setSavingDecisao(false);
