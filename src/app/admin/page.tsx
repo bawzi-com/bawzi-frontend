@@ -90,6 +90,14 @@ export default function AdminDashboard() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadedImageUrl, setUploadedImageUrl] = useState('');
 
+  // Estado do modal de moderação
+  const [moderationModal, setModerationModal] = useState<{
+    userId: string; email: string;
+    action: 'block' | 'unblock' | 'ban' | 'unban' | 'delete';
+    banReason: string;
+  } | null>(null);
+  const [moderationLoading, setModerationLoading] = useState(false);
+
   // Sessão expirada → derruba e redireciona imediatamente para login
   useEffect(() => {
     const handleExpired = () => {
@@ -225,6 +233,57 @@ export default function AdminDashboard() {
       }
     } catch (e) {
       alert("Erro de comunicação com o servidor.");
+    }
+  };
+
+  const executeModerationAction = async () => {
+    if (!moderationModal) return;
+    const { userId, email, action, banReason } = moderationModal;
+    const token = localStorage.getItem('bawzi_token');
+    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+
+    setModerationLoading(true);
+    try {
+      let res: Response;
+      if (action === 'delete') {
+        res = await fetch(`${base}/api/admin/users/${userId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } else if (action === 'ban') {
+        res = await fetch(`${base}/api/admin/users/${userId}/ban`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: banReason }),
+        });
+      } else {
+        res = await fetch(`${base}/api/admin/users/${userId}/${action}`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+
+      if (res.ok) {
+        if (action === 'delete') {
+          setUsers(prev => prev.filter(u => u.id !== userId));
+        } else if (action === 'block') {
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: true } : u));
+        } else if (action === 'unblock') {
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: false } : u));
+        } else if (action === 'ban') {
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: true, blocked: true, ban_reason: banReason } : u));
+        } else if (action === 'unban') {
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: false, blocked: false, ban_reason: '' } : u));
+        }
+        setModerationModal(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Erro: ${err.detail || 'Tente novamente.'}`);
+      }
+    } catch {
+      alert('Erro de comunicação com o servidor.');
+    } finally {
+      setModerationLoading(false);
     }
   };
 
@@ -919,26 +978,42 @@ export default function AdminDashboard() {
                 ) : (
                   filteredUsers.map((user: any) => {
                     const currentTier = user.workspace_tier || user.tier || 0;
-                    
-                    let tierColor = "bg-slate-500/20 text-slate-400 border-slate-500/20"; 
+
+                    let tierColor = "bg-slate-500/20 text-slate-400 border-slate-500/20";
                     if (currentTier === 1) tierColor = "bg-blue-500/20 text-blue-400 border-blue-500/20";
                     if (currentTier === 2) tierColor = "bg-emerald-500/20 text-emerald-400 border-emerald-500/20";
                     if (currentTier === 3) tierColor = "bg-violet-500/20 text-violet-400 border-violet-500/20";
                     if (currentTier === 4) tierColor = "bg-amber-500/20 text-amber-400 border-amber-500/20";
 
+                    const isBanned = Boolean(user.banned);
+                    const isBlocked = Boolean(user.blocked) && !isBanned;
+
                     return (
-                      <tr key={user.id} className="hover:bg-slate-800/20 transition-colors group">
+                      <tr key={user.id} className={`hover:bg-slate-800/20 transition-colors group ${isBanned ? 'opacity-60' : ''}`}>
                         <td className="py-5 pl-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium text-slate-200">{user.email}</span>
-                            <button 
+                            <button
                               onClick={() => handleEmailChange(user.id, user.email)}
                               className="text-slate-600 hover:text-blue-400 transition-colors p-1"
                               title="Corrigir E-mail"
                             >
                               <Edit2 size={14} />
                             </button>
+                            {isBanned && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-black bg-red-500/20 text-red-400 border border-red-500/30">
+                                BANIDO
+                              </span>
+                            )}
+                            {isBlocked && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-black bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                                BLOQUEADO
+                              </span>
+                            )}
                           </div>
+                          {isBanned && user.ban_reason && (
+                            <p className="text-xs text-red-400/60 mt-1 pl-0.5">Motivo: {user.ban_reason}</p>
+                          )}
                         </td>
                         <td className="py-5 text-slate-400 text-sm">{user.workspace_name}</td>
                         <td className="py-5">
@@ -947,12 +1022,51 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td className="py-5 pr-4 text-right">
-                          <button 
-                            onClick={() => handleTierChange(user.id, user.email, currentTier)}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-violet-600 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-violet-500 focus:ring-2 focus:ring-violet-500/50 outline-none"
-                          >
-                            <Settings size={14} /> Update Tier
-                          </button>
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            <button
+                              onClick={() => handleTierChange(user.id, user.email, currentTier)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-violet-600 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-violet-500"
+                            >
+                              <Settings size={12} /> Tier
+                            </button>
+                            {isBanned ? (
+                              <button
+                                onClick={() => setModerationModal({ userId: user.id, email: user.email, action: 'unban', banReason: '' })}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-900/40 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold transition-all border border-emerald-700/50"
+                              >
+                                <CheckCircle2 size={12} /> Desbanir
+                              </button>
+                            ) : isBlocked ? (
+                              <button
+                                onClick={() => setModerationModal({ userId: user.id, email: user.email, action: 'unblock', banReason: '' })}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-900/40 hover:bg-emerald-600 text-emerald-400 hover:text-white text-xs font-bold transition-all border border-emerald-700/50"
+                              >
+                                <CheckCircle2 size={12} /> Desbloquear
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => setModerationModal({ userId: user.id, email: user.email, action: 'block', banReason: '' })}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-900/40 hover:bg-orange-600 text-orange-400 hover:text-white text-xs font-bold transition-all border border-orange-700/50"
+                                >
+                                  <Lock size={12} /> Bloquear
+                                </button>
+                                <button
+                                  onClick={() => setModerationModal({ userId: user.id, email: user.email, action: 'ban', banReason: '' })}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-900/40 hover:bg-red-600 text-red-400 hover:text-white text-xs font-bold transition-all border border-red-700/50"
+                                >
+                                  <XCircle size={12} /> Banir
+                                </button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => setModerationModal({ userId: user.id, email: user.email, action: 'delete', banReason: '' })}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-red-700 text-slate-500 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-red-600"
+                              title="Remover conta permanentemente"
+                            >
+                              🗑
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -2151,7 +2265,7 @@ export default function AdminDashboard() {
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1 shrink-0">
-                      {/* Badge de status */}
+                      {/* Badge de status do convite */}
                       <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg ${
                         inv.status === 'activated'          ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800' :
                         inv.status === 'user_registered'    ? 'bg-violet-900/40 text-violet-400 border border-violet-800' :
@@ -2165,6 +2279,21 @@ export default function AdminDashboard() {
                         {inv.status === 'expired'             && '✕ Expirado'}
                         {inv.status === 'waiting'             && '● Aguardando'}
                       </span>
+                      {/* Badge do período promo (só aparece quando ativado) */}
+                      {inv.status === 'activated' && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                          inv.promo_active
+                            ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            : 'bg-slate-800/60 text-slate-500 border border-slate-700'
+                        }`}>
+                          {inv.promo_active
+                            ? `Acesso ativo até ${new Date(inv.promo_expires_at).toLocaleDateString('pt-BR')}`
+                            : inv.promo_expires_at
+                              ? `Período encerrado · ${new Date(inv.promo_expires_at).toLocaleDateString('pt-BR')}`
+                              : 'Período encerrado'
+                          }
+                        </span>
+                      )}
                       {/* Ações */}
                       <div className="flex gap-2">
                         {inv.status === 'user_registered' && (
@@ -2195,6 +2324,118 @@ export default function AdminDashboard() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL DE MODERAÇÃO                         */}
+      {/* ========================================== */}
+      {moderationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => !moderationLoading && setModerationModal(null)}
+          />
+
+          {/* Card */}
+          <div className="relative z-10 bg-slate-900 border border-slate-700 rounded-[2rem] p-8 w-full max-w-md shadow-2xl">
+            {/* Ícone + título */}
+            <div className="flex flex-col items-center text-center mb-6">
+              {moderationModal.action === 'delete' && (
+                <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center mb-4 text-2xl">🗑</div>
+              )}
+              {moderationModal.action === 'ban' && (
+                <div className="w-14 h-14 rounded-2xl bg-red-500/15 flex items-center justify-center mb-4">
+                  <XCircle size={28} className="text-red-400" />
+                </div>
+              )}
+              {moderationModal.action === 'block' && (
+                <div className="w-14 h-14 rounded-2xl bg-orange-500/15 flex items-center justify-center mb-4">
+                  <Lock size={28} className="text-orange-400" />
+                </div>
+              )}
+              {(moderationModal.action === 'unblock' || moderationModal.action === 'unban') && (
+                <div className="w-14 h-14 rounded-2xl bg-emerald-500/15 flex items-center justify-center mb-4">
+                  <CheckCircle2 size={28} className="text-emerald-400" />
+                </div>
+              )}
+
+              <h3 className="text-lg font-black text-white mb-1">
+                {moderationModal.action === 'block' && 'Bloquear conta'}
+                {moderationModal.action === 'unblock' && 'Desbloquear conta'}
+                {moderationModal.action === 'ban' && 'Banir conta'}
+                {moderationModal.action === 'unban' && 'Desbanir conta'}
+                {moderationModal.action === 'delete' && 'Remover conta'}
+              </h3>
+
+              <p className="text-slate-400 text-sm break-all">{moderationModal.email}</p>
+            </div>
+
+            {/* Descrição da ação */}
+            <div className={`mb-6 px-4 py-3 rounded-xl text-sm border ${
+              moderationModal.action === 'delete' ? 'bg-red-500/10 border-red-500/20 text-red-300' :
+              moderationModal.action === 'ban' ? 'bg-red-500/10 border-red-500/20 text-red-300' :
+              moderationModal.action === 'block' ? 'bg-orange-500/10 border-orange-500/20 text-orange-300' :
+              'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+            }`}>
+              {moderationModal.action === 'block' && 'O utilizador ficará temporariamente sem acesso. Pode ser desfeito a qualquer momento.'}
+              {moderationModal.action === 'unblock' && 'O bloqueio será removido e o utilizador poderá voltar a aceder normalmente.'}
+              {moderationModal.action === 'ban' && 'A conta será banida permanentemente. O utilizador não poderá mais aceder.'}
+              {moderationModal.action === 'unban' && 'O ban será removido. O utilizador poderá voltar a aceder normalmente.'}
+              {moderationModal.action === 'delete' && 'Esta ação é irreversível. A conta e todos os dados associados serão eliminados permanentemente.'}
+            </div>
+
+            {/* Motivo do ban */}
+            {moderationModal.action === 'ban' && (
+              <div className="mb-6">
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Motivo (opcional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={moderationModal.banReason}
+                  onChange={(e) => setModerationModal(prev => prev ? { ...prev, banReason: e.target.value } : null)}
+                  placeholder="Ex: Violação dos termos de uso…"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all resize-none text-sm"
+                />
+              </div>
+            )}
+
+            {/* Botões */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setModerationModal(null)}
+                disabled={moderationLoading}
+                className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500 font-bold text-sm transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={executeModerationAction}
+                disabled={moderationLoading}
+                className={`flex-1 py-3 rounded-xl font-black text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  moderationModal.action === 'delete' || moderationModal.action === 'ban'
+                    ? 'bg-red-600 hover:bg-red-500 text-white'
+                    : moderationModal.action === 'block'
+                    ? 'bg-orange-600 hover:bg-orange-500 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                {moderationLoading ? (
+                  <><Loader2 size={16} className="animate-spin" /> A processar…</>
+                ) : (
+                  <>
+                    {moderationModal.action === 'block' && <><Lock size={15} /> Bloquear</>}
+                    {moderationModal.action === 'unblock' && <><CheckCircle2 size={15} /> Desbloquear</>}
+                    {moderationModal.action === 'ban' && <><XCircle size={15} /> Banir</>}
+                    {moderationModal.action === 'unban' && <><CheckCircle2 size={15} /> Desbanir</>}
+                    {moderationModal.action === 'delete' && <>🗑 Remover permanentemente</>}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

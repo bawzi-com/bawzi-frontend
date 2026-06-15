@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -82,6 +82,28 @@ const FLOW = [
   },
 ];
 
+const ANALYSIS_STEPS = [
+  { Icon: FileSearch, title: 'Edital capturado', desc: 'PNCP, anexos e prazos' },
+  { Icon: SearchCheck, title: 'Objeto lido', desc: 'CNAE, escopo e aderência' },
+  { Icon: Scale, title: 'Riscos mapeados', desc: 'Habilitação, multas e cláusulas' },
+  { Icon: Calculator, title: 'Preço simulado', desc: 'Margem, deságio e limite' },
+  { Icon: Gauge, title: 'Decisão gerada', desc: 'Go/No-Go com próximos passos' },
+];
+
+const ANALYSIS_SIGNALS = [
+  { label: 'CNAE', value: 'Match parcial', fill: '0.72', tone: 'bg-sky-400' },
+  { label: 'Jurídico', value: 'Atenção', fill: '0.58', tone: 'bg-amber-400' },
+  { label: 'Preço', value: 'Margem pressionada', fill: '0.64', tone: 'bg-emerald-400' },
+];
+
+const ANALYSIS_LOGS = [
+  'Lendo objeto e itens do edital',
+  'Comparando CNAE com escopo contratado',
+  'Extraindo exigências eliminatórias',
+  'Estimando pressão competitiva',
+  'Montando recomendação executiva',
+];
+
 const PLANOS = [
   {
     nome: 'Essencial',
@@ -137,21 +159,21 @@ export default function LandingPage() {
     <div className="font-sans text-slate-900 overflow-x-hidden">
       <section className="relative overflow-hidden bg-slate-950 text-white">
         <div className="absolute inset-0 pointer-events-none opacity-35 [background-image:linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] [background-size:42px_42px]" />
-        <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-10 pt-20 text-center md:pt-28">
+        <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-12 pt-14 text-center md:pt-20">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300">
             <span className="h-2 w-2 rounded-full bg-emerald-300" />
             Decisão Go/No-Go para licitações
           </div>
 
-          <h1 className="mt-8 max-w-5xl text-4xl font-black leading-[1.04] tracking-tight md:text-6xl">
+          <h1 className="mt-5 max-w-5xl text-4xl font-black leading-[1.04] tracking-tight md:text-5xl lg:text-6xl">
             Saiba em minutos se vale disputar uma licitação.
           </h1>
 
-          <p className="mt-6 max-w-3xl text-base font-medium leading-8 text-slate-300 md:text-xl">
+          <p className="mt-4 max-w-3xl text-base font-medium leading-7 text-slate-300 md:text-lg">
             A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
           </p>
 
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-400">
               Testar com um edital <ArrowRight size={17} />
             </Link>
@@ -160,7 +182,9 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <div className="mt-10 grid w-full max-w-4xl gap-3 text-left sm:grid-cols-3">
+          <DecisionPreview />
+
+          <div className="mt-5 grid w-full max-w-4xl gap-3 text-left sm:grid-cols-3">
             {[
               ['2-4h', 'economizadas por edital analisado'],
               ['CNAE + PNCP', 'match antes da proposta'],
@@ -172,14 +196,12 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-
-          <DecisionPreview />
         </div>
       </section>
 
-      <section className="bg-white py-20">
-        <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.75fr_1fr] lg:items-center">
-          <div>
+      <section id="problema" className="scroll-mt-24 bg-white py-16 md:py-20">
+        <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.78fr_1fr] lg:items-center">
+          <div className="max-w-xl">
             <p className="text-xs font-black uppercase tracking-widest text-emerald-600">O problema que a Bawzi resolve</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
               A disputa errada custa mais que uma assinatura.
@@ -187,44 +209,75 @@ export default function LandingPage() {
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
               Licitação boa não é só edital aberto. Ela precisa fazer sentido para o CNAE, para a capacidade operacional, para a margem e para o risco que sua empresa aceita assumir.
             </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              ['Edital incompatível', 'Evita gastar equipe em objeto sem aderência ao negócio.'],
-              ['Documento faltando', 'Mostra impedimentos e condições antes do protocolo.'],
-              ['Margem pressionada', 'Ajuda a enxergar limite de preço e deságio provável.'],
-              ['Concorrente recorrente', 'Revela contexto competitivo antes da decisão.'],
-            ].map(([title, desc]) => (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
-                  <AlertTriangle size={17} />
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              {[
+                ['Risco', 'antes da leitura longa'],
+                ['Fit', 'antes da proposta'],
+                ['Preço', 'antes do lance'],
+              ].map(([value, label]) => (
+                <div key={value} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <p className="text-sm font-black text-slate-950">{value}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
                 </div>
-                <h3 className="text-sm font-black text-slate-950">{title}</h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{desc}</p>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-3 shadow-sm sm:p-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Triagem operacional</p>
+                  <h3 className="mt-1 text-lg font-black text-slate-950">O que normalmente passa despercebido</h3>
+                </div>
+                <span className="rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+                  antes do protocolo
+                </span>
               </div>
-            ))}
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {[
+                ['Edital incompatível', 'Evita gastar equipe em objeto sem aderência ao negócio.', 'bg-sky-50 text-sky-700 border-sky-100'],
+                ['Documento faltando', 'Mostra impedimentos e condições antes do protocolo.', 'bg-amber-50 text-amber-700 border-amber-100'],
+                ['Margem pressionada', 'Ajuda a enxergar limite de preço e deságio provável.', 'bg-emerald-50 text-emerald-700 border-emerald-100'],
+                ['Concorrente recorrente', 'Revela contexto competitivo antes da decisão.', 'bg-indigo-50 text-indigo-700 border-indigo-100'],
+              ].map(([title, desc, tone]) => (
+                <div key={title} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl border ${tone}`}>
+                    <AlertTriangle size={17} />
+                  </div>
+                  <h3 className="text-sm font-black text-slate-950">{title}</h3>
+                  <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
       <SavingsCalculator />
 
-      <section className="bg-white py-20 md:py-24">
+      <section id="como-funciona" className="scroll-mt-24 bg-white py-16 md:py-20">
         <div className="mx-auto max-w-[1180px] px-6">
-          <div className="mb-14 max-w-2xl">
+          <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+            <div className="max-w-2xl">
             <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Como a plataforma trabalha</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Encontre, decida e execute.</h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
               O Radar é a entrada. A decisão é o produto. A execução vem com checklist, riscos, preço e próximos passos.
             </p>
+            </div>
+            <Link href="/login" className="inline-flex h-12 w-fit items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-black text-slate-900 transition-all hover:bg-slate-100">
+              Testar fluxo <ArrowRight size={16} />
+            </Link>
           </div>
 
-          <div className="grid gap-5 md:grid-cols-3">
+          <div className="relative grid gap-4 md:grid-cols-3">
+            <div className="absolute left-[16%] right-[16%] top-12 hidden h-px bg-gradient-to-r from-transparent via-emerald-200 to-transparent md:block" />
             {FLOW.map(({ n, title, desc, Icon }) => (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div key={title} className="relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-6 flex items-center justify-between">
-                  <span className="text-5xl font-black leading-none text-slate-100">{n}</span>
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                  <span className="text-4xl font-black leading-none text-slate-100">{n}</span>
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-emerald-700 shadow-sm">
                     <Icon size={21} />
                   </div>
                 </div>
@@ -236,18 +289,27 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="bg-slate-50 py-20 md:py-24">
+      <section id="veredito" className="scroll-mt-24 bg-slate-50 py-16 md:py-20">
         <div className="mx-auto max-w-[1180px] px-6">
-          <div className="mb-14 text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">O que entra no veredito</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Mais que análise de texto. Uma decisão operacional.</h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base font-medium leading-8 text-slate-600">
-              Cada módulo alimenta uma pergunta simples: sua empresa deve entrar, condicionar a entrada ou abandonar agora?
-            </p>
+          <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+            <div className="max-w-2xl">
+              <p className="text-xs font-black uppercase tracking-widest text-emerald-600">O que entra no veredito</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Mais que análise de texto. Uma decisão operacional.</h2>
+              <p className="mt-4 text-base font-medium leading-8 text-slate-600">
+                Cada módulo alimenta uma pergunta simples: sua empresa deve entrar, condicionar a entrada ou abandonar agora?
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {['Go', 'Go condicionado', 'No-Go'].map((label) => (
+                <span key={label} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-600 shadow-sm">
+                  {label}
+                </span>
+              ))}
+            </div>
           </div>
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {DECISION_SIGNALS.map(({ Icon, title, desc, tone }) => (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <div key={title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <div className={`mb-5 flex h-11 w-11 items-center justify-center rounded-2xl border ${tone}`}>
                   <Icon size={21} />
                 </div>
@@ -364,7 +426,7 @@ function SavingsCalculator() {
   };
 
   return (
-    <section className="bg-slate-50 py-20 md:py-24">
+    <section id="economia" className="scroll-mt-24 bg-slate-50 py-16 md:py-20">
       <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.82fr_1fr] lg:items-center">
         <div>
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3.5 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
@@ -399,7 +461,7 @@ function SavingsCalculator() {
           <div className="mb-6 flex items-start justify-between gap-4">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Simulação rápida</p>
-              <h3 className="mt-1 text-xl font-black text-slate-950">Quanto a decisão rápida economiza?</h3>
+              <h3 className="mt-1 text-xl font-black text-slate-950">Simule com a rotina do seu time</h3>
             </div>
             <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
               {analysesPerDay}/dia
@@ -446,7 +508,7 @@ function SavingsCalculator() {
               </div>
             </div>
             <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-xs font-semibold leading-6 text-slate-300">
-              Se a Bawzi evitar só parte desse retrabalho, o plano já tende a se pagar antes mesmo de considerar margem preservada e riscos jurídicos evitados.
+              Com {editais} editais por mês, cada hora poupada vira folga para preço, documentação e follow-up. A estimativa ajuda a comparar assinatura com custo operacional.
             </p>
           </div>
         </div>
@@ -510,85 +572,254 @@ function formatCurrency(value: number) {
 
 function DecisionPreview() {
   return (
-    <div className="mt-12 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-white shadow-2xl shadow-emerald-950/30 text-left">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
-            <FileSearch size={18} />
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Painel de decisão</p>
-            <p className="text-sm font-black text-slate-950">Pregão eletrônico - serviços terceirizados</p>
-          </div>
-        </div>
-        <span className="hidden rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700 sm:inline-flex">
-          PNCP oficial
-        </span>
-      </div>
+    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/15 bg-white text-left shadow-2xl shadow-emerald-950/30 md:mt-10">
+      <style>{`
+        @keyframes bawzi-scan {
+          0% { transform: translateY(-70%); opacity: 0; }
+          14% { opacity: 1; }
+          72% { opacity: 1; }
+          100% { transform: translateY(310%); opacity: 0; }
+        }
+        @keyframes bawzi-flow {
+          0%, 100% { transform: translateX(-16%); opacity: .2; }
+          45%, 70% { opacity: 1; }
+          100% { transform: translateX(112%); }
+        }
+        @keyframes bawzi-fill {
+          0% { transform: scaleX(.12); }
+          48%, 78% { transform: scaleX(var(--fill)); }
+          100% { transform: scaleX(.12); }
+        }
+        @keyframes bawzi-log {
+          0%, 12% { transform: translateY(0); }
+          20%, 32% { transform: translateY(-2.25rem); }
+          40%, 52% { transform: translateY(-4.5rem); }
+          60%, 72% { transform: translateY(-6.75rem); }
+          80%, 92% { transform: translateY(-9rem); }
+          100% { transform: translateY(0); }
+        }
+        @keyframes bawzi-glow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, .34); }
+          50% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+        }
+        @keyframes bawzi-step {
+          0%, 100% { opacity: .42; transform: scale(.96); }
+          45%, 72% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
 
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="p-5 md:p-6">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3.5 md:px-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-emerald-300">
+              <FileSearch size={18} />
+            </div>
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
-                Go condicionado
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Demonstração visual</p>
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-700">
+                  exemplo fictício
+                </span>
               </div>
-              <h3 className="mt-3 text-2xl font-black tracking-tight text-slate-950">Participar somente após validações</h3>
-              <p className="mt-3 max-w-2xl text-sm font-medium leading-7 text-slate-600">
-                A oportunidade tem aderência parcial ao CNAE e pode valer a disputa, mas exige confirmar documentação, margem mínima e pontos de esclarecimento antes de mobilizar proposta.
+              <p className="mt-1 text-base font-black text-slate-950">Como a Bawzi transforma um edital em decisão</p>
+              <p className="mt-1 max-w-2xl text-xs font-semibold leading-5 text-slate-500">
+                Esta animação simula o fluxo de análise. Os dados e percentuais abaixo são ilustrativos.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:min-w-[220px]">
-              <Metric label="Score" value="68/100" />
-              <Metric label="Confiança" value="84%" />
+          </div>
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            simulação em movimento
+          </span>
+        </div>
+      </div>
+
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,.92fr)]">
+        <div className="border-b border-slate-200 bg-slate-950 p-4 md:p-5 lg:border-b-0 lg:border-r">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Edital de exemplo</p>
+              <p className="mt-1 text-sm font-black text-white">Pregão eletrônico - serviços terceirizados</p>
+            </div>
+            <span className="rounded-full border border-sky-300/25 bg-sky-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-sky-200">
+              etapa 2 de 5
+            </span>
+          </div>
+
+          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/90 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]">
+            <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:28px_28px]" />
+            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-emerald-300/0 via-emerald-300/25 to-emerald-300/0 blur-sm [animation:bawzi-scan_3.4s_ease-in-out_infinite]" />
+            <div className="relative flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Leitura simulada em progresso</p>
+                <p className="mt-1 text-base font-black text-white sm:text-lg">Objeto, prazos e anexos sendo cruzados</p>
+              </div>
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-300/10 text-emerald-200 [animation:bawzi-glow_2.2s_ease-in-out_infinite]">
+                <SearchCheck size={19} />
+              </div>
+            </div>
+
+            <div className="relative mt-4 hidden space-y-2 sm:block">
+              {[84, 62, 92, 48, 74, 58].map((width, index) => (
+                <div key={index} className="h-2 overflow-hidden rounded-full bg-white/8">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-slate-500 via-emerald-300 to-sky-300"
+                    style={{ width: `${width}%`, opacity: index % 2 ? 0.42 : 0.74 }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="relative mt-4 hidden gap-2 sm:grid sm:grid-cols-3">
+              {['CNAE', 'Documentos', 'Preço'].map((label, index) => (
+                <div key={label} className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className="h-full origin-left rounded-full bg-emerald-300 [animation:bawzi-fill_4.2s_ease-in-out_infinite]"
+                      style={{
+                        '--fill': `${0.56 + index * 0.14}`,
+                        animationDelay: `${index * 0.34}s`,
+                      } as CSSProperties}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="relative mt-4 grid gap-2 sm:hidden">
+              {[
+                ['Captura PNCP', 'Edital e anexos'],
+                ['Riscos', 'Documentos e cláusulas'],
+                ['Veredito', 'Ação recomendada'],
+              ].map(([title, desc], index) => (
+                <div key={title} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-400 text-[10px] font-black text-slate-950">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <p className="text-xs font-black text-white">{title}</p>
+                    <p className="mt-0.5 text-[10px] font-semibold text-slate-400">{desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-3 sm:p-4">
+            <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent" />
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fluxo simulado</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-300">análise contínua</p>
+            </div>
+            <div className="absolute left-0 top-[4.55rem] h-px w-full bg-white/10" />
+            <div className="relative flex items-center justify-between gap-3">
+              {ANALYSIS_STEPS.map(({ Icon, title, desc }, index) => (
+                <div
+                  key={title}
+                  className="relative flex min-w-0 flex-1 flex-col items-center text-center"
+                  style={{ animationDelay: `${index * 0.28}s` }}
+                >
+                  {index < ANALYSIS_STEPS.length - 1 && (
+                    <span className="absolute left-1/2 top-5 h-px w-full overflow-hidden bg-white/10">
+                      <span
+                        className="block h-full w-1/2 bg-gradient-to-r from-transparent via-emerald-300 to-transparent [animation:bawzi-flow_3.2s_linear_infinite]"
+                        style={{ animationDelay: `${index * 0.42}s` }}
+                      />
+                    </span>
+                  )}
+                  <span
+                    className="relative z-10 flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300/20 bg-slate-900 text-emerald-200 [animation:bawzi-step_3.8s_ease-in-out_infinite]"
+                    style={{ animationDelay: `${index * 0.28}s` }}
+                  >
+                    <Icon size={17} />
+                  </span>
+                  <p className="mt-3 text-[10px] font-black leading-4 text-white sm:text-[11px]">{title}</p>
+                  <p className="mt-1 hidden text-[10px] font-semibold leading-4 text-slate-500 sm:block">{desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <aside className="bg-white p-4 text-slate-950 md:p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resultado de exemplo</p>
+              <h3 className="mt-2 text-2xl font-black tracking-tight">Go condicionado</h3>
+              <p className="mt-2 hidden text-sm font-semibold leading-6 text-slate-500 sm:block">
+                A decisão aparece junto das evidências que levaram ao veredito.
+              </p>
+            </div>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
+              simulado
+            </span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
             {[
-              ['CNAE', 'Match parcial', 'Objeto adjacente ao serviço cadastrado.'],
-              ['Jurídico', 'Atenção', 'Há cláusulas de multa e documentação sensível.'],
-              ['Preço', 'Margem sob pressão', 'Deságio provável exige limite de lance.'],
-            ].map(([title, status, desc]) => (
-              <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</p>
-                <p className="mt-2 text-sm font-black text-slate-950">{status}</p>
-                <p className="mt-2 text-xs font-medium leading-5 text-slate-500">{desc}</p>
+              ['Score', '68/100'],
+              ['Confiança', '84%'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center shadow-sm sm:p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
               </div>
             ))}
           </div>
-        </div>
 
-        <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0">
-          <p className="mb-4 text-[10px] font-black uppercase tracking-widest text-slate-400">Próximas ações</p>
-          <div className="space-y-4">
-            {[
-              ['Hoje', 'Validar documentos eliminatórios.'],
-              ['Hoje', 'Calcular preço mínimo com margem.'],
-              ['Após resposta', 'Reprocessar decisão antes do lance.'],
-            ].map(([time, action], index) => (
-              <div key={action} className="flex gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-black text-white">
-                  {index + 1}
-                </span>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{time}</p>
-                  <p className="mt-1 text-sm font-bold leading-5 text-slate-800">{action}</p>
+          <div className="mt-4 space-y-3">
+            {ANALYSIS_SIGNALS.map((signal, index) => (
+              <div key={signal.label}>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{signal.label}</p>
+                  <p className="text-xs font-black text-slate-700">{signal.value}</p>
                 </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full origin-left rounded-full ${signal.tone} [animation:bawzi-fill_4.4s_ease-in-out_infinite]`}
+                    style={{
+                      '--fill': signal.fill,
+                      animationDelay: `${index * 0.45}s`,
+                    } as CSSProperties}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 hidden overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm sm:block">
+            <div className="flex items-center gap-2">
+              <Clock3 size={14} className="text-emerald-700" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Agentes em execução</p>
+            </div>
+            <div className="mt-3 h-9 overflow-hidden">
+              <div className="[animation:bawzi-log_7s_ease-in-out_infinite]">
+                {ANALYSIS_LOGS.map((log) => (
+                  <p key={log} className="flex h-9 items-center gap-2 text-xs font-bold text-slate-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    {log}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 hidden gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-1">
+            {[
+              { Icon: AlertTriangle, text: 'Confirmar documentos eliminatórios', tone: 'text-amber-700 bg-amber-50 border-amber-100' },
+              { Icon: Calculator, text: 'Calcular preço mínimo com margem', tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+              { Icon: Check, text: 'Reprocessar antes do lance', tone: 'text-sky-700 bg-sky-50 border-sky-100' },
+            ].map(({ Icon, text, tone }) => (
+              <div key={text} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${tone}`}>
+                <Icon size={15} />
+                <p className="text-xs font-black leading-5">{text}</p>
               </div>
             ))}
           </div>
         </aside>
       </div>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
-      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-      <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import type { BawziUpdateEvent } from '@/lib/types';
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
+  const isLanding = pathname === '/';
   
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
@@ -149,6 +150,13 @@ export default function Header() {
     );
   })() : null;
 
+  const landingLinks = [
+    { href: '/#problema', label: 'Problema' },
+    { href: '/#como-funciona', label: 'Como funciona' },
+    { href: '/#economia', label: 'Economia' },
+    { href: '/#planos', label: 'Planos' },
+  ];
+
   return (
     <div className="sticky top-0 z-50 print:hidden">
       {promoStrip}
@@ -161,23 +169,33 @@ export default function Header() {
         </Link>
 
         {/* NAVEGAÇÃO CENTRAL */}
-        <nav className="hidden md:flex items-center gap-8 mr-8">
-          <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-            Workspace
-          </Link>
-          {token && (
-            <Link href="/history" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/history' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-              Histórico
-            </Link>
+        <nav className="hidden md:flex items-center gap-7 mr-8">
+          {isLanding && !token ? (
+            landingLinks.map(({ href, label }) => (
+              <Link key={href} href={href} className="text-sm font-bold pb-1 border-b-2 border-transparent text-slate-500 transition-all hover:text-slate-900">
+                {label}
+              </Link>
+            ))
+          ) : (
+            <>
+              <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                Workspace
+              </Link>
+              {token && (
+                <Link href="/history" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/history' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                  Histórico
+                </Link>
+              )}
+              {token && (
+                <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                  Gestão
+                </Link>
+              )}
+              <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                Planos
+              </Link>
+            </>
           )}
-          {token && (
-            <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-              Gestão
-            </Link>
-          )}
-          <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-            Planos
-          </Link>
         </nav>
 
         {/* ÁREA DO UTILIZADOR */}
@@ -216,20 +234,27 @@ export default function Header() {
 
             </div>
           ) : (
-             <button
-              onClick={() => {
-                // Só /workspace abre o modal inline (AnalysisApp está montado lá).
-                // Em / (landing) e em qualquer outra página → navega para /login.
-                if (pathname === '/workspace') {
-                  window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }));
-                } else {
-                  router.push('/login');
-                }
-              }}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-sm transition-colors shadow-sm"
-            >
-              Entrar
-            </button>
+            <div className="flex items-center gap-2">
+              {isLanding && (
+                <Link href="/#planos" className="hidden rounded-xl border border-slate-200 px-3 py-2 text-sm font-black text-slate-600 transition-colors hover:bg-slate-50 sm:inline-flex">
+                  Planos
+                </Link>
+              )}
+	             <button
+	              onClick={() => {
+	                // Só /workspace abre o modal inline (AnalysisApp está montado lá).
+	                // Em / (landing) e em qualquer outra página → navega para /login.
+	                if (pathname === '/workspace') {
+	                  window.dispatchEvent(new CustomEvent('bawzi_open_auth', { detail: 'login' }));
+	                } else {
+	                  router.push('/login');
+	                }
+	              }}
+	              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-sm transition-colors shadow-sm"
+	            >
+	              Entrar
+	            </button>
+            </div>
           )}
         </div>
       </div>

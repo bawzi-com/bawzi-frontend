@@ -23,10 +23,15 @@ const PASSWORD_GUIDANCE = 'Use uma senha com 8 caracteres ou mais, uma letra mai
 const getMissingPasswordRequirements = (value: string) =>
   PASSWORD_REQUIREMENTS.filter((requirement) => !requirement.test(value));
 
+const formatRequirementList = (items: string[]) => {
+  if (items.length <= 1) return items[0] || '';
+  return `${items.slice(0, -1).join(', ')} e ${items[items.length - 1]}`;
+};
+
 const buildPasswordError = (value: string) => {
   const missing = getMissingPasswordRequirements(value);
   if (!missing.length) return '';
-  return `Sua senha ainda precisa de ${missing.map((item) => item.label).join(', ')}.`;
+  return `Sua senha ainda precisa de ${formatRequirementList(missing.map((item) => item.label))}.`;
 };
 
 // ============================================================================
@@ -278,8 +283,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   // ---- VIEW: CÓDIGO 2FA (após senha correta) ----
   if (view === '2fa') {
     return (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
           <button
             onClick={onClose}
@@ -287,7 +292,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           >
             &times;
           </button>
-          <div className="p-8 md:p-10">
+          <div className="max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-6 sm:p-8 md:p-10">
             <div className="flex flex-col items-center text-center mb-8">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100 text-2xl">
                 🔐
@@ -336,8 +341,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   // ---- VIEW: ESQUECEU A SENHA ----
   if (view === 'forgot-password') {
     return (
-      <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
-        <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+      <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-white w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
           <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
           <button
             onClick={onClose}
@@ -345,7 +350,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           >
             &times;
           </button>
-          <div className="p-8 md:p-10">
+          <div className="max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-6 sm:p-8 md:p-10">
             <div className="flex flex-col items-center text-center mb-8">
               <div className="mb-6 transform hover:scale-105 transition-transform">
                 <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
@@ -409,8 +414,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
   // ---- VIEW: LOGIN / REGISTER ----
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-md rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-4 bg-slate-950/45 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-md max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] rounded-[2rem] overflow-hidden shadow-2xl relative animate-in zoom-in-95 duration-300">
 
         <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-emerald-500 to-sky-500"></div>
 
@@ -421,9 +426,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           &times;
         </button>
 
-        <div className="p-8 md:p-10">
-          <div className="flex flex-col items-center text-center mb-8">
-            <div className="mb-6 transform hover:scale-105 transition-transform">
+        <div className="max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-5 sm:p-8 md:p-10">
+          <div className="flex flex-col items-center text-center mb-5 sm:mb-8">
+            <div className="mb-4 sm:mb-6 transform hover:scale-105 transition-transform">
               <Image src="/logo-bawzi.png" alt="Bawzi Logo" width={140} height={40} className="object-contain" priority />
             </div>
 
@@ -441,7 +446,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
             {view === 'register' && (
               <div>
                 <input
@@ -449,7 +454,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                   placeholder="Nome Completo"
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
+                  className="w-full p-3.5 sm:p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                   required
                 />
               </div>
@@ -461,7 +466,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 placeholder="E-mail Profissional"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
+                className="w-full p-3.5 sm:p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
             </div>
@@ -474,13 +479,13 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 onChange={(e) => setPassword(e.target.value)}
                 aria-invalid={view === 'register' && password.length > 0 && !isRegisterPasswordValid}
                 aria-describedby={view === 'register' ? 'password-requirements' : undefined}
-                className="w-full p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
+                className="w-full p-3.5 sm:p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
             </div>
 
             {view === 'register' && (
-              <div id="password-requirements" className="-mt-1 space-y-2 px-1 text-xs">
+              <div id="password-requirements" className="-mt-1 space-y-1.5 sm:space-y-2 px-1 text-xs">
                 <p className="font-bold text-slate-500">Sua senha precisa ter:</p>
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   {PASSWORD_REQUIREMENTS.map((requirement) => {
