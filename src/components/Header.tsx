@@ -112,7 +112,7 @@ export default function Header() {
     try {
       await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
     } catch { /* silencioso — sessão local sempre é limpa */ }
-    clearSession();
+    clearSession({ notifyExpired: false });
     setToken(null);
     setIsGlobalAdmin(false);
     router.push('/');

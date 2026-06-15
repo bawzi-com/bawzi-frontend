@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -12,7 +12,6 @@ import {
   Check,
   Clock3,
   ClipboardCheck,
-  FileSearch,
   Gauge,
   LineChart,
   PiggyBank,
@@ -83,27 +82,6 @@ const FLOW = [
   },
 ];
 
-const ANALYSIS_STEPS = [
-  { Icon: FileSearch, title: 'Edital capturado', desc: 'PNCP, anexos e prazos' },
-  { Icon: SearchCheck, title: 'Objeto lido', desc: 'CNAE, escopo e aderência' },
-  { Icon: Scale, title: 'Riscos mapeados', desc: 'Habilitação, multas e cláusulas' },
-  { Icon: Calculator, title: 'Preço simulado', desc: 'Margem, deságio e limite' },
-  { Icon: Gauge, title: 'Decisão gerada', desc: 'Go/No-Go com próximos passos' },
-];
-
-const ANALYSIS_SIGNALS = [
-  { label: 'CNAE', value: 'Match parcial', fill: '0.72', tone: 'bg-sky-400' },
-  { label: 'Jurídico', value: 'Atenção', fill: '0.58', tone: 'bg-amber-400' },
-  { label: 'Preço', value: 'Margem pressionada', fill: '0.64', tone: 'bg-emerald-400' },
-];
-
-const ANALYSIS_LOGS = [
-  'Lendo objeto e itens do edital',
-  'Comparando CNAE com escopo contratado',
-  'Extraindo exigências eliminatórias',
-  'Estimando pressão competitiva',
-  'Montando recomendação executiva',
-];
 
 const PLANOS = [
   {
@@ -160,7 +138,7 @@ export default function LandingPage() {
     <div className="font-sans text-slate-900 overflow-x-hidden">
       <section className="relative overflow-hidden bg-slate-950 text-white">
         <div className="absolute inset-0 pointer-events-none opacity-35 [background-image:linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] [background-size:42px_42px]" />
-        <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-12 pt-14 text-center md:pt-20">
+        <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-10 pt-12 text-center md:pt-16">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300">
             <span className="h-2 w-2 rounded-full bg-emerald-300" />
             Decisão Go/No-Go para licitações
@@ -183,15 +161,15 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <DecisionPreview />
+          <OutputCard />
 
-          <div className="mt-5 grid w-full max-w-4xl gap-3 text-left sm:grid-cols-3">
+          <div className="mt-4 grid w-full max-w-5xl gap-3 text-left sm:grid-cols-3">
             {[
               ['Minutos', 'do edital à decisão Go/No-Go'],
               ['4 agentes', 'jurídico, CNAE, preço e concorrência'],
               ['PNCP oficial', 'fonte do governo federal, em tempo real'],
             ].map(([value, label]) => (
-              <div key={value} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
+              <div key={value} className="rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 shadow-[0_20px_60px_-45px_rgba(16,185,129,0.8)]">
                 <p className="text-2xl font-black text-white">{value}</p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">{label}</p>
               </div>
@@ -690,253 +668,112 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function DecisionPreview() {
-  return (
-    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/15 bg-white text-left shadow-2xl shadow-emerald-950/30 md:mt-10">
-      <style>{`
-        @keyframes bawzi-scan {
-          0% { transform: translateY(-70%); opacity: 0; }
-          14% { opacity: 1; }
-          72% { opacity: 1; }
-          100% { transform: translateY(310%); opacity: 0; }
-        }
-        @keyframes bawzi-flow {
-          0%, 100% { transform: translateX(-16%); opacity: .2; }
-          45%, 70% { opacity: 1; }
-          100% { transform: translateX(112%); }
-        }
-        @keyframes bawzi-fill {
-          0% { transform: scaleX(.12); }
-          48%, 78% { transform: scaleX(var(--fill)); }
-          100% { transform: scaleX(.12); }
-        }
-        @keyframes bawzi-log {
-          0%, 12% { transform: translateY(0); }
-          20%, 32% { transform: translateY(-2.25rem); }
-          40%, 52% { transform: translateY(-4.5rem); }
-          60%, 72% { transform: translateY(-6.75rem); }
-          80%, 92% { transform: translateY(-9rem); }
-          100% { transform: translateY(0); }
-        }
-        @keyframes bawzi-glow {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, .34); }
-          50% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
-        }
-        @keyframes bawzi-step {
-          0%, 100% { opacity: .42; transform: scale(.96); }
-          45%, 72% { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
 
-      <div className="border-b border-slate-200 bg-slate-50 px-4 py-3.5 md:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-emerald-300">
-              <FileSearch size={18} />
-            </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Demonstração visual</p>
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-700">
-                  exemplo fictício
-                </span>
-              </div>
-              <p className="mt-1 text-base font-black text-slate-950">Como a Bawzi transforma um edital em decisão</p>
-              <p className="mt-1 max-w-2xl text-xs font-semibold leading-5 text-slate-500">
-                Esta animação simula o fluxo de análise. Os dados e percentuais abaixo são ilustrativos.
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            simulação em movimento
-          </span>
+function OutputCard() {
+  const signals = [
+    { tone: 'border-sky-100 bg-sky-50 text-sky-700', dot: 'bg-sky-400', text: 'CNAE — Match parcial' },
+    { tone: 'border-amber-100 bg-amber-50 text-amber-700', dot: 'bg-amber-400', text: 'Jurídico — 2 cláusulas críticas' },
+    { tone: 'border-rose-100 bg-rose-50 text-rose-700', dot: 'bg-rose-400', text: 'Preço — Margem pressionada' },
+    { tone: 'border-indigo-100 bg-indigo-50 text-indigo-700', dot: 'bg-indigo-400', text: 'Concorrência — 3 recorrentes' },
+  ];
+  const nextSteps = [
+    'Confirmar documentos eliminatórios antes do protocolo',
+    'Calcular preço mínimo preservando margem de segurança',
+    'Checar histórico de fornecedores recorrentes no PNCP',
+  ];
+
+  return (
+    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-white text-left shadow-[0_32px_90px_-45px_rgba(16,185,129,0.65)] md:mt-9">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+          <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
+          <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
+          <span className="ml-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Laudo Bawzi</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300">PNCP oficial</span>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-400">Exemplo fictício</span>
         </div>
       </div>
 
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,.92fr)]">
-        <div className="border-b border-slate-200 bg-slate-950 p-4 md:p-5 lg:border-b-0 lg:border-r">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Edital de exemplo</p>
-              <p className="mt-1 text-sm font-black text-white">Pregão eletrônico - serviços terceirizados</p>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_290px]">
+        <div className="min-w-0">
+          <div className="border-b border-amber-100 bg-amber-50 px-5 py-5 sm:px-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Veredito · Exemplo fictício</p>
+                <h3 className="mt-2 text-3xl font-black leading-none text-slate-950">Go condicionado</h3>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
+                  Pregão eletrônico — serviços terceirizados · Município de São Paulo
+                </p>
+              </div>
+              <div className="shrink-0 rounded-2xl bg-slate-950 px-4 py-3 text-center shadow-xl shadow-slate-950/15">
+                <p className="text-3xl font-black leading-none text-emerald-300">68</p>
+                <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-500">score</p>
+              </div>
             </div>
-            <span className="rounded-full border border-sky-300/25 bg-sky-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-sky-200">
-              etapa 2 de 5
-            </span>
           </div>
 
-          <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/90 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.06)]">
-            <div className="absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:28px_28px]" />
-            <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-emerald-300/0 via-emerald-300/25 to-emerald-300/0 blur-sm [animation:bawzi-scan_3.4s_ease-in-out_infinite]" />
-            <div className="relative flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Leitura simulada em progresso</p>
-                <p className="mt-1 text-base font-black text-white sm:text-lg">Objeto, prazos e anexos sendo cruzados</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/20 bg-emerald-300/10 text-emerald-200 [animation:bawzi-glow_2.2s_ease-in-out_infinite]">
-                <SearchCheck size={19} />
-              </div>
-            </div>
-
-            <div className="relative mt-4 hidden space-y-2 sm:block">
-              {[84, 62, 92, 48, 74, 58].map((width, index) => (
-                <div key={index} className="h-2 overflow-hidden rounded-full bg-white/8">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-slate-500 via-emerald-300 to-sky-300"
-                    style={{ width: `${width}%`, opacity: index % 2 ? 0.42 : 0.74 }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="relative mt-4 hidden gap-2 sm:grid sm:grid-cols-3">
-              {['CNAE', 'Documentos', 'Preço'].map((label, index) => (
-                <div key={label} className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className="h-full origin-left rounded-full bg-emerald-300 [animation:bawzi-fill_4.2s_ease-in-out_infinite]"
-                      style={{
-                        '--fill': `${0.56 + index * 0.14}`,
-                        animationDelay: `${index * 0.34}s`,
-                      } as CSSProperties}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="relative mt-4 grid gap-2 sm:hidden">
-              {[
-                ['Captura PNCP', 'Edital e anexos'],
-                ['Riscos', 'Documentos e cláusulas'],
-                ['Veredito', 'Ação recomendada'],
-              ].map(([title, desc], index) => (
-                <div key={title} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2.5">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-400 text-[10px] font-black text-slate-950">
-                    {index + 1}
+          <div className="grid md:grid-cols-[0.9fr_1.1fr]">
+            <div className="border-b border-slate-100 px-5 py-4 sm:px-6 md:border-b-0 md:border-r">
+              <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Sinais da análise</p>
+              <div className="grid gap-2">
+                {signals.map((signal) => (
+                  <span key={signal.text} className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${signal.tone}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${signal.dot}`} />
+                    {signal.text}
                   </span>
-                  <div>
-                    <p className="text-xs font-black text-white">{title}</p>
-                    <p className="mt-0.5 text-[10px] font-semibold text-slate-400">{desc}</p>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] p-3 sm:p-4">
-            <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-slate-950 via-slate-950/80 to-transparent" />
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fluxo simulado</p>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-300">análise contínua</p>
-            </div>
-            <div className="absolute left-0 top-[4.55rem] h-px w-full bg-white/10" />
-            <div className="relative flex items-center justify-between gap-3">
-              {ANALYSIS_STEPS.map(({ Icon, title, desc }, index) => (
-                <div
-                  key={title}
-                  className="relative flex min-w-0 flex-1 flex-col items-center text-center"
-                  style={{ animationDelay: `${index * 0.28}s` }}
-                >
-                  {index < ANALYSIS_STEPS.length - 1 && (
-                    <span className="absolute left-1/2 top-5 h-px w-full overflow-hidden bg-white/10">
-                      <span
-                        className="block h-full w-1/2 bg-gradient-to-r from-transparent via-emerald-300 to-transparent [animation:bawzi-flow_3.2s_linear_infinite]"
-                        style={{ animationDelay: `${index * 0.42}s` }}
-                      />
+            <div className="px-5 py-4 sm:px-6">
+              <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Próximos passos</p>
+              <ol className="space-y-2.5">
+                {nextSteps.map((text, i) => (
+                  <li key={text} className="flex items-start gap-3 text-sm font-medium leading-6 text-slate-700">
+                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-black text-slate-500">
+                      {i + 1}
                     </span>
-                  )}
-                  <span
-                    className="relative z-10 flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-300/20 bg-slate-900 text-emerald-200 [animation:bawzi-step_3.8s_ease-in-out_infinite]"
-                    style={{ animationDelay: `${index * 0.28}s` }}
-                  >
-                    <Icon size={17} />
-                  </span>
-                  <p className="mt-3 text-[10px] font-black leading-4 text-white sm:text-[11px]">{title}</p>
-                  <p className="mt-1 hidden text-[10px] font-semibold leading-4 text-slate-500 sm:block">{desc}</p>
-                </div>
-              ))}
+                    {text}
+                  </li>
+                ))}
+              </ol>
             </div>
           </div>
         </div>
 
-        <aside className="bg-white p-4 text-slate-950 md:p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resultado de exemplo</p>
-              <h3 className="mt-2 text-2xl font-black tracking-tight">Go condicionado</h3>
-              <p className="mt-2 hidden text-sm font-semibold leading-6 text-slate-500 sm:block">
-                A decisão aparece junto das evidências que levaram ao veredito.
-              </p>
+        <aside className="border-t border-slate-100 bg-slate-50 px-5 py-5 lg:border-l lg:border-t-0">
+          <div className="border-b border-slate-200 pb-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Confiança</p>
+            <div className="mt-2 flex items-end justify-between gap-4">
+              <p className="text-5xl font-black leading-none text-slate-950">84%</p>
+              <BadgeCheck size={26} className="text-emerald-600" />
             </div>
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
-              simulado
-            </span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {[
-              ['Score', '68/100'],
-              ['Confiança', '84%'],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-center shadow-sm sm:p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
-                <p className="mt-2 text-xl font-black text-slate-950">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {ANALYSIS_SIGNALS.map((signal, index) => (
-              <div key={signal.label}>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{signal.label}</p>
-                  <p className="text-xs font-black text-slate-700">{signal.value}</p>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className={`h-full origin-left rounded-full ${signal.tone} [animation:bawzi-fill_4.4s_ease-in-out_infinite]`}
-                    style={{
-                      '--fill': signal.fill,
-                      animationDelay: `${index * 0.45}s`,
-                    } as CSSProperties}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-5 hidden overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm sm:block">
-            <div className="flex items-center gap-2">
-              <Clock3 size={14} className="text-emerald-700" />
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Agentes em execução</p>
-            </div>
-            <div className="mt-3 h-9 overflow-hidden">
-              <div className="[animation:bawzi-log_7s_ease-in-out_infinite]">
-                {ANALYSIS_LOGS.map((log) => (
-                  <p key={log} className="flex h-9 items-center gap-2 text-xs font-bold text-slate-700">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    {log}
-                  </p>
-                ))}
-              </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-[84%] rounded-full bg-emerald-500" />
             </div>
           </div>
 
-          <div className="mt-5 hidden gap-2 sm:grid sm:grid-cols-3 lg:grid-cols-1">
-            {[
-              { Icon: AlertTriangle, text: 'Confirmar documentos eliminatórios', tone: 'text-amber-700 bg-amber-50 border-amber-100' },
-              { Icon: Calculator, text: 'Calcular preço mínimo com margem', tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
-              { Icon: Check, text: 'Reprocessar antes do lance', tone: 'text-sky-700 bg-sky-50 border-sky-100' },
-            ].map(({ Icon, text, tone }) => (
-              <div key={text} className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${tone}`}>
-                <Icon size={15} />
-                <p className="text-xs font-black leading-5">{text}</p>
-              </div>
-            ))}
+          <div className="border-b border-slate-200 py-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tempo de resposta</p>
+            <div className="mt-2 flex items-center gap-2 text-slate-950">
+              <Clock3 size={18} className="text-emerald-600" />
+              <p className="text-2xl font-black">Minutos</p>
+            </div>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Do edital à decisão Go/No-Go</p>
+          </div>
+
+          <div className="pt-5">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Motor de decisão</p>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase text-slate-500">
+              {['Jurídico', 'CNAE', 'Preço', 'Concorrência'].map((item) => (
+                <span key={item} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-center">
+                  {item}
+                </span>
+              ))}
+            </div>
           </div>
         </aside>
       </div>

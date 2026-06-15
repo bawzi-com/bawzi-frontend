@@ -70,7 +70,7 @@ import {
 // Usa clearSession() do apiClient — remove apenas os dados de sessão,
 // sem apagar preferências do usuário (ex: bawzi_favorites, bawzi_tier).
 const logout = () => {
-  clearSession();
+  clearSession({ notifyExpired: false });
   window.location.reload();
 };
 
@@ -315,7 +315,6 @@ export default function AnalysisApp() {
 
           if (userRes.status === 401) {
             clearSession();
-            window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
             return;
           }
 

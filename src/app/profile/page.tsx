@@ -303,12 +303,21 @@ function ProfileContent() {
     finally { setIsSyncing(false); }
   };
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    } catch { /* sessão local sempre é limpa */ }
+    clearSession({ notifyExpired: false });
+    setAuthToken('');
+    router.push('/');
+  };
+
   const handleDeleteAccount = async () => {
     if (!window.confirm("Eliminar conta permanentemente?")) return;
     setIsDeleting(true);
     try {
       const res = await apiFetch(`${API_URL}/api/users/me`, { method: 'DELETE' });
-      if (res.ok) { clearSession(); window.location.href = '/'; } 
+      if (res.ok) { clearSession({ notifyExpired: false }); window.location.href = '/'; } 
     } catch (error) { setIsDeleting(false); }
   };
 
@@ -414,7 +423,7 @@ function ProfileContent() {
               {planName}
             </span>
             <button
-              onClick={() => { localStorage.clear(); router.push('/'); }}
+              onClick={handleLogout}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-500 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
             >
               <LogOut size={14} />

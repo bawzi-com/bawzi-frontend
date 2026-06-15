@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import { API_URL, setAccessToken } from '@/lib/apiClient';
+import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -49,6 +50,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   const [error, setError] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<CompanyLookupResult | null>(null);
   const missingPasswordRequirements = getMissingPasswordRequirements(password);
   const isRegisterPasswordValid = missingPasswordRequirements.length === 0;
 
@@ -61,6 +63,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       setError('');
       setForgotSuccess(false);
       setConsentAccepted(false);
+      setSelectedCompany(null);
     }
   }, [isOpen, defaultView]);
 
@@ -174,7 +177,15 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       
       const payload = view === 'login' 
         ? { email: email, password: password } 
-        : { email: email, password: password, name: nome };
+        : {
+            email: email,
+            password: password,
+            name: nome,
+            cnpj: selectedCompany?.cnpj || undefined,
+            company_name: selectedCompany?.razao_social || selectedCompany?.nome_fantasia || undefined,
+            company_domain: selectedCompany?.domain || undefined,
+            company_website: selectedCompany?.website || undefined,
+          };
 
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
@@ -505,6 +516,17 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                   Esqueceu a senha?
                 </button>
               </div>
+            )}
+
+            {view === 'register' && (
+              <CompanyLookup
+                compact
+                label="Empresa do workspace"
+                helperText="Opcional. Encontre pelo nome, CNPJ ou domínio e deixe seu workspace pronto."
+                placeholder={email.includes('@') ? `Ex.: ${email.split('@')[1]}` : 'Nome, CNPJ ou domínio'}
+                selected={selectedCompany}
+                onSelect={setSelectedCompany}
+              />
             )}
 
             {view === 'register' && (

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 import { setActiveCompanyContext } from '@/lib/activeContext';
 import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
   const router = useRouter();
@@ -22,6 +23,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
 
   const [formData, setFormData] = useState<{
     _id: string; cnpj: string; razao_social: string; enquadramento: string;
+    nome_fantasia: string; website: string;
     capital_social: string; cnae_principal: string; cnae_descricao: string;
     cnaes_secundarios: { codigo: string; descricao: string }[];
     uf: string; municipio: string;
@@ -35,6 +37,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     observacoes_operacionais: string;
   }>({
     _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
+    nome_fantasia: '', website: '',
     cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [],
     uf: '', municipio: '',
     core_business: '', produtos_servicos: [], regioes_atendidas: [],
@@ -92,6 +95,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   const handleAddNew = () => {
     setFormData({
       _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
+      nome_fantasia: '', website: '',
       cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [], uf: '', municipio: '',
       core_business: '', produtos_servicos: [], regioes_atendidas: [],
       capacidade_operacional: '', margem_minima_pct: '', limite_contrato: '',
@@ -107,6 +111,8 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       _id: emp._id || '',
       cnpj: emp.cnpj || '',
       razao_social: emp.razao_social || '',
+      nome_fantasia: emp.nome_fantasia || '',
+      website: emp.website || '',
       enquadramento: emp.enquadramento || '',
       capital_social: emp.capital_social || '',
       cnae_principal: emp.cnae_principal || '',
@@ -149,6 +155,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       setFormData({
         ...formData,
         razao_social: data.razao_social || '',
+        nome_fantasia: data.nome_fantasia || '',
         enquadramento: data.porte || '',
         capital_social: data.capital_social || '',
         cnae_principal: data.cnae_principal || '',
@@ -166,8 +173,53 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     }
   };
 
+  const handleCompanyLookupSelect = async (company: CompanyLookupResult) => {
+    const cnpjLimpo = String(company.cnpj || '').replace(/\D/g, '');
+    let enriched = company;
+
+    if (cnpjLimpo.length === 14 && (!company.cnae_principal || !company.cnae_descricao)) {
+      setIsSearchingCnpj(true);
+      try {
+        const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
+        const data = await res.json().catch(() => null);
+        if (res.ok && data) enriched = { ...company, ...data };
+      } catch (error) {
+        if (error instanceof SessionExpiredError) { clearSession(); return; }
+      } finally {
+        setIsSearchingCnpj(false);
+      }
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      cnpj: cnpjLimpo || prev.cnpj,
+      razao_social: enriched.razao_social || enriched.nome_fantasia || prev.razao_social,
+      nome_fantasia: enriched.nome_fantasia || prev.nome_fantasia,
+      website: enriched.website || (enriched.domain ? `https://${enriched.domain}` : prev.website),
+      enquadramento: enriched.porte || enriched.enquadramento || prev.enquadramento,
+      capital_social: enriched.capital_social || prev.capital_social,
+      cnae_principal: enriched.cnae_principal || prev.cnae_principal,
+      cnae_descricao: enriched.cnae_descricao || prev.cnae_descricao,
+      cnaes_secundarios: enriched.cnaes_secundarios || prev.cnaes_secundarios,
+      uf: enriched.uf || prev.uf,
+      municipio: enriched.municipio || prev.municipio,
+    }));
+
+    setMessage({
+      type: 'success',
+      text: cnpjLimpo
+        ? 'Empresa encontrada. Revise os dados e confirme a monitorização.'
+        : 'Domínio aplicado. Complete o CNPJ quando quiser ativar CNAE e dados públicos.',
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const cnpjLimpo = formData.cnpj.replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      setMessage({ type: 'error', text: 'Informe o CNPJ para confirmar a monitorização da empresa.' });
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await apiFetch(`${API_URL}/api/workspace/company`, {
@@ -265,7 +317,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
         <div className="space-y-5">
           {companiesList.map((emp) => (
             <div 
-              key={emp.cnpj} 
+              key={emp.cnpj || emp.website || emp.razao_social} 
               className="group flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 transition-all duration-300 hover:border-emerald-200 hover:shadow-sm"
             >
               
@@ -349,6 +401,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                   </button>
                   <button 
                     onClick={() => handleDelete(emp.cnpj)} 
+                    disabled={!emp.cnpj}
                     className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-400 transition-all hover:bg-rose-100 hover:text-rose-600"
                     title="Remover Empresa"
                   >
@@ -388,6 +441,14 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
             <button type="button" onClick={() => setView('list')} className="text-[10px] font-black uppercase text-slate-400 hover:text-slate-600">Cancelar</button>
           </div>
 
+          <div className="mb-6">
+            <CompanyLookup
+              label="Encontrar empresa"
+              helperText="Busque pelo CNPJ, nome fantasia, razão social ou domínio da empresa. Se encontrar CNPJ, a Bawzi preenche CNAE, UF e capital social."
+              onSelect={handleCompanyLookupSelect}
+            />
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="w-full">
               <label className={labelStyle}>CNPJ da Organização</label>
@@ -405,6 +466,17 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 <input type="text" className={`${inputStyle} pl-12`} value={formData.razao_social} onChange={e => setFormData({...formData, razao_social: e.target.value})} />
                 <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"><Building2 size={20} /></div>
               </div>
+            </div>
+
+            <div className="w-full md:col-span-2">
+              <label className={labelStyle}>Site ou domínio</label>
+              <input
+                type="text"
+                className={inputStyle}
+                placeholder="Ex.: https://minhaempresa.com.br"
+                value={formData.website}
+                onChange={e => setFormData({ ...formData, website: e.target.value })}
+              />
             </div>
 
             <div className="w-full">

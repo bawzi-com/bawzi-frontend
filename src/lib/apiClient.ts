@@ -165,7 +165,7 @@ export function startSessionKeepAlive(
 }
 
 // ─── Limpar sessão ────────────────────────────────────────────────────────────
-export function clearSession(): void {
+export function clearSession({ notifyExpired = true }: { notifyExpired?: boolean } = {}): void {
   _accessToken = null;
   if (typeof window === 'undefined') return;
   localStorage.removeItem('bawzi_tier');
@@ -174,7 +174,9 @@ export function clearSession(): void {
   localStorage.removeItem('bawzi_user');
   // Manter bawzi_token por retrocompatibilidade com componentes ainda não migrados
   localStorage.removeItem('bawzi_token');
-  window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
+  if (notifyExpired) {
+    window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
+  }
 }
 
 // ─── Inicialização de sessão (chamar no mount do app) ────────────────────────
