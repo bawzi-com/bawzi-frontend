@@ -60,11 +60,11 @@ export default function ChatWidget() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Mostra hint após 3s — permanece até o usuário clicar no chat pela primeira vez
+  // Mostra hint após 3s a cada visita; some automaticamente em 6s ou ao clicar
   useEffect(() => {
-    if (localStorage.getItem('bawzi_chat_seen')) return;
     const show = setTimeout(() => setShowHint(true), 3000);
-    return () => clearTimeout(show);
+    const hide = setTimeout(() => setShowHint(false), 9000); // 3s delay + 6s visível
+    return () => { clearTimeout(show); clearTimeout(hide); };
   }, []);
 
   // Detecta se o usuário está logado
@@ -286,7 +286,6 @@ export default function ChatWidget() {
         onClick={() => {
           setOpen((v) => !v);
           setShowHint(false);
-          localStorage.setItem('bawzi_chat_seen', '1');
         }}
         className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-2xl text-white flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
         style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 8px 24px rgba(5,150,105,0.35)' }}

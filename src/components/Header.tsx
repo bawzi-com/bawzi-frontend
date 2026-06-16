@@ -205,6 +205,9 @@ export default function Header() {
               <Link href="/plans" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/plans' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
                 Planos
               </Link>
+              <Link href="/docs" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/docs' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                Docs
+              </Link>
             </>
           )}
         </nav>
