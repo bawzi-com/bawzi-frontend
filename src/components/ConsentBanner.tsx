@@ -1,7 +1,22 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { apiFetch, getAccessToken, API_URL } from '@/lib/apiClient';
 
 const CONSENT_KEY = 'bawzi_consent_accepted';
+
+/** Envia o consentimento para o backend (fire-and-forget). */
+async function syncConsentToDb() {
+  try {
+    if (!getAccessToken()) return;
+    await apiFetch(`${API_URL}/api/users/me/lgpd-consent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  } catch {
+    // silencia — o banner não bloqueia a UX por falha de rede
+  }
+}
 
 export default function ConsentBanner() {
   const [visible, setVisible] = useState(false);
@@ -13,6 +28,7 @@ export default function ConsentBanner() {
   const accept = () => {
     localStorage.setItem(CONSENT_KEY, 'true');
     setVisible(false);
+    syncConsentToDb();
   };
 
   if (!visible) return null;

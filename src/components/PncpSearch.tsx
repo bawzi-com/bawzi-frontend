@@ -842,8 +842,8 @@ export default function PncpSearch({
             onClick={() => { setBulkMode(!bulkMode); setSelected(new Set()); }}
             className={`shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all border ${
               bulkMode
-                ? 'bg-violet-600 text-white border-violet-600 shadow-sm shadow-violet-200'
-                : 'bg-white border-violet-200 text-violet-600 hover:bg-violet-600 hover:text-white hover:border-violet-600 hover:shadow-sm hover:shadow-violet-200'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-200'
+                : 'bg-white border-emerald-200 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 hover:shadow-sm hover:shadow-emerald-200'
             }`}
           >
             {bulkMode ? <><X size={12} /> Cancelar lote</> : <><Layers size={12} /> Analisar em lote</>}
@@ -941,7 +941,7 @@ export default function PncpSearch({
       {/* ========================================== */}
       {/* ── Barra de execução do lote (aparece só quando bulk está ativo) ── */}
       {results.length > 0 && bulkMode && (
-        <div className="rounded-2xl bg-violet-50 border border-violet-200 px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               {Array.from({ length: MAX_BULK }).map((_, i) => (
@@ -949,15 +949,15 @@ export default function PncpSearch({
                   key={i}
                   className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center text-[9px] font-black transition-all ${
                     i < selected.size
-                      ? 'bg-violet-600 border-violet-600 text-white'
-                      : 'border-violet-300 text-violet-300'
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'border-emerald-300 text-emerald-300'
                   }`}
                 >
                   {i < selected.size ? '✓' : i + 1}
                 </span>
               ))}
             </div>
-            <span className="text-[11px] text-violet-600 font-bold">
+            <span className="text-[11px] text-emerald-700 font-bold">
               {selected.size === 0
                 ? 'Clique nos editais para selecionar'
                 : `${selected.size} de ${MAX_BULK} selecionado${selected.size !== 1 ? 's' : ''}`}
@@ -966,7 +966,7 @@ export default function PncpSearch({
           <button
             onClick={handleBulkAnalyze}
             disabled={selected.size === 0 || bulkLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs transition-all shadow-md shadow-violet-500/20 active:scale-[0.98]"
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs transition-all shadow-md shadow-emerald-500/20 active:scale-[0.98]"
           >
             <Zap size={12} className={bulkLoading ? 'animate-pulse' : ''} />
             {bulkLoading
@@ -1016,7 +1016,7 @@ export default function PncpSearch({
             return (
               <div
                 key={editalKey}
-                className={`p-5 md:p-6 border rounded-[1.5rem] bg-white transition-all shadow-sm hover:shadow-md group ${isSelected ? 'border-violet-400 ring-2 ring-violet-200' : 'border-slate-200 hover:border-slate-300'}`}
+                className={`p-5 md:p-6 border rounded-[1.5rem] bg-white transition-all shadow-sm hover:shadow-md group ${isSelected ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-slate-200 hover:border-slate-300'}`}
                 onClick={bulkMode ? () => {
                   if (isSelected) {
                     setSelected(prev => { const n = new Set(prev); n.delete(editalKey); return n; });
@@ -1030,7 +1030,7 @@ export default function PncpSearch({
                   <div className="flex gap-2 items-center">
                     {/* Checkbox em modo bulk */}
                     {bulkMode && (
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-300 bg-white'}`}>
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 bg-white'}`}>
                         {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
                       </div>
                     )}
@@ -1038,7 +1038,7 @@ export default function PncpSearch({
                       {edital.uf}{edital.municipio ? ` · ${edital.municipio}` : ''} • {edital.ano}
                     </span>
                     {edital.modalidade && (
-                      <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-md uppercase border border-indigo-100">
+                      <span className="text-[10px] font-black text-sky-700 bg-sky-50 px-2 py-1 rounded-md uppercase border border-sky-100">
                         {edital.modalidade}
                       </span>
                     )}

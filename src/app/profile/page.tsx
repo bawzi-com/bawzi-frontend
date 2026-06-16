@@ -18,7 +18,9 @@ import {
   CheckCircle2,
   Users,
   Crown,
+  Bell,
 } from 'lucide-react';
+import { subscribeToPush, unsubscribeFromPush } from '../../lib/pushNotifications';
 
 import CompanyProfileForm from '../../components/CompanyProfileForm';
 import PersonalDataForm from '../../components/PersonalDataForm';
@@ -128,7 +130,7 @@ function ProfileContent() {
   // Scroll-spy: destaca no menu a seção visível
   useEffect(() => {
     if (isLoading || typeof window === 'undefined') return;
-    const ids = ['sec-perfil', 'sec-empresas', 'sec-seguranca', 'sec-equipe', 'sec-assinatura', 'sec-risco'];
+    const ids = ['sec-perfil', 'sec-empresas', 'sec-seguranca', 'sec-equipe', 'sec-assinatura', 'sec-privacidade', 'sec-risco'];
     const observer = new IntersectionObserver(
       (entries) => {
         const visivel = entries
@@ -335,12 +337,13 @@ function ProfileContent() {
   const initial = (userData?.name || userData?.email || 'B').charAt(0).toUpperCase();
 
   const navItems = [
-    { id: 'sec-perfil',      label: 'Perfil',      icon: User },
-    { id: 'sec-empresas',    label: 'Empresas',    icon: Building2 },
-    { id: 'sec-seguranca',   label: 'Segurança',   icon: Shield },
-    { id: 'sec-equipe',      label: 'Equipe',      icon: Users },
-    { id: 'sec-assinatura',  label: 'Assinatura',  icon: CreditCard },
-    { id: 'sec-risco',       label: 'Risco',       icon: AlertTriangle },
+    { id: 'sec-perfil',        label: 'Perfil',        icon: User },
+    { id: 'sec-empresas',      label: 'Empresas',      icon: Building2 },
+    { id: 'sec-seguranca',     label: 'Segurança',     icon: Shield },
+    { id: 'sec-equipe',        label: 'Equipe',        icon: Users },
+    { id: 'sec-assinatura',    label: 'Assinatura',    icon: CreditCard },
+    { id: 'sec-privacidade',   label: 'Privacidade',   icon: Bell },
+    { id: 'sec-risco',         label: 'Risco',         icon: AlertTriangle },
   ];
 
   const scrollTo = (id: string) => {
@@ -677,6 +680,80 @@ function ProfileContent() {
                   </div>
                 </div>
               )}
+            </section>
+
+            <section id="sec-privacidade" className={panelClass}>
+              <SectionHeading icon={Bell} title="Privacidade & Notificações" eyebrow="Notificações push, cache e consentimento" tone="slate" />
+              <div className="divide-y divide-slate-100">
+
+                {/* Push notifications */}
+                <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Notificações push</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Receba alertas de novos editais e contratos vencendo direto no navegador.</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => subscribeToPush()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                    >
+                      <Bell size={13} /> Ativar
+                    </button>
+                    <button
+                      onClick={() => unsubscribeFromPush()}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Desativar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Cache */}
+                <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Cache do site</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Remove dados temporários salvos pelo navegador (preferências locais, tier em cache).</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const keep = ['bawzi_consent_accepted'];
+                      const saved: Record<string, string> = {};
+                      keep.forEach(k => { const v = localStorage.getItem(k); if (v) saved[k] = v; });
+                      localStorage.clear();
+                      keep.forEach(k => { if (saved[k]) localStorage.setItem(k, saved[k]); });
+                      window.location.reload();
+                    }}
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    <RefreshCw size={13} /> Limpar cache
+                  </button>
+                </div>
+
+                {/* Consentimento LGPD */}
+                <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Consentimento LGPD</p>
+                    <p className="mt-0.5 text-xs text-slate-500">Revoga o aceite dos termos e exibe novamente o banner de privacidade na próxima visita.</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await apiFetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/users/me/lgpd-consent`, {
+                          method: 'DELETE',
+                        });
+                      } catch {
+                        // continua mesmo se a rede falhar
+                      }
+                      localStorage.removeItem('bawzi_consent_accepted');
+                      window.location.reload();
+                    }}
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-4 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                  >
+                    Revogar consentimento
+                  </button>
+                </div>
+
+              </div>
             </section>
 
             <section id="sec-risco" className={panelClass}>

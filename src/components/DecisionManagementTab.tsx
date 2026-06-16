@@ -80,6 +80,12 @@ export default function DecisionManagementTab({
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('active');
   const [sortFilter, setSortFilter] = useState<SortFilter>('recent');
   const [notice, setNotice] = useState<NoticeState>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [savingStageId, setSavingStageId] = useState<string | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
@@ -511,7 +517,7 @@ export default function DecisionManagementTab({
 
   const saveLearning = async (
     card: DecisionQueueCardModel,
-    payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string },
+    payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string; contrato_inicio: string; contrato_fim: string },
   ) => {
     if (!card.analysis.id || savingLearningId) return;
 
@@ -1034,6 +1040,7 @@ function DecisionQueueCard({
   const nextStage = getNextDecisionQueueStage(card.stage);
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
   const learnedResult = getResultLabel(card.analysis);
+  const vigenciaStatus = getVigenciaStatus(card.analysis);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1090,6 +1097,13 @@ function DecisionQueueCard({
         {learnedResult && (
           <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-[11px] font-black leading-snug text-emerald-800">
             {learnedResult}
+          </div>
+        )}
+
+        {vigenciaStatus && (
+          <div className={`mb-3 flex items-center gap-1.5 rounded-xl border p-2.5 text-[10px] font-black leading-snug ${vigenciaStatus.className}`}>
+            <CalendarDays size={11} className="shrink-0" />
+            {vigenciaStatus.label}
           </div>
         )}
 
@@ -1424,20 +1438,23 @@ function DecisionReviewModal({
         </div>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Tipo</label>
-              <select
-                value={tipo}
-                onChange={(event) => setTipo(event.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-800 outline-none focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
-              >
-                <option value="resposta_orgao">Resposta do órgão</option>
-                <option value="novo_documento">Novo documento</option>
-                <option value="alteracao_edital">Alteração do edital</option>
-                <option value="nova_cotacao">Nova cotação</option>
-                <option value="decisao_interna">Decisão interna</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={tipo}
+                  onChange={(event) => setTipo(event.target.value)}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 pr-8 text-sm font-bold text-slate-800 outline-none focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-500/10"
+                >
+                  <option value="resposta_orgao">Resposta do órgão</option>
+                  <option value="novo_documento">Novo documento</option>
+                  <option value="alteracao_edital">Alteração do edital</option>
+                  <option value="nova_cotacao">Nova cotação</option>
+                  <option value="decisao_interna">Decisão interna</option>
+                </select>
+                <ChevronRight size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90 text-slate-400" />
+              </div>
             </div>
             <div>
               <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Título</label>
@@ -1497,7 +1514,7 @@ function LearningModal({
   card: DecisionQueueCardModel;
   isSaving: boolean;
   onClose: () => void;
-  onSubmit: (card: DecisionQueueCardModel, payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string }) => void;
+  onSubmit: (card: DecisionQueueCardModel, payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string; contrato_inicio: string; contrato_fim: string }) => void;
 }) {
   const headerOffset = useStickyHeaderOffset();
   const learning = card.analysis.decision_learning || {};
@@ -1506,7 +1523,30 @@ function LearningModal({
   const [precoFinal, setPrecoFinal] = useState(String(learning.preco_final || ''));
   const [vencedor, setVencedor] = useState(String(learning.vencedor || ''));
   const [observacao, setObservacao] = useState(String(learning.observacao || ''));
+  const [contratoInicio, setContratoInicio] = useState(String(learning.contrato_inicio || ''));
+  const [contratoFim, setContratoFim] = useState(String(learning.contrato_fim || ''));
   const finalResult = participou ? resultado : 'not_participated';
+
+  const sugerirVigencia = () => {
+    const rec = card.analysis as Record<string, unknown>;
+    const tryDate = (...keys: string[]): string => {
+      for (const k of keys) {
+        const v = String(rec[k] || '').trim();
+        if (!v) continue;
+        // YYYY-MM-DD already
+        if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+        // DD/MM/YYYY
+        const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+      }
+      return '';
+    };
+    const inicio = tryDate('data_inicio_vigencia', 'dataVigenciaInicio', 'data_vigencia_ini', 'vigencia_inicio', 'contrato_inicio');
+    const fim = tryDate('data_fim_vigencia', 'dataVigenciaFim', 'data_vigencia_fim', 'vigencia_fim', 'contrato_fim');
+    if (inicio) setContratoInicio(inicio);
+    if (fim) setContratoFim(fim);
+    if (!inicio && !fim) window.alert('Nenhuma data de vigência encontrada na análise. Preencha manualmente.');
+  };
 
   return (
     <div
@@ -1522,6 +1562,8 @@ function LearningModal({
             preco_final: precoFinal.trim(),
             vencedor: vencedor.trim(),
             observacao: observacao.trim(),
+            contrato_inicio: contratoInicio.trim(),
+            contrato_fim: contratoFim.trim(),
           });
         }}
         className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]"
@@ -1600,6 +1642,42 @@ function LearningModal({
               />
             </div>
           </div>
+
+          {participou && resultado === 'won' && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Vigência do contrato</p>
+                <button
+                  type="button"
+                  onClick={sugerirVigencia}
+                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-[9px] font-black text-emerald-700 transition-all hover:bg-emerald-100"
+                >
+                  <RefreshCw size={9} />
+                  Sugerir do edital
+                </button>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-emerald-600">Início</label>
+                  <input
+                    type="date"
+                    value={contratoInicio}
+                    onChange={(event) => setContratoInicio(event.target.value)}
+                    className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-emerald-600">Fim</label>
+                  <input
+                    type="date"
+                    value={contratoFim}
+                    onChange={(event) => setContratoFim(event.target.value)}
+                    className="w-full rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/10"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Observação</label>
@@ -1814,6 +1892,46 @@ function getStageReason(
     executed: 'Fluxo encerrado na Bawzi. Registrar resultado final quando aplicável.',
   };
   return fallback[stage];
+}
+
+function getVigenciaStatus(analysis: SavedAnalysis): { label: string; className: string } | null {
+  const learning = asRecord(analysis.decision_learning);
+  if (learning.resultado !== 'won') return null;
+  const inicio = firstText(learning.contrato_inicio);
+  const fim = firstText(learning.contrato_fim);
+  if (!inicio && !fim) return null;
+
+  const fmt = (iso: string) => {
+    const d = new Date(iso + 'T00:00:00');
+    return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' });
+  };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (inicio && fim) {
+    const dInicio = new Date(inicio + 'T00:00:00');
+    const dFim = new Date(fim + 'T00:00:00');
+    const diffDias = Math.ceil((dFim.getTime() - today.getTime()) / 86_400_000);
+    if (diffDias < 0) {
+      const encerrado = Math.abs(diffDias);
+      return { label: `Encerrado há ${encerrado}d · ${fmt(inicio)} → ${fmt(fim)}`, className: 'border-slate-200 bg-slate-50 text-slate-500' };
+    }
+    if (today < dInicio) {
+      return { label: `Inicia em ${fmt(inicio)} → ${fmt(fim)}`, className: 'border-sky-100 bg-sky-50 text-sky-700' };
+    }
+    const urgency = diffDias <= 30 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700';
+    return { label: `Vigência ativa · ${diffDias}d restantes · até ${fmt(fim)}`, className: urgency };
+  }
+
+  if (fim) {
+    const dFim = new Date(fim + 'T00:00:00');
+    const diffDias = Math.ceil((dFim.getTime() - today.getTime()) / 86_400_000);
+    if (diffDias < 0) return { label: `Encerrado em ${fmt(fim)}`, className: 'border-slate-200 bg-slate-50 text-slate-500' };
+    return { label: `Até ${fmt(fim)} · ${diffDias}d restantes`, className: 'border-emerald-100 bg-emerald-50 text-emerald-700' };
+  }
+
+  return { label: `Início: ${fmt(inicio)}`, className: 'border-sky-100 bg-sky-50 text-sky-700' };
 }
 
 function getResultLabel(analysis: SavedAnalysis) {

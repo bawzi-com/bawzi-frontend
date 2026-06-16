@@ -2,7 +2,8 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
-import { API_URL, setAccessToken } from '@/lib/apiClient';
+import { API_URL, setAccessToken, apiFetch } from '@/lib/apiClient';
+import { subscribeToPush } from '@/lib/pushNotifications';
 import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
 
 interface AuthModalProps {
@@ -10,6 +11,21 @@ interface AuthModalProps {
   onClose: () => void;
   defaultView?: 'login' | 'register';
   onSuccess?: () => void;
+}
+
+/** Sincroniza o consentimento LGPD do localStorage → banco após o login. */
+async function syncLgpdConsent() {
+  try {
+    const accepted = typeof window !== 'undefined' && localStorage.getItem('bawzi_consent_accepted');
+    if (!accepted) return;
+    await apiFetch(`${API_URL}/api/users/me/lgpd-consent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+  } catch {
+    // silencia — não bloqueia o login
+  }
 }
 
 const PASSWORD_REQUIREMENTS = [
@@ -121,6 +137,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
+        subscribeToPush().catch(() => {});
+        syncLgpdConsent();
         if (onSuccess) onSuccess();
         onClose();
       } catch (err: any) {
@@ -235,6 +253,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
         if (data.tier !== undefined) localStorage.setItem('bawzi_tier', data.tier.toString());
         if (data.workspace_id) localStorage.setItem('bawzi_workspace_id', data.workspace_id);
 
+        subscribeToPush().catch(() => {});
+        syncLgpdConsent();
         if (onSuccess) onSuccess();
         onClose();
       } else {
@@ -271,6 +291,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       if (typeof data.backup_codes_restantes === 'number' && data.backup_codes_restantes <= 2) {
         alert(`⚠️ Você usou um código de backup. Restam apenas ${data.backup_codes_restantes}. Gere novos no Perfil → Segurança.`);
       }
+      subscribeToPush().catch(() => {});
+      syncLgpdConsent();
       if (onSuccess) onSuccess();
       onClose();
     } catch (err: any) {

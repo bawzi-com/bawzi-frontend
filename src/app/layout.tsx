@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import ConsentBanner from '../components/ConsentBanner';
+import ChatWidget from '../components/ChatWidget';
 import { TierProvider } from '../Contexts/TierContext';
 
 export const metadata: Metadata = {
@@ -37,6 +38,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
           {/* RODAPÉ GLOBAL */}
           <Footer />
+
+          {/* WIDGET DE CHAT FLUTUANTE */}
+          <ChatWidget />
 
         </TierProvider>
 

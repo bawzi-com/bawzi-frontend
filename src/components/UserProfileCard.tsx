@@ -25,9 +25,9 @@ export default function UserProfileCard({ user, currentTier, onActiveCnpjChange 
   // Cores dinâmicas para o Crachá
   const getTierStyle = (tier: number) => {
     switch (tier) {
-      case 4: return 'bg-slate-900 text-yellow-400 border-slate-800 shadow-[0_0_10px_rgba(250,204,21,0.2)]';
-      case 3: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 2: return 'bg-violet-50 text-violet-700 border-violet-200';
+      case 4: return 'bg-slate-900 text-emerald-300 border-slate-800 shadow-[0_0_10px_rgba(5,150,105,0.18)]';
+      case 3: return 'bg-sky-50 text-sky-700 border-sky-200';
+      case 2: return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
   };
@@ -57,7 +57,7 @@ export default function UserProfileCard({ user, currentTier, onActiveCnpjChange 
       {/* ========================================== */}
       <div className="flex items-center gap-4">
         <div className="relative shrink-0">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-violet-500/30 border-2 border-white">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-600 to-sky-600 flex items-center justify-center text-white text-xl font-black shadow-lg shadow-emerald-600/20 border-2 border-white">
             {initial}
           </div>
           <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 border-2 border-white rounded-full flex items-center justify-center">
@@ -71,7 +71,7 @@ export default function UserProfileCard({ user, currentTier, onActiveCnpjChange 
               {user.name || 'Usuário Bawzi'}
             </h4>
             <span className={`shrink-0 px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border flex items-center gap-1 ${getTierStyle(activeTier)}`}>
-              <span>⭐</span> Nível {activeTier}
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" /> Nível {activeTier}
             </span>
           </div>
           <p className="text-xs font-medium text-slate-500 truncate">
@@ -95,7 +95,7 @@ export default function UserProfileCard({ user, currentTier, onActiveCnpjChange 
           </div>
           <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
             <div
-              className={`h-full rounded-full transition-all duration-1000 ${percentagemUso >= 100 ? 'bg-amber-500' : 'bg-violet-500'}`}
+              className={`h-full rounded-full transition-all duration-1000 ${percentagemUso >= 100 ? 'bg-amber-500' : 'bg-emerald-600'}`}
               style={{ width: `${percentagemUso}%` }}
             ></div>
           </div>
@@ -123,7 +123,7 @@ export default function UserProfileCard({ user, currentTier, onActiveCnpjChange 
           activeCnpj={user.active_cnpj}
           label="Contexto ativo"
           onChange={onActiveCnpjChange}
-          className="border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-white"
+          className="border-emerald-100 bg-gradient-to-r from-emerald-50/70 to-white"
         />
       )}
 

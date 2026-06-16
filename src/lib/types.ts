@@ -96,6 +96,8 @@ export interface SavedAnalysis {
     preco_final?: string;
     vencedor?: string;
     observacao?: string;
+    contrato_inicio?: string;
+    contrato_fim?: string;
     updated_at?: string;
   };
   /** Campos extras da IA (riscos, semáforo, etc.) */
