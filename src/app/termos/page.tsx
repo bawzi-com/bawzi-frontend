@@ -135,8 +135,8 @@ export default function TermosPage() {
             <ShieldCheck className="mt-1 shrink-0 text-sky-300" size={20} />
             <p>
               Dúvidas contratuais ou solicitações formais podem ser enviadas para{' '}
-              <a className="font-bold text-sky-200 underline underline-offset-4" href="mailto:suporte@bawzi.com">
-                suporte@bawzi.com
+              <a className="font-bold text-sky-200 underline underline-offset-4" href="mailto:development@bawzi.com">
+                development@bawzi.com
               </a>
               .
             </p>

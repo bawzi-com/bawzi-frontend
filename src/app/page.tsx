@@ -136,45 +136,33 @@ export default function LandingPage() {
 
   return (
     <div className="font-sans text-slate-900 overflow-x-hidden">
-      <section className="relative overflow-hidden bg-slate-950 text-white">
-        <div className="absolute inset-0 pointer-events-none opacity-35 [background-image:linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] [background-size:42px_42px]" />
+      <section className="relative overflow-hidden bg-[#f8fafc] text-slate-950">
+        <div className="absolute inset-0 pointer-events-none opacity-70 [background-image:linear-gradient(rgba(15,23,42,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.045)_1px,transparent_1px)] [background-size:42px_42px]" />
+        <div className="absolute inset-x-0 bottom-0 h-40 bg-white" />
         <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-10 pt-12 text-center md:pt-16">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-300" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
             Decisão Go/No-Go para licitações
           </div>
 
-          <h1 className="mt-5 max-w-5xl text-4xl font-black leading-[1.04] tracking-tight md:text-5xl lg:text-6xl">
+          <h1 className="mt-5 max-w-5xl text-4xl font-black leading-[1.04] tracking-tight text-slate-950 md:text-5xl lg:text-6xl">
             Saiba em minutos se vale disputar uma licitação.
           </h1>
 
-          <p className="mt-4 max-w-3xl text-base font-medium leading-7 text-slate-300 md:text-lg">
+          <p className="mt-4 max-w-3xl text-base font-medium leading-7 text-slate-600 md:text-lg">
             A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
           </p>
 
           <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-400">
+            <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-500">
               Testar com um edital <ArrowRight size={17} />
             </Link>
-            <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 px-7 text-sm font-bold text-white transition-all hover:bg-white/15">
+            <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50">
               Ver planos e preços
             </Link>
           </div>
 
           <OutputCard />
-
-          <div className="mt-4 grid w-full max-w-5xl gap-3 text-left sm:grid-cols-3">
-            {[
-              ['Minutos', 'do edital à decisão Go/No-Go'],
-              ['4 agentes', 'jurídico, CNAE, preço e concorrência'],
-              ['PNCP oficial', 'fonte do governo federal, em tempo real'],
-            ].map(([value, label]) => (
-              <div key={value} className="rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-3 shadow-[0_20px_60px_-45px_rgba(16,185,129,0.8)]">
-                <p className="text-2xl font-black text-white">{value}</p>
-                <p className="mt-1 text-[11px] font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -429,17 +417,17 @@ export default function LandingPage() {
 
 function TrustBar() {
   const items = [
-    { icon: '🔗', text: 'Conectado ao PNCP oficial' },
-    { icon: '🔒', text: 'Edital nunca sai do seu ambiente' },
-    { icon: '⚡', text: 'Análise em minutos' },
-    { icon: '↩', text: 'Cancele quando quiser' },
+    { Icon: SearchCheck, text: 'Conectado ao PNCP oficial' },
+    { Icon: BadgeCheck, text: 'Edital nunca sai do seu ambiente' },
+    { Icon: Clock3, text: 'Análise em minutos' },
+    { Icon: Check, text: 'Cancele quando quiser' },
   ];
   return (
-    <div className="border-b border-slate-100 bg-slate-50">
-      <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-center gap-x-8 gap-y-3 px-6 py-4">
-        {items.map(({ icon, text }) => (
-          <span key={text} className="flex items-center gap-2 text-[12px] font-semibold text-slate-500">
-            <span>{icon}</span>
+    <div className="border-b border-slate-100 bg-white">
+      <div className="mx-auto grid max-w-[1180px] gap-2 px-6 py-4 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map(({ Icon, text }) => (
+          <span key={text} className="flex items-center justify-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-[12px] font-bold text-slate-500">
+            <Icon size={14} className="text-emerald-600" />
             {text}
           </span>
         ))}
@@ -670,112 +658,120 @@ function formatCurrency(value: number) {
 
 
 function OutputCard() {
-  const signals = [
-    { tone: 'border-sky-100 bg-sky-50 text-sky-700', dot: 'bg-sky-400', text: 'CNAE — Match parcial' },
-    { tone: 'border-amber-100 bg-amber-50 text-amber-700', dot: 'bg-amber-400', text: 'Jurídico — 2 cláusulas críticas' },
-    { tone: 'border-rose-100 bg-rose-50 text-rose-700', dot: 'bg-rose-400', text: 'Preço — Margem pressionada' },
-    { tone: 'border-indigo-100 bg-indigo-50 text-indigo-700', dot: 'bg-indigo-400', text: 'Concorrência — 3 recorrentes' },
+  const agents = [
+    { Icon: BadgeCheck, label: 'CNAE', value: 'Match parcial', tone: 'text-sky-600', bar: 'w-[68%]' },
+    { Icon: Scale, label: 'Jurídico', value: '2 cláusulas críticas', tone: 'text-amber-600', bar: 'w-[56%]' },
+    { Icon: Calculator, label: 'Preço', value: 'Margem pressionada', tone: 'text-rose-600', bar: 'w-[62%]' },
+    { Icon: UsersRound, label: 'Concorrência', value: '3 recorrentes', tone: 'text-indigo-600', bar: 'w-[74%]' },
   ];
-  const nextSteps = [
-    'Confirmar documentos eliminatórios antes do protocolo',
-    'Calcular preço mínimo preservando margem de segurança',
-    'Checar histórico de fornecedores recorrentes no PNCP',
-  ];
+  const nextSteps = ['Validar documentos', 'Definir preço mínimo', 'Revisar antes do lance'];
 
   return (
-    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-white/10 bg-white text-left shadow-[0_32px_90px_-45px_rgba(16,185,129,0.65)] md:mt-9">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
-          <span className="ml-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Laudo Bawzi</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
-          <span className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-2.5 py-1 text-emerald-300">PNCP oficial</span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-slate-400">Exemplo fictício</span>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_290px]">
-        <div className="min-w-0">
-          <div className="border-b border-amber-100 bg-amber-50 px-5 py-5 sm:px-6">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-600">Veredito · Exemplo fictício</p>
-                <h3 className="mt-2 text-3xl font-black leading-none text-slate-950">Go condicionado</h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-500">
-                  Pregão eletrônico — serviços terceirizados · Município de São Paulo
-                </p>
+    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white text-left shadow-[0_34px_90px_-48px_rgba(15,23,42,0.45)] md:mt-9">
+      <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="relative overflow-hidden border-b border-slate-100 bg-slate-50 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-amber-400" />
+          <div className="relative">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Simulação de análise</p>
+                <h3 className="mt-2 text-2xl font-black leading-tight text-slate-950 sm:text-3xl">Do edital ao veredito</h3>
               </div>
-              <div className="shrink-0 rounded-2xl bg-slate-950 px-4 py-3 text-center shadow-xl shadow-slate-950/15">
-                <p className="text-3xl font-black leading-none text-emerald-300">68</p>
-                <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-slate-500">score</p>
-              </div>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                PNCP oficial
+              </span>
             </div>
-          </div>
 
-          <div className="grid md:grid-cols-[0.9fr_1.1fr]">
-            <div className="border-b border-slate-100 px-5 py-4 sm:px-6 md:border-b-0 md:border-r">
-              <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Sinais da análise</p>
-              <div className="grid gap-2">
-                {signals.map((signal) => (
-                  <span key={signal.text} className={`inline-flex min-h-9 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${signal.tone}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${signal.dot}`} />
-                    {signal.text}
-                  </span>
-                ))}
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                  <SearchCheck size={19} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Edital detectado</p>
+                  <p className="mt-1 text-base font-black leading-snug text-slate-950">Pregão eletrônico · serviços terceirizados</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">Município de São Paulo · análise fictícia para demonstração</p>
+                </div>
               </div>
             </div>
 
-            <div className="px-5 py-4 sm:px-6">
-              <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">Próximos passos</p>
-              <ol className="space-y-2.5">
-                {nextSteps.map((text, i) => (
-                  <li key={text} className="flex items-start gap-3 text-sm font-medium leading-6 text-slate-700">
-                    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-black text-slate-500">
-                      {i + 1}
+            <div className="mt-4 grid gap-2">
+              {agents.map(({ Icon, label, value, tone, bar }) => (
+                <div key={label} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2 text-xs font-black text-slate-800">
+                      <Icon size={15} className={tone} />
+                      {label}
                     </span>
-                    {text}
-                  </li>
-                ))}
-              </ol>
+                    <span className="text-[10px] font-bold text-slate-500">{value}</span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                    <div className={`${bar} h-full rounded-full bg-emerald-400`} />
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        </div>
 
-        <aside className="border-t border-slate-100 bg-slate-50 px-5 py-5 lg:border-l lg:border-t-0">
-          <div className="border-b border-slate-200 pb-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Confiança</p>
-            <div className="mt-2 flex items-end justify-between gap-4">
-              <p className="text-5xl font-black leading-none text-slate-950">84%</p>
-              <BadgeCheck size={26} className="text-emerald-600" />
-            </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
-              <div className="h-full w-[84%] rounded-full bg-emerald-500" />
-            </div>
-          </div>
-
-          <div className="border-b border-slate-200 py-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tempo de resposta</p>
-            <div className="mt-2 flex items-center gap-2 text-slate-950">
-              <Clock3 size={18} className="text-emerald-600" />
-              <p className="text-2xl font-black">Minutos</p>
-            </div>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Do edital à decisão Go/No-Go</p>
-          </div>
-
-          <div className="pt-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Motor de decisão</p>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-black uppercase text-slate-500">
-              {['Jurídico', 'CNAE', 'Preço', 'Concorrência'].map((item) => (
-                <span key={item} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-center">
-                  {item}
-                </span>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {['4 agentes', '84% confiança', 'minutos'].map((item) => (
+                <div key={item} className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                  <p className="text-sm font-black text-slate-950">{item}</p>
+                </div>
               ))}
             </div>
           </div>
-        </aside>
+        </div>
+
+        <div className="bg-white p-5 text-slate-950 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Veredito · exemplo fictício</p>
+              <h4 className="mt-2 text-3xl font-black leading-none text-slate-950">Go condicionado</h4>
+              <p className="mt-3 max-w-sm text-sm font-semibold leading-6 text-slate-500">
+                Vale avançar, desde que a equipe confirme documentação e proteja a margem antes de propor.
+              </p>
+            </div>
+            <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-full" style={{ background: 'conic-gradient(#10b981 0 68%, #e2e8f0 68% 100%)' }}>
+              <div className="flex h-16 w-16 flex-col items-center justify-center rounded-full bg-white shadow-inner">
+                <span className="text-2xl font-black leading-none text-slate-950">68</span>
+                <span className="text-[8px] font-black uppercase text-slate-400">score</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-amber-100 bg-amber-50 p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Por que condicionado?</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-amber-900">
+              O objeto tem aderência parcial ao CNAE e a disputa pode ser interessante, mas há risco jurídico e pressão de preço.
+            </p>
+          </div>
+
+          <div className="mt-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Próximos passos</p>
+            <div className="mt-3 grid gap-2">
+              {nextSteps.map((step, index) => (
+                <div key={step} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black text-slate-500 shadow-sm">{index + 1}</span>
+                  <span className="text-sm font-black text-slate-700">{step}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            {[
+              ['CNAE', 'parcial'],
+              ['Preço', 'atenção'],
+              ['Jurídico', 'validar'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-slate-200 px-3 py-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                <p className="mt-1 text-xs font-black text-slate-900">{value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

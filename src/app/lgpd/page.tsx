@@ -136,7 +136,7 @@ export default function LgpdPage() {
             <Mail className="text-sky-400" size={22} /> Como exercer direitos
           </h2>
           <div className="mb-6 rounded-xl border border-sky-400/20 bg-sky-400/10 p-4 text-sm leading-6 text-sky-100/90">
-            Envie sua solicitação para <a className="font-bold text-sky-200 underline underline-offset-4" href="mailto:dpo@bawzi.com">dpo@bawzi.com</a>. Se a conta pertencer a uma empresa cliente, algumas solicitações podem exigir validação com o administrador do workspace.
+            Envie sua solicitação para <a className="font-bold text-sky-200 underline underline-offset-4" href="mailto:development@bawzi.com">development@bawzi.com</a>. Se a conta pertencer a uma empresa cliente, algumas solicitações podem exigir validação com o administrador do workspace.
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             {requestSteps.map(([title, body]) => (

@@ -73,7 +73,7 @@ export default function PrivacidadePage() {
             <Mail className="mb-3 text-sky-400" size={24} />
             <h2 className="text-sm font-black uppercase tracking-widest text-white">Contato</h2>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Solicitações de privacidade: <a className="font-bold text-sky-300 underline underline-offset-4" href="mailto:dpo@bawzi.com">dpo@bawzi.com</a>.
+              Solicitações de privacidade: <a className="font-bold text-sky-300 underline underline-offset-4" href="mailto:development@bawzi.com">development@bawzi.com</a>.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">

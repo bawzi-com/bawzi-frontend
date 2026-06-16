@@ -736,7 +736,7 @@ function SectionPrivacidade() {
       <Callout type="info">
         Para solicitar uma cópia dos seus dados ou pedir a exclusão total da conta, acesse
         <strong> Perfil → Zona de risco → Excluir conta</strong> ou envie uma solicitação para
-        privacidade@bawzi.com.
+        development@bawzi.com.
       </Callout>
 
       <H2 id="revogar">Revogar consentimento</H2>
@@ -908,7 +908,7 @@ export default function DocsPage() {
             <p className="text-xs font-semibold text-slate-700 mb-1">Precisa de ajuda?</p>
             <p className="text-xs text-slate-500 mb-3">Nossa equipe responde em até 24h.</p>
             <a
-              href="mailto:suporte@bawzi.com"
+              href="mailto:development@bawzi.com"
               className="flex items-center gap-1.5 text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
             >
               Falar com suporte <ExternalLink size={11} />
@@ -993,7 +993,7 @@ export default function DocsPage() {
           <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
             <p className="text-xs text-slate-400">Última atualização: Junho 2026</p>
             <a
-              href="mailto:suporte@bawzi.com"
+              href="mailto:development@bawzi.com"
               className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-emerald-600 transition-colors"
             >
               Esta página foi útil? <span className="underline ml-1">Fale conosco</span>

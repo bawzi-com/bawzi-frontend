@@ -70,8 +70,8 @@ export default function PlansPage() {
 
         <p className="text-center mt-10 text-sm text-slate-400">
           Tem dúvidas?{' '}
-          <a href="mailto:suporte@bawzi.com" className="text-emerald-600 font-bold hover:underline">
-            suporte@bawzi.com
+          <a href="mailto:development@bawzi.com" className="text-emerald-600 font-bold hover:underline">
+            development@bawzi.com
           </a>
         </p>
       </div>

@@ -96,7 +96,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
           <p className="mt-4 text-[10px] text-slate-400">
             Se o problema persistir, entre em contacto com o{' '}
-            <a href="mailto:suporte@bawzi.com" className="underline hover:text-slate-600">
+            <a href="mailto:development@bawzi.com" className="underline hover:text-slate-600">
               suporte
             </a>
             .
