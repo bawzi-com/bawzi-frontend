@@ -7,6 +7,8 @@ export default function PncpStatusBadge() {
   const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
   const [retrying, setRetrying] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkStatus = async () => {
@@ -31,6 +33,13 @@ export default function PncpStatusBadge() {
     const result = await checkStatus();
     setRetrying(false);
     if (result === 'offline' || result === 'error') {
+      if (wrapperRef.current) {
+        const rect = wrapperRef.current.getBoundingClientRect();
+        setTooltipPos({
+          top: rect.bottom + 8,
+          right: window.innerWidth - rect.right,
+        });
+      }
       setShowTooltip(true);
       if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
       tooltipTimer.current = setTimeout(() => setShowTooltip(false), 6000);
@@ -99,13 +108,16 @@ export default function PncpStatusBadge() {
   }[status];
 
   return (
-    <div className="relative">
-      {/* Tooltip após retry sem sucesso */}
-      {showTooltip && (
-        <div className="absolute bottom-full right-0 mb-2 z-50 w-64 animate-in fade-in slide-in-from-bottom-1 duration-200">
-          <div className="rounded-2xl border border-amber-200 bg-white shadow-lg p-3.5">
+    <div className="relative" ref={wrapperRef}>
+      {/* Tooltip após retry sem sucesso — fixed para escapar qualquer overflow pai */}
+      {showTooltip && tooltipPos && (
+        <div
+          className="fixed z-[9999] w-72 animate-in fade-in slide-in-from-top-1 duration-200"
+          style={{ top: tooltipPos.top, right: tooltipPos.right }}
+        >
+          <div className="rounded-2xl border border-amber-200 bg-white shadow-xl p-4">
             <div className="flex items-start gap-2.5">
-              <span className="text-base leading-none mt-0.5">🔌</span>
+              <span className="text-base leading-none mt-0.5 shrink-0">🔌</span>
               <div>
                 <p className="text-xs font-black text-slate-900">PNCP temporariamente indisponível</p>
                 <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500">
@@ -113,8 +125,8 @@ export default function PncpStatusBadge() {
                 </p>
               </div>
             </div>
-            {/* Seta */}
-            <div className="absolute -bottom-1.5 right-5 h-3 w-3 rotate-45 border-b border-r border-amber-200 bg-white" />
+            {/* Seta apontando para cima */}
+            <div className="absolute -top-1.5 right-5 h-3 w-3 rotate-45 border-t border-l border-amber-200 bg-white" />
           </div>
         </div>
       )}

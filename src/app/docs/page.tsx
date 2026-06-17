@@ -111,6 +111,8 @@ const NAV: Section[] = [
       { id: 'workspace', title: 'Workspace' },
       { id: 'convidar-membros', title: 'Convidar membros' },
       { id: 'funcoes', title: 'Funções e permissões' },
+      { id: 'empresas-monitoradas', title: 'Empresas monitoradas' },
+      { id: 'downgrade-empresas', title: 'Reduzir plano (empresas)' },
     ],
   },
   {
@@ -187,12 +189,12 @@ function Tag({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PlanBadge({ plan }: { plan: 'Gratuito' | 'Starter' | 'Pro' | 'Enterprise' }) {
+function PlanBadge({ plan }: { plan: 'Gratuito' | 'Essencial' | 'Pro' | 'Elite' }) {
   const colors: Record<string, string> = {
-    Gratuito:   'bg-slate-100 text-slate-600 border-slate-200',
-    Starter:    'bg-sky-50 text-sky-700 border-sky-200',
-    Pro:        'bg-emerald-50 text-emerald-700 border-emerald-200',
-    Enterprise: 'bg-violet-50 text-violet-700 border-violet-200',
+    Gratuito:  'bg-slate-100 text-slate-600 border-slate-200',
+    Essencial: 'bg-sky-50 text-sky-700 border-sky-200',
+    Pro:       'bg-emerald-50 text-emerald-700 border-emerald-200',
+    Elite:     'bg-violet-50 text-violet-700 border-violet-200',
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${colors[plan]}`}>
@@ -516,7 +518,7 @@ function SectionConcorrentes() {
       </Step>
       <Callout type="info">
         O monitoramento de concorrentes é um recurso disponível nos planos <PlanBadge plan="Pro" /> e
-        {' '}<PlanBadge plan="Enterprise" />.
+        {' '}<PlanBadge plan="Elite" />.
       </Callout>
 
       <H2 id="historico-lances">Histórico de lances</H2>
@@ -571,6 +573,39 @@ function SectionEquipe() {
       <P>
         Para alterar o papel de um membro, acesse <strong>Perfil → Equipe</strong>, clique nos três
         pontos ao lado do nome e selecione <strong>Alterar função</strong>.
+      </P>
+
+      <H2 id="empresas-monitoradas">Empresas monitoradas</H2>
+      <P>
+        Além dos membros, cada plano define quantas <strong>empresas</strong> podem ser monitoradas
+        ativamente — ou seja, receber alertas do Radar e aparecer no contexto de análise.
+      </P>
+      <UL>
+        <LI><strong>Gratuito</strong> — sem monitoramento de empresa</LI>
+        <LI><strong>Essencial</strong> — 1 empresa</LI>
+        <LI><strong>Pro</strong> — até 2 empresas</LI>
+        <LI><strong>Elite</strong> — até 3 empresas</LI>
+      </UL>
+      <P>
+        Gerencie as empresas monitoradas em <strong>Perfil → Área de trabalho → Empresas</strong>.
+        Você pode adicionar, remover ou definir qual empresa está ativa para análise.
+      </P>
+
+      <H2 id="downgrade-empresas">O que acontece ao reduzir o plano</H2>
+      <P>
+        Se você fizer downgrade e tiver mais empresas cadastradas do que o novo plano permite, as empresas
+        excedentes entram em estado <strong>suspenso</strong>: o Radar delas é pausado, mas todos os dados
+        são preservados. Você tem <strong>7 dias</strong> para ajustar — removendo empresas ou reativando
+        uma dentro do limite.
+      </P>
+      <Callout type="warning">
+        Após os 7 dias sem ajuste, as empresas excedentes são desabilitadas automaticamente. Elas
+        continuam salvas, mas ficam bloqueadas para análise até que você reduza a lista ou faça upgrade.
+      </Callout>
+      <P>
+        Para reativar uma empresa dentro do limite: em <strong>Perfil → Área de trabalho → Empresas</strong>,
+        localize a empresa suspensa e clique em <strong>Tornar ativa</strong>. O sistema a move
+        automaticamente para dentro do limite do plano atual.
       </P>
     </>
   );
@@ -633,22 +668,22 @@ function SectionPlanos() {
     {
       name: 'Gratuito',
       badge: <PlanBadge plan="Gratuito" />,
-      features: ['1 análise de edital / mês', 'Busca básica no PNCP', '1 membro', 'Histórico de 30 dias'],
+      features: ['5 análises / mês', 'Busca básica no PNCP', '1 membro', 'Sem empresa monitorada'],
     },
     {
-      name: 'Starter',
-      badge: <PlanBadge plan="Starter" />,
-      features: ['20 análises / mês', 'Radar com 5 palavras-chave', '3 membros', 'Histórico de 90 dias', 'Alertas por e-mail'],
+      name: 'Essencial',
+      badge: <PlanBadge plan="Essencial" />,
+      features: ['Análises ilimitadas', 'Radar de alertas', '2 membros', '1 empresa monitorada', 'Alertas por e-mail e push'],
     },
     {
       name: 'Pro',
       badge: <PlanBadge plan="Pro" />,
-      features: ['Análises ilimitadas', 'Radar com palavras-chave ilimitadas', '10 membros', 'Histórico ilimitado', 'Monitoramento de concorrentes', 'Notificações push', 'Relatórios exportáveis'],
+      features: ['Análises ilimitadas', '5 membros', '2 empresas monitoradas', 'Monitoramento de concorrentes', 'Modelos IA avançados (Claude Sonnet)', 'Relatórios exportáveis'],
     },
     {
-      name: 'Enterprise',
-      badge: <PlanBadge plan="Enterprise" />,
-      features: ['Tudo do Pro', 'Membros ilimitados', 'API de integração', 'SLA de suporte prioritário', 'Onboarding dedicado', 'Gestão multi-CNPJ'],
+      name: 'Elite',
+      badge: <PlanBadge plan="Elite" />,
+      features: ['Tudo do Pro', '10 membros', '3 empresas monitoradas', 'Modelos IA premium (o3-mini + Claude Opus)', 'API Enterprise', 'Suporte prioritário'],
     },
   ];
 

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { MessageCircle } from 'lucide-react';
 
 export default function Footer() {
   return (
@@ -68,6 +69,25 @@ export default function Footer() {
           </ul>
         </div>
 
+      </div>
+
+      {/* ── Faixa de suporte ────────────────────────────────────────────────────── */}
+      <div className="max-w-[1400px] mx-auto px-6 py-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center shrink-0">
+            <MessageCircle size={16} className="text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-800 leading-none mb-0.5">Precisa de ajuda?</p>
+            <p className="text-xs text-slate-500">Nossa equipe responde em até 24h.</p>
+          </div>
+        </div>
+        <a
+          href="mailto:development@bawzi.com"
+          className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-700 hover:text-emerald-800 transition-colors border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl"
+        >
+          Falar com suporte →
+        </a>
       </div>
 
       {/* ── Barra inferior ──────────────────────────────────────────────────────── */}

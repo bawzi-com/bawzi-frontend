@@ -16,7 +16,7 @@ import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
-  ClipboardList,
+  ClipboardList, MessageCircle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
@@ -526,6 +526,22 @@ export default function AppSidebar({
           ))}
         </div>
       </div>
+
+      {/* ── SUPORTE ──────────────────────────────────────────────────────────── */}
+      <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <MessageCircle size={14} className="text-emerald-600 shrink-0" />
+          <p className="text-[12px] font-black text-slate-800">Precisa de ajuda?</p>
+        </div>
+        <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">Nossa equipe responde em até 24h.</p>
+        <a
+          href="mailto:development@bawzi.com"
+          className="flex items-center justify-center gap-1.5 w-full text-[11px] font-black text-emerald-700 hover:text-emerald-800 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 rounded-xl transition-colors"
+        >
+          Falar com suporte →
+        </a>
+      </div>
+
     </div>
   );
 }
