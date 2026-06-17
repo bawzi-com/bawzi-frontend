@@ -556,7 +556,14 @@ export default function AnalysisApp() {
       });
       const data = await res.json();
       if (res.ok) {
-        if (data.url) {
+        if (data.updated) {
+          const syncRes = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`);
+          const syncData = await syncRes.json().catch(() => null);
+          if (syncRes.ok && syncData?.tier !== undefined) {
+            localStorage.setItem('bawzi_tier', String(syncData.tier));
+          }
+          window.location.reload();
+        } else if (data.url) {
           // Portal do Stripe — navega para lá.
           // Safety net: se a navegação não acontecer em 8s, reseta o loading
           // (evita que o spinner fique preso para sempre).

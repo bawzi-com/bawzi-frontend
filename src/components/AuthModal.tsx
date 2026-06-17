@@ -543,8 +543,8 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             {view === 'register' && (
               <CompanyLookup
                 compact
-                label="Empresa do workspace"
-                helperText="Opcional. Encontre pelo nome, CNPJ ou domínio e deixe seu workspace pronto."
+                label="Sua empresa (opcional)"
+                helperText="Vincule sua conta a uma empresa. O workspace já vem com nome e CNPJ preenchidos — ideal para emitir relatórios e identificar contratos. Se for uso pessoal, pode pular."
                 placeholder={email.includes('@') ? `Ex.: ${email.split('@')[1]}` : 'Nome, CNPJ ou domínio'}
                 selected={selectedCompany}
                 onSelect={setSelectedCompany}

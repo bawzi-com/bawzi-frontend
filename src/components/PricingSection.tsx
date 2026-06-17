@@ -71,29 +71,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
   };
 
   const handleManageSubscription = async () => {
-    setIsCheckoutLoading(true);
-    try {
-      const token = getAuthToken();
-      const res = await fetch(`${API_URL}/api/billing/customer-portal`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        // 🟢 MARCA QUE VAI SAIR PARA O PORTAL
-        sessionStorage.setItem('returning_from_portal', 'true');
-        window.location.href = data.url; 
-      } else {
-        setIsCheckoutLoading(false);
-        showCheckoutError(data.detail || "Erro ao abrir faturamento.");
-      }
-    } catch {
-      setIsCheckoutLoading(false);
-      showCheckoutError("Erro de conexão. Tente novamente.");
-    }
+    router.push('/profile#sec-assinatura');
   };
 
   const handleUpgradeClick = async (tier: number) => {
@@ -118,7 +96,9 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       const data = await res.json();
 
       if (res.ok) {
-        if (data.url) {
+        if (data.updated) {
+          await forceManualSync();
+        } else if (data.url) {
           // Portal/Checkout Stripe — redireciona para lá.
           // Safety net: reseta o loading se a navegação não acontecer em 8s.
           sessionStorage.setItem('returning_from_portal', 'true');

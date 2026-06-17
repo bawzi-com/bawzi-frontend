@@ -27,6 +27,7 @@ import PersonalDataForm from '../../components/PersonalDataForm';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TwoFactorSettings from '../../components/TwoFactorSettings';
 import TeamManager from '../../components/TeamManager';
+import CardUpdateModal from '../../components/CardUpdateModal';
 import ActiveContextSwitcher from '../../components/ActiveContextSwitcher';
 import {
   ACTIVE_CONTEXT_EVENT,
@@ -108,8 +109,14 @@ function ProfileContent() {
   const [members, setMembers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [billingAction, setBillingAction] = useState<string | null>(null);
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [savedCard, setSavedCard] = useState<{ brand: string; last4: string; exp_month: number; exp_year: number } | null>(null);
+  const [changePlanModal, setChangePlanModal] = useState<{ tier: number } | null>(null);
   const [invoicesVisible, setInvoicesVisible] = useState(5);
   const [cleanupRequired, setCleanupRequired] = useState(false);
   const [membersOverflow, setMembersOverflow] = useState(0);
@@ -168,11 +175,13 @@ function ProfileContent() {
     setAuthToken(token);
 
     try {
-      const [userRes, wsRes, membersRes, invRes] = await Promise.all([
+      const [userRes, wsRes, membersRes, invRes, subRes, pmRes] = await Promise.all([
         apiFetch(`${API_URL}/api/users/me`),
         apiFetch(`${API_URL}/api/workspace/details`),
         apiFetch(`${API_URL}/api/workspace/members`),
         apiFetch(`${API_URL}/api/billing/invoices`),
+        apiFetch(`${API_URL}/api/billing/subscription-details`),
+        apiFetch(`${API_URL}/api/billing/payment-method`),
       ]);
 
       if (userRes.ok && wsRes.ok) {
@@ -240,6 +249,8 @@ function ProfileContent() {
       
       if (membersRes.ok) setMembers(await membersRes.json());
       if (invRes && invRes.ok) setInvoices(await invRes.json());
+      if (subRes && subRes.ok) setSubscriptionDetails(await subRes.json());
+      if (pmRes && pmRes.ok) { const pmData = await pmRes.json(); setSavedCard(pmData.card ?? null); }
       
     } catch (error) {
       if (error instanceof SessionExpiredError) { clearSession(); return; }
@@ -301,20 +312,77 @@ function ProfileContent() {
     waitForWebhookAndReload();
   }, [stripeSuccess, API_URL]);
 
-  const handleManageSubscription = async () => {
+  const syncAndReload = async () => {
+    await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`).catch(() => {});
+    window.location.reload();
+  };
+
+  const handleChangePlan = async (tier: number) => {
+    if (!window.confirm(`Confirmar mudança para o nível ${tier}? A Stripe pode aplicar ajustes proporcionais no ciclo atual.`)) return;
+    setBillingAction(`tier-${tier}`);
     try {
-      const res = await apiFetch(`${API_URL}/api/billing/customer-portal`, { method: 'POST' });
-      const data = await res.json();
-      if (res.ok && data.url) window.location.href = data.url;
-    } catch (error) { alert("Erro ao aceder ao faturamento."); }
+      const res = await apiFetch(`${API_URL}/api/billing/update-subscription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Erro ao alterar plano.');
+      await syncAndReload();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao alterar plano.');
+      setBillingAction(null);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!window.confirm('Cancelar a renovação automática deste plano? Você mantém o acesso até o fim do ciclo já pago.')) return;
+    setBillingAction('cancel');
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/cancel-subscription`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Erro ao cancelar assinatura.');
+      await fetchData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao cancelar assinatura.');
+    } finally {
+      setBillingAction(null);
+    }
+  };
+
+  const handleReactivateSubscription = async () => {
+    setBillingAction('reactivate');
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/reactivate-subscription`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Erro ao reativar assinatura.');
+      await fetchData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao reativar assinatura.');
+    } finally {
+      setBillingAction(null);
+    }
+  };
+
+  const handleUpdatePaymentMethod = async () => {
+    setBillingAction('payment');
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/setup-intent`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.client_secret) throw new Error(data?.detail || 'Erro ao preparar atualização de cartão.');
+      setPaymentClientSecret(data.client_secret);
+      setShowPaymentModal(true);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao aceder ao faturamento.');
+    } finally {
+      setBillingAction(null);
+    }
   };
 
   const forceManualSync = async () => {
     setIsSyncing(true);
     try {
-      const res = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`, {
-        headers: { 'Cache-Control': 'no-cache' },
-      });
+      const res = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`);
       const data = await res.json();
       if (res.ok) window.location.reload(); 
     } catch (error) { console.error("Erro ao forçar sync", error); }
@@ -671,30 +739,164 @@ function ProfileContent() {
                 <>
                   <SectionHeading
                     icon={CreditCard}
-                    title="Assinatura ativa"
-                    eyebrow={`Plano ${planName} em uso`}
+                    title="Assinatura"
+                    eyebrow={`Plano ${planName} · Nível ${userTier}`}
                     tone="emerald"
                     actions={
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={forceManualSync}
-                          disabled={isSyncing}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
-                        >
-                          <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={14} />
-                          Sincronizar
-                        </button>
-                        <button
-                          onClick={handleManageSubscription}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-3 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700"
-                        >
-                          Faturas
-                          <ChevronRight size={13} />
-                        </button>
-                      </div>
+                      <button
+                        onClick={forceManualSync}
+                        disabled={isSyncing}
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-widest text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        <RefreshCw className={isSyncing ? 'animate-spin' : ''} size={13} />
+                        Sincronizar
+                      </button>
                     }
                   />
-                  {invoices.length > 0 ? (
+
+                  {/* ── Plano atual + próxima cobrança ── */}
+                  <div className="border-b border-slate-100 p-5 sm:p-6">
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+
+                      {/* LEFT — info do plano */}
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50">
+                          <Crown size={18} className="text-emerald-600" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Plano ativo</p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <span className="text-2xl font-black leading-none text-slate-950">{planName}</span>
+                            <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">
+                              Nível {userTier}
+                            </span>
+                          </div>
+                          {subscriptionDetails?.amount && (
+                            <p className="mt-1 text-sm font-semibold text-slate-500">{subscriptionDetails.amount}/mês</p>
+                          )}
+                          {subscriptionDetails?.current_period_end && (
+                            <p className="mt-1 text-xs font-medium text-slate-400">
+                              Próxima cobrança em{' '}
+                              <span className="font-semibold text-slate-600">{subscriptionDetails.current_period_end}</span>
+                            </p>
+                          )}
+                          {subscriptionDetails?.cancel_at_period_end && (
+                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                              <span>⏸</span> Renovação cancelada — acesso até o fim do ciclo
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* RIGHT — cartão + ações */}
+                      <div className="flex flex-col items-start gap-3 lg:items-end">
+                        {/* Mini-card visual */}
+                        {savedCard ? (
+                          <div className="inline-flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10">
+                              <CreditCard size={15} className="text-white/60" />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 capitalize">{savedCard.brand}</p>
+                              <p className="font-black tracking-widest text-white">•••• {savedCard.last4}</p>
+                            </div>
+                            <div className="border-l border-white/10 pl-3">
+                              <p className="text-[10px] text-white/30">Exp.</p>
+                              <p className="text-xs font-bold text-white/60">
+                                {String(savedCard.exp_month).padStart(2, '0')}/{String(savedCard.exp_year).slice(-2)}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-400">
+                            <CreditCard size={14} />
+                            Nenhum cartão cadastrado
+                          </div>
+                        )}
+
+                        {/* Botões de ação */}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={handleUpdatePaymentMethod}
+                            disabled={billingAction === 'payment'}
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            <CreditCard size={13} className="text-slate-400" />
+                            {billingAction === 'payment' ? 'Aguarde...' : savedCard ? 'Alterar cartão' : 'Adicionar cartão'}
+                          </button>
+
+                          {subscriptionDetails?.status === 'active' && (
+                            subscriptionDetails.cancel_at_period_end ? (
+                              <button
+                                onClick={handleReactivateSubscription}
+                                disabled={!!billingAction}
+                                className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {billingAction === 'reactivate' ? 'Reativando...' : 'Reativar renovação'}
+                              </button>
+                            ) : (
+                              <button
+                                onClick={handleCancelSubscription}
+                                disabled={!!billingAction}
+                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-4 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+                              >
+                                {billingAction === 'cancel' ? 'Cancelando...' : 'Cancelar renovação'}
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* ── Trocar plano — só com assinatura Stripe real ── */}
+                  {subscriptionDetails && (
+                    <div className="border-b border-slate-100 p-5 sm:p-6">
+                      <p className="mb-4 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Trocar plano</p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        {([
+                          { tier: 2, name: 'Essencial',    price: 'R$ 79/mês'  },
+                          { tier: 3, name: 'Profissional', price: 'R$ 197/mês' },
+                          { tier: 4, name: 'Avançado',     price: 'R$ 497/mês' },
+                        ] as const).map(({ tier, name, price }) => {
+                          const isCurrent = tier === userTier;
+                          const isUp = tier > userTier;
+                          return (
+                            <button
+                              key={tier}
+                              onClick={() => !isCurrent && setChangePlanModal({ tier })}
+                              disabled={isCurrent || !!billingAction}
+                              className={`relative flex flex-col gap-0.5 rounded-xl border p-4 text-left transition ${
+                                isCurrent
+                                  ? 'border-emerald-200 bg-emerald-50 cursor-default'
+                                  : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40'
+                              }`}
+                            >
+                              {isCurrent && (
+                                <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600">
+                                  <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-bold uppercase tracking-widest ${isCurrent ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                Nível {tier}
+                              </span>
+                              <span className={`text-sm font-black ${isCurrent ? 'text-emerald-900' : 'text-slate-800'}`}>{name}</span>
+                              <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : 'text-slate-500'}`}>{price}</span>
+                              {!isCurrent && (
+                                <span className={`mt-1.5 text-[10px] font-bold ${isUp ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                  {billingAction === `tier-${tier}` ? 'Alterando...' : isUp ? '↑ Upgrade' : '↓ Downgrade'}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+	                  {invoices.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead>
@@ -867,6 +1069,111 @@ function ProfileContent() {
                 </button>
               </div>
             </section>
+
+            {/* ── Modal: Atualizar cartão ── */}
+            <CardUpdateModal
+              isOpen={showPaymentModal}
+              clientSecret={paymentClientSecret}
+              onClose={() => { setShowPaymentModal(false); setPaymentClientSecret(null); }}
+              onSuccess={async () => {
+                setShowPaymentModal(false);
+                setPaymentClientSecret(null);
+                // Recarrega só o cartão — não precisa de fetchData completo
+                try {
+                  const r = await apiFetch(`${API_URL}/api/billing/payment-method`);
+                  if (r.ok) { const d = await r.json(); setSavedCard(d.card ?? null); }
+                } catch { /* silencioso */ }
+              }}
+            />
+
+            {/* ── Modal: Confirmação de troca de plano ── */}
+            {changePlanModal && (() => {
+              const PLANS: Record<number, { name: string; price: string; features: string[] }> = {
+                2: { name: 'Essencial',    price: 'R$ 79/mês',  features: ['Perfil da empresa (CNPJ/UF)', 'Central de decisões', 'Radar 360 — busca PNCP', 'Editais até 80.000 chars', 'PDF até 15 MB'] },
+                3: { name: 'Profissional', price: 'R$ 197/mês', features: ['Oportunidades com fit CNAE', 'Monitor inteligente PNCP', 'Fôlego financeiro', '4 Agentes IA em paralelo', 'Editais até 180.000 chars'] },
+                4: { name: 'Avançado',     price: 'R$ 497/mês', features: ['Pipeline de renovações', 'War Room de concorrentes', 'Simulador tático de preços', 'Editais até 400.000 chars', 'PDF até 100 MB'] },
+              };
+              const current = PLANS[userTier];
+              const next    = PLANS[changePlanModal.tier];
+              const isUp    = changePlanModal.tier > userTier;
+              return (
+                <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
+                  <div className="absolute inset-0" onClick={() => setChangePlanModal(null)} aria-hidden />
+                  <div
+                    className="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
+                    style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
+                  >
+                    <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+
+                    {/* Header */}
+                    <div className={`px-6 py-5 ${isUp ? 'bg-emerald-600' : 'bg-slate-800'}`}>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60">
+                        {isUp ? 'Upgrade de plano' : 'Downgrade de plano'}
+                      </p>
+                      <h2 className="mt-1 text-lg font-black text-white">
+                        {current?.name ?? `Nível ${userTier}`} → {next?.name ?? `Nível ${changePlanModal.tier}`}
+                      </h2>
+                      <p className="mt-0.5 text-sm text-white/70">
+                        {next?.price} · A Stripe aplica ajuste proporcional no ciclo atual
+                      </p>
+                    </div>
+
+                    {/* Body */}
+                    <div className="p-6 space-y-5">
+                      {/* Comparativo */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Plano atual</p>
+                          <p className="font-black text-slate-950">{current?.name ?? `Nível ${userTier}`}</p>
+                          <ul className="mt-2 space-y-1">
+                            {current?.features.slice(0, 3).map(f => (
+                              <li key={f} className="text-[11px] text-slate-500 flex items-start gap-1.5">
+                                <span className="text-slate-300 mt-0.5 shrink-0">—</span>{f}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className={`rounded-xl border p-4 ${isUp ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                          <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isUp ? 'text-emerald-600' : 'text-amber-600'}`}>Novo plano</p>
+                          <p className="font-black text-slate-950">{next?.name ?? `Nível ${changePlanModal.tier}`}</p>
+                          <ul className="mt-2 space-y-1">
+                            {next?.features.slice(0, 3).map(f => (
+                              <li key={f} className={`text-[11px] flex items-start gap-1.5 ${isUp ? 'text-emerald-700' : 'text-amber-800'}`}>
+                                <span className="mt-0.5 shrink-0">{isUp ? '✓' : '—'}</span>{f}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {/* Nota de cobrança */}
+                      <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
+                        {isUp
+                          ? 'O upgrade é imediato. A diferença proporcional do ciclo atual será cobrada no cartão cadastrado.'
+                          : 'O downgrade ocorre no próximo ciclo. Você mantém os recursos atuais até o fim do período já pago.'}
+                      </p>
+
+                      {/* Botões */}
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setChangePlanModal(null)}
+                          className="h-11 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-black uppercase tracking-widest text-slate-600 transition hover:bg-slate-50"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={async () => { setChangePlanModal(null); await handleChangePlan(changePlanModal.tier); }}
+                          disabled={!!billingAction}
+                          className={`h-11 flex-1 rounded-lg text-sm font-black uppercase tracking-wide text-white transition disabled:opacity-50 ${isUp ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-800 hover:bg-slate-700'}`}
+                        >
+                          {billingAction ? 'Alterando...' : `Confirmar ${isUp ? 'upgrade' : 'downgrade'}`}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </main>
         </div>
       </div>

@@ -20,12 +20,15 @@ interface UpgradeModalProps {
   onClose: () => void;
   tier: number;
   clientSecret: string | null;
+  title?: string;
+  eyebrow?: string;
 }
 
-export default function UpgradeModal({ isOpen, onClose, tier, clientSecret }: UpgradeModalProps) {
+export default function UpgradeModal({ isOpen, onClose, tier, clientSecret, title, eyebrow }: UpgradeModalProps) {
   if (!isOpen) return null;
 
   const plan = PLAN_INFO[tier] ?? { name: 'Plano Bawzi', price: '', headerClass: 'bg-gradient-to-br from-emerald-500 to-sky-600', orbs: 'from-sky-400/30 to-emerald-300/20' };
+  const modalTitle = title ?? `${plan.name} ${plan.price ? `· ${plan.price}` : ''}`;
 
   return (
     <div
@@ -62,10 +65,10 @@ export default function UpgradeModal({ isOpen, onClose, tier, clientSecret }: Up
             <div className="w-px h-5 bg-white/30" />
             <div>
               <p className="text-white/60 text-[10px] font-bold uppercase tracking-[0.15em] leading-none mb-1">
-                Assinar plano
+                {eyebrow ?? 'Assinar plano'}
               </p>
               <p className="text-white text-[15px] font-black leading-tight drop-shadow-sm">
-                {plan.name} <span className="font-light opacity-70">·</span> {plan.price}
+                {modalTitle}
               </p>
             </div>
           </div>
