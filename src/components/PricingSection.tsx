@@ -147,9 +147,73 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
     }
   };
 
+  // Paleta visual por tier
+  const tierStyle = {
+    '-1': {
+      strip:   'bg-slate-200',
+      card:    'bg-white border border-slate-200 hover:shadow-md hover:-translate-y-0.5',
+      badge:   'text-slate-400',
+      name:    'text-slate-700',
+      price:   'text-slate-800',
+      period:  'text-slate-400',
+      feature: 'text-slate-500',
+      check:   'text-slate-400',
+      btn:     'bg-slate-800 text-white hover:bg-slate-700',
+      btnActive:'bg-slate-200 text-slate-500 cursor-default',
+    },
+    '1': {
+      strip:   'bg-slate-300',
+      card:    'bg-white border border-slate-200 hover:shadow-md hover:-translate-y-0.5',
+      badge:   'text-slate-400',
+      name:    'text-slate-800',
+      price:   'text-slate-900',
+      period:  'text-slate-400',
+      feature: 'text-slate-500',
+      check:   'text-slate-400',
+      btn:     'bg-slate-900 text-white hover:bg-slate-700',
+      btnActive:'bg-emerald-100 text-emerald-700 cursor-default',
+    },
+    '2': {
+      strip:   'bg-sky-500',
+      card:    'bg-white border border-slate-200 hover:shadow-md hover:-translate-y-0.5',
+      badge:   'text-sky-500',
+      name:    'text-slate-900',
+      price:   'text-slate-900',
+      period:  'text-slate-400',
+      feature: 'text-slate-500',
+      check:   'text-sky-500',
+      btn:     'bg-sky-600 text-white hover:bg-sky-700',
+      btnActive:'bg-emerald-100 text-emerald-700 cursor-default',
+    },
+    '3': {
+      strip:   'bg-emerald-500',
+      card:    'bg-white border border-emerald-200 shadow-xl lg:-translate-y-4 hover:shadow-2xl hover:-translate-y-5 z-10 relative',
+      badge:   'text-emerald-600',
+      name:    'text-slate-900',
+      price:   'text-slate-900',
+      period:  'text-slate-400',
+      feature: 'text-slate-600',
+      check:   'text-emerald-500',
+      btn:     'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-200',
+      btnActive:'bg-emerald-100 text-emerald-700 cursor-default',
+    },
+    '4': {
+      strip:   'bg-gradient-to-r from-violet-600 to-indigo-600',
+      card:    'bg-slate-950 border border-slate-800 hover:shadow-xl hover:-translate-y-0.5',
+      badge:   'text-violet-400',
+      name:    'text-white',
+      price:   'text-white',
+      period:  'text-slate-400',
+      feature: 'text-slate-400',
+      check:   'text-violet-400',
+      btn:     'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:from-violet-500 hover:to-indigo-500 shadow-md shadow-violet-900/40',
+      btnActive:'bg-violet-900/50 text-violet-300 cursor-default',
+    },
+  } as Record<string, Record<string, string>>;
+
   const tiers = [
     {
-      name: "Teste", badge: "NÍVEL 0", price: "Grátis",
+      name: "Teste", badge: "NÍVEL 0", price: "Grátis", period: "",
       features: [
         "Nova Análise — score Go/No-Go",
         "Resumo executivo do edital",
@@ -157,20 +221,20 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 10.000 caracteres",
         "PDF até 3 MB · sem cadastro",
       ],
-      buttonText: "Testar agora", tierLevel: -1, popular: false,
+      buttonText: "Testar agora", tierLevel: -1, popular: false, label: null,
     },
     {
-      name: "Gratuito", badge: "NÍVEL 1", price: "Grátis*",
+      name: "Gratuito", badge: "NÍVEL 1", price: "Grátis", period: "",
       features: [
         "Análise completa (5x/mês)",
         "Mapa de riscos jurídicos",
         "Editais até 25.000 caracteres",
         "PDF até 5 MB",
       ],
-      buttonText: "Criar conta", tierLevel: 1, popular: false,
+      buttonText: "Criar conta", tierLevel: 1, popular: false, label: null,
     },
     {
-      name: "Essencial", badge: "NÍVEL 2", price: "R$ 79/mês",
+      name: "Essencial", badge: "NÍVEL 2", price: "R$ 79", period: "/mês",
       features: [
         "Perfil da empresa (CNPJ/UF)",
         "Central de decisões e laudos salvos",
@@ -180,10 +244,10 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 80.000 caracteres",
         "PDF até 15 MB",
       ],
-      buttonText: "Assinar Essencial", tierLevel: 2, popular: false,
+      buttonText: "Assinar Essencial", tierLevel: 2, popular: false, label: null,
     },
     {
-      name: "Profissional", badge: "NÍVEL 3", price: "R$ 197/mês",
+      name: "Profissional", badge: "NÍVEL 3", price: "R$ 197", period: "/mês",
       features: [
         "Oportunidades com fit CNAE e perfil",
         "Monitor inteligente PNCP (e-mail + sino)",
@@ -192,10 +256,10 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 180.000 caracteres",
         "PDF até 30 MB",
       ],
-      buttonText: "Assinar Profissional", tierLevel: 3, popular: true,
+      buttonText: "Assinar Profissional", tierLevel: 3, popular: true, label: "Mais popular",
     },
     {
-      name: "Avançado", badge: "NÍVEL 4", price: "R$ 497/mês",
+      name: "Avançado", badge: "NÍVEL 4", price: "R$ 497", period: "/mês",
       features: [
         "Pipeline de renovações e contratos vencendo",
         "War Room de concorrentes",
@@ -203,7 +267,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
         "Editais até 400.000 caracteres",
         "PDF até 100 MB · suporte prioritário",
       ],
-      buttonText: "Assinar Avançado", tierLevel: 4, popular: false,
+      buttonText: "Assinar Avançado", tierLevel: 4, popular: false, label: "Elite",
     },
   ];
 
@@ -214,6 +278,7 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
           {checkoutError}
         </div>
       )}
+
       {/* Banner: Convite Promocional */}
       {isPromo && (
         <div className="flex flex-wrap items-center gap-3 bg-violet-50 border border-violet-200 px-5 py-4 rounded-2xl mb-6">
@@ -267,74 +332,86 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end mb-16">
-        {tiers.map((tier, index) => {
-          const isActivePaid  = !isPromo && tier.tierLevel === activeTier;
-          const isPromoActive = isPromo && tier.tierLevel === activeTier;
-          const isCurrentPlan = isActivePaid; // só marca como "atual" se for assinatura paga
-          const isDark = tier.popular;
+        {tiers.map((tier) => {
+          const s            = tierStyle[String(tier.tierLevel)];
+          const isActivePaid = !isPromo && tier.tierLevel === activeTier;
+          const isPromoActive= isPromo  && tier.tierLevel === activeTier;
 
           return (
             <div
-              key={index}
-              className={`rounded-2xl flex flex-col transition-all duration-300 overflow-hidden
-                ${isDark ? 'bg-slate-950 shadow-xl lg:-translate-y-3 z-10 relative' : tier.tierLevel === -1 ? 'bg-slate-50' : 'bg-white'}
-                ${isActivePaid  ? 'ring-2 ring-emerald-500 ring-offset-2' : ''}
-                ${isPromoActive ? 'ring-2 ring-violet-400 ring-offset-2' : ''}
-                ${!isActivePaid && !isPromoActive ? 'border border-slate-200' : ''}`}
+              key={tier.tierLevel}
+              className={`rounded-2xl flex flex-col transition-all duration-300 overflow-hidden ${s.card}
+                ${isActivePaid   ? 'ring-2 ring-emerald-500 ring-offset-2' : ''}
+                ${isPromoActive  ? 'ring-2 ring-violet-400 ring-offset-2'  : ''}`}
             >
-              {/* Topo colorido */}
-              <div className={`px-5 pt-5 pb-4 ${isDark ? '' : 'border-b border-slate-100'}`}>
-                <span className={`text-[9px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  {tier.badge}
-                </span>
-                <h3 className={`text-[17px] font-black mt-0.5 leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              {/* Faixa colorida no topo */}
+              <div className={`h-1 w-full ${s.strip}`} />
+
+              {/* Cabeçalho */}
+              <div className="px-5 pt-4 pb-4">
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[9px] font-black uppercase tracking-widest ${s.badge}`}>
+                    {tier.badge}
+                  </span>
+                  {tier.label && (
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border
+                      ${tier.tierLevel === 3
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-violet-50 text-violet-700 border-violet-200'}`}>
+                      {tier.label}
+                    </span>
+                  )}
+                </div>
+                <h3 className={`text-[18px] font-black leading-tight ${s.name}`}>
                   {tier.name}
                 </h3>
-                <div className={`text-[22px] font-black mt-2 leading-none ${isDark ? 'text-emerald-400' : 'text-slate-900'}`}>
-                  {tier.price}
+                <div className="flex items-baseline gap-0.5 mt-2">
+                  <span className={`text-[24px] font-black leading-none ${s.price}`}>
+                    {tier.price}
+                  </span>
+                  {tier.period && (
+                    <span className={`text-[12px] font-medium ${s.period}`}>{tier.period}</span>
+                  )}
                 </div>
               </div>
 
+              {/* Separador */}
+              <div className={`h-px mx-5 ${tier.tierLevel === 4 ? 'bg-slate-800' : 'bg-slate-100'}`} />
+
               {/* Features */}
-              <ul className={`px-5 py-4 space-y-2.5 flex-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              <ul className="px-5 py-4 space-y-2.5 flex-1">
                 {tier.features.map((feature, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[11px] font-medium leading-snug">
-                    <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-500'}`} />
+                  <li key={i} className={`flex items-start gap-2 text-[11px] font-medium leading-snug ${s.feature}`}>
+                    <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${s.check}`} />
                     {feature}
                   </li>
                 ))}
               </ul>
 
               {/* Botão */}
-              <div className="px-5 pb-5 space-y-2">
-                {/* Badge promo no topo do botão */}
+              <div className="px-5 pb-5 pt-1 space-y-2">
                 {isPromoActive && (
                   <div className="flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-violet-600 bg-violet-50 border border-violet-200 px-2 py-1 rounded-lg">
                     <Sparkles className="w-2.5 h-2.5" />
                     Acesso via convite ativo
                   </div>
                 )}
-
                 <button
                   onClick={() => {
-                    if (isActivePaid) handleManageSubscription();
+                    if (isActivePaid)       handleManageSubscription();
                     else if (tier.tierLevel === -1) window.scrollTo({ top: 0, behavior: 'smooth' });
-                    else if (tier.tierLevel === 1) handleRegisterClick();
+                    else if (tier.tierLevel === 1)  handleRegisterClick();
                     else handleUpgradeClick(tier.tierLevel);
                   }}
-                  className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]
+                  className={`w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-[0.98]
                     ${isActivePaid
-                      ? 'bg-emerald-500/20 text-emerald-600 cursor-default'
+                      ? s.btnActive
                       : isPromoActive
-                        ? isDark
-                          ? 'bg-violet-500 text-white hover:bg-violet-400 shadow-lg'
-                          : 'bg-violet-600 text-white hover:bg-violet-700'
-                        : isDark
-                          ? 'bg-white text-slate-900 hover:bg-slate-100 shadow-lg'
-                          : 'bg-slate-900 text-white hover:bg-slate-700'}`}
+                        ? 'bg-violet-600 text-white hover:bg-violet-700'
+                        : s.btn}`}
                 >
-                  {isActivePaid  ? '✓ Plano Atual' :
-                   isPromoActive ? 'Assinar e manter acesso' :
+                  {isActivePaid   ? '✓ Plano Atual' :
+                   isPromoActive  ? 'Assinar e manter acesso' :
                    tier.buttonText}
                 </button>
               </div>
