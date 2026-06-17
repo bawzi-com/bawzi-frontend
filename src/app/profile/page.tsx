@@ -110,6 +110,10 @@ function ProfileContent() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [invoicesVisible, setInvoicesVisible] = useState(5);
+  const [cleanupRequired, setCleanupRequired] = useState(false);
+  const [membersOverflow, setMembersOverflow] = useState(0);
+  const [cleanupDeadline, setCleanupDeadline] = useState<string | null>(null);
   // UX: seção ativa no menu (scroll-spy) + status 2FA no card do avatar
   const [activeSection, setActiveSection] = useState('sec-perfil');
   const [twoFAOn, setTwoFAOn] = useState<boolean | null>(null);
@@ -189,6 +193,10 @@ function ProfileContent() {
           active_cnpj: nextActiveCnpj,
         });
 
+        setCleanupRequired(!!wData.cleanup_required);
+        setMembersOverflow(wData.members_overflow ?? 0);
+        setCleanupDeadline(wData.cleanup_deadline ?? null);
+
         if (nextActiveCnpj) setActiveCnpj(nextActiveCnpj);
 
         setUserTier(nivelAtualizado);
@@ -242,47 +250,55 @@ function ProfileContent() {
   };
 
   useEffect(() => {
-    if (stripeSuccess) {
-      let attempts = 0;
-      const maxAttempts = 6;
+    // Carrega o perfil imediatamente — garante que isLoading sai de true
+    // independentemente do fluxo (stripe success ou acesso direto).
+    fetchData();
 
-      const waitForWebhookAndReload = async () => {
-        attempts++;
-        const token = getAuthToken();
-        if (!token) return;
+    if (!stripeSuccess) return;
 
-        try {
-          // Força o sync com Stripe antes de ler os dados
-          await apiFetch(`${API_URL}/api/billing/sync`).catch(() => {});
+    // Fluxo pós-Stripe: verifica em background se o tier foi atualizado pelo webhook.
+    // Se mudar, recarrega a página limpa (sem ?success). Se não mudar em 6 tentativas,
+    // permanece na página já carregada — sem tela de loading infinito.
+    let attempts = 0;
+    const maxAttempts = 6;
 
-          const [userRes, wsRes] = await Promise.all([
-            apiFetch(`${API_URL}/api/users/me`),
-            apiFetch(`${API_URL}/api/workspace/details`),
-          ]);
+    const waitForWebhookAndReload = async () => {
+      attempts++;
+      const token = getAuthToken();
+      if (!token) return;
 
-          if (userRes.ok && wsRes.ok) {
-            const uData = await userRes.json();
-            const wData = await wsRes.json();
-            // Workspace é a fonte de verdade — user.tier pode estar stale
-            const nivelAtualizado = wData.tier || uData.tier || 1;
-            const nivelAntigo = Number(localStorage.getItem('bawzi_tier') || 1);
+      try {
+        await apiFetch(`${API_URL}/api/billing/sync`).catch(() => {});
 
-            // Recarrega se o tier mudou (upgrade OU downgrade) ou se esgotaram as tentativas
-            if (nivelAtualizado !== nivelAntigo || attempts >= maxAttempts) {
-              localStorage.setItem('bawzi_tier', String(nivelAtualizado));
-              window.location.href = '/profile';
-            } else {
-              setTimeout(waitForWebhookAndReload, 2000);
-            }
+        const [userRes, wsRes] = await Promise.all([
+          apiFetch(`${API_URL}/api/users/me`),
+          apiFetch(`${API_URL}/api/workspace/details`),
+        ]);
+
+        if (userRes.ok && wsRes.ok) {
+          const uData = await userRes.json();
+          const wData = await wsRes.json();
+          const nivelAtualizado = wData.tier || uData.tier || 1;
+          const nivelAntigo = Number(localStorage.getItem('bawzi_tier') || 1);
+
+          if (nivelAtualizado !== nivelAntigo) {
+            // Tier confirmado pelo Stripe — recarrega limpo
+            localStorage.setItem('bawzi_tier', String(nivelAtualizado));
+            window.location.href = '/profile';
+            return;
           }
-        } catch (error) {
-          console.error("Erro na verificação de pagamento:", error);
         }
-      };
-      waitForWebhookAndReload();
-    } else {
-      fetchData();
-    }
+      } catch (error) {
+        console.error("Erro na verificação de pagamento:", error);
+      }
+
+      if (attempts < maxAttempts) {
+        setTimeout(waitForWebhookAndReload, 2000);
+      }
+      // Se esgotou tentativas sem mudança de tier, permanece na página já carregada
+    };
+
+    waitForWebhookAndReload();
   }, [stripeSuccess, API_URL]);
 
   const handleManageSubscription = async () => {
@@ -535,6 +551,73 @@ function ProfileContent() {
           </aside>
 
           <main className="min-w-0 space-y-4">
+            {/* Banner de downgrade — prazo de ajuste após mudança de plano */}
+            {cleanupRequired && (() => {
+              const suspendedCount = companies.filter((c: any) => c.suspended).length;
+              const disabledCount  = companies.filter((c: any) => c.disabled).length;
+              const hasCompanyIssue = suspendedCount > 0 || disabledCount > 0;
+              const hasMemberIssue  = membersOverflow > 0;
+              if (!hasCompanyIssue && !hasMemberIssue) return null;
+
+              // Calcula dias restantes até o prazo
+              let diasRestantes: number | null = null;
+              if (cleanupDeadline) {
+                const diff = new Date(cleanupDeadline).getTime() - Date.now();
+                diasRestantes = Math.max(0, Math.ceil(diff / 86_400_000));
+              }
+              const prazoExpirou = diasRestantes !== null && diasRestantes === 0;
+              const isRed = prazoExpirou || disabledCount > 0;
+
+              return (
+                <div className={`rounded-lg border p-4 ${isRed ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 text-lg leading-none">{isRed ? '🚫' : '⚠️'}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className={`text-sm font-black ${isRed ? 'text-red-900' : 'text-amber-900'}`}>
+                          {isRed ? 'Prazo encerrado — empresas desabilitadas' : 'Plano alterado — ação necessária'}
+                        </p>
+                        {diasRestantes !== null && !prazoExpirou && (
+                          <span className="rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-[11px] font-black text-amber-800">
+                            {diasRestantes} dia{diasRestantes !== 1 ? 's' : ''} restante{diasRestantes !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                      <p className={`mt-1 text-xs font-medium leading-5 ${isRed ? 'text-red-800' : 'text-amber-800'}`}>
+                        {disabledCount > 0 && (
+                          <><strong>{disabledCount} empresa{disabledCount > 1 ? 's desabilitadas' : ' desabilitada'}</strong> — indisponíveis para análise até você removê-las ou fazer upgrade. {' '}</>
+                        )}
+                        {suspendedCount > 0 && !prazoExpirou && (
+                          <><strong>{suspendedCount} empresa{suspendedCount > 1 ? 's suspensas' : ' suspensa'}</strong> — radar parado. Remova ou troque a privilegiada antes do prazo. {' '}</>
+                        )}
+                        {hasMemberIssue && (
+                          <><strong>{membersOverflow} membro{membersOverflow > 1 ? 's' : ''} além do limite</strong> — novos convites bloqueados.</>
+                        )}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {hasCompanyIssue && (
+                          <button
+                            onClick={() => scrollTo('sec-empresas')}
+                            className={`text-[11px] font-black uppercase tracking-wider transition-colors underline underline-offset-2 ${isRed ? 'text-red-700 hover:text-red-900' : 'text-amber-700 hover:text-amber-900'}`}
+                          >
+                            Gerenciar empresas ↓
+                          </button>
+                        )}
+                        {hasMemberIssue && (
+                          <button
+                            onClick={() => scrollTo('sec-equipe')}
+                            className={`text-[11px] font-black uppercase tracking-wider transition-colors underline underline-offset-2 ${isRed ? 'text-red-700 hover:text-red-900' : 'text-amber-700 hover:text-amber-900'}`}
+                          >
+                            Gerenciar equipe ↓
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             <section id="sec-perfil" className={panelClass}>
               <SectionHeading icon={User} title="Dados do perfil" eyebrow="Nome e e-mail da conta" tone="slate" />
               <div className="p-5 sm:p-6">
@@ -623,7 +706,7 @@ function ProfileContent() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {invoices.map((inv) => (
+                          {invoices.slice(0, invoicesVisible).map((inv) => (
                             <tr key={inv.id} className="transition-colors hover:bg-slate-50">
                               <td className="px-5 py-3.5 font-medium text-slate-500">{inv.date}</td>
                               <td className="px-5 py-3.5 font-bold text-slate-900">{inv.number}</td>
@@ -648,6 +731,19 @@ function ProfileContent() {
                           ))}
                         </tbody>
                       </table>
+                      {invoicesVisible < invoices.length && (
+                        <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-slate-400">
+                            {invoicesVisible} de {invoices.length} faturas
+                          </span>
+                          <button
+                            onClick={() => setInvoicesVisible(v => Math.min(v + 10, invoices.length))}
+                            className="text-[11px] font-black uppercase tracking-wider text-emerald-600 hover:text-emerald-700 transition-colors"
+                          >
+                            Mostrar mais 10
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="p-5">

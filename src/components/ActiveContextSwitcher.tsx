@@ -29,7 +29,9 @@ export default function ActiveContextSwitcher({
   onChange,
 }: ActiveContextSwitcherProps) {
   const companyList = useMemo(
-    () => (companies || []).filter(company => !!getCompanyCnpj(company)),
+    () => (companies || []).filter(
+      (company: any) => !!getCompanyCnpj(company) && !company.suspended && !company.disabled,
+    ),
     [companies],
   );
   const [selectedCnpj, setSelectedCnpj] = useState(() => getPreferredActiveCnpj(companyList, activeCnpj));

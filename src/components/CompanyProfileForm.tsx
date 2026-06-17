@@ -46,7 +46,8 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
   });
 
   const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
-  const slotsOcupados = companiesList.length;
+  // Conta apenas empresas ativas (não suspensas nem desabilitadas)
+  const slotsOcupados = companiesList.filter((c: any) => !c.suspended && !c.disabled).length;
 
   useEffect(() => {
     if (companyData) {
@@ -247,6 +248,22 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     }
   };
 
+  const handleActivate = async (cnpj: string) => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/workspace/company/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cnpj }),
+      });
+      if (!res.ok) throw new Error('Erro ao ativar empresa.');
+      setMessage({ type: 'success', text: 'Empresa ativada! O seletor de análise foi atualizado.' });
+      if (onUpdate) await onUpdate();
+    } catch (error: any) {
+      if (error instanceof SessionExpiredError) { clearSession(); return; }
+      setMessage({ type: 'error', text: error.message });
+    }
+  };
+
   const handleDelete = async (cnpj: string) => {
     if (!window.confirm("Remover esta empresa da sua monitorização?")) return;
     
@@ -316,10 +333,31 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       {view === 'list' && (
         <div className="space-y-5">
           {companiesList.map((emp) => (
-            <div 
-              key={emp.cnpj || emp.website || emp.razao_social} 
-              className="group flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5 transition-all duration-300 hover:border-emerald-200 hover:shadow-sm"
+            <div
+              key={emp.cnpj || emp.website || emp.razao_social}
+              className={[
+                'group flex flex-col gap-4 rounded-lg border p-5 transition-all duration-300',
+                emp.suspended
+                  ? 'border-amber-200 bg-amber-50/50 opacity-70'
+                  : 'border-slate-200 bg-white hover:border-emerald-200 hover:shadow-sm',
+              ].join(' ')}
             >
+              {emp.suspended && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                  <span className="text-sm">⚠️</span>
+                  <p className="text-[11px] font-black text-amber-800">
+                    Radar suspenso — excede o limite do plano. Clique em <strong>Tornar ativa</strong> para privilegiá-la (outra empresa será suspensa), remova-a ou faça upgrade.
+                  </p>
+                </div>
+              )}
+              {emp.disabled && (
+                <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                  <span className="text-sm">🚫</span>
+                  <p className="text-[11px] font-black text-red-800">
+                    Empresa desabilitada — prazo de ajuste encerrado. Indisponível para análise. Remova-a ou faça upgrade para reativar.
+                  </p>
+                </div>
+              )}
               
               {/* === LINHA 1: DADOS E BOTÕES === */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -382,25 +420,44 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                 
                 {/* Botões de Ação */}
                 <div className="flex w-full items-center justify-end gap-2 border-t border-slate-100 pt-4 md:w-auto md:border-t-0 md:pt-0">
+                  {emp.suspended ? (
+                    /* Empresa suspensa: botão para torná-la privilegiada */
+                    <button
+                      onClick={() => handleActivate(emp.cnpj)}
+                      className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-amber-700 transition-all hover:bg-amber-600 hover:text-white hover:border-amber-600 md:flex-none"
+                      title="Tornar esta a empresa privilegiada para análise"
+                    >
+                      <Activity size={16} /> Tornar ativa
+                    </button>
+                  ) : emp.disabled ? (
+                    /* Empresa desabilitada: só remoção disponível */
+                    <span className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-slate-100 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 md:flex-none cursor-default">
+                      Desabilitada
+                    </span>
+                  ) : (
+                    /* Empresa ativa: fluxo normal */
+                    <button
+                      onClick={() => {
+                        const activeCnpj = setActiveCompanyContext(emp.cnpj);
+                        if (onCnpjDetected) onCnpjDetected(activeCnpj);
+                        router.push('/workspace');
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white md:flex-none"
+                    >
+                      <Activity size={16} /> Ver Radar
+                    </button>
+                  )}
+                  {!emp.disabled && (
+                    <button
+                      onClick={() => handleEdit(emp)}
+                      className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-500 transition-all hover:bg-slate-200 hover:text-slate-800"
+                      title="Editar"
+                    >
+                      <Edit3 size={18} />
+                    </button>
+                  )}
                   <button
-                    onClick={() => {
-                      const activeCnpj = setActiveCompanyContext(emp.cnpj);
-                      if (onCnpjDetected) onCnpjDetected(activeCnpj);
-                      router.push('/workspace');
-                    }}
-                    className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-emerald-50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-all hover:bg-emerald-600 hover:text-white md:flex-none"
-                  >
-                    <Activity size={16} /> Ver Radar
-                  </button>
-                  <button 
-                    onClick={() => handleEdit(emp)} 
-                    className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-500 transition-all hover:bg-slate-200 hover:text-slate-800"
-                    title="Editar"
-                  >
-                    <Edit3 size={18} />
-                  </button>
-                  <button 
-                    onClick={() => handleDelete(emp.cnpj)} 
+                    onClick={() => handleDelete(emp.cnpj)}
                     disabled={!emp.cnpj}
                     className="flex shrink-0 items-center justify-center rounded-lg bg-slate-50 p-2.5 text-slate-400 transition-all hover:bg-rose-100 hover:text-rose-600"
                     title="Remover Empresa"

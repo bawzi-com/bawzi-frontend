@@ -202,6 +202,13 @@ export default function AnalysisLoadingOverlay({
             <X size={14} />
             Cancelar análise
           </button>
+
+          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <p className="text-xs font-black text-emerald-800">🏆 A vitória começa antes do balcão.</p>
+            <p className="mt-1.5 text-[11px] font-medium leading-5 text-emerald-700">
+              Robôs trabalham nos lances. Nós trabalhamos agora — para você entrar só onde vale ganhar.
+            </p>
+          </div>
         </aside>
       </div>
     </div>

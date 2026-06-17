@@ -288,6 +288,48 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="bg-white py-16 md:py-20">
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="grid gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Antes do balcão</p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
+                Você não perde no balcão por falta de agilidade.
+              </h2>
+              <p className="mt-1 text-3xl font-black tracking-tight text-slate-400 md:text-4xl">
+                Perde por ter entrado na licitação errada.
+              </p>
+              <p className="mt-6 text-base font-medium leading-8 text-slate-600">
+                Robôs trabalham nos lances. Nós trabalhamos antes: analisamos preços praticados, histórico de vencedores e nível de concorrência para que cada decisão sua seja baseada em dados reais — não em estimativa.
+              </p>
+              <Link href="/login" className="mt-7 inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 text-sm font-black text-white shadow-md transition-all hover:bg-emerald-500">
+                Analisar um edital agora <ArrowRight size={16} />
+              </Link>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div className="rounded-2xl bg-slate-950 p-6 text-white">
+                <p className="text-2xl font-black leading-snug">🏆 A vitória começa antes do balcão.</p>
+                <p className="mt-3 text-base font-medium leading-7 text-slate-300">
+                  Preços reais. Concorrência real. Decisão certa.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  ['Preços', 'praticados no mercado'],
+                  ['Vencedores', 'histórico real PNCP'],
+                  ['Concorrência', 'nível por segmento'],
+                ].map(([title, desc]) => (
+                  <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <p className="text-sm font-black text-slate-950">{title}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-slate-950 py-16 text-white md:py-20">
         <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.88fr_1fr] lg:items-center">
           <div>
@@ -329,6 +371,95 @@ export default function LandingPage() {
       </section>
 
       <SavingsCalculator />
+
+      <section className="scroll-mt-24 bg-white py-16 md:py-20" id="vantagens">
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="mb-12 text-center">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Por que a Bawzi</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
+              A diferença entre dados reais e achismo.
+            </h2>
+            <p className="mt-4 mx-auto max-w-2xl text-base font-medium leading-8 text-slate-500">
+              Qualquer planilha organiza editais. A Bawzi decide junto com você — com dados do PNCP oficial, histórico de vencedores e inteligência de preço baseada em contratos fechados.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[
+              {
+                numero: '01',
+                titulo: 'Preço vem de contrato, não de estimativa',
+                desc: 'O valor estimado pelo órgão raramente é o valor de mercado. A Bawzi usa preços de contratos fechados no PNCP para calcular deságio real e limite de lance.',
+                cor: 'text-emerald-600',
+                borda: 'border-emerald-100',
+                bg: 'bg-emerald-50',
+              },
+              {
+                numero: '02',
+                titulo: 'Go/No-Go em minutos, não em dias',
+                desc: '4 agentes de IA analisam CNAE, jurídico, preço e concorrência em paralelo. O veredito chega antes de você terminar de ler o edital.',
+                cor: 'text-sky-600',
+                borda: 'border-sky-100',
+                bg: 'bg-sky-50',
+              },
+              {
+                numero: '03',
+                titulo: 'Você sabe quem compete antes de entrar',
+                desc: 'Histórico de fornecedores recorrentes, perfil de vencedores e nível de concorrência por segmento — tudo antes de mobilizar equipe e proposta.',
+                cor: 'text-indigo-600',
+                borda: 'border-indigo-100',
+                bg: 'bg-indigo-50',
+              },
+              {
+                numero: '04',
+                titulo: 'Risco jurídico antes do protocolo',
+                desc: 'Cláusulas eliminatórias, documentos críticos e penalidades mapeadas antes de qualquer comprometimento. Sua equipe jurídica atua onde importa.',
+                cor: 'text-amber-600',
+                borda: 'border-amber-100',
+                bg: 'bg-amber-50',
+              },
+              {
+                numero: '05',
+                titulo: 'Decisão com rastreabilidade',
+                desc: 'Cada Go ou No-Go vem com justificativa documentada, score de confiança e próximos passos — para a diretoria aprovar sem precisar ler o edital.',
+                cor: 'text-teal-600',
+                borda: 'border-teal-100',
+                bg: 'bg-teal-50',
+              },
+              {
+                numero: '06',
+                titulo: 'Conectado ao PNCP em tempo real',
+                desc: 'Editais, contratos e resultados direto da API oficial do governo. Sem raspar HTML, sem dado defasado, sem intermediário.',
+                cor: 'text-rose-600',
+                borda: 'border-rose-100',
+                bg: 'bg-rose-50',
+              },
+            ].map(({ numero, titulo, desc, cor, borda, bg }) => (
+              <div key={numero} className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+                <div className={`mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border ${borda} ${bg}`}>
+                  <span className={`text-xs font-black ${cor}`}>{numero}</span>
+                </div>
+                <h3 className="text-base font-black leading-snug text-slate-950">{titulo}</h3>
+                <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 rounded-[1.5rem] border border-emerald-100 bg-emerald-50 p-6 md:p-8">
+            <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Resumindo</p>
+                <p className="mt-2 text-xl font-black leading-snug text-slate-950 md:text-2xl">
+                  Robôs trabalham nos lances. Nós trabalhamos antes — para que você entre apenas nas disputas que vale ganhar.
+                </p>
+              </div>
+              <Link href="/login" className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 text-sm font-black text-white shadow-md transition-all hover:bg-emerald-500">
+                Testar grátis <ArrowRight size={16} />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="scroll-mt-24 bg-white py-16 md:py-20" id="planos">
         <div className="mx-auto max-w-[1180px] px-6">

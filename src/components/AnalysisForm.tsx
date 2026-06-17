@@ -250,6 +250,14 @@ export default function AnalysisForm({
           </div>
         )}
 
+        {/* Strip antes do balcão */}
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-5 py-4">
+          <p className="text-sm font-black text-emerald-800">🏆 A vitória começa antes do balcão.</p>
+          <p className="mt-1 text-xs font-medium leading-5 text-slate-600">
+            Você não perde no balcão por falta de agilidade — perde por ter entrado na licitação errada. Robôs trabalham nos lances. Nós trabalhamos agora.
+          </p>
+        </div>
+
         {/* Botões de análise */}
         <div className="mt-6 w-full">
           {/* Indicador de quota mensal */}

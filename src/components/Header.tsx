@@ -164,6 +164,7 @@ export default function Header() {
   const landingLinks = [
     { href: '/#problema', label: 'Problema' },
     { href: '/#como-funciona', label: 'Como funciona' },
+    { href: '/#vantagens', label: 'Por que a Bawzi' },
     { href: '/#economia', label: 'Economia' },
     { href: '/#planos', label: 'Planos' },
   ];
@@ -180,7 +181,7 @@ export default function Header() {
         </Link>
 
         {/* NAVEGAÇÃO CENTRAL */}
-        <nav className="hidden md:flex items-center gap-7 mr-8">
+        <nav className="hidden md:flex items-center gap-5 lg:gap-7 mr-4 lg:mr-8">
           {isLanding && !token ? (
             landingLinks.map(({ href, label }) => (
               <Link key={href} href={href} className="text-sm font-bold pb-1 border-b-2 border-transparent text-slate-500 transition-all hover:text-slate-900">
@@ -190,7 +191,7 @@ export default function Header() {
           ) : (
             <>
               <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-                Workspace
+                Área de trabalho
               </Link>
               {token && (
                 <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
@@ -201,7 +202,7 @@ export default function Header() {
                 Planos
               </Link>
               <Link href="/docs" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/docs' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
-                Docs
+                Documentação
               </Link>
             </>
           )}

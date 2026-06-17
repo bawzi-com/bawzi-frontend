@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 export default function PncpStatusBadge() {
   const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
   const [retrying, setRetrying] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const checkStatus = async () => {
     try {
@@ -14,18 +16,35 @@ export default function PncpStatusBadge() {
       if (!res.ok) throw new Error("Falha na API");
       const data = await res.json();
       setStatus(data.pncp_state || 'error');
+      return data.pncp_state || 'error';
     } catch (err) {
-      if (err instanceof SessionExpiredError) return;
+      if (err instanceof SessionExpiredError) return 'error';
       setStatus('error');
+      return 'error';
     }
   };
 
   const handleRetry = async () => {
     setRetrying(true);
+    setShowTooltip(false);
     setStatus('checking');
-    await checkStatus();
+    const result = await checkStatus();
     setRetrying(false);
+    if (result === 'offline' || result === 'error') {
+      setShowTooltip(true);
+      if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+      tooltipTimer.current = setTimeout(() => setShowTooltip(false), 6000);
+    }
   };
+
+  useEffect(() => {
+    checkStatus();
+    const interval = setInterval(checkStatus, 120000);
+    return () => {
+      clearInterval(interval);
+      if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     checkStatus();
@@ -80,26 +99,47 @@ export default function PncpStatusBadge() {
   }[status];
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${config.bg} transition-all duration-500`}>
-      <div className="relative flex h-2 w-2">
-        {config.animate && (
-          <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${config.dot} ${config.animate}`}></span>
-        )}
-        <span className={`relative inline-flex rounded-full h-2 w-2 ${config.dot}`}></span>
-      </div>
-      <span className={`text-[10px] font-black uppercase tracking-widest ${config.color} flex items-center gap-1`}>
-        {config.text}
-      </span>
-      {(status === 'offline' || status === 'error') && (
-        <button
-          onClick={handleRetry}
-          disabled={retrying}
-          title="Verificar novamente"
-          className="ml-1 text-[9px] text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
-        >
-          ↺
-        </button>
+    <div className="relative">
+      {/* Tooltip após retry sem sucesso */}
+      {showTooltip && (
+        <div className="absolute bottom-full right-0 mb-2 z-50 w-64 animate-in fade-in slide-in-from-bottom-1 duration-200">
+          <div className="rounded-2xl border border-amber-200 bg-white shadow-lg p-3.5">
+            <div className="flex items-start gap-2.5">
+              <span className="text-base leading-none mt-0.5">🔌</span>
+              <div>
+                <p className="text-xs font-black text-slate-900">PNCP temporariamente indisponível</p>
+                <p className="mt-1 text-[11px] font-medium leading-relaxed text-slate-500">
+                  O portal do governo está fora do ar. Suas análises continuam funcionando com os dados locais. Tente novamente em alguns minutos.
+                </p>
+              </div>
+            </div>
+            {/* Seta */}
+            <div className="absolute -bottom-1.5 right-5 h-3 w-3 rotate-45 border-b border-r border-amber-200 bg-white" />
+          </div>
+        </div>
       )}
+
+      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${config.bg} transition-all duration-500`}>
+        <div className="relative flex h-2 w-2">
+          {config.animate && (
+            <span className={`absolute inline-flex h-full w-full rounded-full opacity-75 ${config.dot} ${config.animate}`}></span>
+          )}
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${config.dot}`}></span>
+        </div>
+        <span className={`text-[10px] font-black uppercase tracking-widest ${config.color} flex items-center gap-1`}>
+          {config.text}
+        </span>
+        {(status === 'offline' || status === 'error') && (
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            title="Verificar novamente"
+            className={`ml-1 text-[9px] text-slate-400 hover:text-slate-600 transition-all disabled:opacity-40 ${retrying ? 'animate-spin' : 'hover:scale-125'}`}
+          >
+            ↺
+          </button>
+        )}
+      </div>
     </div>
   );
 }
