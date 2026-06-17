@@ -9,7 +9,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://app.bawzi.com https://*.railway.app https://accounts.google.com https://api.stripe.com https://*.stripe.com wss:",
+  "connect-src 'self' https://api.bawzi.com https://app.bawzi.com https://*.railway.app https://accounts.google.com https://api.stripe.com https://*.stripe.com wss:",
   "frame-src https://accounts.google.com https://js.stripe.com https://hooks.stripe.com https://*.stripe.com",
   "object-src 'none'",
   "base-uri 'self'",
