@@ -61,6 +61,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   const [code2FA, setCode2FA] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [nome, setNome] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -75,6 +78,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       setView(defaultView);
       setEmail('');
       setPassword('');
+      setConfirmPassword('');
+      setShowPassword(false);
+      setShowConfirmPassword(false);
       setNome('');
       setError('');
       setForgotSuccess(false);
@@ -185,6 +191,11 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
     if (view === 'register' && !isRegisterPasswordValid) {
       setError(buildPasswordError(password) || PASSWORD_GUIDANCE);
+      return;
+    }
+
+    if (view === 'register' && password !== confirmPassword) {
+      setError('As senhas não coincidem. Verifique e tente novamente.');
       return;
     }
 
@@ -495,18 +506,80 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
               />
             </div>
 
-            <div>
+            {/* Campo senha */}
+            <div className="relative">
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 aria-invalid={view === 'register' && password.length > 0 && !isRegisterPasswordValid}
                 aria-describedby={view === 'register' ? 'password-requirements' : undefined}
-                className="w-full p-3.5 sm:p-4 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
+                className="w-full p-3.5 sm:p-4 pr-12 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none bg-slate-50 transition-all font-medium"
                 required
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+              >
+                {showPassword ? (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                )}
+              </button>
             </div>
+
+            {/* Confirmar senha — só no cadastro */}
+            {view === 'register' && (
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  placeholder="Confirmar senha"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+                  className={`w-full p-3.5 sm:p-4 pr-12 rounded-xl border outline-none bg-slate-50 transition-all font-medium focus:ring-2 ${
+                    confirmPassword.length > 0 && confirmPassword !== password
+                      ? 'border-red-300 focus:border-red-400 focus:ring-red-500/20'
+                      : confirmPassword.length > 0 && confirmPassword === password
+                        ? 'border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/20'
+                        : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20'
+                  }`}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(v => !v)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  aria-label={showConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                >
+                  {showConfirmPassword ? (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+                {/* Feedback inline */}
+                {confirmPassword.length > 0 && (
+                  <p className={`mt-1.5 px-1 text-xs font-semibold ${confirmPassword === password ? 'text-emerald-600' : 'text-red-500'}`}>
+                    {confirmPassword === password ? '✓ Senhas coincidem' : 'As senhas não coincidem'}
+                  </p>
+                )}
+              </div>
+            )}
 
             {view === 'register' && (
               <div id="password-requirements" className="-mt-1 space-y-1.5 sm:space-y-2 px-1 text-xs">

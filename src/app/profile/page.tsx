@@ -318,7 +318,6 @@ function ProfileContent() {
   };
 
   const handleChangePlan = async (tier: number) => {
-    if (!window.confirm(`Confirmar mudança para o nível ${tier}? A Stripe pode aplicar ajustes proporcionais no ciclo atual.`)) return;
     setBillingAction(`tier-${tier}`);
     try {
       const res = await apiFetch(`${API_URL}/api/billing/update-subscription`, {
@@ -328,9 +327,12 @@ function ProfileContent() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Erro ao alterar plano.');
-      await syncAndReload();
+      // Sincroniza com o Stripe e recarrega os dados sem sair da página
+      await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`).catch(() => {});
+      await fetchData();
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao alterar plano.');
+    } finally {
       setBillingAction(null);
     }
   };
