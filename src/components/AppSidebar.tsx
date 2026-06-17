@@ -185,7 +185,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Gestão de execução ─────────────────────────── */}
-        {token && currentTier < 2 ? (
+        {token && currentTier < 4 ? (
           <button
             onClick={() => router.push('/plans')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-50 opacity-60 hover:opacity-80"
@@ -197,7 +197,7 @@ export default function AppSidebar({
               <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Gestão</p>
               <p className="text-[10px] font-medium leading-none text-slate-400">Fluxo dos editais</p>
             </div>
-            <FeatureBadge label="NÍV. 2" color="slate" />
+            <FeatureBadge label="NÍV. 4" color="slate" />
           </button>
         ) : (
           <button

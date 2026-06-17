@@ -75,6 +75,23 @@ export default function AdminDashboard() {
   const [promoList, setPromoList]     = useState<any[]>([]);
   const [promoListLoading, setPromoListLoading] = useState(false);
 
+  // Estados do Banner Promocional
+  const [banner, setBanner] = useState({
+    active: false,
+    title: '',
+    description: '',
+    coupon_code: '',
+    discount_label: '',
+    color: 'emerald',
+    expires_at: '',
+    link_text: 'Ver planos',
+    link_url: '/plans',
+    dismissible: true,
+  });
+  const [bannerLoading, setBannerLoading] = useState(false);
+  const [bannerSaving, setBannerSaving] = useState(false);
+  const [bannerMsg, setBannerMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
   // Estados de Tiers
   const [tierConfigs, setTierConfigs] = useState<any[]>([]);
   const [tierEdits, setTierEdits] = useState<Record<number, any>>({});
@@ -289,6 +306,57 @@ export default function AdminDashboard() {
       alert('Erro de comunicação com o servidor.');
     } finally {
       setModerationLoading(false);
+    }
+  };
+
+  const loadBanner = async () => {
+    setBannerLoading(true);
+    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      const res = await apiFetch(`${base}/api/admin/promo-banner`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) {
+          setBanner(prev => ({
+            ...prev,
+            ...data,
+            expires_at: data.expires_at
+              ? new Date(data.expires_at).toISOString().slice(0, 16)
+              : '',
+          }));
+        }
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+    } finally {
+      setBannerLoading(false);
+    }
+  };
+
+  const saveBanner = async () => {
+    setBannerSaving(true);
+    setBannerMsg(null);
+    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    try {
+      const payload = {
+        ...banner,
+        expires_at: banner.expires_at ? new Date(banner.expires_at).toISOString() : null,
+      };
+      const res = await apiFetch(`${base}/api/admin/promo-banner`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      setBannerMsg(res.ok
+        ? { text: '✅ Banner salvo com sucesso.', ok: true }
+        : { text: 'Erro ao salvar banner.', ok: false },
+      );
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setBannerMsg({ text: 'Erro de conexão.', ok: false });
+    } finally {
+      setBannerSaving(false);
+      setTimeout(() => setBannerMsg(null), 4000);
     }
   };
 
@@ -855,10 +923,10 @@ export default function AdminDashboard() {
           <Lock size={18} /> Tiers &amp; Limites
         </button>
         <button
-          onClick={() => { setActiveTab('promo'); loadPromoList(); }}
+          onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); }}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'promo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
-          <Zap size={18} /> Convites (demo)
+          <Zap size={18} /> Promoções
         </button>
       </div>
 
@@ -2195,7 +2263,155 @@ export default function AdminDashboard() {
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
 
           <div>
-            <h2 className="text-2xl font-black text-white tracking-tight">Convites Promocionais</h2>
+            <h2 className="text-2xl font-black text-white tracking-tight">Promoções</h2>
+            <p className="text-slate-500 text-sm mt-1">
+              Configure o banner de cupom e envie convites de acesso temporário.
+            </p>
+          </div>
+
+          {/* ── BANNER DE CUPOM ─────────────────────────────────────────── */}
+          <div className="bg-slate-900 border border-emerald-800/40 rounded-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-black text-emerald-300 uppercase tracking-widest flex items-center gap-2">
+                <Zap size={13} /> Banner de Cupom
+              </h3>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <span className="text-xs text-slate-400 font-bold">
+                  {banner.active ? 'Ativo' : 'Inativo'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBanner(p => ({ ...p, active: !p.active }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${banner.active ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${banner.active ? 'translate-x-4.5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+            </div>
+
+            {bannerLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-slate-600" /></div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Título */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Título</label>
+                  <input
+                    value={banner.title}
+                    onChange={e => setBanner(p => ({ ...p, title: e.target.value }))}
+                    placeholder="🎉 Oferta de lançamento!"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+                {/* Descrição */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Descrição</label>
+                  <input
+                    value={banner.description}
+                    onChange={e => setBanner(p => ({ ...p, description: e.target.value }))}
+                    placeholder="Use o cupom no checkout"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+                {/* Código do cupom */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Código do cupom (Stripe)</label>
+                  <input
+                    value={banner.coupon_code}
+                    onChange={e => setBanner(p => ({ ...p, coupon_code: e.target.value.toUpperCase() }))}
+                    placeholder="BAWZI30"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-black tracking-widest focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+                {/* Label de desconto */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Label de desconto</label>
+                  <input
+                    value={banner.discount_label}
+                    onChange={e => setBanner(p => ({ ...p, discount_label: e.target.value }))}
+                    placeholder="30% OFF"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+                {/* Cor */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cor</label>
+                  <select
+                    value={banner.color}
+                    onChange={e => setBanner(p => ({ ...p, color: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                  >
+                    <option value="emerald">Emerald (verde)</option>
+                    <option value="amber">Amber (amarelo)</option>
+                    <option value="violet">Violet (roxo)</option>
+                    <option value="rose">Rose (vermelho)</option>
+                    <option value="sky">Sky (azul)</option>
+                  </select>
+                </div>
+                {/* Validade */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Validade (opcional)</label>
+                  <input
+                    type="datetime-local"
+                    value={banner.expires_at}
+                    onChange={e => setBanner(p => ({ ...p, expires_at: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors"
+                  />
+                </div>
+                {/* Texto do CTA */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Texto do botão (CTA)</label>
+                  <input
+                    value={banner.link_text ?? ''}
+                    onChange={e => setBanner(p => ({ ...p, link_text: e.target.value }))}
+                    placeholder="Ver planos"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+                {/* URL do CTA */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">URL do botão</label>
+                  <input
+                    value={banner.link_url ?? ''}
+                    onChange={e => setBanner(p => ({ ...p, link_url: e.target.value }))}
+                    placeholder="/plans"
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={banner.dismissible}
+                  onChange={e => setBanner(p => ({ ...p, dismissible: e.target.checked }))}
+                  className="rounded accent-emerald-500"
+                />
+                <span className="text-xs text-slate-400 font-bold">Permitir fechar o banner</span>
+              </label>
+              <div className="flex items-center gap-3">
+                {bannerMsg && (
+                  <span className={`text-xs font-bold ${bannerMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {bannerMsg.text}
+                  </span>
+                )}
+                <button
+                  onClick={saveBanner}
+                  disabled={bannerSaving}
+                  className="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-black rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {bannerSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar banner
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── CONVITES PROMO ──────────────────────────────────────────── */}
+          <div>
+            <h3 className="text-lg font-black text-white tracking-tight">Convites Promocionais</h3>
             <p className="text-slate-500 text-sm mt-1">
               Envie acesso completo (tier 4) por tempo limitado. O link é de uso único e não aparece nos planos públicos.
             </p>
