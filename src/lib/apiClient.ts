@@ -22,18 +22,29 @@
  *   4. Se renovação falha → clearSession() + evento bawzi_session_expired.
  */
 
+const PRODUCTION_API_URL = 'https://api.bawzi.com';
+
 function resolveApiUrl(rawUrl: string): string {
   const normalized = rawUrl.replace(/\/$/, '');
   if (typeof window === 'undefined') return normalized;
 
+  const localHosts = new Set(['localhost', '127.0.0.1']);
+  const isLocalBrowser = localHosts.has(window.location.hostname);
+
+  // Se a URL configurada aponta para localhost mas o browser está em produção
+  // (NEXT_PUBLIC_API_URL não foi definida no deploy) → usa o backend de produção
+  let isLocalUrl = false;
+  try { isLocalUrl = localHosts.has(new URL(normalized).hostname); } catch { /* noop */ }
+
+  if (isLocalUrl && !isLocalBrowser) {
+    return PRODUCTION_API_URL;
+  }
+
   try {
     const url = new URL(normalized);
-    const localHosts = new Set(['localhost', '127.0.0.1']);
-
-    if (localHosts.has(url.hostname) && localHosts.has(window.location.hostname)) {
+    if (localHosts.has(url.hostname) && isLocalBrowser) {
       url.hostname = window.location.hostname;
     }
-
     return url.toString().replace(/\/$/, '');
   } catch {
     return normalized;
