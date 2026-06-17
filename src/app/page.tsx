@@ -10,6 +10,7 @@ import {
   BellRing,
   Calculator,
   Check,
+  Zap,
   Clock3,
   ClipboardCheck,
   Gauge,
@@ -288,6 +289,8 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <TasterSection />
+
       <section className="bg-white py-16 md:py-20">
         <div className="mx-auto max-w-[1180px] px-6">
           <div className="grid gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
@@ -543,6 +546,330 @@ export default function LandingPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+// ─── Seção de degustação gratuita ────────────────────────────────────────────
+
+type SemaforoSinal = 'verde' | 'amarelo' | 'vermelho' | 'cinza';
+interface TasterResult {
+  title?: string;
+  score?: number;
+  classification?: string;
+  decisao?: {
+    veredito?: string;
+    resumo_decisao?: string;
+    motivos?: string[];
+  };
+  semaforo?: {
+    tecnica?:      SemaforoSinal;
+    financeira?:   SemaforoSinal;
+    juridica?:     SemaforoSinal;
+    documentacao?: SemaforoSinal;
+  };
+  vantagens?: string[];
+  desvantagens?: string[];
+}
+
+const SEMAFORO_LABELS: Record<string, string> = {
+  tecnica:      'Técnica',
+  financeira:   'Financeira',
+  juridica:     'Jurídica',
+  documentacao: 'Docs',
+};
+
+const SEMAFORO_COLOR: Record<SemaforoSinal | string, string> = {
+  verde:    'bg-emerald-500',
+  amarelo:  'bg-amber-400',
+  vermelho: 'bg-red-500',
+  cinza:    'bg-slate-400',
+};
+
+const LOADING_MSGS = [
+  'Lendo o edital…',
+  'Extraindo pontos críticos…',
+  'Avaliando viabilidade…',
+  'Calculando score…',
+  'Preparando veredito…',
+];
+
+function TasterSection() {
+  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+
+  const [text, setText]       = useState('');
+  const [loading, setLoading] = useState(false);
+  const [loadMsg, setLoadMsg] = useState(LOADING_MSGS[0]);
+  const [result, setResult]   = useState<TasterResult | null>(null);
+  const [error, setError]     = useState<string | null>(null);
+  const [guestLimit, setGuestLimit] = useState(1);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/tiers/guest-limit`)
+      .then(r => r.json())
+      .then(data => { if (data?.daily_limit > 0) setGuestLimit(data.daily_limit); })
+      .catch(() => {});
+  }, [API_URL]);
+
+  const [exhausted, setExhausted] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const raw = localStorage.getItem('bawzi_guest_quota');
+      if (!raw) return false;
+      const { date, used } = JSON.parse(raw);
+      return date === new Date().toISOString().split('T')[0] && used > 0;
+    } catch { return false; }
+  });
+
+  const handleAnalyze = async () => {
+    const trimmed = text.trim();
+    if (trimmed.length < 80) {
+      setError('Cole um trecho maior (mínimo 80 caracteres).');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    // Rotaciona mensagens de loading
+    let idx = 0;
+    const interval = setInterval(() => {
+      idx = (idx + 1) % LOADING_MSGS.length;
+      setLoadMsg(LOADING_MSGS[idx]);
+    }, 4500);
+
+    try {
+      const form = new FormData();
+      form.append('raw_text', trimmed.slice(0, 10000));
+      form.append('uf', 'BR');
+      form.append('provider', 'openai');
+
+      const res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = err?.detail || {};
+        if (detail?.codigo === 'GUEST_DAILY_LIMIT') {
+          const today = new Date().toISOString().split('T')[0];
+          localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
+          setExhausted(true);
+          return;
+        }
+        throw new Error(detail?.mensagem || `Erro ${res.status}`);
+      }
+      const data: TasterResult = await res.json();
+      setResult(data);
+      // Marca uso no localStorage
+      const today = new Date().toISOString().split('T')[0];
+      localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
+      setExhausted(true);
+    } catch (e: unknown) {
+      setError((e as Error).message || 'Erro ao analisar. Tente novamente.');
+    } finally {
+      clearInterval(interval);
+      setLoading(false);
+    }
+  };
+
+  // Helpers de veredito
+  const rawVeredito  = (result?.decisao?.veredito || result?.classification || '').toUpperCase();
+  const isGo         = rawVeredito.startsWith('GO') && !rawVeredito.includes('NO');
+  const isNoGo       = rawVeredito.includes('NO') || rawVeredito.includes('NÃO');
+  const vBg          = isNoGo ? 'bg-red-500' : isGo && rawVeredito === 'GO' ? 'bg-emerald-500' : 'bg-amber-500';
+  const vLabel       = isNoGo ? 'NO-GO' : rawVeredito === 'GO' ? 'GO' : rawVeredito || 'GO CONDICIONADO';
+  const score        = result?.score ?? 0;
+
+  const motivos: string[] = result?.decisao?.motivos?.length
+    ? result.decisao.motivos
+    : result?.vantagens?.length
+      ? result.vantagens
+      : [];
+
+  // ── Estado: resultado ──
+  if (result) {
+    return (
+      <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="text-center mb-10">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-4">Resultado da sua análise gratuita</p>
+            <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
+              <span className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-base font-black text-white ${vBg}`}>
+                {vLabel}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-sm font-black" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                Score {score}/100
+              </span>
+            </div>
+            {result.title && (
+              <p className="text-slate-300 font-semibold text-sm max-w-2xl mx-auto">{result.title}</p>
+            )}
+          </div>
+
+          <div className="max-w-2xl mx-auto space-y-4">
+            {/* Semáforo */}
+            {result.semaforo && (
+              <div className="grid grid-cols-4 gap-2">
+                {(Object.entries(result.semaforo) as [string, SemaforoSinal][]).map(([key, val]) => (
+                  <div key={key} className="rounded-2xl px-3 py-3 text-center" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                    <div className={`w-3 h-3 rounded-full mx-auto mb-1.5 ${SEMAFORO_COLOR[val] || 'bg-slate-500'}`} />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      {SEMAFORO_LABELS[key] || key}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Motivos — 2 visíveis, restante desfocado */}
+            {motivos.length > 0 && (
+              <div className="space-y-2">
+                {motivos.slice(0, 2).map((m, i) => (
+                  <div key={i} className="rounded-xl px-4 py-3 text-sm text-slate-200 font-medium leading-relaxed" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                    {m}
+                  </div>
+                ))}
+                {motivos.length > 2 && (
+                  <div className="relative">
+                    <div className="rounded-xl px-4 py-3 text-sm text-slate-200 font-medium leading-relaxed blur-sm select-none pointer-events-none" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                      {motivos[2]}
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-[11px] font-black text-slate-300 uppercase tracking-widest px-3 py-1 rounded-full" style={{ background: '#0f172a', border: '1px solid #475569' }}>
+                        🔒 Mais na conta gratuita
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CTAs */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-4">
+              <Link
+                href="/login"
+                className="w-full sm:flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-lg transition-all"
+              >
+                Ver análise completa <ArrowRight size={15} />
+              </Link>
+              <Link
+                href="/plans"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-sm transition-all text-slate-300 hover:text-white"
+                style={{ background: '#1e293b', border: '1px solid #475569' }}
+              >
+                Ver planos
+              </Link>
+            </div>
+            <p className="text-center text-slate-500 text-xs">Crie uma conta gratuita — sem cartão · 5 análises/mês</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Estado: cota esgotada ──
+  if (exhausted) {
+    return (
+      <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
+        <div className="mx-auto max-w-xl px-6 text-center">
+          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-400 mb-5" style={{ background: '#052e16', border: '1px solid #166534' }}>
+            Degustação gratuita
+          </span>
+          <h2 className="text-3xl font-black text-white mb-3">Análise gratuita já usada hoje.</h2>
+          <p className="text-slate-400 font-medium mb-8 leading-relaxed">
+            Crie uma conta gratuita e ganhe <strong className="text-white">5 análises por mês</strong> — sem cartão, sem prazo de expiração.
+          </p>
+          <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-8 text-sm font-black text-white shadow-lg hover:bg-emerald-500 transition-all">
+            Criar conta gratuita <ArrowRight size={16} />
+          </Link>
+          <p className="mt-4 text-slate-500 text-xs">Sua análise gratuita volta amanhã.</p>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Estado: formulário ──
+  const canSubmit = !loading && text.trim().length >= 80;
+  return (
+    <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
+      <div className="mx-auto max-w-[1180px] px-6">
+
+        {/* Header */}
+        <div className="text-center mb-10">
+          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-400 mb-5" style={{ background: '#052e16', border: '1px solid #166534' }}>
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            {guestLimit} análise{guestLimit !== 1 ? 's' : ''} gratuita{guestLimit !== 1 ? 's' : ''} por dia · sem cadastro
+          </span>
+          <h2 className="text-3xl font-black text-white md:text-4xl mb-3">Experimente agora.</h2>
+          <p className="text-slate-400 font-medium max-w-lg mx-auto leading-relaxed">
+            Cole um trecho do edital e veja o veredito Go/No-Go em segundos — sem criar conta.
+          </p>
+        </div>
+
+        {/* Card branco */}
+        <div className="max-w-2xl mx-auto bg-white rounded-3xl p-8 shadow-2xl">
+
+          {/* Textarea */}
+          <div className="relative mb-4">
+            <textarea
+              value={text}
+              onChange={e => { setText(e.target.value); setError(null); }}
+              maxLength={10000}
+              rows={7}
+              className="w-full rounded-2xl border-2 p-4 text-slate-800 placeholder:text-slate-400 font-medium text-sm resize-none transition-all leading-relaxed focus:outline-none"
+              style={{
+                background: '#f8fafc',
+                borderColor: text.length > 0 ? '#059669' : '#e2e8f0',
+              }}
+              placeholder="Cole aqui o texto do edital, objeto da contratação ou termo de referência..."
+            />
+            <div className="absolute bottom-3 right-3 text-[10px] font-bold rounded-lg px-2 py-1" style={{ background: '#f1f5f9', color: '#94a3b8' }}>
+              {text.length.toLocaleString('pt-BR')}&nbsp;/&nbsp;10.000
+            </div>
+          </div>
+
+          {/* Erro */}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm font-medium" style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626' }}>
+              {error}
+            </div>
+          )}
+
+          {/* Botão principal */}
+          <button
+            onClick={handleAnalyze}
+            disabled={!canSubmit}
+            className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl text-white font-black text-sm transition-all"
+            style={{
+              background: canSubmit ? '#059669' : '#d1fae5',
+              color: canSubmit ? '#ffffff' : '#6ee7b7',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+              boxShadow: canSubmit ? '0 4px 16px rgba(5,150,105,0.35)' : 'none',
+            }}
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 rounded-full animate-spin shrink-0" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
+                {loadMsg}
+              </>
+            ) : (
+              <>
+                <Zap size={16} />
+                Analisar gratuitamente
+                <ArrowRight size={14} className="ml-0.5" />
+              </>
+            )}
+          </button>
+
+          {/* Link secundário */}
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-xs text-slate-400">Análise com IA · sem salvar histórico</p>
+            <Link
+              href="/login"
+              className="flex items-center gap-1 text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap"
+            >
+              Criar conta grátis <ArrowRight size={13} />
+            </Link>
+          </div>
+        </div>
+
+      </div>
+    </section>
   );
 }
 

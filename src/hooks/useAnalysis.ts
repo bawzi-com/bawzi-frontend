@@ -360,7 +360,9 @@ export function useAnalysis({
       }, 100);
 
       if (!token) {
-        localStorage.setItem('bawzi_free_trial_used', 'true');
+        // Persiste uso com a data de hoje para reset diário automático
+        const today = new Date().toISOString().split('T')[0];
+        localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
         onFreeTrialUsed();
       }
 

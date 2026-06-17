@@ -147,7 +147,16 @@ export default function AnalysisApp() {
   const [userTier, setUserTier]         = useState<number>(1);
   const [userData, setUserData]         = useState<UserData | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
+  const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const raw = localStorage.getItem('bawzi_guest_quota');
+      if (!raw) return false;
+      const { date, used } = JSON.parse(raw);
+      const today = new Date().toISOString().split('T')[0];
+      return date === today && used > 0;
+    } catch { return false; }
+  });
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -238,6 +247,22 @@ export default function AnalysisApp() {
   const isOverFileLimit     = totalFileSize > currentFileLimitBytes;
   const isOverLimit         = isOverTextLimit || isOverFileLimit;
   const requiresAuth        = !token && hasUsedFreeTrial;
+
+  // Quota para usuários não logados (tier -1): 1 análise gratuita por dia (reset meia-noite UTC)
+  const GUEST_LIMIT = 1;
+  const guestQuota: QuotaInfo | null = !token ? (() => {
+    const now = new Date();
+    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    return {
+      tier:            -1,
+      ilimitado:       false,
+      limite:          GUEST_LIMIT,
+      usado:           hasUsedFreeTrial ? GUEST_LIMIT : 0,
+      restante:        hasUsedFreeTrial ? 0 : GUEST_LIMIT,
+      reseta_em:       tomorrow.toISOString().split('T')[0],
+      dias_para_reset: 0, // sempre hoje/amanhã — label tratado no QuotaBar
+    };
+  })() : null;
 
   // ─── useEffect: atualiza quota após cada análise concluída ──────────────────
   useEffect(() => {
@@ -722,7 +747,7 @@ export default function AnalysisApp() {
                         onProviderChange={setProvider}
                         onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-                        quota={quota}
+                        quota={token ? quota : guestQuota}
                         onUpgradeClick={() => handleUpgrade(currentTier + 1)}
                       />
                       </div>

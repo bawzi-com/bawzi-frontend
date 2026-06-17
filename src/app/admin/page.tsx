@@ -9,8 +9,10 @@ import {
   Zap,
   ShieldAlert,
   BarChart3,
+  BarChart2,
   TrendingUp,
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Settings,
   Briefcase,
@@ -31,6 +33,8 @@ import {
   Clock,
   XCircle,
   Loader2,
+  DollarSign,
+  Trash2,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -44,7 +48,16 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'promo'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'promo' | 'analytics' | 'logs'>('overview');
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  // Estados de Logs de Erro
+  const [errorLogs, setErrorLogs] = useState<any[]>([]);
+  const [errorLogsTotal, setErrorLogsTotal] = useState(0);
+  const [errorLogsLoading, setErrorLogsLoading] = useState(false);
+  const [errorLogFilter, setErrorLogFilter] = useState<'' | 'WARNING' | 'ERROR' | 'CRITICAL'>('');
+  const [expandedLog, setExpandedLog] = useState<number | null>(null);
 
   // Estados do Formulário SMTP
   const [smtpUser, setSmtpUser] = useState('');
@@ -438,6 +451,39 @@ export default function AdminDashboard() {
     } else {
       alert(`Erro: ${data.detail}`);
     }
+  };
+
+  const loadAnalytics = async () => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await apiFetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')}/api/admin/analytics/usage`);
+      if (res.ok) setAnalyticsData(await res.json());
+    } catch {}
+    setAnalyticsLoading(false);
+  };
+
+  const loadErrorLogs = async (lvl = errorLogFilter) => {
+    setErrorLogsLoading(true);
+    try {
+      const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const qs = lvl ? `?level=${lvl}` : '';
+      const res = await apiFetch(`${base}/api/admin/errors${qs}`);
+      if (res.ok) {
+        const d = await res.json();
+        setErrorLogs(d.errors ?? []);
+        setErrorLogsTotal(d.total ?? 0);
+      }
+    } catch {}
+    setErrorLogsLoading(false);
+  };
+
+  const clearErrorLogs = async () => {
+    if (!confirm('Apagar todos os logs de erro? Esta ação não pode ser desfeita.')) return;
+    try {
+      const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const res = await apiFetch(`${base}/api/admin/errors`, { method: 'DELETE' });
+      if (res.ok) { setErrorLogs([]); setErrorLogsTotal(0); }
+    } catch {}
   };
 
   const loadTierConfigs = async () => {
@@ -928,6 +974,18 @@ export default function AdminDashboard() {
         >
           <Zap size={18} /> Promoções
         </button>
+        <button
+          onClick={() => { setActiveTab('analytics'); if (!analyticsData) loadAnalytics(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'analytics' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+        >
+          <BarChart2 size={18} /> Uso por IA
+        </button>
+        <button
+          onClick={() => { setActiveTab('logs'); loadErrorLogs(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'logs' ? 'border-red-500 text-red-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+        >
+          <AlertTriangle size={18} /> Logs de Erro
+        </button>
       </div>
 
       {/* ========================================== */}
@@ -935,11 +993,28 @@ export default function AdminDashboard() {
       {/* ========================================== */}
       {activeTab === 'overview' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
             <StatCard icon={<Users />} label="Usuários" value={data.kpis.usuarios} color="text-blue-400" />
             <StatCard icon={<FileText />} label="Análises Totais" value={data.kpis.analises_totais} color="text-violet-400" />
             <StatCard icon={<Zap />} label="Requisições 24h" value={data.kpis.analises_24h} color="text-amber-400" />
             <StatCard icon={<TrendingUp />} label="Clientes Pagos" value={data.kpis.conversao_pro} color="text-emerald-400" />
+          </div>
+
+          {/* Custo Total de IA */}
+          <div className="flex items-center justify-between px-8 py-5 mb-12 rounded-2xl border" style={{ background: 'rgba(120,53,15,0.12)', borderColor: 'rgba(180,83,9,0.3)' }}>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl" style={{ background: 'rgba(120,53,15,0.3)' }}>
+                <DollarSign size={18} className="text-amber-400" />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-amber-600">Custo Total de IA (Estimado)</p>
+                <p className="text-[11px] text-slate-600 mt-0.5">Tokens reais quando disponíveis · média 8k/2,5k para histórico anterior</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-black text-amber-400">${data.kpis.cost_usd_total?.toFixed(2) ?? '—'}</p>
+              <p className="text-[10px] text-slate-600 uppercase tracking-widest font-bold mt-0.5">USD · todos os tempos</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -2100,7 +2175,7 @@ export default function AdminDashboard() {
                       {/* Análises/mês */}
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
-                          Análises / mês
+                          {tier.tier_id === -1 ? 'Análises / dia' : 'Análises / mês'}
                           <span className="ml-1 text-slate-600 normal-case font-normal">(0 = ilimitado)</span>
                         </label>
                         <input
@@ -2548,6 +2623,271 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* ABA: USO POR IA                            */}
+      {/* ========================================== */}
+      {activeTab === 'analytics' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-black text-white">Uso por Modelo de IA</h2>
+              <p className="text-slate-500 text-sm mt-1">Requisições salvas no histórico (usuários autenticados)</p>
+            </div>
+            <button onClick={loadAnalytics} disabled={analyticsLoading} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+              <RefreshCw size={13} className={analyticsLoading ? 'animate-spin' : ''} /> Atualizar
+            </button>
+          </div>
+
+          {analyticsLoading && (
+            <div className="flex items-center justify-center py-20 text-slate-500">
+              <Loader2 size={28} className="animate-spin mr-3" /> Carregando dados…
+            </div>
+          )}
+
+          {!analyticsLoading && analyticsData && (
+            <>
+              {/* Nota sobre estimativa */}
+              <p className="text-[11px] text-slate-600 -mb-4">
+                💡 Custo estimado em USD · análises sem token real usam média de 8k input + 2,5k output · <span className="text-slate-500">~ = estimado</span>
+              </p>
+
+              {/* Por Tier */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
+                  <BarChart3 size={16} className="text-violet-400" />
+                  <span className="font-black text-white text-sm">Requisições por Tier</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Tier</th>
+                        <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Modelos</th>
+                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Total</th>
+                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Custo USD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analyticsData.by_tier.map((row: any) => (
+                        <tr key={row.tier} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                          <td className="px-6 py-4 font-bold text-white whitespace-nowrap">
+                            <span className="text-xs text-slate-500 mr-1">#{row.tier}</span> {row.tier_name}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-wrap gap-2">
+                              {row.models.map((m: any) => (
+                                <span key={m.model} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-300">
+                                  {m.model}
+                                  <span className="ml-1 text-violet-400 font-black">{m.count}</span>
+                                  <span className="ml-1 text-amber-400 font-normal">{m.has_real_tokens ? '' : '~'}${m.cost_usd.toFixed(3)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right font-black text-white">{row.total}</td>
+                          <td className="px-6 py-4 text-right font-black text-amber-400 whitespace-nowrap">${row.cost_usd.toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Por Usuário */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
+                  <Users size={16} className="text-emerald-400" />
+                  <span className="font-black text-white text-sm">Requisições por Usuário</span>
+                  <span className="ml-auto text-[11px] text-slate-600">Top 100</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-800">
+                        <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Usuário</th>
+                        <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Tier</th>
+                        <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Modelos</th>
+                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Total</th>
+                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Custo USD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analyticsData.by_user.map((row: any) => (
+                        <tr key={row.user_id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                          <td className="px-6 py-4">
+                            <p className="font-bold text-white text-xs">{row.email}</p>
+                            {row.name && <p className="text-[11px] text-slate-500 mt-0.5">{row.name}</p>}
+                          </td>
+                          <td className="px-6 py-4 text-slate-400 text-xs whitespace-nowrap">
+                            <span className="text-[10px] text-slate-600 mr-1">#{row.tier}</span>{row.tier_name}
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-wrap gap-2">
+                              {row.models.map((m: any) => (
+                                <span key={m.model} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-300">
+                                  {m.model}
+                                  <span className="ml-1 text-emerald-400 font-black">{m.count}</span>
+                                  <span className="ml-1 text-amber-400 font-normal">{m.has_real_tokens ? '' : '~'}${m.cost_usd.toFixed(3)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right font-black text-white">{row.total}</td>
+                          <td className="px-6 py-4 text-right font-black text-amber-400 whitespace-nowrap">${row.cost_usd.toFixed(3)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {!analyticsLoading && !analyticsData && (
+            <div className="text-center py-16 text-slate-600">
+              Nenhum dado disponível ainda.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* ABA: LOGS DE ERRO                          */}
+      {/* ========================================== */}
+      {activeTab === 'logs' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl" style={{ background: 'rgba(239,68,68,0.12)' }}>
+                <AlertTriangle size={24} className="text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black tracking-tight">Logs de Erro</h2>
+                <p className="text-slate-500 text-sm mt-1">
+                  WARNING / ERROR / CRITICAL · últimos 100 · TTL 7 dias
+                  {errorLogsTotal > 0 && <span className="ml-2 text-red-400 font-bold">({errorLogsTotal} no total)</span>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {/* Filtro de nível */}
+              <div className="flex gap-1">
+                {(['', 'WARNING', 'ERROR', 'CRITICAL'] as const).map(lvl => (
+                  <button
+                    key={lvl || 'all'}
+                    onClick={() => { setErrorLogFilter(lvl); loadErrorLogs(lvl); }}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
+                      errorLogFilter === lvl
+                        ? lvl === 'CRITICAL' ? 'bg-red-600 text-white'
+                          : lvl === 'ERROR' ? 'bg-orange-600 text-white'
+                          : lvl === 'WARNING' ? 'bg-amber-600 text-white'
+                          : 'bg-slate-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {lvl || 'Todos'}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => loadErrorLogs()}
+                disabled={errorLogsLoading}
+                className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-2 rounded-lg bg-slate-800/50"
+              >
+                <RefreshCw size={13} className={errorLogsLoading ? 'animate-spin' : ''} /> Atualizar
+              </button>
+              {errorLogs.length > 0 && (
+                <button
+                  onClick={clearErrorLogs}
+                  className="flex items-center gap-2 text-xs text-red-500 hover:text-red-400 transition-colors px-3 py-2 rounded-lg bg-red-950/30 border border-red-900/40"
+                >
+                  <Trash2 size={13} /> Limpar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Loading */}
+          {errorLogsLoading && (
+            <div className="flex items-center justify-center py-16 text-slate-500 gap-3">
+              <Loader2 size={20} className="animate-spin" /> Carregando logs...
+            </div>
+          )}
+
+          {/* Lista */}
+          {!errorLogsLoading && errorLogs.length === 0 && (
+            <div className="text-center py-20 text-slate-600">
+              <CheckCircle2 size={40} className="mx-auto mb-4 text-emerald-700/60" />
+              <p className="font-bold text-slate-500">Nenhum erro registrado</p>
+              <p className="text-sm mt-1">Os logs aparecem aqui quando o servidor capturar WARNING ou superior.</p>
+            </div>
+          )}
+
+          {!errorLogsLoading && errorLogs.length > 0 && (
+            <div className="space-y-2">
+              {errorLogs.map((log: any, i: number) => {
+                const isCritical = log.level === 'CRITICAL';
+                const isError    = log.level === 'ERROR';
+                const isWarning  = log.level === 'WARNING';
+                const levelColor = isCritical ? '#ef4444' : isError ? '#f97316' : '#f59e0b';
+                const levelBg    = isCritical ? 'rgba(239,68,68,0.12)' : isError ? 'rgba(249,115,22,0.10)' : 'rgba(245,158,11,0.09)';
+                const expanded   = expandedLog === i;
+                // Timestamp formatting
+                const ts = log.created_at ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }) : '—';
+
+                return (
+                  <div
+                    key={i}
+                    className="rounded-2xl border transition-all cursor-pointer"
+                    style={{ background: expanded ? levelBg : 'rgba(15,23,42,0.6)', borderColor: expanded ? levelColor + '44' : 'rgba(51,65,85,0.5)' }}
+                    onClick={() => setExpandedLog(expanded ? null : i)}
+                  >
+                    {/* Summary row */}
+                    <div className="flex items-center gap-4 px-5 py-4">
+                      {/* Level badge */}
+                      <span
+                        className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg shrink-0"
+                        style={{ background: levelBg, color: levelColor, border: `1px solid ${levelColor}33` }}
+                      >
+                        {log.level}
+                      </span>
+                      {/* Timestamp */}
+                      <span className="text-[11px] text-slate-500 font-mono shrink-0">{ts}</span>
+                      {/* Logger */}
+                      <span className="text-[11px] text-slate-600 font-mono hidden md:block shrink-0 max-w-[200px] truncate" title={log.logger}>
+                        {log.logger}
+                      </span>
+                      {/* Message preview */}
+                      <span className="text-sm text-slate-300 flex-1 truncate font-medium">
+                        {log.message?.split('\n')[0] ?? ''}
+                      </span>
+                      {/* Expand indicator */}
+                      <span className="text-slate-600 text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
+                    </div>
+
+                    {/* Expanded detail */}
+                    {expanded && (
+                      <div className="border-t px-5 pb-5 pt-4" style={{ borderColor: levelColor + '22' }}>
+                        <div className="flex flex-wrap gap-4 text-[11px] text-slate-500 mb-3 font-mono">
+                          <span>módulo: <span className="text-slate-300">{log.module}</span></span>
+                          <span>função: <span className="text-slate-300">{log.funcName}</span></span>
+                          <span>linha: <span className="text-slate-300">{log.lineno}</span></span>
+                          <span>logger: <span className="text-slate-300">{log.logger}</span></span>
+                        </div>
+                        <pre className="text-xs text-slate-300 whitespace-pre-wrap break-words font-mono rounded-xl p-4 leading-relaxed" style={{ background: 'rgba(0,0,0,0.4)' }}>
+                          {log.message}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

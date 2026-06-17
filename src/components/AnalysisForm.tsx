@@ -47,57 +47,67 @@ interface AnalysisFormProps {
 
 // ─── Indicador de quota mensal ────────────────────────────────────────────────
 
-function QuotaBar({ quota, onUpgradeClick }: { quota: QuotaInfo; onUpgradeClick?: () => void }) {
+function QuotaBar({
+  quota,
+  onUpgradeClick,
+  isGuest = false,
+}: {
+  quota: QuotaInfo;
+  onUpgradeClick?: () => void;
+  isGuest?: boolean;
+}) {
   if (quota.ilimitado) return null;
 
-  const pct = Math.min(100, Math.round((quota.usado / quota.limite) * 100));
-  const esgotado = quota.restante === 0;
-  const quaseEsgotado = !esgotado && quota.restante !== null && quota.restante <= 1;
+  const pct          = quota.limite > 0 ? Math.min(100, Math.round((quota.usado / quota.limite) * 100)) : 0;
+  const esgotado     = quota.restante === 0;
+  // Para guests (limite = 1), não mostrar estado "quase esgotado" — só verde ou vermelho
+  const quaseEsgotado = !isGuest && !esgotado && quota.restante !== null && quota.restante <= 1;
 
-  const barColor = esgotado
-    ? 'bg-red-500'
-    : quaseEsgotado
-      ? 'bg-amber-500'
-      : 'bg-emerald-500';
-
-  const textColor = esgotado
-    ? 'text-red-700'
-    : quaseEsgotado
-      ? 'text-amber-700'
-      : 'text-slate-600';
-
-  const bgColor = esgotado
+  const barColor = esgotado ? 'bg-red-500' : quaseEsgotado ? 'bg-amber-500' : 'bg-emerald-500';
+  const textColor = esgotado ? 'text-red-700' : quaseEsgotado ? 'text-amber-700' : 'text-slate-600';
+  const bgColor   = esgotado
     ? 'bg-red-50 border-red-200'
     : quaseEsgotado
       ? 'bg-amber-50 border-amber-200'
       : 'bg-slate-50 border-slate-200';
 
+  const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada' : '⛔ Limite mensal atingido';
+  const labelAtivo     = isGuest ? 'Teste gratuito' : 'Análises este mês';
+
   return (
     <div className={`rounded-2xl border px-4 py-3 ${bgColor}`}>
       <div className="flex items-center justify-between mb-2">
         <span className={`text-[11px] font-black uppercase tracking-wider ${textColor}`}>
-          {esgotado ? '⛔ Limite mensal atingido' : `Análises este mês`}
+          {esgotado ? labelEsgotado : labelAtivo}
         </span>
         <span className={`text-[11px] font-bold ${textColor}`}>
           {quota.usado} / {quota.limite}
-          {' '}·{' '}
-          reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}
+          {isGuest
+            ? <>{' '}·{' '}reseta amanhã</>
+            : <>{' '}·{' '}reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}</>
+          }
         </span>
       </div>
 
       <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
-        <div
-          className={`h-full rounded-full transition-all ${barColor}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
       </div>
 
       {esgotado && (
         <div className="flex items-center justify-between mt-1">
-          <p className="text-[11px] text-red-600 font-medium">
-            Reseta em {quota.reseta_em} · Faça upgrade para continuar agora.
+          <p className={`text-[11px] font-medium ${isGuest ? 'text-red-600' : 'text-red-600'}`}>
+            {isGuest
+              ? 'Crie uma conta gratuita para continuar analisando.'
+              : `Reseta em ${quota.reseta_em} · Faça upgrade para continuar agora.`}
           </p>
-          {onUpgradeClick && (
+          {isGuest ? (
+            <a
+              href="/login"
+              className="text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2 whitespace-nowrap"
+            >
+              Criar conta →
+            </a>
+          ) : onUpgradeClick && (
             <button
               onClick={onUpgradeClick}
               className="text-[11px] font-black text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2"
@@ -260,9 +270,9 @@ export default function AnalysisForm({
 
         {/* Botões de análise */}
         <div className="mt-6 w-full">
-          {/* Indicador de quota mensal */}
-          {token && quota && !quota.ilimitado && (
-            <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick} />
+          {/* Indicador de quota — logado (tier 1-3) ou guest (tier -1) */}
+          {quota && !quota.ilimitado && (
+            <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick} isGuest={!token} />
           )}
 
           {userTier === 4 ? (
