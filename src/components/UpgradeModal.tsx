@@ -1,12 +1,13 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import {
   EmbeddedCheckoutProvider,
   EmbeddedCheckout
 } from '@stripe/react-stripe-js';
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // Classes completas são necessárias para o Tailwind JIT não purgá-las
 const PLAN_INFO: Record<number, { name: string; price: string; headerClass: string; orbs: string }> = {
@@ -25,6 +26,16 @@ interface UpgradeModalProps {
 }
 
 export default function UpgradeModal({ isOpen, onClose, tier, clientSecret, title, eyebrow }: UpgradeModalProps) {
+  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch(`${API_URL}/api/billing/config`)
+      .then(r => r.json())
+      .then(data => { if (data.publishable_key) setStripePromise(loadStripe(data.publishable_key)); })
+      .catch(() => {});
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const plan = PLAN_INFO[tier] ?? { name: 'Plano Bawzi', price: '', headerClass: 'bg-gradient-to-br from-emerald-500 to-sky-600', orbs: 'from-sky-400/30 to-emerald-300/20' };

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
+import { useState, useEffect } from 'react';
+import { loadStripe, Stripe } from '@stripe/stripe-js';
 import {
   Elements,
   PaymentElement,
@@ -9,8 +9,7 @@ import {
   useElements,
 } from '@stripe/react-stripe-js';
 
-const STRIPE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = STRIPE_KEY ? loadStripe(STRIPE_KEY) : null;
+const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // ── Ícones de bandeiras de cartão ─────────────────────────────────────────────
 function VisaIcon() {
@@ -138,6 +137,23 @@ interface CardUpdateModalProps {
 }
 
 export default function CardUpdateModal({ isOpen, clientSecret, onClose, onSuccess }: CardUpdateModalProps) {
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
+  const [stripeError, setStripeError] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetch(`${API_URL}/api/billing/config`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.publishable_key) {
+          setStripePromise(loadStripe(data.publishable_key));
+        } else {
+          setStripeError(true);
+        }
+      })
+      .catch(() => setStripeError(true));
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -199,17 +215,17 @@ export default function CardUpdateModal({ isOpen, clientSecret, onClose, onSucce
 
         {/* ── Body ── */}
         <div className="p-6">
-          {!STRIPE_KEY ? (
+          {stripeError ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
               <svg className="h-8 w-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
               </svg>
               <div>
-                <p className="text-sm font-bold text-slate-700">Configuração pendente</p>
-                <p className="mt-1 text-xs text-slate-400">A chave Stripe não está definida neste ambiente.</p>
+                <p className="text-sm font-bold text-slate-700">Erro ao conectar ao Stripe</p>
+                <p className="mt-1 text-xs text-slate-400">Tente novamente em instantes.</p>
               </div>
             </div>
-          ) : clientSecret ? (
+          ) : stripePromise && clientSecret ? (
             <Elements
               stripe={stripePromise}
               options={{
