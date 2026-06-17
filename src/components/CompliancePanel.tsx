@@ -507,7 +507,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
             
             <button 
               onClick={onUpgradeClick}
-              className="w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-1.5"
             >
               Desbloquear Radar
             </button>
