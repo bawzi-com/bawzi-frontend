@@ -36,8 +36,8 @@ export default function UpsellModal({
   const displayFeatures = features || defaultFeatures;
 
   const handleUpgradeClick = () => {
-    onClose(); // Fecha o modal
-    router.push('/billing'); // Redireciona para a página de planos
+    onClose();
+    router.push('/profile?goto=assinatura');
   };
 
   return (

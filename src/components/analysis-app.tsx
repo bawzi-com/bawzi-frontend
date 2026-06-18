@@ -546,6 +546,13 @@ export default function AnalysisApp() {
 
   const handleUpgrade = async (tier: number) => {
     if (!token) { setAuthMode('register'); setShowAuthModal(true); return; }
+    // Assinantes pagos: a troca/gestão de plano tem UI completa na página de perfil
+    // (modal de confirmação, cupom, info de próxima cobrança). Redireciona para lá.
+    // Usa router.push (client-side) para preservar _accessToken na memória.
+    if (userTier > 1) {
+      router.push('/profile?goto=assinatura');
+      return;
+    }
     setSelectedTier(tier);
     setIsCheckoutLoading(true);
     try {

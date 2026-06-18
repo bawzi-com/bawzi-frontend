@@ -70,11 +70,19 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
     else router.push('/login'); 
   };
 
-  const handleManageSubscription = async () => {
-    router.push('/profile#sec-assinatura');
+  const handleManageSubscription = () => {
+    // ?goto=assinatura é lido via useSearchParams no profile — mais confiável
+    // que hash no App Router. Client-side navigation preserva _accessToken.
+    router.push('/profile?goto=assinatura');
   };
 
   const handleUpgradeClick = async (tier: number) => {
+    // Quando embutido em outro contexto (ex: workspace), delega para o handler externo
+    if (onUpgrade) {
+      onUpgrade(tier);
+      return;
+    }
+
     const token = getAuthToken();
     if (!token) {
       router.push('/login');
@@ -82,8 +90,8 @@ export default function PricingSection({ onRegister, onUpgrade, currentTier: pro
     }
 
     setSelectedTier(tier);
-    setIsCheckoutLoading(true); 
-    
+    setIsCheckoutLoading(true);
+
     try {
       const res = await fetch(`${API_URL}/api/billing/create-checkout-session`, {
         method: 'POST',

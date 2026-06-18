@@ -37,7 +37,7 @@ import {
   type ActiveContextEventDetail,
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { apiFetch, getAuthToken, clearSession, SessionExpiredError } from '@/lib/apiClient';
+import { apiFetch, getAuthToken, initSession, clearSession, SessionExpiredError } from '@/lib/apiClient';
 
 type ProfileIcon = React.ComponentType<{ size?: number; className?: string }>;
 type SectionTone = 'emerald' | 'sky' | 'slate' | 'amber' | 'red';
@@ -97,6 +97,7 @@ function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const stripeSuccess = searchParams.get('success');
+  const gotoSection  = searchParams.get('goto');   // ex: ?goto=assinatura → rola até #sec-assinatura
 
   const [authToken, setAuthToken] = useState<string>('');
   const [userData, setUserData] = useState<any>(null);
@@ -236,7 +237,9 @@ function ProfileContent() {
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const fetchData = async () => {
-    const token = getAuthToken();
+    // Após navegação full-page, _accessToken está nulo e bawzi_token foi limpo
+    // pelo initSession() anterior. Precisamos reidratar antes de ler o token.
+    const token = getAuthToken() || await initSession();
     if (!token) { router.push('/'); return; }
     setAuthToken(token);
 
@@ -325,6 +328,30 @@ function ProfileContent() {
       setIsLoading(false);
     }
   };
+
+  // Scroll para seção indicada por ?goto=assinatura ou pelo hash #sec-assinatura
+  // Dispara quando os dados carregam (isLoading false); usa query param como fonte
+  // primária (mais confiável no App Router) e hash como fallback.
+  useEffect(() => {
+    if (isLoading) return;
+    const targetId = gotoSection ? `sec-${gotoSection}` : window.location.hash?.slice(1);
+    if (!targetId) return;
+    // Limpa o query param da URL sem recarregar (UX limpa)
+    if (gotoSection) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('goto');
+      const newUrl = params.toString()
+        ? `${window.location.pathname}?${params}`
+        : window.location.pathname;
+      window.history.replaceState(null, '', newUrl);
+    }
+    // Pequeno atraso para garantir que o layout já assentou
+    setTimeout(() => {
+      const el = document.getElementById(targetId);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   useEffect(() => {
     // Carrega o perfil imediatamente — garante que isLoading sai de true
