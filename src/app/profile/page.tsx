@@ -111,12 +111,24 @@ function ProfileContent() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [lgpdConsent, setLgpdConsent] = useState(() =>
+    typeof window !== 'undefined' && localStorage.getItem('bawzi_consent_accepted') === 'true'
+  );
   const [isSyncing, setIsSyncing] = useState(false);
   const [billingAction, setBillingAction] = useState<string | null>(null);
   const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [savedCard, setSavedCard] = useState<{ brand: string; last4: string; exp_month: number; exp_year: number } | null>(null);
   const [changePlanModal, setChangePlanModal] = useState<{ tier: number } | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponValidation, setCouponValidation] = useState<{
+    valid: boolean; description?: string; duration?: string;
+    originalPrice?: string; finalPrice?: string; discountLabel?: string; error?: string;
+  } | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [invoicesVisible, setInvoicesVisible] = useState(5);
   const [cleanupRequired, setCleanupRequired] = useState(false);
   const [membersOverflow, setMembersOverflow] = useState(0);
@@ -124,6 +136,8 @@ function ProfileContent() {
   // UX: seção ativa no menu (scroll-spy) + status 2FA no card do avatar
   const [activeSection, setActiveSection] = useState('sec-perfil');
   const [twoFAOn, setTwoFAOn] = useState<boolean | null>(null);
+  const [pushEnabled, setPushEnabled] = useState<boolean | null>(null); // null = verificando
+  const [pushLoading, setPushLoading] = useState(false);
 
   useEffect(() => {
     const handleContextUpdate = (event: Event) => {
@@ -136,6 +150,33 @@ function ProfileContent() {
 
     window.addEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
     return () => window.removeEventListener(ACTIVE_CONTEXT_EVENT, handleContextUpdate);
+  }, []);
+
+  // Sincroniza consentimento LGPD: escuta banner + verifica backend no mount
+  useEffect(() => {
+    // Escuta o banner aceitar em outra aba ou na mesma página
+    const onAccepted = () => setLgpdConsent(true);
+    window.addEventListener('bawzi_lgpd_accepted', onAccepted);
+
+    // Verifica estado real no backend (cobre revogação em outro dispositivo)
+    apiFetch(`${API_URL}/api/users/me/lgpd-consent`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setLgpdConsent(!!d.consented); })
+      .catch(() => {});
+
+    return () => window.removeEventListener('bawzi_lgpd_accepted', onAccepted);
+  }, []);
+
+  // Detecta se push já está ativo no browser
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      setPushEnabled(false);
+      return;
+    }
+    navigator.serviceWorker.getRegistration('/sw.js')
+      .then(reg => reg ? reg.pushManager.getSubscription() : null)
+      .then(sub => setPushEnabled(!!sub))
+      .catch(() => setPushEnabled(false));
   }, []);
 
   // Scroll-spy: destaca no menu a seção visível
@@ -166,6 +207,31 @@ function ProfileContent() {
       .then(d => setTwoFAOn(d ? !!d.ativo : null))
       .catch(() => setTwoFAOn(null));
   }, [authToken]);
+
+  // Validação debounced de cupom — dispara 700ms após o usuário parar de digitar
+  useEffect(() => {
+    if (!couponCode.trim() || !changePlanModal) {
+      setCouponValidation(null);
+      return;
+    }
+    setCouponLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`${API_URL}/api/billing/validate-coupon`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: couponCode.trim(), tier: changePlanModal.tier }),
+        });
+        const data = await res.json().catch(() => ({ valid: false, error: 'Erro ao validar.' }));
+        setCouponValidation(data);
+      } catch {
+        setCouponValidation({ valid: false, error: 'Erro ao validar cupom.' });
+      } finally {
+        setCouponLoading(false);
+      }
+    }, 700);
+    return () => { clearTimeout(timer); setCouponLoading(false); };
+  }, [couponCode, changePlanModal?.tier]);
 
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -298,6 +364,14 @@ function ProfileContent() {
             window.location.href = '/profile';
             return;
           }
+
+          // Mesmo sem mudança de tier, tenta atualizar o cartão salvo
+          // (webhook pode ter chegado mas o tier já estava correto)
+          const pmRes = await apiFetch(`${API_URL}/api/billing/payment-method`).catch(() => null);
+          if (pmRes?.ok) {
+            const pmData = await pmRes.json();
+            if (pmData?.card) setSavedCard(pmData.card);
+          }
         }
       } catch (error) {
         console.error("Erro na verificação de pagamento:", error);
@@ -317,13 +391,15 @@ function ProfileContent() {
     window.location.reload();
   };
 
-  const handleChangePlan = async (tier: number) => {
+  const handleChangePlan = async (tier: number, coupon?: string) => {
     setBillingAction(`tier-${tier}`);
     try {
+      const body: Record<string, unknown> = { tier };
+      if (coupon) body.coupon_code = coupon;
       const res = await apiFetch(`${API_URL}/api/billing/update-subscription`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tier }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || 'Erro ao alterar plano.');
@@ -338,7 +414,7 @@ function ProfileContent() {
   };
 
   const handleCancelSubscription = async () => {
-    if (!window.confirm('Cancelar a renovação automática deste plano? Você mantém o acesso até o fim do ciclo já pago.')) return;
+    setShowCancelModal(false);
     setBillingAction('cancel');
     try {
       const res = await apiFetch(`${API_URL}/api/billing/cancel-subscription`, { method: 'POST' });
@@ -401,12 +477,11 @@ function ProfileContent() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!window.confirm("Eliminar conta permanentemente?")) return;
     setIsDeleting(true);
     try {
       const res = await apiFetch(`${API_URL}/api/users/me`, { method: 'DELETE' });
-      if (res.ok) { clearSession({ notifyExpired: false }); window.location.href = '/'; } 
-    } catch (error) { setIsDeleting(false); }
+      if (res.ok) { clearSession({ notifyExpired: false }); window.location.href = '/'; }
+    } catch { setIsDeleting(false); }
   };
 
   if (isLoading) {
@@ -756,100 +831,127 @@ function ProfileContent() {
                     }
                   />
 
-                  {/* ── Plano atual + próxima cobrança ── */}
-                  <div className="border-b border-slate-100 p-5 sm:p-6">
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  {/* ── Plano atual ── */}
+                  <div className="border-b border-slate-100">
+                    {/* Banner do plano */}
+                    <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-emerald-700 px-5 py-5 sm:px-6">
+                      {/* Decoração de fundo */}
+                      <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/5" />
+                      <div className="pointer-events-none absolute -bottom-4 right-8 h-20 w-20 rounded-full bg-white/5" />
 
-                      {/* LEFT — info do plano */}
-                      <div className="flex items-start gap-4">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50">
-                          <Crown size={18} className="text-emerald-600" />
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Plano ativo</p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <span className="text-2xl font-black leading-none text-slate-950">{planName}</span>
-                            <span className="rounded-full bg-emerald-600 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest text-white">
-                              Nível {userTier}
-                            </span>
+                      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        {/* Tier + nome + preço */}
+                        <div className="flex items-center gap-4">
+                          <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
+                            <Crown size={16} className="text-white/70" />
+                            <span className="text-[10px] font-black text-white/70">N{userTier}</span>
                           </div>
-                          {subscriptionDetails?.amount && (
-                            <p className="mt-1 text-sm font-semibold text-slate-500">{subscriptionDetails.amount}/mês</p>
-                          )}
-                          {subscriptionDetails?.current_period_end && (
-                            <p className="mt-1 text-xs font-medium text-slate-400">
-                              Próxima cobrança em{' '}
-                              <span className="font-semibold text-slate-600">{subscriptionDetails.current_period_end}</span>
-                            </p>
-                          )}
-                          {subscriptionDetails?.cancel_at_period_end && (
-                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-                              <span>⏸</span> Renovação cancelada — acesso até o fim do ciclo
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Seu plano atual</p>
+                            <p className="mt-0.5 text-xl font-black text-white">{planName}</p>
+                            {subscriptionDetails?.amount && (
+                              <p className="mt-0.5 text-sm font-semibold text-white/70">
+                                {subscriptionDetails.amount}
+                                <span className="ml-1 text-[10px] uppercase tracking-wide text-white/50">/mês</span>
+                                {subscriptionDetails?.interval && (
+                                  <span className="ml-2 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white/60">
+                                    {subscriptionDetails.interval}
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Cartão salvo */}
+                        <div className="flex flex-col items-start gap-2 sm:items-end">
+                          {savedCard ? (
+                            <div className="inline-flex items-center gap-2.5 rounded-xl bg-white/10 px-3.5 py-2.5 backdrop-blur-sm">
+                              <CreditCard size={14} className="text-white/60" />
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-white/50 capitalize">{savedCard.brand} •••• {savedCard.last4}</p>
+                                <p className="text-[10px] text-white/40">
+                                  Expira {String(savedCard.exp_month).padStart(2, '0')}/{String(savedCard.exp_year).slice(-2)}
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-2 rounded-xl border border-dashed border-white/20 bg-white/10 px-3.5 py-2.5 text-xs font-semibold text-white/50">
+                              <CreditCard size={13} />
+                              Nenhum cartão cadastrado
                             </div>
                           )}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleUpdatePaymentMethod}
+                              disabled={billingAction === 'payment'}
+                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-[11px] font-semibold text-white/80 transition hover:bg-white/20 disabled:opacity-50"
+                            >
+                              <CreditCard size={12} />
+                              {billingAction === 'payment' ? 'Aguarde...' : savedCard ? 'Alterar cartão' : 'Adicionar cartão'}
+                            </button>
+                            {subscriptionDetails?.status === 'active' && (
+                              subscriptionDetails.cancel_at_period_end ? (
+                                <button
+                                  onClick={handleReactivateSubscription}
+                                  disabled={!!billingAction}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[11px] font-bold text-emerald-700 transition hover:bg-white/90 disabled:opacity-50"
+                                >
+                                  {billingAction === 'reactivate' ? 'Reativando...' : 'Reativar renovação'}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setShowCancelModal(true)}
+                                  disabled={!!billingAction}
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-[11px] font-semibold text-white/60 transition hover:border-red-300/50 hover:bg-red-500/20 hover:text-white disabled:opacity-50"
+                                >
+                                  {billingAction === 'cancel' ? 'Cancelando...' : 'Cancelar renovação'}
+                                </button>
+                              )
+                            )}
+                          </div>
                         </div>
                       </div>
+                    </div>
 
-                      {/* RIGHT — cartão + ações */}
-                      <div className="flex flex-col items-start gap-3 lg:items-end">
-                        {/* Mini-card visual */}
-                        {savedCard ? (
-                          <div className="inline-flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10">
-                              <CreditCard size={15} className="text-white/60" />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 capitalize">{savedCard.brand}</p>
-                              <p className="font-black tracking-widest text-white">•••• {savedCard.last4}</p>
-                            </div>
-                            <div className="border-l border-white/10 pl-3">
-                              <p className="text-[10px] text-white/30">Exp.</p>
-                              <p className="text-xs font-bold text-white/60">
-                                {String(savedCard.exp_month).padStart(2, '0')}/{String(savedCard.exp_year).slice(-2)}
-                              </p>
-                            </div>
+                    {/* Vigência + progress bar */}
+                    {subscriptionDetails?.current_period_start && subscriptionDetails?.current_period_end && (
+                      <div className="px-5 py-3 sm:px-6">
+                        {subscriptionDetails.cancel_at_period_end ? (
+                          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                            <span>⏸</span> Renovação cancelada — acesso até {subscriptionDetails.current_period_end}
                           </div>
                         ) : (
-                          <div className="inline-flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-400">
-                            <CreditCard size={14} />
-                            Nenhum cartão cadastrado
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                            <p className="text-xs text-slate-400">
+                              Vigência:{' '}
+                              <span className="font-semibold text-slate-700">
+                                {subscriptionDetails.current_period_start} → {subscriptionDetails.current_period_end}
+                              </span>
+                            </p>
+                            {subscriptionDetails?.dias_total > 0 && (
+                              <div className="flex flex-1 items-center gap-2" style={{ minWidth: '160px' }}>
+                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                                  <div
+                                    className="h-full rounded-full bg-emerald-500 transition-all"
+                                    style={{
+                                      width: `${Math.max(4, Math.min(100, ((subscriptionDetails.dias_total - subscriptionDetails.dias_restantes) / subscriptionDetails.dias_total) * 100))}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                                  {subscriptionDetails.dias_restantes}d restantes
+                                </span>
+                              </div>
+                            )}
+                            <p className="text-xs text-slate-400">
+                              Próxima cobrança:{' '}
+                              <span className="font-semibold text-slate-700">{subscriptionDetails.current_period_end}</span>
+                            </p>
                           </div>
                         )}
-
-                        {/* Botões de ação */}
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={handleUpdatePaymentMethod}
-                            disabled={billingAction === 'payment'}
-                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            <CreditCard size={13} className="text-slate-400" />
-                            {billingAction === 'payment' ? 'Aguarde...' : savedCard ? 'Alterar cartão' : 'Adicionar cartão'}
-                          </button>
-
-                          {subscriptionDetails?.status === 'active' && (
-                            subscriptionDetails.cancel_at_period_end ? (
-                              <button
-                                onClick={handleReactivateSubscription}
-                                disabled={!!billingAction}
-                                className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                {billingAction === 'reactivate' ? 'Reativando...' : 'Reativar renovação'}
-                              </button>
-                            ) : (
-                              <button
-                                onClick={handleCancelSubscription}
-                                disabled={!!billingAction}
-                                className="inline-flex h-9 items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-4 text-xs font-semibold text-red-600 transition hover:bg-red-100 disabled:opacity-50"
-                              >
-                                {billingAction === 'cancel' ? 'Cancelando...' : 'Cancelar renovação'}
-                              </button>
-                            )
-                          )}
-                        </div>
                       </div>
-
-                    </div>
+                    )}
                   </div>
 
                   {/* ── Trocar plano — só com assinatura Stripe real ── */}
@@ -871,26 +973,35 @@ function ProfileContent() {
                               disabled={isCurrent || !!billingAction}
                               className={`relative flex flex-col gap-0.5 rounded-xl border p-4 text-left transition ${
                                 isCurrent
-                                  ? 'border-emerald-200 bg-emerald-50 cursor-default'
-                                  : 'border-slate-200 bg-white hover:border-emerald-200 hover:bg-emerald-50/40'
+                                  ? 'border-emerald-300 bg-emerald-50 cursor-default ring-1 ring-emerald-200'
+                                  : isUp
+                                    ? 'border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50 hover:shadow-sm'
+                                    : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-amber-50/50 hover:shadow-sm'
                               }`}
                             >
-                              {isCurrent && (
-                                <span className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600">
-                                  <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              {isCurrent ? (
+                                <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
+                                  <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                   </svg>
+                                  Atual
+                                </span>
+                              ) : (
+                                <span className={`absolute right-3 top-3 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${
+                                  isUp
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {billingAction === `tier-${tier}` ? '...' : isUp ? '↑ Upgrade' : '↓ Downgrade'}
                                 </span>
                               )}
                               <span className={`text-[10px] font-bold uppercase tracking-widest ${isCurrent ? 'text-emerald-600' : 'text-slate-400'}`}>
                                 Nível {tier}
                               </span>
-                              <span className={`text-sm font-black ${isCurrent ? 'text-emerald-900' : 'text-slate-800'}`}>{name}</span>
-                              <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : 'text-slate-500'}`}>{price}</span>
-                              {!isCurrent && (
-                                <span className={`mt-1.5 text-[10px] font-bold ${isUp ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                  {billingAction === `tier-${tier}` ? 'Alterando...' : isUp ? '↑ Upgrade' : '↓ Downgrade'}
-                                </span>
+                              <span className={`mt-0.5 text-sm font-black ${isCurrent ? 'text-emerald-900' : 'text-slate-800'}`}>{name}</span>
+                              <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : isUp ? 'text-slate-500' : 'text-amber-700'}`}>{price}</span>
+                              {!isCurrent && !isUp && (
+                                <span className="mt-1 text-[10px] text-amber-600">Você perderá recursos do plano atual</span>
                               )}
                             </button>
                           );
@@ -898,45 +1009,68 @@ function ProfileContent() {
                       </div>
                     </div>
                   )}
-	                  {invoices.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            <th className="px-5 py-3 font-black uppercase tracking-wider text-slate-500">Data</th>
-                            <th className="px-5 py-3 font-black uppercase tracking-wider text-slate-500">Fatura</th>
-                            <th className="px-5 py-3 font-black uppercase tracking-wider text-slate-500">Valor</th>
-                            <th className="px-5 py-3 font-black uppercase tracking-wider text-slate-500">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {invoices.slice(0, invoicesVisible).map((inv) => (
-                            <tr key={inv.id} className="transition-colors hover:bg-slate-50">
-                              <td className="px-5 py-3.5 font-medium text-slate-500">{inv.date}</td>
-                              <td className="px-5 py-3.5 font-bold text-slate-900">{inv.number}</td>
-                              <td className="px-5 py-3.5 font-black text-slate-900">{inv.amount}</td>
-                              <td className="px-5 py-3.5">
-                                {(() => {
-                                  const s = inv.status as string;
-                                  const cfg =
-                                    s === 'Pago' ? { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' } :
-                                    s === 'Aberto' ? { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200' } :
-                                    s === 'Inadimplente' ? { dot: 'bg-red-500', badge: 'bg-red-50 text-red-700 border-red-200' } :
-                                    { dot: 'bg-slate-400', badge: 'bg-slate-50 text-slate-600 border-slate-200' };
-                                  return (
-                                    <span className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[10px] font-black uppercase ${cfg.badge}`}>
-                                      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                                      {s || 'Pendente'}
+                  {invoices.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {invoices.slice(0, invoicesVisible).map((inv) => {
+                        const coveredByCredit = !!inv.covered_by_credit;
+                        const s = inv.status as string;
+                        const statusCfg =
+                          s === 'Pago'         ? { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' } :
+                          s === 'Aberto'       ? { dot: 'bg-amber-500',   badge: 'bg-amber-50 text-amber-700 border-amber-200' } :
+                          s === 'Inadimplente' ? { dot: 'bg-red-500',     badge: 'bg-red-50 text-red-700 border-red-200' } :
+                                                 { dot: 'bg-slate-400',   badge: 'bg-slate-50 text-slate-600 border-slate-200' };
+                        return (
+                          <div key={inv.id} className="flex items-center justify-between gap-4 px-5 py-3.5 transition-colors hover:bg-slate-50">
+                            {/* Ícone + descrição */}
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <p className="truncate text-xs font-bold text-slate-900">
+                                    {inv.description || 'Cobrança'}
+                                  </p>
+                                  {coveredByCredit && (
+                                    <span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-600 border border-sky-100">
+                                      Coberto por crédito
                                     </span>
-                                  );
-                                })()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-400">{inv.date} · {inv.number}</p>
+                              </div>
+                            </div>
+
+                            {/* Valor + status + PDF */}
+                            <div className="flex shrink-0 items-center gap-3">
+                              <span className="text-sm font-black text-slate-950">
+                                {inv.amount}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase ${statusCfg.badge}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
+                                {s || 'Pendente'}
+                              </span>
+                              {inv.pdf_url && (
+                                <a
+                                  href={inv.pdf_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                                  title="Ver fatura"
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                  </svg>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                       {invoicesVisible < invoices.length && (
-                        <div className="border-t border-slate-100 px-5 py-3 flex items-center justify-between">
+                        <div className="px-5 py-3 flex items-center justify-between">
                           <span className="text-[11px] font-medium text-slate-400">
                             {invoicesVisible} de {invoices.length} faturas
                           </span>
@@ -972,7 +1106,7 @@ function ProfileContent() {
                     </div>
                     <Link
                       href="/plans"
-                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-white px-5 text-xs font-black uppercase tracking-widest text-slate-950 transition-colors hover:bg-emerald-50"
+                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 text-xs font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700"
                     >
                       Ver planos
                       <ChevronRight size={14} />
@@ -992,20 +1126,54 @@ function ProfileContent() {
                     <p className="text-sm font-semibold text-slate-800">Notificações push</p>
                     <p className="mt-0.5 text-xs text-slate-500">Receba alertas de novos editais e contratos vencendo direto no navegador.</p>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  {!lgpdConsent ? (
+                    <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                      Requer consentimento LGPD
+                    </span>
+                  ) : pushEnabled === null ? (
+                    <span className="shrink-0 text-xs text-slate-400">Verificando…</span>
+                  ) : pushEnabled ? (
                     <button
-                      onClick={() => subscribeToPush()}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      disabled={pushLoading}
+                      onClick={async () => {
+                        setPushLoading(true);
+                        try {
+                          await unsubscribeFromPush();
+                          setPushEnabled(false);
+                        } catch {
+                          alert('Não foi possível desativar as notificações. Tente novamente.');
+                        } finally {
+                          setPushLoading(false);
+                        }
+                      }}
+                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
                     >
-                      <Bell size={13} /> Ativar
+                      {pushLoading ? 'Desativando…' : 'Desativar'}
                     </button>
+                  ) : (
                     <button
-                      onClick={() => unsubscribeFromPush()}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                      disabled={pushLoading}
+                      onClick={async () => {
+                        setPushLoading(true);
+                        try {
+                          const ok = await subscribeToPush();
+                          if (ok) {
+                            setPushEnabled(true);
+                          } else {
+                            alert('Permissão negada ou navegador não suportado. Verifique as configurações do seu browser.');
+                          }
+                        } catch {
+                          alert('Não foi possível ativar as notificações. Tente novamente.');
+                        } finally {
+                          setPushLoading(false);
+                        }
+                      }}
+                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
                     >
-                      Desativar
+                      <Bell size={13} />
+                      {pushLoading ? 'Ativando…' : 'Ativar'}
                     </button>
-                  </div>
+                  )}
                 </div>
 
                 {/* Cache */}
@@ -1033,23 +1201,60 @@ function ProfileContent() {
                 <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                   <div>
                     <p className="text-sm font-semibold text-slate-800">Consentimento LGPD</p>
-                    <p className="mt-0.5 text-xs text-slate-500">Revoga o aceite dos termos e exibe novamente o banner de privacidade na próxima visita.</p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {lgpdConsent
+                        ? 'Consentimento ativo. Notificações push habilitadas. Ao revogar, as notificações serão desativadas e o banner de privacidade reaparecerá.'
+                        : 'Consentimento não concedido. Notificações push bloqueadas até o aceite dos termos.'}
+                    </p>
+                  </div>
+                  {lgpdConsent ? (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await unsubscribeFromPush();
+                          await apiFetch(`${API_URL}/api/users/me/lgpd-consent`, { method: 'DELETE' });
+                        } catch { /* continua mesmo se falhar */ }
+                        localStorage.removeItem('bawzi_consent_accepted');
+                        setLgpdConsent(false);
+                      }}
+                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-4 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                    >
+                      Revogar consentimento
+                    </button>
+                  ) : (
+                    <span className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                      Não concedido
+                    </span>
+                  )}
+                </div>
+
+                {/* ── Exportar dados ── */}
+                <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800">Exportar meus dados</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                      Baixe um arquivo JSON com todos os seus dados pessoais (portabilidade LGPD, Art. 18).
+                    </p>
                   </div>
                   <button
                     onClick={async () => {
                       try {
-                        await apiFetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/users/me/lgpd-consent`, {
-                          method: 'DELETE',
-                        });
+                        const res = await apiFetch(`${API_URL}/api/users/me/export`);
+                        if (!res.ok) throw new Error('Falha ao exportar');
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'meus-dados-bawzi.json';
+                        a.click();
+                        URL.revokeObjectURL(url);
                       } catch {
-                        // continua mesmo se a rede falhar
+                        alert('Não foi possível exportar os dados. Tente novamente.');
                       }
-                      localStorage.removeItem('bawzi_consent_accepted');
-                      window.location.reload();
                     }}
-                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-4 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+                    className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
                   >
-                    Revogar consentimento
+                    Baixar meus dados
                   </button>
                 </div>
 
@@ -1063,7 +1268,7 @@ function ProfileContent() {
                   A exclusão da conta eliminará permanentemente todos os seus dados, empresas monitoradas e histórico.
                 </p>
                 <button
-                  onClick={handleDeleteAccount}
+                  onClick={() => { setDeleteConfirmText(''); setShowDeleteModal(true); }}
                   disabled={isDeleting}
                   className="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-red-200 bg-white px-4 text-[10px] font-black uppercase tracking-widest text-red-600 transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white disabled:opacity-60"
                 >
@@ -1071,6 +1276,86 @@ function ProfileContent() {
                 </button>
               </div>
             </section>
+
+            {/* ── Modal: Excluir conta ── */}
+            {showDeleteModal && (
+              <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
+                <div className="absolute inset-0" onClick={() => !isDeleting && setShowDeleteModal(false)} aria-hidden />
+                <div
+                  className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+                  style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
+                >
+                  {/* Header */}
+                  <div className="bg-gradient-to-br from-red-600 to-rose-700 px-6 py-5 relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 w-28 h-28 rounded-full bg-white/5 blur-xl pointer-events-none" />
+                    <div className="flex items-center gap-3 relative">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                        <AlertTriangle size={18} className="text-white" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Ação irreversível</p>
+                        <h2 className="text-lg font-black text-white leading-tight">Excluir conta</h2>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Corpo */}
+                  <div className="p-6 space-y-4">
+                    {/* Lista de consequências */}
+                    <div className="rounded-xl border border-red-100 bg-red-50 p-4 space-y-2">
+                      <p className="text-xs font-black text-red-900 uppercase tracking-wide">O que será excluído permanentemente:</p>
+                      <ul className="space-y-1.5">
+                        {[
+                          'Sua conta e dados de acesso',
+                          'Todas as empresas monitoradas',
+                          'Histórico de análises e relatórios',
+                          'Membros da equipe vinculados',
+                          'Assinatura ativa (sem reembolso proporcional)',
+                        ].map(item => (
+                          <li key={item} className="flex items-start gap-2 text-xs text-red-800">
+                            <span className="mt-0.5 shrink-0 text-red-400 font-bold">✗</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Confirmação por texto */}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Para confirmar, digite <span className="font-black text-red-600">EXCLUIR</span> abaixo:
+                      </label>
+                      <input
+                        type="text"
+                        value={deleteConfirmText}
+                        onChange={e => setDeleteConfirmText(e.target.value)}
+                        placeholder="EXCLUIR"
+                        autoComplete="off"
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-bold text-slate-900 placeholder:font-normal placeholder:text-slate-400 focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
+                      />
+                    </div>
+
+                    {/* Botões */}
+                    <div className="flex gap-3 pt-1">
+                      <button
+                        onClick={() => setShowDeleteModal(false)}
+                        disabled={isDeleting}
+                        className="h-11 flex-1 rounded-lg border border-slate-200 bg-slate-50 text-sm font-black text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={handleDeleteAccount}
+                        disabled={isDeleting || deleteConfirmText !== 'EXCLUIR'}
+                        className="h-11 flex-1 rounded-lg bg-red-600 text-sm font-black text-white transition hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {isDeleting ? 'Excluindo...' : 'Excluir definitivamente'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Modal: Atualizar cartão ── */}
             <CardUpdateModal
@@ -1087,6 +1372,62 @@ function ProfileContent() {
                 } catch { /* silencioso */ }
               }}
             />
+
+            {/* ── Modal: Cancelamento de assinatura ── */}
+            {showCancelModal && (
+              <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
+                <div className="absolute inset-0" onClick={() => setShowCancelModal(false)} aria-hidden />
+                <div
+                  className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+                  style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
+                >
+                  {/* Header vermelho */}
+                  <div className="bg-gradient-to-br from-red-600 to-rose-700 px-6 py-5 relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 w-24 h-24 rounded-full bg-white/5 blur-xl" />
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Cancelar assinatura</p>
+                    <h2 className="mt-1 text-lg font-black text-white">Tem certeza?</h2>
+                    <p className="mt-0.5 text-sm text-white/70">Esta ação não pode ser desfeita imediatamente.</p>
+                  </div>
+
+                  {/* Corpo */}
+                  <div className="p-6 space-y-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+                      <p className="text-sm font-black text-amber-900">O que acontece ao cancelar:</p>
+                      <ul className="space-y-1.5">
+                        {[
+                          subscriptionDetails?.current_period_end
+                            ? `Acesso mantido até ${subscriptionDetails.current_period_end}`
+                            : 'Acesso mantido até o fim do ciclo atual',
+                          'Sem cobranças futuras automáticas',
+                          'Você pode reativar antes do vencimento',
+                          'Dados e histórico preservados',
+                        ].map(item => (
+                          <li key={item} className="flex items-start gap-2 text-xs text-amber-800">
+                            <span className="mt-0.5 shrink-0 text-amber-500">•</span>{item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => setShowCancelModal(false)}
+                        className="h-11 flex-1 rounded-lg bg-emerald-600 text-sm font-black text-white transition hover:bg-emerald-700"
+                      >
+                        Manter plano
+                      </button>
+                      <button
+                        onClick={handleCancelSubscription}
+                        disabled={!!billingAction}
+                        className="h-11 flex-1 rounded-lg border border-red-200 bg-red-50 text-sm font-black text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+                      >
+                        {billingAction === 'cancel' ? 'Cancelando...' : 'Cancelar renovação'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Modal: Confirmação de troca de plano ── */}
             {changePlanModal && (() => {
@@ -1155,20 +1496,90 @@ function ProfileContent() {
                           : 'O downgrade ocorre no próximo ciclo. Você mantém os recursos atuais até o fim do período já pago.'}
                       </p>
 
+                      {/* Cupom de desconto */}
+                      <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">
+                          Cupom de desconto <span className="normal-case font-semibold tracking-normal text-slate-300">(opcional)</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={couponCode}
+                            onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponValidation(null); }}
+                            placeholder="Ex: BAWZI30"
+                            className={`h-10 w-full rounded-lg border px-3 pr-9 text-sm font-mono font-bold text-slate-800 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 outline-none transition focus:ring-2 ${
+                              couponValidation?.valid
+                                ? 'border-emerald-400 bg-emerald-50/50 focus:ring-emerald-100'
+                                : couponValidation?.valid === false
+                                ? 'border-red-300 bg-red-50/50 focus:ring-red-100'
+                                : 'border-slate-200 bg-slate-50 focus:border-emerald-400 focus:ring-emerald-100'
+                            }`}
+                          />
+                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                            {couponLoading ? (
+                              <svg className="h-4 w-4 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                              </svg>
+                            ) : couponValidation?.valid ? (
+                              <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                              </svg>
+                            ) : couponValidation?.valid === false ? (
+                              <svg className="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                              </svg>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {/* Feedback de validação */}
+                        {couponValidation?.valid && (
+                          <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                            <p className="text-xs font-black text-emerald-700">
+                              ✓ {couponValidation.description}
+                              {couponValidation.duration && <span className="ml-1 font-semibold opacity-70">({couponValidation.duration})</span>}
+                            </p>
+                            <p className="mt-0.5 text-sm font-black text-emerald-800">
+                              <span className="line-through opacity-50 mr-1.5">{couponValidation.originalPrice}/mês</span>
+                              {couponValidation.finalPrice}/mês
+                            </p>
+                          </div>
+                        )}
+                        {couponValidation?.valid === false && (
+                          <p className="mt-1.5 text-xs font-semibold text-red-500">✗ {couponValidation.error}</p>
+                        )}
+                      </div>
+
                       {/* Botões */}
                       <div className="flex gap-3">
                         <button
-                          onClick={() => setChangePlanModal(null)}
+                          onClick={() => { setChangePlanModal(null); setCouponCode(''); setCouponValidation(null); }}
                           className="h-11 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-black uppercase tracking-widest text-slate-600 transition hover:bg-slate-50"
                         >
                           Cancelar
                         </button>
                         <button
-                          onClick={async () => { setChangePlanModal(null); await handleChangePlan(changePlanModal.tier); }}
-                          disabled={!!billingAction}
+                          onClick={async () => {
+                            const code = couponCode.trim() || undefined;
+                            setChangePlanModal(null);
+                            setCouponCode('');
+                            setCouponValidation(null);
+                            await handleChangePlan(changePlanModal.tier, code);
+                          }}
+                          disabled={!!billingAction || couponLoading}
                           className={`h-11 flex-1 rounded-lg text-sm font-black uppercase tracking-wide text-white transition disabled:opacity-50 ${isUp ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-800 hover:bg-slate-700'}`}
                         >
-                          {billingAction ? 'Alterando...' : `Confirmar ${isUp ? 'upgrade' : 'downgrade'}`}
+                          {billingAction ? 'Alterando...' : (
+                            <span className="flex flex-col items-center leading-tight">
+                              <span>Confirmar {isUp ? 'upgrade' : 'downgrade'}</span>
+                              {couponValidation?.valid && (
+                                <span className="text-[10px] font-semibold opacity-80 normal-case tracking-normal">
+                                  {couponValidation.finalPrice}/mês com desconto
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </button>
                       </div>
                     </div>

@@ -29,6 +29,8 @@ export default function ConsentBanner() {
     localStorage.setItem(CONSENT_KEY, 'true');
     setVisible(false);
     syncConsentToDb();
+    // Notifica outras partes da UI (ex: página de perfil) sem reload
+    window.dispatchEvent(new CustomEvent('bawzi_lgpd_accepted'));
   };
 
   if (!visible) return null;
