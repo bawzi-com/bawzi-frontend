@@ -38,6 +38,7 @@ import {
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
 import { apiFetch, getAuthToken, initSession, clearSession, SessionExpiredError } from '@/lib/apiClient';
+import ChangePlanModal from '@/components/ChangePlanModal';
 
 type ProfileIcon = React.ComponentType<{ size?: number; className?: string }>;
 type SectionTone = 'emerald' | 'sky' | 'slate' | 'amber' | 'red';
@@ -97,7 +98,6 @@ function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const stripeSuccess = searchParams.get('success');
-  const gotoSection  = searchParams.get('goto');   // ex: ?goto=assinatura → rola até #sec-assinatura
 
   const [authToken, setAuthToken] = useState<string>('');
   const [userData, setUserData] = useState<any>(null);
@@ -123,12 +123,6 @@ function ProfileContent() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [savedCard, setSavedCard] = useState<{ brand: string; last4: string; exp_month: number; exp_year: number } | null>(null);
   const [changePlanModal, setChangePlanModal] = useState<{ tier: number } | null>(null);
-  const [couponCode, setCouponCode] = useState('');
-  const [couponValidation, setCouponValidation] = useState<{
-    valid: boolean; description?: string; duration?: string;
-    originalPrice?: string; finalPrice?: string; discountLabel?: string; error?: string;
-  } | null>(null);
-  const [couponLoading, setCouponLoading] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [invoicesVisible, setInvoicesVisible] = useState(5);
   const [cleanupRequired, setCleanupRequired] = useState(false);
@@ -209,30 +203,6 @@ function ProfileContent() {
       .catch(() => setTwoFAOn(null));
   }, [authToken]);
 
-  // Validação debounced de cupom — dispara 700ms após o usuário parar de digitar
-  useEffect(() => {
-    if (!couponCode.trim() || !changePlanModal) {
-      setCouponValidation(null);
-      return;
-    }
-    setCouponLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await apiFetch(`${API_URL}/api/billing/validate-coupon`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: couponCode.trim(), tier: changePlanModal.tier }),
-        });
-        const data = await res.json().catch(() => ({ valid: false, error: 'Erro ao validar.' }));
-        setCouponValidation(data);
-      } catch {
-        setCouponValidation({ valid: false, error: 'Erro ao validar cupom.' });
-      } finally {
-        setCouponLoading(false);
-      }
-    }, 700);
-    return () => { clearTimeout(timer); setCouponLoading(false); };
-  }, [couponCode, changePlanModal?.tier]);
 
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -329,27 +299,17 @@ function ProfileContent() {
     }
   };
 
-  // Scroll para seção indicada por ?goto=assinatura ou pelo hash #sec-assinatura
-  // Dispara quando os dados carregam (isLoading false); usa query param como fonte
-  // primária (mais confiável no App Router) e hash como fallback.
+  // Scroll para seção solicitada via sessionStorage (definido antes do router.push)
+  // Usa sessionStorage porque é síncrono, persiste na navegação client-side e não
+  // depende de query param nem de hash (que são instáveis no App Router).
   useEffect(() => {
     if (isLoading) return;
-    const targetId = gotoSection ? `sec-${gotoSection}` : window.location.hash?.slice(1);
+    const targetId = sessionStorage.getItem('goto_section') || window.location.hash?.slice(1);
     if (!targetId) return;
-    // Limpa o query param da URL sem recarregar (UX limpa)
-    if (gotoSection) {
-      const params = new URLSearchParams(window.location.search);
-      params.delete('goto');
-      const newUrl = params.toString()
-        ? `${window.location.pathname}?${params}`
-        : window.location.pathname;
-      window.history.replaceState(null, '', newUrl);
-    }
-    // Pequeno atraso para garantir que o layout já assentou
+    sessionStorage.removeItem('goto_section');
     setTimeout(() => {
-      const el = document.getElementById(targetId);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 80);
+      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading]);
 
@@ -1457,163 +1417,16 @@ function ProfileContent() {
             )}
 
             {/* ── Modal: Confirmação de troca de plano ── */}
-            {changePlanModal && (() => {
-              const PLANS: Record<number, { name: string; price: string; features: string[] }> = {
-                2: { name: 'Essencial',    price: 'R$ 79/mês',  features: ['Perfil da empresa (CNPJ/UF)', 'Central de decisões', 'Radar 360 — busca PNCP', 'Editais até 80.000 chars', 'PDF até 15 MB'] },
-                3: { name: 'Profissional', price: 'R$ 197/mês', features: ['Oportunidades com fit CNAE', 'Monitor inteligente PNCP', 'Fôlego financeiro', '4 Agentes IA em paralelo', 'Editais até 180.000 chars'] },
-                4: { name: 'Avançado',     price: 'R$ 497/mês', features: ['Pipeline de renovações', 'War Room de concorrentes', 'Simulador tático de preços', 'Editais até 400.000 chars', 'PDF até 100 MB'] },
-              };
-              const current = PLANS[userTier];
-              const next    = PLANS[changePlanModal.tier];
-              const isUp    = changePlanModal.tier > userTier;
-              return (
-                <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
-                  <div className="absolute inset-0" onClick={() => setChangePlanModal(null)} aria-hidden />
-                  <div
-                    className="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
-                    style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
-                  >
-                    <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
-
-                    {/* Header */}
-                    <div className={`px-6 py-5 ${isUp ? 'bg-emerald-600' : 'bg-slate-800'}`}>
-                      <p className="text-[10px] font-black uppercase tracking-widest text-white/60">
-                        {isUp ? 'Upgrade de plano' : 'Downgrade de plano'}
-                      </p>
-                      <h2 className="mt-1 text-lg font-black text-white">
-                        {current?.name ?? `Nível ${userTier}`} → {next?.name ?? `Nível ${changePlanModal.tier}`}
-                      </h2>
-                      <p className="mt-0.5 text-sm text-white/70">
-                        {next?.price} · A Stripe aplica ajuste proporcional no ciclo atual
-                      </p>
-                    </div>
-
-                    {/* Body */}
-                    <div className="p-6 space-y-5">
-                      {/* Comparativo */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Plano atual</p>
-                          <p className="font-black text-slate-950">{current?.name ?? `Nível ${userTier}`}</p>
-                          <ul className="mt-2 space-y-1">
-                            {current?.features.slice(0, 3).map(f => (
-                              <li key={f} className="text-[11px] text-slate-500 flex items-start gap-1.5">
-                                <span className="text-slate-300 mt-0.5 shrink-0">—</span>{f}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className={`rounded-xl border p-4 ${isUp ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                          <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isUp ? 'text-emerald-600' : 'text-amber-600'}`}>Novo plano</p>
-                          <p className="font-black text-slate-950">{next?.name ?? `Nível ${changePlanModal.tier}`}</p>
-                          <ul className="mt-2 space-y-1">
-                            {next?.features.slice(0, 3).map(f => (
-                              <li key={f} className={`text-[11px] flex items-start gap-1.5 ${isUp ? 'text-emerald-700' : 'text-amber-800'}`}>
-                                <span className="mt-0.5 shrink-0">{isUp ? '✓' : '—'}</span>{f}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      {/* Nota de cobrança */}
-                      <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
-                        {isUp
-                          ? 'O upgrade é imediato. A diferença proporcional do ciclo atual será cobrada no cartão cadastrado.'
-                          : 'O downgrade ocorre no próximo ciclo. Você mantém os recursos atuais até o fim do período já pago.'}
-                      </p>
-
-                      {/* Cupom de desconto */}
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">
-                          Cupom de desconto <span className="normal-case font-semibold tracking-normal text-slate-300">(opcional)</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            value={couponCode}
-                            onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponValidation(null); }}
-                            placeholder="Ex: BAWZI30"
-                            className={`h-10 w-full rounded-lg border px-3 pr-9 text-sm font-mono font-bold text-slate-800 placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 outline-none transition focus:ring-2 ${
-                              couponValidation?.valid
-                                ? 'border-emerald-400 bg-emerald-50/50 focus:ring-emerald-100'
-                                : couponValidation?.valid === false
-                                ? 'border-red-300 bg-red-50/50 focus:ring-red-100'
-                                : 'border-slate-200 bg-slate-50 focus:border-emerald-400 focus:ring-emerald-100'
-                            }`}
-                          />
-                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                            {couponLoading ? (
-                              <svg className="h-4 w-4 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                              </svg>
-                            ) : couponValidation?.valid ? (
-                              <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
-                              </svg>
-                            ) : couponValidation?.valid === false ? (
-                              <svg className="h-4 w-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
-                              </svg>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        {/* Feedback de validação */}
-                        {couponValidation?.valid && (
-                          <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                            <p className="text-xs font-black text-emerald-700">
-                              ✓ {couponValidation.description}
-                              {couponValidation.duration && <span className="ml-1 font-semibold opacity-70">({couponValidation.duration})</span>}
-                            </p>
-                            <p className="mt-0.5 text-sm font-black text-emerald-800">
-                              <span className="line-through opacity-50 mr-1.5">{couponValidation.originalPrice}/mês</span>
-                              {couponValidation.finalPrice}/mês
-                            </p>
-                          </div>
-                        )}
-                        {couponValidation?.valid === false && (
-                          <p className="mt-1.5 text-xs font-semibold text-red-500">✗ {couponValidation.error}</p>
-                        )}
-                      </div>
-
-                      {/* Botões */}
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => { setChangePlanModal(null); setCouponCode(''); setCouponValidation(null); }}
-                          className="h-11 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-black uppercase tracking-widest text-slate-600 transition hover:bg-slate-50"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          onClick={async () => {
-                            const code = couponCode.trim() || undefined;
-                            setChangePlanModal(null);
-                            setCouponCode('');
-                            setCouponValidation(null);
-                            await handleChangePlan(changePlanModal.tier, code);
-                          }}
-                          disabled={!!billingAction || couponLoading}
-                          className={`h-11 flex-1 rounded-lg text-sm font-black uppercase tracking-wide text-white transition disabled:opacity-50 ${isUp ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-800 hover:bg-slate-700'}`}
-                        >
-                          {billingAction ? 'Alterando...' : (
-                            <span className="flex flex-col items-center leading-tight">
-                              <span>Confirmar {isUp ? 'upgrade' : 'downgrade'}</span>
-                              {couponValidation?.valid && (
-                                <span className="text-[10px] font-semibold opacity-80 normal-case tracking-normal">
-                                  {couponValidation.finalPrice}/mês com desconto
-                                </span>
-                              )}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            <ChangePlanModal
+              currentTier={userTier}
+              targetTier={changePlanModal?.tier ?? null}
+              onClose={() => setChangePlanModal(null)}
+              onConfirm={async (tier, coupon) => {
+                setChangePlanModal(null);
+                await handleChangePlan(tier, coupon);
+              }}
+              isConfirming={billingAction?.startsWith('tier-') ?? false}
+            />
           </main>
         </div>
       </div>

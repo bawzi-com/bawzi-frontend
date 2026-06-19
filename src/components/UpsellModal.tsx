@@ -37,7 +37,8 @@ export default function UpsellModal({
 
   const handleUpgradeClick = () => {
     onClose();
-    router.push('/profile?goto=assinatura');
+    sessionStorage.setItem('goto_section', 'sec-assinatura');
+    router.push('/profile');
   };
 
   return (

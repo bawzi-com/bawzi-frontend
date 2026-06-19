@@ -51,6 +51,7 @@ import OnboardingModal from '../components/OnboardingModal';
 import UpgradeModal from './UpgradeModal';
 import AuthModal from './AuthModal';
 import UpsellModal from './UpsellModal';
+import ChangePlanModal from './ChangePlanModal';
 
 // Contextos e tipos
 import { useTierConfig } from '../Contexts/TierContext';
@@ -172,6 +173,10 @@ export default function AnalysisApp() {
   const [selectedTier, setSelectedTier] = useState<number>(1);
   const [stripeSecret, setStripeSecret] = useState<string | null>(null);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+
+  // ChangePlanModal (workspace)
+  const [changePlanTargetTier, setChangePlanTargetTier] = useState<number | null>(null);
+  const [isChangingPlan, setIsChangingPlan]             = useState(false);
 
   // Partilha
   const [isSharing, setIsSharing]       = useState(false);
@@ -550,7 +555,8 @@ export default function AnalysisApp() {
     // (modal de confirmação, cupom, info de próxima cobrança). Redireciona para lá.
     // Usa router.push (client-side) para preservar _accessToken na memória.
     if (userTier > 1) {
-      router.push('/profile?goto=assinatura');
+      sessionStorage.setItem('goto_section', 'sec-assinatura');
+      router.push('/profile');
       return;
     }
     setSelectedTier(tier);
@@ -595,6 +601,38 @@ export default function AnalysisApp() {
     } catch {
       setIsCheckoutLoading(false);
       showError('Erro ao processar plano. Tente novamente.');
+    }
+  };
+
+  const handleChangePlanInWorkspace = async (tier: number, coupon?: string) => {
+    setIsChangingPlan(true);
+    try {
+      const body: Record<string, unknown> = { tier };
+      if (coupon) body.coupon_code = coupon;
+      const res = await apiFetch(`${API_URL}/api/billing/update-subscription`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || 'Erro ao alterar plano.');
+      // Sincroniza e atualiza tier na UI
+      const syncRes = await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`).catch(() => null);
+      if (syncRes?.ok) {
+        const syncData = await syncRes.json().catch(() => null);
+        if (syncData?.tier) {
+          const newTier = Number(syncData.tier);
+          setUserTier(newTier);
+          localStorage.setItem('bawzi_tier', String(newTier));
+          localStorage.setItem('bawzi_tier_ts', String(Date.now()));
+          window.dispatchEvent(new CustomEvent('bawzi_update', { detail: { tier: newTier } }));
+        }
+      }
+      setChangePlanTargetTier(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Erro ao alterar plano.');
+    } finally {
+      setIsChangingPlan(false);
     }
   };
 
@@ -1069,6 +1107,7 @@ export default function AnalysisApp() {
             <PricingSection
               onRegister={() => { setAuthMode('register'); setShowAuthModal(true); }}
               onUpgrade={handleUpgrade}
+              onChangePlan={userTier > 1 ? setChangePlanTargetTier : undefined}
               currentTier={userTier}
             />
           </div>
@@ -1102,6 +1141,14 @@ export default function AnalysisApp() {
           setCopiadoImpugnacao(true);
           setTimeout(() => setCopiadoImpugnacao(false), 2000);
         }}
+      />
+
+      <ChangePlanModal
+        currentTier={userTier}
+        targetTier={changePlanTargetTier}
+        onClose={() => setChangePlanTargetTier(null)}
+        onConfirm={handleChangePlanInWorkspace}
+        isConfirming={isChangingPlan}
       />
 
       <UpgradeModal
