@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
@@ -11,12 +11,14 @@ export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const isLanding = pathname === '/';
-  
+
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
   const [userData, setUserData] = useState<{name?: string, email?: string} | null>(null);
   const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
   const [promo, setPromo] = useState<{is_promo: boolean; promo_expires_at: string} | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
 
@@ -107,6 +109,20 @@ export default function Header() {
     window.addEventListener('bawzi_update', handleGlobalUpdate);
     return () => window.removeEventListener('bawzi_update', handleGlobalUpdate);
   }, [pathname]);
+
+  // Fecha o menu ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
+
+  // Fecha o menu ao navegar
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const handleLogout = async () => {
     try {
@@ -225,33 +241,69 @@ export default function Header() {
                 </Link>
               )}
               
-              <div className="relative group cursor-pointer">
-                <Link href="/profile" className="h-10 w-10 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-300 group-hover:ring-4 group-hover:ring-emerald-500/15">
+              <div className="relative" ref={menuRef}>
+                <button
+                  onClick={() => setMenuOpen(prev => !prev)}
+                  className={`h-10 w-10 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-200 ${menuOpen ? 'ring-4 ring-emerald-500/20' : 'hover:ring-4 hover:ring-emerald-500/15'}`}
+                  aria-label="Menu do usuário"
+                >
                   {userData?.name ? userData.name.charAt(0).toUpperCase() : 'B'}
-                </Link>
+                </button>
 
-                <div className="absolute right-0 mt-3 w-max min-w-[220px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 transform origin-top-right scale-95 group-hover:scale-100 z-50">
-                  <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-200 relative">
-                    <div className="absolute -top-2 right-4 w-4 h-4 bg-white border-t border-l border-slate-200 transform rotate-45"></div>
-                    <div className="relative z-10 flex flex-col text-left">
-                      <span className="text-sm font-black text-slate-900 truncate max-w-[180px]">
-                        {userData?.name || 'Usuário Bawzi'}
-                      </span>
-                      <span className="text-[10px] font-medium text-slate-500 truncate max-w-[180px] mt-0.5">
-                        {userData?.email || 'Configurações de perfil'}
-                      </span>
-                      
-                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                         <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest rounded-lg">
-                           Nível {userTier}
-                         </span>
-                         <button onClick={handleLogout} className="text-[9px] font-bold text-slate-500 hover:text-red-600 transition-colors uppercase tracking-widest">
-                           Sair
-                         </button>
+                {menuOpen && (
+                  <div className="absolute right-0 mt-3 w-max min-w-[220px] z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+                      {/* Cabeçalho com info do usuário */}
+                      <div className="px-4 pt-4 pb-3">
+                        <div className="absolute -top-2 right-4 w-4 h-4 bg-white border-t border-l border-slate-200 transform rotate-45"></div>
+                        <p className="text-sm font-black text-slate-900 truncate max-w-[180px]">
+                          {userData?.name || 'Usuário Bawzi'}
+                        </p>
+                        <p className="text-[10px] font-medium text-slate-500 truncate max-w-[180px] mt-0.5">
+                          {userData?.email || ''}
+                        </p>
+                        <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[9px] font-black uppercase tracking-widest rounded-lg">
+                          Nível {userTier}
+                        </span>
+                      </div>
+
+                      {/* Opções do menu */}
+                      <div className="border-t border-slate-100 py-1">
+                        <Link
+                          href="/profile"
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          Meu Perfil
+                        </Link>
+                        <Link
+                          href="/plans"
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                          </svg>
+                          Meu Plano
+                        </Link>
+                      </div>
+
+                      {/* Sair */}
+                      <div className="border-t border-slate-100 py-1">
+                        <button
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Sair
+                        </button>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
 
             </div>

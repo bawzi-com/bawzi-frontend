@@ -221,7 +221,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = API_URL;
 
       const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/tier`, {
         method: 'PUT',
@@ -252,7 +252,7 @@ export default function AdminDashboard() {
     }
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = API_URL;
 
       const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/users/${userId}/email`, {
         method: 'PUT',
@@ -276,7 +276,7 @@ export default function AdminDashboard() {
   const executeModerationAction = async () => {
     if (!moderationModal) return;
     const { userId, email, action, banReason } = moderationModal;
-    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base = API_URL;
 
     setModerationLoading(true);
     try {
@@ -324,7 +324,7 @@ export default function AdminDashboard() {
 
   const loadBanner = async () => {
     setBannerLoading(true);
-    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base = API_URL;
     try {
       const res = await apiFetch(`${base}/api/admin/promo-banner`);
       if (res.ok) {
@@ -349,7 +349,7 @@ export default function AdminDashboard() {
   const saveBanner = async () => {
     setBannerSaving(true);
     setBannerMsg(null);
-    const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base = API_URL;
     try {
       const payload = {
         ...banner,
@@ -375,7 +375,7 @@ export default function AdminDashboard() {
 
   const loadPromoList = async () => {
     setPromoListLoading(true);
-    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base  = API_URL;
     try {
       const res = await apiFetch(`${base}/api/admin/promo-invites`);
       if (res.ok) setPromoList(await res.json());
@@ -392,7 +392,7 @@ export default function AdminDashboard() {
     if (!promoEmail.includes('@') || promoSubmittingRef.current) return;
     promoSubmittingRef.current = true;
     setPromoLoading(true); setPromoMsg(null);
-    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base  = API_URL;
     try {
       const res = await apiFetch(`${base}/api/admin/promo-invite`, {
         method: 'POST',
@@ -416,7 +416,7 @@ export default function AdminDashboard() {
 
   const handleRevogarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Revogar convite de ${email}?`)) return;
-    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base  = API_URL;
     await apiFetch(`${base}/api/admin/promo-invites/${token_promo}`, {
       method: 'DELETE',
     });
@@ -425,7 +425,7 @@ export default function AdminDashboard() {
 
   const handleAtivarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Ativar manualmente o convite de ${email}?`)) return;
-    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base  = API_URL;
     const res = await apiFetch(`${base}/api/admin/promo-invites/${token_promo}/ativar`, {
       method: 'POST',
     });
@@ -440,7 +440,7 @@ export default function AdminDashboard() {
 
   const handleReenviarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Reenviar convite para ${email}? Um novo link será gerado.`)) return;
-    const base  = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const base  = API_URL;
     const res = await apiFetch(`${base}/api/admin/promo-invites/${token_promo}/reenviar`, {
       method: 'POST',
     });
@@ -456,7 +456,7 @@ export default function AdminDashboard() {
   const loadAnalytics = async () => {
     setAnalyticsLoading(true);
     try {
-      const res = await apiFetch(`${(process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '')}/api/admin/analytics/usage`);
+      const res = await apiFetch(`${API_URL}/api/admin/analytics/usage`);
       if (res.ok) setAnalyticsData(await res.json());
     } catch {}
     setAnalyticsLoading(false);
@@ -465,7 +465,7 @@ export default function AdminDashboard() {
   const loadErrorLogs = async (lvl = errorLogFilter) => {
     setErrorLogsLoading(true);
     try {
-      const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const base = API_URL;
       const qs = lvl ? `?level=${lvl}` : '';
       const res = await apiFetch(`${base}/api/admin/errors${qs}`);
       if (res.ok) {
@@ -480,14 +480,14 @@ export default function AdminDashboard() {
   const clearErrorLogs = async () => {
     if (!confirm('Apagar todos os logs de erro? Esta ação não pode ser desfeita.')) return;
     try {
-      const base = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const base = API_URL;
       const res = await apiFetch(`${base}/api/admin/errors`, { method: 'DELETE' });
       if (res.ok) { setErrorLogs([]); setErrorLogsTotal(0); }
     } catch {}
   };
 
   const loadTierConfigs = async () => {
-    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const baseUrl = API_URL;
     try {
       const res = await apiFetch(`${baseUrl}/api/admin/tier-configs`);
       if (res.ok) {
@@ -515,7 +515,7 @@ export default function AdminDashboard() {
   };
 
   const handleSaveTier = async (tierId: number) => {
-    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const baseUrl = API_URL;
     setSavingTier(tierId);
     setTierMsg(null);
     try {
@@ -547,7 +547,7 @@ export default function AdminDashboard() {
 
   const handleResetTier = async (tierId: number) => {
     if (!confirm(`Restaurar Tier ${tierId} aos valores padrão?`)) return;
-    const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+    const baseUrl = API_URL;
     try {
       await apiFetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
         method: 'DELETE',
@@ -565,7 +565,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setSavingSmtp(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = API_URL;
       const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/email/smtp`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -590,7 +590,7 @@ export default function AdminDashboard() {
   const loadPncpData = async () => {
     setPncpLoading(true);
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const [statsRes, statusRes, schedulerRes] = await Promise.all([
         apiFetch(`${baseUrl}/api/admin/pncp/stats`),
         apiFetch(`${baseUrl}/api/admin/workers/status`),
@@ -610,7 +610,7 @@ export default function AdminDashboard() {
     if (!confirm(`Iniciar worker de contratos em modo "${modo}"?\n\nTempo estimado:\n• sem_termo: ~3 min\n• rapido: ~30s\n• medio: ~10 min\n• maximo: ~45 min\n• completo: ~50 min`)) return;
     setWorkerAction(`contratos-${modo}`);
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const res = await apiFetch(`${baseUrl}/api/admin/workers/contratos?modo=${modo}`, {
         method: 'POST',
       });
@@ -633,7 +633,7 @@ export default function AdminDashboard() {
     if (!confirm(`Enriquecer fornecedores para: ${ufsLabel}?\n\nEste worker usa /api/consulta (tem nomeRazaoSocialFornecedor)\ne actualiza os contratos já indexados sem re-indexar.\n\nTempo: ~2-5 min por UF · ~1-2h completo`)) return;
     setWorkerAction('fornecedores');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = fornecedoresUfs.trim() ? `?ufs=${encodeURIComponent(fornecedoresUfs.trim())}` : '';
       const res = await apiFetch(`${baseUrl}/api/admin/workers/fornecedores${qs}`, {
         method: 'POST',
@@ -665,7 +665,7 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('enrich_via_consulta');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = new URLSearchParams();
       if (enrichViaConsultaUfs.trim()) qs.set('ufs', enrichViaConsultaUfs.trim());
       const qsStr = qs.toString();
@@ -696,7 +696,7 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('editais_detalhe');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = new URLSearchParams();
       if (editaisDetalheUfs.trim()) qs.set('ufs', editaisDetalheUfs.trim());
       const qsStr = qs.toString();
@@ -730,7 +730,7 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('itens_contratos');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = new URLSearchParams();
       if (itensContratosUfs.trim()) qs.set('ufs', itensContratosUfs.trim());
       const qsStr = qs.toString();
@@ -763,7 +763,7 @@ export default function AdminDashboard() {
     )) return;
     setWorkerAction('consulta_uf');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = new URLSearchParams();
       if (consultaUfUfs.trim()) qs.set('ufs', consultaUfUfs.trim());
       qs.set('janelas', String(janelas));
@@ -786,7 +786,7 @@ export default function AdminDashboard() {
     if (!confirm(`Iniciar worker de municípios para: ${ufsLabel}?\n\nTempo estimado: ~2-4h para todas as UFs.`)) return;
     setWorkerAction('municipios');
     try {
-      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+      const baseUrl = API_URL;
       const qs = municipiosUfs.trim() ? `?ufs=${encodeURIComponent(municipiosUfs.trim())}` : '';
       const res = await apiFetch(`${baseUrl}/api/admin/workers/municipios${qs}`, {
         method: 'POST',
@@ -821,7 +821,7 @@ export default function AdminDashboard() {
 
     setUploadingImage(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = API_URL;
 
       const formData = new FormData();
       formData.append('file', file);
@@ -851,7 +851,7 @@ export default function AdminDashboard() {
 
     setSavingTemplate(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const baseUrl = API_URL;
 
       const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/admin/email-templates/${selectedTemplate.slug}`, {
         method: 'PUT',
