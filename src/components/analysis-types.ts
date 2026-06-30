@@ -180,6 +180,14 @@ export interface AnalysisResult {
   pegadinha?: PegadinhaData;
   cockpit_status?: CockpitStatusMap;
   cockpit_updated_at?: string;
+  avaliacao_parametros?: Array<{
+    nome: string;
+    peso: 'alto' | 'medio' | 'baixo';
+    status: 'ok' | 'alerta' | 'bloqueio';
+    score: number;
+    trecho_citado: string;
+    avaliacao: string;
+  }>;
 }
 
 // ─── Funções utilitárias ──────────────────────────────────────────────────────

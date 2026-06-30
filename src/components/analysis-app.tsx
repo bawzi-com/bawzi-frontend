@@ -39,6 +39,7 @@ import ImpugnacaoModal from './ImpugnacaoModal';
 
 // Componentes externos (mantidos inalterados)
 import HistoryTab from './HistoryTab';
+import ParametrizacaoPanel from './ParametrizacaoPanel';
 import DecisionManagementTab from './DecisionManagementTab';
 import CompareTab from './CompareTab';
 import PricingSection from './PricingSection';
@@ -950,6 +951,12 @@ export default function AnalysisApp() {
               )}
 
               {/* Aba Histórico */}
+              {activeTab === 'parametrizacao' && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 bg-white rounded-[2rem] border border-slate-200 shadow-sm min-h-[600px]">
+                  <ParametrizacaoPanel />
+                </div>
+              )}
+
               {activeTab === 'history' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {isCheckingAuth ? (

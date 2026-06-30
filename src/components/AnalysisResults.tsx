@@ -17,7 +17,7 @@ import {
   ClipboardList, Pin, ThumbsUp, ThumbsDown, FileText,
   Lock, Crown, AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
-  RefreshCw, History, CheckCircle2,
+  RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -389,240 +389,222 @@ function DecisionSnapshot({
   return (
     <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
       <div className={`h-1.5 ${verdict.bar}`} />
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="p-5 md:p-7">
-          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-            <div className="flex items-start gap-4">
-              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl shadow-sm ${verdict.iconShell}`}>
-                <Icon size={25} strokeWidth={2.4} />
+
+      <div className="p-6 md:p-8">
+
+        {/* ── Cabeçalho: veredito + métricas em linha ───────────────────── */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-start gap-4">
+            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl shadow-sm ${verdict.iconShell}`}>
+              <Icon size={25} strokeWidth={2.4} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verdict.pill}`}>
+                  {decision.veredito.replace('_', ' ')}
+                </span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Decisão executiva
+                </span>
               </div>
+              <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
+                {decision.rotulo}
+              </h3>
+            </div>
+          </div>
+
+          {/* Indicadores compactos no cabeçalho */}
+          <div className="flex shrink-0 gap-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]">
+              <p className={`text-2xl font-black leading-none ${verdict.text}`}>{result.score}</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Viabilidade</p>
+              <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className={`h-full rounded-full ${verdict.bar}`} style={{ width: `${result.score}%` }} />
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]">
+              <p className="text-2xl font-black leading-none text-slate-700">{decision.confianca}%</p>
+              <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Confiança</p>
+              <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-slate-500" style={{ width: `${decision.confianca}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Síntese ───────────────────────────────────────────────────── */}
+        <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese do veredito</p>
+          <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">{summaryText}</p>
+        </div>
+
+        {/* ── Aderência ao negócio ──────────────────────────────────────── */}
+        {businessFit && (
+          <div className={`mt-5 rounded-2xl border px-5 py-4 ${businessFit.shell}`}>
+            <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verdict.pill}`}>
-                    {decision.veredito.replace('_', ' ')}
-                  </span>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Decisão executiva
-                  </span>
-                </div>
-                <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
-                  {decision.rotulo}
-                </h3>
+                <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <Settings2 size={14} className={businessFit.icon} />
+                  Aderência ao negócio
+                </p>
+                <p className="mt-2 text-sm font-black leading-snug text-slate-900">{businessFit.label}</p>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{businessFit.description}</p>
+              </div>
+              <div className="shrink-0 rounded-xl border border-white/70 bg-white/75 px-3 py-2 text-right">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Match CNAE</p>
+                <p className={`mt-1 text-lg font-black leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
               </div>
             </div>
-
-          </div>
-
-          <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese do veredito</p>
-            <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">{summaryText}</p>
-          </div>
-
-          {businessFit && (
-            <div className={`mt-6 rounded-2xl border px-5 py-4 ${businessFit.shell}`}>
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    <Settings2 size={14} className={businessFit.icon} />
-                    Aderência ao negócio
-                  </p>
-                  <p className="mt-2 text-sm font-black leading-snug text-slate-900">{businessFit.label}</p>
-                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{businessFit.description}</p>
-                </div>
-                <div className="shrink-0 rounded-xl border border-white/70 bg-white/75 px-3 py-2 md:text-right">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Match CNAE</p>
-                  <p className={`mt-1 text-lg font-black leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
-                </div>
+            {(businessFit.cnae || businessFit.object) && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {businessFit.cnae && (
+                  <span className="rounded-lg bg-white/65 px-3 py-1.5 text-[11px] font-bold text-slate-600">
+                    CNAE: {businessFit.cnae}
+                  </span>
+                )}
+                {businessFit.object && (
+                  <span className="rounded-lg bg-white/65 px-3 py-1.5 text-[11px] font-bold text-slate-600">
+                    Edital: {businessFit.object}
+                  </span>
+                )}
               </div>
-              {(businessFit.cnae || businessFit.object) && (
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {businessFit.cnae && (
-                    <p className="rounded-lg bg-white/65 px-3 py-2 text-[11px] font-bold leading-snug text-slate-600">
-                      CNAE: {businessFit.cnae}
-                    </p>
-                  )}
-                  {businessFit.object && (
-                    <p className="rounded-lg bg-white/65 px-3 py-2 text-[11px] font-bold leading-snug text-slate-600">
-                      Edital: {businessFit.object}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {evidenceItems.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
-              <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                <Shield size={14} className={verdict.text} />
-                Por que a decisão é segura
-              </p>
-              <div className="grid gap-3 md:grid-cols-2">
-                {evidenceItems.map((evidence, index) => (
-                  <div key={`${evidence.titulo}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
-                        {evidence.categoria || 'Evidência'}
+        {/* ── Evidências ────────────────────────────────────────────────── */}
+        {evidenceItems.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
+            <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <Shield size={14} className={verdict.text} />
+              Por que a decisão é segura
+            </p>
+            <div className="space-y-3">
+              {evidenceItems.map((evidence, index) => (
+                <div key={`${evidence.titulo}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                      {evidence.categoria || 'Evidência'}
+                    </span>
+                    {(evidence.referencia || evidence.fonte) && (
+                      <span className="inline-block max-w-[20rem] truncate rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400 ring-1 ring-slate-200">
+                        {evidence.referencia || evidence.fonte}
                       </span>
-                      {(evidence.referencia || evidence.fonte) && (
-                        <span className="inline-block max-w-[14rem] truncate rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400 ring-1 ring-slate-200 md:max-w-[18rem]">
-                          {evidence.referencia || evidence.fonte}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-2 text-sm font-black leading-snug text-slate-900">{evidence.titulo}</p>
-                    {evidence.detalhe && (
-                      <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-600">{evidence.detalhe}</p>
-                    )}
-                    {evidence.trecho && (
-                      <blockquote className="mt-3 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
-                        "{evidence.trecho}"
-                      </blockquote>
-                    )}
-                    {evidence.impacto && (
-                      <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-bold leading-relaxed text-slate-500">
-                        Impacto: {evidence.impacto}
-                      </p>
-                    )}
-                    {evidence.fonte && evidence.fonte !== evidence.referencia && (
-                      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Fonte: {evidence.fonte}
-                      </p>
                     )}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-            <div className={`grid divide-y divide-slate-200 md:divide-x md:divide-y-0 ${decisionColsClass}`}>
-              {decisionColumns.map(({ label, Icon: ColumnIcon, items, tone }) => (
-                <div key={label} className="bg-white px-5 py-4">
-                  <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    <ColumnIcon size={14} className={tone} />
-                    {label}
-                  </p>
-                  <div className="space-y-2.5">
-                    {items.map((item, index) => (
-                      <div key={`${item}-${index}`} className="flex gap-2.5">
-                        <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${verdict.dot}`} />
-                        <p className="text-xs font-semibold leading-relaxed text-slate-600">{item}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="mt-2 text-sm font-black leading-snug text-slate-900">{evidence.titulo}</p>
+                  {evidence.detalhe && (
+                    <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-600">{evidence.detalhe}</p>
+                  )}
+                  {evidence.trecho && (
+                    <blockquote className="mt-3 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
+                      "{evidence.trecho}"
+                    </blockquote>
+                  )}
+                  {evidence.impacto && (
+                    <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-bold text-slate-500">
+                      Impacto: {evidence.impacto}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
           </div>
+        )}
 
-          {gapItems.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-              <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                <SearchX size={14} className="text-amber-500" />
-                Lacunas da análise
-                <span className="font-medium normal-case tracking-normal text-slate-400">· o que ainda não está coberto acima</span>
-              </p>
-              <div className="grid gap-2 md:grid-cols-2">
-                {gapItems.slice(0, 4).map((item, index) => (
-                  <div key={`${item}-${index}`} className="flex gap-2 rounded-xl bg-slate-50 px-3 py-2.5">
-                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                    <p className="text-xs font-semibold leading-relaxed text-slate-600">{item}</p>
-                  </div>
-                ))}
+        {/* ── Impedimentos / Motivos / O que mudaria ────────────────────── */}
+        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+          <div className={`grid divide-y divide-slate-200 md:divide-x md:divide-y-0 ${decisionColsClass}`}>
+            {decisionColumns.map(({ label, Icon: ColumnIcon, items, tone }) => (
+              <div key={label} className="bg-white px-5 py-5">
+                <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <ColumnIcon size={14} className={tone} />
+                  {label}
+                </p>
+                <div className="space-y-2.5">
+                  {items.map((item, index) => (
+                    <div key={`${item}-${index}`} className="flex gap-2.5">
+                      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${verdict.dot}`} />
+                      <p className="text-sm font-semibold leading-relaxed text-slate-600">{item}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
 
-        <aside className="border-t border-slate-200 bg-slate-50 p-5 lg:border-l lg:border-t-0 lg:p-6">
-          <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-            <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-              <Gauge size={14} className="text-slate-400" />
-              Indicadores
+        {/* ── Lacunas ───────────────────────────────────────────────────── */}
+        {gapItems.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <SearchX size={14} className="text-amber-500" />
+              Lacunas da análise
+              <span className="font-medium normal-case tracking-normal text-slate-400">· o que ainda não está coberto acima</span>
             </p>
-            <div className="space-y-4">
-              <DecisionMetric
-                label="Viabilidade"
-                helper="Atratividade da oportunidade para a empresa"
-                value={`${result.score}/100`}
-                percent={result.score}
-                barClass={verdict.bar}
-                valueClass={verdict.text}
-              />
-              <DecisionMetric
-                label="Confiança"
-                helper="Qualidade da base usada para sustentar o veredito"
-                value={`${decision.confianca}%`}
-                percent={decision.confianca}
-                barClass={verdict.bar}
-                valueClass={verdict.text}
-              />
+            <div className="space-y-2">
+              {gapItems.slice(0, 4).map((item, index) => (
+                <div key={`${item}-${index}`} className="flex gap-2.5 rounded-xl bg-slate-50 px-4 py-3">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <p className="text-sm font-semibold leading-relaxed text-slate-600">{item}</p>
+                </div>
+              ))}
             </div>
           </div>
+        )}
 
-          {decision.fatores_confianca.length > 0 && (
-            <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                <FileText size={14} className="text-slate-400" />
-                Base da confiança
+        {/* ── Base da confiança (compacta, horizontal) ──────────────────── */}
+        {decision.fatores_confianca.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <FileText size={14} className="text-slate-400" />
+              Base da confiança
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {decision.fatores_confianca.slice(0, 5).map((factor, index) => {
+                const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
+                return (
+                  <div key={`${factor.criterio}-${index}`} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                    <p className="text-xs font-bold text-slate-800">{factor.criterio}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${status.pill}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Próxima ação ──────────────────────────────────────────────── */}
+        {decision.proximas_acoes.length > 0 && (
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex-1 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <ClipboardList size={12} className="mr-1.5 inline" />
+                {decision.proximas_acoes[0].prazo || 'Próxima ação'}
               </p>
-              <div className="space-y-2">
-                {decision.fatores_confianca.slice(0, 5).map((factor, index) => {
-                  const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
-                  return (
-                    <div key={`${factor.criterio}-${index}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 text-xs font-black leading-snug text-slate-800">{factor.criterio}</p>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${status.pill}`}>
-                          {status.label}
-                        </span>
-                      </div>
-                      {/* Detalhe omitido quando apenas repete uma evidência já exibida */}
-                      {factor.detalhe && !detalheJaCoberto(factor.detalhe) && (
-                        <p className="mt-1 text-[11px] font-semibold leading-relaxed text-slate-500">{factor.detalhe}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              <p className="mt-1 text-sm font-black leading-snug text-slate-900">
+                {decision.proximas_acoes[0].acao}
+              </p>
+              {(decision.proximas_acoes[0].responsavel || decision.proximas_acoes[0].resultado_esperado) && (
+                <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-500">
+                  {decision.proximas_acoes[0].responsavel ? `${decision.proximas_acoes[0].responsavel}: ` : ''}
+                  {decision.proximas_acoes[0].resultado_esperado}
+                </p>
+              )}
             </div>
-          )}
+            <button
+              type="button"
+              onClick={() => document.getElementById('cockpit-pos-veredito')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className={`shrink-0 rounded-2xl px-5 py-4 text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
+            >
+              Plano completo no Cockpit<br />
+              <span className="font-normal opacity-80">({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓</span>
+            </button>
+          </div>
+        )}
 
-          <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-            <ClipboardList size={14} className="text-slate-400" />
-            Próxima ação
-          </p>
-          {decision.proximas_acoes.length > 0 ? (
-            <div className="space-y-3">
-              {/* Só a 1ª ação aqui — o plano completo (com responsável, prazo e
-                  nota) vive no Cockpit, sem duplicar a lista inteira */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  {decision.proximas_acoes[0].prazo || 'Agora'}
-                </p>
-                <p className="mt-1 text-sm font-black leading-snug text-slate-900">
-                  {decision.proximas_acoes[0].acao}
-                </p>
-                {(decision.proximas_acoes[0].responsavel || decision.proximas_acoes[0].resultado_esperado) && (
-                  <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-500">
-                    {decision.proximas_acoes[0].responsavel ? `${decision.proximas_acoes[0].responsavel}: ` : ''}
-                    {decision.proximas_acoes[0].resultado_esperado}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => document.getElementById('cockpit-pos-veredito')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                className={`w-full rounded-xl px-4 py-2.5 text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
-              >
-                Plano completo no Cockpit ({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs font-medium text-slate-400">Sem ações pendentes registradas.</p>
-          )}
-        </aside>
       </div>
     </section>
   );
@@ -859,6 +841,12 @@ function DecisionCockpit({
   const tasks = useMemo(() => buildDecisionCockpitTasks(decision, result), [decision, result]);
   const [statusMap, setStatusMap] = useState<NonNullable<AnalysisResult['cockpit_status']>>(() => normalizeCockpitStatus(result.cockpit_status));
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   useEffect(() => {
     setStatusMap(normalizeCockpitStatus(result.cockpit_status));
@@ -938,132 +926,146 @@ function DecisionCockpit({
   };
 
   return (
-    <section className="mb-8 rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm print:hidden md:p-7">
-      <div id="cockpit-pos-veredito" className="mb-5 flex flex-col gap-4 scroll-mt-24 md:flex-row md:items-start md:justify-between">
+    <section className="mb-8 rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm print:hidden md:p-8">
+
+      {/* Cabeçalho + progresso */}
+      <div id="cockpit-pos-veredito" className="mb-6 flex flex-col gap-4 scroll-mt-24 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
             <ClipboardList size={14} className={verdict.text} />
             Cockpit pós-veredito
           </p>
-          <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">Plano de execução da decisão</h3>
+          <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">Plano de execução da decisão</h3>
         </div>
-        <div className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 md:w-72">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Progresso</p>
-            <p className={`text-sm font-black ${verdict.text}`}>{completed}/{tasks.length}</p>
+
+        {/* Barra de progresso compacta */}
+        <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <p className={`text-lg font-black leading-none ${verdict.text}`}>{completed}/{tasks.length}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">concluídas</p>
+            </div>
+            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-200">
+              <div className={`h-full rounded-full transition-all ${verdict.bar}`} style={{ width: `${progress}%` }} />
+            </div>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-            <div className={`h-full rounded-full ${verdict.bar}`} style={{ width: `${progress}%` }} />
-          </div>
-          <p className={`mt-2 text-[10px] font-black uppercase tracking-widest ${
-            saveState === 'error'
-              ? 'text-red-600'
-              : saveState === 'saving'
-                ? 'text-amber-600'
-                : saveState === 'saved'
-                  ? 'text-emerald-600'
-                  : 'text-slate-400'
+          <div className={`h-7 w-px bg-slate-200`} />
+          <span className={`text-[10px] font-black uppercase tracking-widest ${
+            saveState === 'error' ? 'text-red-500'
+            : saveState === 'saving' ? 'text-amber-500'
+            : saveState === 'saved' ? 'text-emerald-500'
+            : 'text-slate-400'
           }`}>
-            {saveState === 'error'
-              ? 'Erro ao salvar'
-              : saveState === 'saving'
-                ? 'Salvando no histórico...'
-                : saveState === 'saved'
-                  ? 'Salvo no histórico'
-                  : analysisId
-                    ? 'Persistido no histórico'
-                    : 'Salvo nesta sessão'}
-          </p>
+            {saveState === 'error' ? '✕ Erro' : saveState === 'saving' ? '...' : saveState === 'saved' ? '✓ Salvo' : analysisId ? '✓ Salvo' : 'Sessão'}
+          </span>
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      {/* Lista de tarefas — coluna única */}
+      <div className="space-y-3">
         {tasks.map((task) => {
           const isDone = !!statusMap[task.id]?.done;
+          const isOpen = expanded.has(task.id);
+          const hasCustomData = !!(statusMap[task.id]?.responsavel || statusMap[task.id]?.prazo || statusMap[task.id]?.nota);
           return (
             <div
               key={task.id}
-              className={`group flex items-start gap-4 rounded-2xl border p-4 transition-all ${
+              className={`rounded-2xl border transition-all ${
                 isDone
-                  ? 'border-emerald-200 bg-emerald-50/70'
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  ? 'border-emerald-200 bg-emerald-50/50'
+                  : 'border-slate-200 bg-white'
               }`}
             >
-              <input
-                type="checkbox"
-                checked={isDone}
-                onChange={(event) => toggleTask(task.id, event.target.checked)}
-                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
-                    {task.origem}
-                  </span>
-                  <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                    task.prioridade === 'Alta'
-                      ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
-                      : task.prioridade === 'Média'
-                        ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
-                        : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200'
-                  }`}>
-                    {task.prioridade}
-                  </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
-                    <Clock size={10} />
-                    {task.prazo}
-                  </span>
-                </div>
-                <p className={`text-sm font-black leading-snug ${isDone ? 'text-emerald-900 line-through decoration-emerald-500/50' : 'text-slate-900'}`}>
-                  {task.acao}
-                </p>
-                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-500">
-                  <strong className="text-slate-700">{task.responsavel}</strong>
-                  {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
-                </p>
-                {task.impacto && (
-                  <p className="mt-1.5 text-[11px] font-bold leading-relaxed text-amber-700/80">
-                    Impacto: {task.impacto}
-                  </p>
-                )}
+              {/* Linha principal */}
+              <div className="flex items-start gap-4 p-4">
+                <input
+                  type="checkbox"
+                  checked={isDone}
+                  onChange={(e) => toggleTask(task.id, e.target.checked)}
+                  className="mt-1 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <div className="min-w-0 flex-1">
+                  {/* Badges: apenas prioridade + timing */}
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                      task.prioridade === 'Alta'
+                        ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
+                        : task.prioridade === 'Média'
+                          ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
+                          : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200'
+                    }`}>
+                      {task.prioridade}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
+                      <Clock size={10} />
+                      {task.prazo}
+                    </span>
+                    {hasCustomData && !isOpen && (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 ring-1 ring-emerald-100">
+                        Preenchido
+                      </span>
+                    )}
+                  </div>
 
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Responsável
-                    </span>
-                    <input
-                      value={statusMap[task.id]?.responsavel ?? task.responsavel}
-                      onChange={(event) => updateTaskField(task.id, 'responsavel', event.target.value)}
-                      onBlur={() => persistTaskField(task.id, 'responsavel')}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Prazo
-                    </span>
-                    <input
-                      value={statusMap[task.id]?.prazo ?? task.prazo}
-                      onChange={(event) => updateTaskField(task.id, 'prazo', event.target.value)}
-                      onBlur={() => persistTaskField(task.id, 'prazo')}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                    />
-                  </label>
-                  <label className="block sm:col-span-2">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                      Nota interna
-                    </span>
-                    <input
-                      value={statusMap[task.id]?.nota ?? ''}
-                      onChange={(event) => updateTaskField(task.id, 'nota', event.target.value)}
-                      onBlur={() => persistTaskField(task.id, 'nota')}
-                      placeholder="Ex.: aguardando jurídico, cotação enviada..."
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                    />
-                  </label>
+                  <p className={`text-sm font-black leading-snug ${isDone ? 'text-emerald-900 line-through decoration-emerald-500/50' : 'text-slate-900'}`}>
+                    {task.acao}
+                  </p>
+                  <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-500">
+                    <strong className="text-slate-700">{task.responsavel}</strong>
+                    {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
+                  </p>
+                  {task.impacto && (
+                    <p className="mt-1 text-[11px] font-bold text-amber-700/80">
+                      Impacto: {task.impacto}
+                    </p>
+                  )}
                 </div>
+
+                {/* Botão de expandir */}
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(task.id)}
+                  className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                >
+                  {isOpen ? 'Fechar' : 'Editar'}
+                </button>
               </div>
+
+              {/* Painel de inputs — colapsável */}
+              {isOpen && (
+                <div className="border-t border-slate-100 bg-slate-50/60 px-4 pb-4 pt-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
+                      <input
+                        value={statusMap[task.id]?.responsavel ?? task.responsavel}
+                        onChange={(e) => updateTaskField(task.id, 'responsavel', e.target.value)}
+                        onBlur={() => persistTaskField(task.id, 'responsavel')}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
+                      <input
+                        value={statusMap[task.id]?.prazo ?? task.prazo}
+                        onChange={(e) => updateTaskField(task.id, 'prazo', e.target.value)}
+                        onBlur={() => persistTaskField(task.id, 'prazo')}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                      />
+                    </label>
+                    <label className="block sm:col-span-2">
+                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
+                      <input
+                        value={statusMap[task.id]?.nota ?? ''}
+                        onChange={(e) => updateTaskField(task.id, 'nota', e.target.value)}
+                        onBlur={() => persistTaskField(task.id, 'nota')}
+                        placeholder="Ex.: aguardando jurídico, cotação enviada..."
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -1804,6 +1806,9 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
         </div>
       )}
 
+      {/* CRITÉRIOS CONFIGURADOS — logo após o veredito para decisão imediata */}
+      <ParametrosSection result={result} />
+
       {/* SWOT & CARGA OPERACIONAL */}
       <SwotSection result={result} />
 
@@ -2299,6 +2304,158 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
         )
       )}
     </div>
+  );
+}
+
+// ─── Avaliação por Parâmetros ─────────────────────────────────────────────────
+
+interface AvaliacaoParametro {
+  nome: string;
+  peso: 'alto' | 'medio' | 'baixo';
+  status: 'ok' | 'alerta' | 'bloqueio';
+  score: number;
+  trecho_citado: string;
+  avaliacao: string;
+}
+
+const PARAM_STATUS_CFG = {
+  ok:       { label: 'Atende',        bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  alerta:   { label: 'Atenção',       bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400'  },
+  bloqueio: { label: 'Não atende',    bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'    },
+};
+
+const PARAM_PESO_CFG = {
+  alto:  { label: 'Crítico',    color: 'text-red-600 font-black' },
+  medio: { label: 'Importante', color: 'text-amber-600 font-bold' },
+  baixo: { label: 'Desejável',  color: 'text-slate-500' },
+};
+
+const PARAM_STATUS_ICON = {
+  ok:       <CheckCircle2 size={20} className="text-emerald-500 flex-shrink-0" />,
+  alerta:   <AlertTriangle size={20} className="text-amber-500 flex-shrink-0" />,
+  bloqueio: <XCircle size={20} className="text-red-500 flex-shrink-0" />,
+};
+
+function ParametrosSection({ result }: { result: AnalysisResult }) {
+  const params: AvaliacaoParametro[] = result.avaliacao_parametros || [];
+
+  // Sem critérios avaliados: nudge para o usuário configurar
+  if (!params.length) {
+    return (
+      <div className="mb-8 flex items-start gap-4 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/40 px-5 py-4 print:hidden">
+        <SlidersHorizontal size={18} className="mt-0.5 flex-shrink-0 text-indigo-400" />
+        <div>
+          <p className="text-sm font-bold text-indigo-700">Nenhum critério personalizado avaliado nesta análise</p>
+          <p className="mt-0.5 text-xs font-medium text-indigo-500">
+            Configure seus critérios em <strong>Parametrização</strong> e gere uma nova análise para ver a avaliação por critério aqui.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const bloqueios = params.filter(p => p.status === 'bloqueio').length;
+  const alertas   = params.filter(p => p.status === 'alerta').length;
+  const ok        = params.filter(p => p.status === 'ok').length;
+
+  const sorted = [...params].sort((a, b) => {
+    const order = { bloqueio: 0, alerta: 1, ok: 2 };
+    return (order[a.status] ?? 1) - (order[b.status] ?? 1);
+  });
+
+  return (
+    <section className="mb-8 overflow-hidden rounded-[1.5rem] border-2 border-indigo-100 bg-white shadow-sm">
+      {/* Cabeçalho */}
+      <div className="border-b border-indigo-100 bg-indigo-50/60 px-6 py-5">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400">
+              <SlidersHorizontal size={13} />
+              Critérios configurados
+            </p>
+            <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">
+              Avaliação por Critérios
+            </h3>
+            <p className="mt-0.5 text-sm font-semibold text-slate-500">
+              {params.length} critério{params.length > 1 ? 's' : ''} avaliado{params.length > 1 ? 's' : ''} pela IA — resultado por critério abaixo
+            </p>
+          </div>
+          <div className="flex gap-2">
+            {ok > 0 && (
+              <div className="flex flex-col items-center rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-center min-w-[60px]">
+                <span className="text-xl font-black text-emerald-600">{ok}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Atende</span>
+              </div>
+            )}
+            {alertas > 0 && (
+              <div className="flex flex-col items-center rounded-2xl border border-amber-100 bg-amber-50 px-4 py-2 text-center min-w-[60px]">
+                <span className="text-xl font-black text-amber-600">{alertas}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-amber-500">Atenção</span>
+              </div>
+            )}
+            {bloqueios > 0 && (
+              <div className="flex flex-col items-center rounded-2xl border border-red-100 bg-red-50 px-4 py-2 text-center min-w-[60px]">
+                <span className="text-xl font-black text-red-600">{bloqueios}</span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-red-500">Bloqueio{bloqueios > 1 ? 's' : ''}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {bloqueios > 0 && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+            <XCircle size={15} className="flex-shrink-0 text-red-500" />
+            <p className="text-xs font-bold text-red-700">
+              {bloqueios} critério{bloqueios > 1 ? 's' : ''} crítico{bloqueios > 1 ? 's não atendem' : ' não atende'} às suas exigências — revise antes de prosseguir com a proposta
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Lista de parâmetros — sempre visíveis, sem expandir */}
+      <div className="divide-y divide-slate-100">
+        {sorted.map((p, i) => {
+          const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.alerta;
+          const peso = PARAM_PESO_CFG[p.peso]     ?? PARAM_PESO_CFG.medio;
+          const icon = PARAM_STATUS_ICON[p.status] ?? PARAM_STATUS_ICON.alerta;
+
+          return (
+            <div key={i} className="px-6 py-5">
+              <div className="flex gap-4">
+                {/* Ícone de status */}
+                <div className="mt-0.5">{icon}</div>
+
+                {/* Conteúdo */}
+                <div className="flex-1 min-w-0">
+                  {/* Linha do nome + badges */}
+                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <span className="text-sm font-black text-slate-900">{p.nome}</span>
+                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${st.bg} ${st.text} ${st.border}`}>
+                      {st.label}
+                    </span>
+                    <span className={`text-[9px] font-bold ${peso.color}`}>{peso.label}</span>
+                    <span className={`ml-auto text-sm font-black tabular-nums ${st.text}`}>{p.score}/10</span>
+                  </div>
+
+                  {/* Avaliação sempre visível */}
+                  {p.avaliacao && (
+                    <p className="text-xs font-semibold leading-relaxed text-slate-600 mb-2">{p.avaliacao}</p>
+                  )}
+
+                  {/* Trecho citado sempre visível */}
+                  {p.trecho_citado && (
+                    <div className="flex gap-2 rounded-lg border-l-4 border-slate-200 bg-slate-50 px-3 py-2">
+                      <Quote size={11} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-[11px] italic text-slate-500 leading-relaxed">{p.trecho_citado}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

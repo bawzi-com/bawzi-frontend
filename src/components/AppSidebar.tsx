@@ -16,7 +16,7 @@ import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
-  ClipboardList, MessageCircle,
+  ClipboardList, MessageCircle, SlidersHorizontal,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
@@ -42,7 +42,7 @@ function FeatureBadge({
   color = 'slate',
 }: {
   label: string;
-  color?: 'slate' | 'teal' | 'emerald' | 'amber' | 'blue' | 'sky' | 'violet';
+  color?: 'slate' | 'teal' | 'emerald' | 'amber' | 'blue' | 'sky' | 'violet' | 'indigo';
 }) {
   const styles: Record<string, string> = {
     slate:  'bg-slate-100  text-slate-600  border-slate-200',
@@ -52,6 +52,7 @@ function FeatureBadge({
     blue:   'bg-blue-50    text-blue-700   border-blue-200',
     sky:    'bg-sky-50     text-sky-700    border-sky-200',
     violet: 'bg-violet-50  text-violet-700 border-violet-200',
+    indigo: 'bg-indigo-50  text-indigo-700 border-indigo-200',
   };
   return (
     <span className={`shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${styles[color]}`}>
@@ -181,6 +182,31 @@ export default function AppSidebar({
               </p>
             </div>
             {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
+          </button>
+        )}
+
+        {/* ── Parametrização ────────────────────────────── */}
+        {token && (
+          <button
+            onClick={() => onSetActiveTab('parametrizacao')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'parametrizacao' ? 'bg-indigo-600' : 'hover:bg-indigo-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'parametrizacao' ? 'bg-white/15' : 'bg-indigo-50 border border-indigo-100'
+            }`}>
+              <SlidersHorizontal size={16} className={activeTab === 'parametrizacao' ? 'text-white' : 'text-indigo-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'parametrizacao' ? 'text-white' : 'text-slate-800'}`}>
+                Parametrização
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'parametrizacao' ? 'text-white/60' : 'text-slate-400'}`}>
+                Critérios de avaliação por IA
+              </p>
+            </div>
+            {activeTab === 'parametrizacao' ? <ActiveDot /> : <FeatureBadge label="IA" color="indigo" />}
           </button>
         )}
 

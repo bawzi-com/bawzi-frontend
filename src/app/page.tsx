@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import EditaisFeed from '@/components/EditaisFeed';
 import {
   AlertTriangle,
   ArrowRight,
@@ -140,30 +141,59 @@ export default function LandingPage() {
       <section className="relative overflow-hidden bg-[#f8fafc] text-slate-950">
         <div className="absolute inset-0 pointer-events-none opacity-70 [background-image:linear-gradient(rgba(15,23,42,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.045)_1px,transparent_1px)] [background-size:42px_42px]" />
         <div className="absolute inset-x-0 bottom-0 h-40 bg-white" />
-        <div className="relative mx-auto flex max-w-[1180px] flex-col items-center px-6 pb-10 pt-12 text-center md:pt-16">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Decisão Go/No-Go para licitações
+
+        <div className="relative mx-auto max-w-[1180px] px-6 pb-10 pt-12 md:pt-16">
+          {/* Layout 2 colunas no desktop */}
+          <div className="flex flex-col lg:flex-row lg:items-start lg:gap-16">
+
+            {/* Coluna esquerda — headline + CTA */}
+            <div className="flex-1 lg:pt-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Decisão Go/No-Go para licitações
+              </div>
+
+              <h1 className="mt-5 text-4xl font-black leading-[1.04] tracking-tight text-slate-950 md:text-5xl lg:text-[52px]">
+                Saiba em minutos se vale disputar uma licitação.
+              </h1>
+
+              <p className="mt-4 text-base font-medium leading-7 text-slate-600 md:text-lg max-w-xl">
+                A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-500">
+                  Testar com um edital <ArrowRight size={17} />
+                </Link>
+                <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50">
+                  Ver planos e preços
+                </Link>
+              </div>
+
+              {/* OutputCard só aparece no mobile abaixo do CTA */}
+              <div className="lg:hidden mt-8">
+                <OutputCard />
+              </div>
+            </div>
+
+            {/* Coluna direita — feed de editais ao vivo */}
+            <div className="hidden lg:block w-[400px] xl:w-[440px] flex-shrink-0">
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">
+                    Editais publicados agora
+                  </h2>
+                </div>
+                <EditaisFeed />
+              </div>
+            </div>
+
           </div>
 
-          <h1 className="mt-5 max-w-5xl text-4xl font-black leading-[1.04] tracking-tight text-slate-950 md:text-5xl lg:text-6xl">
-            Saiba em minutos se vale disputar uma licitação.
-          </h1>
-
-          <p className="mt-4 max-w-3xl text-base font-medium leading-7 text-slate-600 md:text-lg">
-            A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
-          </p>
-
-          <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-500">
-              Testar com um edital <ArrowRight size={17} />
-            </Link>
-            <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50">
-              Ver planos e preços
-            </Link>
+          {/* OutputCard no desktop abaixo das 2 colunas */}
+          <div className="hidden lg:block mt-10">
+            <OutputCard />
           </div>
-
-          <OutputCard />
         </div>
       </section>
 
