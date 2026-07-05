@@ -11,13 +11,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 import {
-  ScanSearch, Radar, Printer, Mail, Zap, Target,
+  Radar, Printer, Mail, Zap, Target,
   Gauge, Settings2, Banknote, Scale, FolderOpen,
   CalendarDays, AlertTriangle, Shield, BrainCircuit,
   ClipboardList, Pin, ThumbsUp, ThumbsDown, FileText,
   Lock, Crown, AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
+  Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -53,6 +54,24 @@ interface AnalysisResultsProps {
   onGoToCapital?: (valor: number) => void;
 }
 
+type LearningStats = {
+  go: {
+    total_com_resultado: number;
+    vitorias: number;
+    derrotas: number;
+    taxa_acerto_pct: number | null;
+    amostra_suficiente: boolean;
+  };
+  no_go: {
+    total_participou_mesmo_assim: number;
+    alertas_validados: number;
+    alertas_nao_validados: number;
+    taxa_alerta_validado_pct: number | null;
+    amostra_suficiente: boolean;
+  };
+  amostra_minima: number;
+};
+
 export default function AnalysisResults({
   result,
   activeTab,
@@ -75,10 +94,74 @@ export default function AnalysisResults({
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
+  const [tracked, setTracked] = useState<boolean>(!!result.tracked_in_gestao);
+  const [trackSaving, setTrackSaving] = useState(false);
+  const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('veredito');
+  const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
+  // Derived: concorrentes step is active when that tab is selected
+  const activeStep = activeTab === 'concorrentes' ? 'concorrentes' : activeAnaliseStep;
 
   useEffect(() => {
     setLiveResult(result);
+    setTracked(!!result.tracked_in_gestao);
   }, [result]);
+
+  // Taxa de acerto real (veredito x resultado registrado) — prova baseada em
+  // dado do próprio workspace, não autoavaliação da IA. Silenciosa se falhar.
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`${API_URL}/api/analyses/learning-stats`);
+        if (cancelled) return;
+        if (!res.ok) {
+          console.warn(`[learning-stats] resposta não-ok: ${res.status}`);
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        if (data && !cancelled) setLearningStats(data);
+      } catch (err) {
+        // Selo de calibração simplesmente não aparece — mas o erro fica
+        // visível no console para diagnóstico, em vez de sumir sem rastro.
+        console.warn('[learning-stats] falha na requisição:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const toggleTracking = async () => {
+    if (!analysisId || !token || trackSaving) return;
+    const next = !tracked;
+    setTracked(next);
+    setTrackSaving(true);
+    try {
+      await apiFetch(`${API_URL}/api/analyses/${analysisId}/track`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ track: next }),
+      });
+    } catch {
+      setTracked(!next);
+    } finally {
+      setTrackSaving(false);
+    }
+  };
+
+  const handleStepClick = (step: (typeof JOURNEY_STEPS)[number]) => {
+    if (step.tab !== activeTab) {
+      onSetActiveTab(step.tab);
+    }
+    if (step.tab === 'analise') {
+      setActiveAnaliseStep(step.key);
+    }
+    if (step.sectionId) {
+      const delay = step.tab !== activeTab ? 200 : 50;
+      setTimeout(() => {
+        document.getElementById(step.sectionId!)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, delay);
+    }
+  };
 
   const handleCopyLink = async () => {
     try {
@@ -175,146 +258,223 @@ export default function AnalysisResults({
             </div>
           </div>
 
-          {/* Barra: Imprimir e Partilhar */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1 flex items-center gap-2">
-              <Share2 size={11} /> Imprimir e Partilhar
-            </p>
-            <div className="flex flex-wrap gap-2">
-
-              {/* Exportar PDF */}
+          {/* Ações discretas: exportar, imprimir, compartilhar — não competem com o veredito */}
+          <div className="flex items-center gap-1 self-end -mt-1">
+            <button
+              onClick={onExportPDF}
+              title="Exportar PDF"
+              className="p-2 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
+            >
+              <Download size={15} />
+            </button>
+            <button
+              onClick={() => window.print()}
+              title="Imprimir"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              <Printer size={15} />
+            </button>
+            {token && analysisId && (
               <button
-                onClick={onExportPDF}
-                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm"
+                onClick={onShare}
+                disabled={isSharing}
+                title={isSharing ? 'Enviando...' : 'Compartilhar por e-mail'}
+                className="p-2 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 transition-colors disabled:opacity-60"
               >
-                <Download size={13} /> Exportar PDF
+                <Mail size={15} />
               </button>
-
-              {/* Imprimir página */}
+            )}
+            <button
+              onClick={handleCopyLink}
+              title={copied ? 'Copiado!' : 'Copiar link'}
+              className={`p-2 rounded-lg transition-colors ${
+                copied ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {copied ? <Check size={15} /> : <Link2 size={15} />}
+            </button>
+            {typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'share' in navigator && (
               <button
-                onClick={() => window.print()}
-                className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all"
+                onClick={handleNativeShare}
+                title="Compartilhar"
+                className="p-2 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition-colors"
               >
-                <Printer size={13} /> Imprimir
+                <Share2 size={15} />
               </button>
+            )}
+          </div>
 
-              {/* Compartilhar por e-mail (só com conta) */}
-              {token && analysisId && (
-                <button
-                  onClick={onShare}
-                  disabled={isSharing}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-sky-50 hover:border-sky-200 hover:text-sky-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all disabled:opacity-60"
-                >
-                  <Mail size={13} /> {isSharing ? 'Enviando...' : 'Compartilhar por e-mail'}
-                </button>
+          </div>
+
+        {/* ══ JORNADA — navegação principal no topo ══ */}
+        <JourneyStepNav
+          activeStep={activeStep}
+          onStepClick={handleStepClick}
+          currentTier={currentTier}
+          userTier={userTier}
+        />
+
+        {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
+        <div key={activeStep} className="animate-in fade-in duration-300">
+
+          {/* ── 01 Veredito ── */}
+          {activeStep === 'veredito' && (
+            <div className="space-y-8">
+              <ExpiredBanner result={liveResult} />
+
+              {/* O veredito e o porquê vêm primeiro — é a resposta que o usuário veio buscar.
+                  Score, cronograma e evidências abaixo sustentam essa resposta. */}
+              <div id="section-score" className="scroll-mt-24">
+                <DecisionSnapshot result={liveResult} learningStats={learningStats} />
+              </div>
+              <SemaforoSection result={liveResult} />
+              <CronogramaSection result={liveResult} />
+
+              {/* Prova/auditoria do score — importante, mas é suporte, não a manchete */}
+              <ScoreHeader result={liveResult} />
+              <CollapsibleScoreBreakdown result={liveResult} />
+              <CollapsibleFichaTecnica result={liveResult} />
+
+              <div className="relative border border-slate-200 rounded-2xl p-8">
+                <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
+                <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
+                  {liveResult.summary}
+                </div>
+              </div>
+              <OportunidadesSection result={liveResult} />
+              {liveResult.pricing_intelligence && !isNoGoVerdict(liveResult) && (
+                <div className="print:hidden">
+                  <TacticalSimulator
+                    pricing={liveResult.pricing_intelligence}
+                    fullResult={liveResult}
+                    userTier={userTier}
+                  />
+                </div>
               )}
-
-              {/* Copiar link */}
-              <button
-                onClick={handleCopyLink}
-                className={`flex items-center gap-2 px-4 py-2.5 border font-bold rounded-xl text-xs transition-all ${
-                  copied
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                }`}
-              >
-                <Link2 size={13} /> {copied ? '✓ Copiado!' : 'Copiar Link'}
-              </button>
-
-              {/* Web Share API (iOS/Android) */}
-              {typeof window !== 'undefined' && typeof navigator !== 'undefined' && 'share' in navigator && (
-                <button
-                  onClick={handleNativeShare}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all"
-                >
-                  <Share2 size={13} /> Compartilhar
-                </button>
+              {liveResult.pricing_intelligence && isNoGoVerdict(liveResult) && (
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
+                  <span className="text-lg leading-none">🎯</span>
+                  <p className="text-sm font-medium leading-relaxed text-slate-500">
+                    <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
+                    proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
+                  </p>
+                </div>
               )}
-
+              <DecisionVersionMonitor
+                result={liveResult}
+                analysisId={analysisId}
+                token={token}
+                onAnalysisUpdate={(updated) => setLiveResult(updated)}
+              />
             </div>
-          </div>
+          )}
 
-          </div>
+          {/* ── 02 Critérios ── */}
+          {activeStep === 'criterios' && (
+            <div id="section-criterios" className="scroll-mt-24">
+              <ParametrosSection result={liveResult} />
+            </div>
+          )}
 
-          <DecisionSnapshot
-            result={liveResult}
-          />
+          {/* ── 03 SWOT & Riscos ── */}
+          {activeStep === 'analise' && (
+            <div id="section-analise" className="scroll-mt-24 space-y-8">
+              <RedFlagsSection result={liveResult} />
+              <SwotSection result={liveResult} />
+              <HabilitacaoSection result={liveResult} />
+              <RisksSection result={liveResult} />
+            </div>
+          )}
 
-          <DecisionVersionMonitor
-            result={liveResult}
-            analysisId={analysisId}
-            token={token}
-            onAnalysisUpdate={(updated) => setLiveResult(updated)}
-          />
+          {/* ── 04 Jurídico ── */}
+          {activeStep === 'juridico' && (
+            <div className="space-y-8">
+              <div id="section-juridico" className="scroll-mt-24">
+                <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
+              </div>
+              <div className="pt-6 border-t border-slate-100 print:hidden">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
+                  Raciocínio Estratégico da IA
+                </h4>
+                <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
+                  {liveResult.rationale || liveResult.recommendation || 'Sem dados estratégicos.'}
+                </div>
+              </div>
+            </div>
+          )}
 
-          <DecisionCockpit
-            result={liveResult}
-            analysisId={analysisId}
-            token={token}
-            onStatusChange={onCockpitStatusChange}
-          />
+          {/* ── 05 Concorrentes ── */}
+          {activeStep === 'concorrentes' && (
+            <div className="animate-in fade-in zoom-in-95 duration-300">
+              <PremiumLock
+                isLocked={Math.max(getCachedTier(userTier), currentTier) < 2}
+                featureTitle="Radar de Concorrentes"
+                requiredTierName="Nível 2 (Essencial)"
+                onUpgradeClick={onUpgradeClick}
+              >
+                <CompetitorWarRoom
+                  competitorsNacionais={liveResult.concorrentes_provaveis || []}
+                  competitorsRegionais={liveResult.concorrentes_regionais || []}
+                  uf={liveResult.uf || 'GO'}
+                  pricing={liveResult.pricing_intelligence as import('./CompetitorWarRoom').PricingIntelligenceData | undefined}
+                  analysisId={analysisId || ''}
+                  userTier={userTier}
+                  fullResult={liveResult as import('./CompetitorWarRoom').FullResultData}
+                />
+              </PremiumLock>
+            </div>
+          )}
 
-        {/* TABS */}
-        <div className="flex flex-wrap gap-3 mb-8 border-b border-slate-200 pb-4 print:hidden">
-          <button
-            onClick={() => onSetActiveTab('analise')}
-            className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
-              activeTab === 'analise'
-                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 ring-1 ring-emerald-600'
-                : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
-            }`}
-          >
-            <ScanSearch size={18} className={activeTab === 'analise' ? 'text-white/70' : 'text-slate-400'} />
-            Raio-X do Edital
-          </button>
+          {/* ── 06 Cockpit ── */}
+          {activeStep === 'cockpit' && (
+            <div className="space-y-6">
+              <DecisionCockpit
+                result={liveResult}
+                analysisId={analysisId}
+                token={token}
+                onStatusChange={onCockpitStatusChange}
+                tracked={tracked}
+                trackSaving={trackSaving}
+                onToggleTracking={toggleTracking}
+              />
+              <EsteiraCTA
+                result={liveResult}
+                tracked={tracked}
+                trackSaving={trackSaving}
+                onToggle={toggleTracking}
+                analysisId={analysisId}
+                token={token}
+              />
+              <PremiumLock
+                isLocked={currentTier < 4}
+                featureTitle="Laudo de Decisão Bawzi (PDF)"
+                requiredTierName="Nível 4 (Avançado)"
+                onUpgradeClick={onUpgradeClick}
+              >
+                <PdfExportCard onExportPDF={onExportPDF} />
+              </PremiumLock>
+            </div>
+          )}
 
-          <button
-            onClick={() => onSetActiveTab('concorrentes')}
-            className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-xs md:text-sm font-black uppercase tracking-widest transition-all duration-300 ${
-              activeTab === 'concorrentes'
-                ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/20 ring-1 ring-sky-600'
-                : 'bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-800 border border-slate-200'
-            }`}
-          >
-            <Radar size={18} className={activeTab === 'concorrentes' ? 'text-rose-400' : 'text-slate-400'} />
-            Radar de Concorrentes
-          </button>
         </div>
 
-        {/* ── ABA 1: RELATÓRIO ── */}
-        {(activeTab === 'analise' || activeTab === 'workspace') && (
-          <ReportTab
-            result={result}
-            userTier={userTier}
-            currentTier={currentTier}
-            modelSource={modelSource}
-            isCachedResult={isCachedResult}
-            onUpgradeClick={onUpgradeClick}
-            onExportPDF={onExportPDF}
-          />
-        )}
+        {/* LAYOUT DE IMPRESSÃO — renderiza tudo, visível apenas ao imprimir */}
+        <PrintLayout result={liveResult} />
 
-        {/* ── ABA 2: WAR ROOM ── */}
-        {activeTab === 'concorrentes' && (
-          <div className="animate-in fade-in zoom-in-95 duration-500 mt-8">
-            <PremiumLock
-              isLocked={Math.max(getCachedTier(userTier), currentTier) < 2}
-              featureTitle="Radar de Concorrentes"
-              requiredTierName="Nível 2 (Essencial)"
-              onUpgradeClick={onUpgradeClick}
-            >
-              <CompetitorWarRoom
-                competitorsNacionais={result.concorrentes_provaveis || []}
-                competitorsRegionais={result.concorrentes_regionais || []}
-                uf={result.uf || 'GO'}
-                pricing={result.pricing_intelligence as import('./CompetitorWarRoom').PricingIntelligenceData | undefined}
-                analysisId={analysisId || ''}
-                userTier={userTier}
-                fullResult={result as import('./CompetitorWarRoom').FullResultData}
-              />
-            </PremiumLock>
+        {/* RODAPÉ METADADOS */}
+        <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium print:hidden">
+          <div className="flex items-center gap-2">
+            <span>Gerado por:</span>
+            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-bold uppercase tracking-widest">{modelSource || 'Motor Bawzi IA'}</span>
           </div>
-        )}
+          {isCachedResult && (
+            <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
+              <Zap size={14} />
+              <span className="font-bold uppercase tracking-widest text-[10px]">Recuperado do Cache</span>
+            </div>
+          )}
+        </div>
 
       </div>
     </div>
@@ -323,11 +483,30 @@ export default function AnalysisResults({
 
 function DecisionSnapshot({
   result,
+  learningStats,
 }: {
   result: AnalysisResult;
+  learningStats?: LearningStats | null;
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
+
+  // Calibração real: taxa de acerto do seu próprio histórico para o mesmo
+  // tipo de veredito — prova baseada em dado, não a IA reavaliando a si mesma.
+  const calibracao = (() => {
+    if (!learningStats) return null;
+    if (decision.veredito === 'GO' || decision.veredito === 'GO_CONDICIONADO') {
+      const { go } = learningStats;
+      if (!go.amostra_suficiente) return null;
+      return { pct: go.taxa_acerto_pct, label: 'de acerto real em vereditos GO', n: go.total_com_resultado };
+    }
+    if (decision.veredito === 'NO_GO') {
+      const { no_go: noGo } = learningStats;
+      if (!noGo.amostra_suficiente) return null;
+      return { pct: noGo.taxa_alerta_validado_pct, label: 'dos alertas No-Go se confirmaram', n: noGo.total_participou_mesmo_assim };
+    }
+    return null;
+  })();
   const businessFit = normalizeBusinessFit(result);
   const summaryText = getDecisionSummary(decision);
 
@@ -429,8 +608,41 @@ function DecisionSnapshot({
                 <div className="h-full rounded-full bg-slate-500" style={{ width: `${decision.confianca}%` }} />
               </div>
             </div>
+            {typeof result.qualidade_extracao?.cobertura_pct === 'number' && (
+              <div
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
+                title={
+                  result.qualidade_extracao.campos_faltantes?.length
+                    ? `Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
+                    : 'Todos os campos críticos foram localizados no material.'
+                }
+              >
+                <p className={`text-2xl font-black leading-none ${
+                  result.qualidade_extracao.cobertura_pct >= 75 ? 'text-emerald-600'
+                  : result.qualidade_extracao.cobertura_pct >= 45 ? 'text-amber-600'
+                  : 'text-red-600'
+                }`}>{result.qualidade_extracao.cobertura_pct}%</p>
+                <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Cobertura</p>
+                <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div className={`h-full rounded-full ${
+                    result.qualidade_extracao.cobertura_pct >= 75 ? 'bg-emerald-500'
+                    : result.qualidade_extracao.cobertura_pct >= 45 ? 'bg-amber-500'
+                    : 'bg-red-500'
+                  }`} style={{ width: `${result.qualidade_extracao.cobertura_pct}%` }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* ── Calibração real (histórico do workspace) ──────────────────── */}
+        {calibracao && (
+          <p className="mt-4 flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+            <Trophy size={12} className="text-emerald-600" />
+            Histórico real do seu workspace: <span className="text-emerald-700">{calibracao.pct}% {calibracao.label}</span>
+            <span className="text-slate-400">({calibracao.n} caso{calibracao.n === 1 ? '' : 's'} registrado{calibracao.n === 1 ? '' : 's'})</span>
+          </p>
+        )}
 
         {/* ── Síntese ───────────────────────────────────────────────────── */}
         <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
@@ -468,6 +680,32 @@ function DecisionSnapshot({
                   </span>
                 )}
               </div>
+            )}
+            {businessFit.viaSecundario && businessFit.cnaeCorrespondente && (
+              <p className="mt-2 text-[11px] font-bold text-slate-600">
+                ✓ Match encontrado via CNAE secundário: {businessFit.cnaeCorrespondente}
+              </p>
+            )}
+            {businessFit.cnaesSecundarios.length > 0 && (
+              <details className="mt-3 group">
+                <summary className="cursor-pointer list-none text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700">
+                  Ver {businessFit.cnaesSecundarios.length} CNAE(s) secundário(s) da empresa
+                </summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {businessFit.cnaesSecundarios.map((item, idx) => (
+                    <span
+                      key={`${item.codigo || idx}`}
+                      className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${
+                        businessFit.cnaeCorrespondente && item.codigo && businessFit.cnaeCorrespondente.startsWith(item.codigo)
+                          ? 'bg-emerald-600/10 text-emerald-800 ring-1 ring-emerald-300'
+                          : 'bg-white/65 text-slate-600'
+                      }`}
+                    >
+                      {[item.codigo, item.descricao].filter(Boolean).join(' · ')}
+                    </span>
+                  ))}
+                </div>
+              </details>
             )}
           </div>
         )}
@@ -830,11 +1068,17 @@ function DecisionCockpit({
   analysisId,
   token,
   onStatusChange,
+  tracked,
+  trackSaving,
+  onToggleTracking,
 }: {
   result: AnalysisResult;
   analysisId: string | null;
   token: string | null;
   onStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
+  tracked: boolean;
+  trackSaving: boolean;
+  onToggleTracking: () => void;
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
@@ -925,68 +1169,108 @@ function DecisionCockpit({
     void persistStatus(nextStatus);
   };
 
+  const isNoGo = decision.veredito === 'NO_GO';
+  const cockpitTitle = isNoGo ? 'Monitoramento pós-veredito' : 'Cockpit de execução';
+  const cockpitSubtitle = isNoGo
+    ? 'Condições a acompanhar para revisar esta decisão'
+    : 'Passos para protocolar a proposta — registrados em Gestão';
+
   return (
-    <section className="mb-8 rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm print:hidden md:p-8">
-
-      {/* Cabeçalho + progresso */}
-      <div id="cockpit-pos-veredito" className="mb-6 flex flex-col gap-4 scroll-mt-24 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-            <ClipboardList size={14} className={verdict.text} />
-            Cockpit pós-veredito
-          </p>
-          <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">Plano de execução da decisão</h3>
-        </div>
-
-        {/* Barra de progresso compacta */}
-        <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
+      {/* Cabeçalho */}
+      <div id="cockpit-pos-veredito" className="scroll-mt-24 border-b border-slate-100 bg-slate-50/60 px-6 py-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <p className={`text-lg font-black leading-none ${verdict.text}`}>{completed}/{tasks.length}</p>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">concluídas</p>
-            </div>
-            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-200">
-              <div className={`h-full rounded-full transition-all ${verdict.bar}`} style={{ width: `${progress}%` }} />
-            </div>
+            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <ClipboardList size={13} className={verdict.text} />
+              {cockpitTitle}
+            </p>
+            <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">{cockpitSubtitle}</h3>
+            <p className="mt-1 text-xs font-semibold text-slate-400">
+              {isNoGo
+                ? 'Marque quando as condições mudarem e reprocesse a análise.'
+                : 'Preencha responsável e prazo para cada passo — os dados ficam salvos no histórico desta análise.'}
+            </p>
           </div>
-          <div className={`h-7 w-px bg-slate-200`} />
-          <span className={`text-[10px] font-black uppercase tracking-widest ${
-            saveState === 'error' ? 'text-red-500'
-            : saveState === 'saving' ? 'text-amber-500'
-            : saveState === 'saved' ? 'text-emerald-500'
-            : 'text-slate-400'
+
+          {/* Progresso + toggle Gestão — unified card */}
+          <div className={`shrink-0 min-w-[126px] overflow-hidden rounded-2xl border shadow-sm transition-all ${
+            tracked ? 'border-emerald-200' : 'border-slate-200 bg-white'
           }`}>
-            {saveState === 'error' ? '✕ Erro' : saveState === 'saving' ? '...' : saveState === 'saved' ? '✓ Salvo' : analysisId ? '✓ Salvo' : 'Sessão'}
-          </span>
+            {/* Big progress number */}
+            <div className={`px-5 pt-4 pb-3 text-center ${tracked ? 'bg-emerald-50' : ''}`}>
+              <div className="flex items-baseline justify-center gap-1">
+                <span className={`text-[2.5rem] font-black leading-none tabular-nums ${verdict.text}`}>{completed}</span>
+                <span className="text-xl font-black text-slate-200">/{tasks.length}</span>
+              </div>
+              <div className="mx-auto mt-2.5 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
+                <div className={`h-full rounded-full transition-all duration-500 ${verdict.bar}`} style={{ width: `${progress}%` }} />
+              </div>
+              <p className="mt-1.5 text-[8px] font-black uppercase tracking-[0.15em] text-slate-400">concluídas</p>
+            </div>
+
+            {/* Tracking toggle */}
+            <button
+              type="button"
+              onClick={onToggleTracking}
+              disabled={!analysisId || !token || trackSaving}
+              title={tracked ? 'Remover do acompanhamento em Gestão' : 'Adicionar ao acompanhamento em Gestão'}
+              className={`flex w-full items-center justify-center gap-1.5 border-t px-4 py-2.5 text-[11px] font-black transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                tracked
+                  ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                  : 'border-slate-100 text-indigo-600 hover:bg-indigo-50'
+              }`}
+            >
+              {trackSaving ? (
+                <RefreshCw size={12} className="animate-spin" />
+              ) : (
+                <Pin size={12} className={tracked ? 'fill-emerald-600 text-emerald-600' : ''} />
+              )}
+              {tracked ? '✓ Em Gestão' : '+ Gestão'}
+            </button>
+          </div>
         </div>
+
+        {/* Banner save state */}
+        {saveState !== 'idle' && (
+          <div className={`mt-3 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
+            saveState === 'error' ? 'bg-red-50 text-red-600'
+            : saveState === 'saving' ? 'bg-amber-50 text-amber-600'
+            : 'bg-emerald-50 text-emerald-600'
+          }`}>
+            {saveState === 'error' ? '✕ Erro ao salvar — tente novamente'
+              : saveState === 'saving' ? 'Salvando no histórico...'
+              : '✓ Salvo no histórico desta análise'}
+          </div>
+        )}
       </div>
 
-      {/* Lista de tarefas — coluna única */}
-      <div className="space-y-3">
-        {tasks.map((task) => {
+      {/* Lista de tarefas — coluna única, numerada */}
+      <div className="divide-y divide-slate-100 px-6">
+        {tasks.map((task, idx) => {
           const isDone = !!statusMap[task.id]?.done;
           const isOpen = expanded.has(task.id);
           const hasCustomData = !!(statusMap[task.id]?.responsavel || statusMap[task.id]?.prazo || statusMap[task.id]?.nota);
           return (
-            <div
-              key={task.id}
-              className={`rounded-2xl border transition-all ${
-                isDone
-                  ? 'border-emerald-200 bg-emerald-50/50'
-                  : 'border-slate-200 bg-white'
-              }`}
-            >
-              {/* Linha principal */}
-              <div className="flex items-start gap-4 p-4">
-                <input
-                  type="checkbox"
-                  checked={isDone}
-                  onChange={(e) => toggleTask(task.id, e.target.checked)}
-                  className="mt-1 h-5 w-5 shrink-0 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                />
+            <div key={task.id} className={`py-4 transition-all ${isDone ? 'opacity-60' : ''}`}>
+              <div className="flex items-start gap-4">
+
+                {/* Número + checkbox */}
+                <div className="flex shrink-0 flex-col items-center gap-1.5 pt-0.5">
+                  <span className={`text-[10px] font-black tabular-nums ${isDone ? 'text-emerald-500' : 'text-slate-300'}`}>
+                    {String(idx + 1).padStart(2, '0')}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={isDone}
+                    onChange={(e) => toggleTask(task.id, e.target.checked)}
+                    className="h-5 w-5 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {/* Conteúdo */}
                 <div className="min-w-0 flex-1">
-                  {/* Badges: apenas prioridade + timing */}
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <div className="mb-1.5 flex flex-wrap items-center gap-2">
                     <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
                       task.prioridade === 'Alta'
                         ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
@@ -996,44 +1280,45 @@ function DecisionCockpit({
                     }`}>
                       {task.prioridade}
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
                       <Clock size={10} />
                       {task.prazo}
                     </span>
                     {hasCustomData && !isOpen && (
                       <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 ring-1 ring-emerald-100">
-                        Preenchido
+                        ✓ Preenchido
                       </span>
                     )}
                   </div>
 
-                  <p className={`text-sm font-black leading-snug ${isDone ? 'text-emerald-900 line-through decoration-emerald-500/50' : 'text-slate-900'}`}>
+                  <p className={`text-sm font-black leading-snug ${isDone ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'}`}>
                     {task.acao}
                   </p>
-                  <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-500">
-                    <strong className="text-slate-700">{task.responsavel}</strong>
-                    {task.resultado_esperado ? `: ${task.resultado_esperado}` : ''}
+                  <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
+                    <strong className="text-slate-600">{task.responsavel}</strong>
+                    {task.resultado_esperado ? ` — ${task.resultado_esperado}` : ''}
                   </p>
                   {task.impacto && (
-                    <p className="mt-1 text-[11px] font-bold text-amber-700/80">
-                      Impacto: {task.impacto}
-                    </p>
+                    <p className="mt-1 text-[11px] font-bold text-amber-700/80">⚠ {task.impacto}</p>
                   )}
                 </div>
 
-                {/* Botão de expandir */}
+                {/* Botão de detalhes */}
                 <button
                   type="button"
                   onClick={() => toggleExpanded(task.id)}
                   className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
                 >
-                  {isOpen ? 'Fechar' : 'Editar'}
+                  {isOpen ? '↑ Fechar' : '↓ Detalhes'}
                 </button>
               </div>
 
-              {/* Painel de inputs — colapsável */}
+              {/* Painel de detalhes — colapsável */}
               {isOpen && (
-                <div className="border-t border-slate-100 bg-slate-50/60 px-4 pb-4 pt-3">
+                <div className="ml-11 mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 pb-4 pt-3">
+                  <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Dados salvos nesta análise · visíveis em Gestão
+                  </p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block">
                       <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
@@ -1059,7 +1344,7 @@ function DecisionCockpit({
                         value={statusMap[task.id]?.nota ?? ''}
                         onChange={(e) => updateTaskField(task.id, 'nota', e.target.value)}
                         onBlur={() => persistTaskField(task.id, 'nota')}
-                        placeholder="Ex.: aguardando jurídico, cotação enviada..."
+                        placeholder="Ex.: aguardando jurídico, pedido protocolado em 01/07..."
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
                       />
                     </label>
@@ -1076,11 +1361,12 @@ function DecisionCockpit({
 
 function buildDecisionCockpitTasks(decision: DecisionUiData, result: AnalysisResult): DecisionCockpitTask[] {
   const tasks: DecisionCockpitTask[] = [];
+  const isNoGo = decision.veredito === 'NO_GO';
 
   decision.proximas_acoes.forEach((action, index) => {
     const prazo = action.prazo || 'Hoje';
     const priority: DecisionCockpitTask['prioridade'] =
-      decision.veredito === 'NO_GO' || /agora|hoje/i.test(prazo) ? 'Alta' : 'Média';
+      isNoGo || /agora|hoje/i.test(prazo) ? 'Alta' : 'Média';
     tasks.push({
       id: `decision-${index}-${normalizeDecisionText(action.acao).slice(0, 40)}`,
       prazo,
@@ -1092,23 +1378,25 @@ function buildDecisionCockpitTasks(decision: DecisionUiData, result: AnalysisRes
     });
   });
 
-  (result.checklist || []).slice(0, 6).forEach((item, index) => {
-    const record = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {};
-    const acao = shortenDecisionText(record.tarefa || record.descricao || record.label || record.item || item, 180);
-    if (!acao) return;
-    const impacto = String(record.impacto || '').toLowerCase();
-    tasks.push({
-      id: `checklist-${index}-${normalizeDecisionText(acao).slice(0, 40)}`,
-      prazo: shortenDecisionText(record.prazo || record.fase || 'Antes da proposta', 40),
-      acao,
-      responsavel: shortenDecisionText(record.responsavel || 'Licitações', 80),
-      resultado_esperado: shortenDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
-      // Impacto do roadmap migrou para cá — a seção duplicada foi removida
-      impacto: shortenDecisionText(record.impacto || '', 120) || undefined,
-      origem: 'Checklist',
-      prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
+  // Itens de checklist (habilitação) só fazem sentido para GO/CONDICIONAL
+  if (!isNoGo) {
+    (result.checklist || []).slice(0, 6).forEach((item, index) => {
+      const record = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {};
+      const acao = shortenDecisionText(record.tarefa || record.descricao || record.label || record.item || item, 180);
+      if (!acao) return;
+      const impacto = String(record.impacto || '').toLowerCase();
+      tasks.push({
+        id: `checklist-${index}-${normalizeDecisionText(acao).slice(0, 40)}`,
+        prazo: shortenDecisionText(record.prazo || record.fase || 'Antes da proposta', 40),
+        acao,
+        responsavel: shortenDecisionText(record.responsavel || 'Licitações', 80),
+        resultado_esperado: shortenDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
+        impacto: shortenDecisionText(record.impacto || '', 120) || undefined,
+        origem: 'Checklist',
+        prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
+      });
     });
-  });
+  }
 
   const seen = new Set<string>();
   return tasks
@@ -1277,6 +1565,15 @@ function normalizeBusinessFit(result: AnalysisResult) {
   };
 
   const cfg = labels[status] || labels.indeterminado;
+  const cnaesSecundarios = Array.isArray(fit.cnaes_secundarios)
+    ? fit.cnaes_secundarios.filter((item) => item && (item.codigo || item.descricao))
+    : [];
+  const cnaeCorrespondente = fit.cnae_correspondente
+    ? [fit.cnae_correspondente, fit.cnae_correspondente_descricao].filter(Boolean).join(' · ')
+    : null;
+  const viaSecundario = Boolean(
+    cnaeCorrespondente && fit.cnae_principal && fit.cnae_correspondente !== fit.cnae_principal
+  );
   return {
     ...cfg,
     status,
@@ -1284,6 +1581,9 @@ function normalizeBusinessFit(result: AnalysisResult) {
     cnae,
     object: shortenDecisionText(fit.objeto_detectado, 110),
     description: shortenDecisionText(fit.justificativa || cfg.fallback, 260),
+    cnaesSecundarios,
+    cnaeCorrespondente,
+    viaSecundario,
   };
 }
 
@@ -1749,6 +2049,321 @@ function semaforoLabel(key: string) {
   return labels[key] || key;
 }
 
+// ─── Jornada de análise: steps unificados (substitui tab bar) ────────────────
+
+const JOURNEY_STEPS = [
+  {
+    key: 'veredito',
+    num: '01',
+    label: 'Veredito',
+    sublabel: 'Score e decisão',
+    icon: Target,
+    tab: 'analise' as const,
+    sectionId: 'section-score',
+    activeBg: 'from-emerald-500 to-teal-600',
+    activeShadow: 'shadow-emerald-500/25',
+    inactiveBg: 'bg-emerald-50 hover:bg-emerald-100',
+    inactiveBorder: 'border-emerald-200',
+    inactiveIcon: 'text-emerald-500',
+    inactiveLabel: 'text-emerald-900',
+  },
+  {
+    key: 'criterios',
+    num: '02',
+    label: 'Critérios',
+    sublabel: 'Parâmetros configurados',
+    icon: SlidersHorizontal,
+    tab: 'analise' as const,
+    sectionId: 'section-criterios',
+    activeBg: 'from-indigo-500 to-violet-600',
+    activeShadow: 'shadow-indigo-500/25',
+    inactiveBg: 'bg-indigo-50 hover:bg-indigo-100',
+    inactiveBorder: 'border-indigo-200',
+    inactiveIcon: 'text-indigo-500',
+    inactiveLabel: 'text-indigo-900',
+  },
+  {
+    key: 'analise',
+    num: '03',
+    label: 'SWOT & Riscos',
+    sublabel: 'Análise estratégica',
+    icon: AlertTriangle,
+    tab: 'analise' as const,
+    sectionId: 'section-analise',
+    activeBg: 'from-amber-500 to-orange-500',
+    activeShadow: 'shadow-amber-500/25',
+    inactiveBg: 'bg-amber-50 hover:bg-amber-100',
+    inactiveBorder: 'border-amber-200',
+    inactiveIcon: 'text-amber-500',
+    inactiveLabel: 'text-amber-900',
+  },
+  {
+    key: 'juridico',
+    num: '04',
+    label: 'Jurídico',
+    sublabel: 'Parecer técnico',
+    icon: Scale,
+    tab: 'analise' as const,
+    sectionId: 'section-juridico',
+    activeBg: 'from-purple-500 to-fuchsia-600',
+    activeShadow: 'shadow-purple-500/25',
+    inactiveBg: 'bg-purple-50 hover:bg-purple-100',
+    inactiveBorder: 'border-purple-200',
+    inactiveIcon: 'text-purple-500',
+    inactiveLabel: 'text-purple-900',
+  },
+  {
+    key: 'concorrentes',
+    num: '05',
+    label: 'Concorrentes',
+    sublabel: 'Radar de mercado',
+    icon: Radar,
+    tab: 'concorrentes' as const,
+    sectionId: null as string | null,
+    activeBg: 'from-sky-500 to-cyan-600',
+    activeShadow: 'shadow-sky-500/25',
+    inactiveBg: 'bg-sky-50 hover:bg-sky-100',
+    inactiveBorder: 'border-sky-200',
+    inactiveIcon: 'text-sky-500',
+    inactiveLabel: 'text-sky-900',
+  },
+  {
+    key: 'cockpit',
+    num: '06',
+    label: 'Cockpit',
+    sublabel: 'Plano de ação',
+    icon: ClipboardList,
+    tab: 'analise' as const,
+    sectionId: 'cockpit-pos-veredito',
+    activeBg: 'from-slate-700 to-slate-900',
+    activeShadow: 'shadow-slate-700/25',
+    inactiveBg: 'bg-slate-100 hover:bg-slate-200',
+    inactiveBorder: 'border-slate-300',
+    inactiveIcon: 'text-slate-500',
+    inactiveLabel: 'text-slate-800',
+  },
+] as const;
+
+type JourneyStepType = (typeof JOURNEY_STEPS)[number];
+
+function JourneyStepNav({
+  activeStep,
+  onStepClick,
+  currentTier,
+  userTier,
+}: {
+  activeStep: string;
+  onStepClick: (step: JourneyStepType) => void;
+  currentTier: number;
+  userTier: number;
+}) {
+  const isLocked = (step: JourneyStepType) =>
+    step.key === 'concorrentes' && Math.max(getCachedTier(userTier), currentTier) < 2;
+
+  const activeIndex = Math.max(0, JOURNEY_STEPS.findIndex((s) => s.key === activeStep));
+  const progressPct = JOURNEY_STEPS.length > 1 ? (activeIndex / (JOURNEY_STEPS.length - 1)) * 100 : 0;
+
+  return (
+    <div className="mb-8 print:hidden">
+      {/* Header */}
+      <div className="mb-5 flex items-center gap-3 px-1">
+        <span className="shrink-0 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+          Jornada de análise
+        </span>
+        <div className="h-px flex-1 bg-gradient-to-r from-slate-200 to-transparent" />
+        <span className="text-[9px] font-medium text-slate-400">
+          Passo {activeIndex + 1} de {JOURNEY_STEPS.length}
+        </span>
+      </div>
+
+      {/* Trilha: nós conectados por uma linha — só a etapa ativa ganha cor,
+          as demais ficam neutras para não competir com o veredito abaixo. */}
+      <div className="overflow-x-auto pb-1">
+        <div className="relative min-w-[640px] px-4">
+          <div className="pointer-events-none absolute left-9 right-9 top-6 h-0.5 bg-slate-200" />
+          <div
+            className="pointer-events-none absolute left-9 top-6 h-0.5 bg-slate-900 transition-all duration-500"
+            style={{ width: `calc((100% - 2.25rem) * ${progressPct / 100})` }}
+          />
+
+          <div className="relative grid grid-cols-6 gap-1">
+            {JOURNEY_STEPS.map((step) => {
+              const Icon = step.icon;
+              const isActive = activeStep === step.key;
+              const locked = isLocked(step);
+
+              return (
+                <button
+                  key={step.key}
+                  type="button"
+                  onClick={() => onStepClick(step)}
+                  className="group relative flex flex-col items-center gap-2 rounded-xl px-1 py-1 text-center transition-transform hover:-translate-y-0.5"
+                >
+                  {/* Nó */}
+                  <div
+                    className={`relative z-10 flex items-center justify-center rounded-full transition-all ${
+                      isActive
+                        ? `h-12 w-12 bg-gradient-to-br ${step.activeBg} shadow-lg ${step.activeShadow} ring-4 ring-white`
+                        : 'h-10 w-10 border border-slate-200 bg-white text-slate-400 group-hover:border-slate-300 group-hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icon size={isActive ? 20 : 16} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'} />
+                    {locked && (
+                      <span className="absolute -right-1.5 -top-1.5 flex items-center gap-0.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-[7px] font-black text-white shadow-sm">
+                        <Crown size={7} />
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Texto */}
+                  <div className="flex flex-col gap-0.5">
+                    <span className={`whitespace-nowrap text-[11px] leading-tight ${
+                      isActive ? 'font-black text-slate-900' : 'font-bold text-slate-500 group-hover:text-slate-700'
+                    }`}>
+                      {step.num} · {step.label}
+                    </span>
+                    <span className={`whitespace-nowrap text-[9px] font-medium leading-tight transition-opacity ${
+                      isActive ? 'text-slate-400 opacity-100' : 'text-slate-300 opacity-0 group-hover:opacity-100'
+                    }`}>
+                      {step.sublabel}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Esteira CTA: convite proeminente para gestão ─────────────────────────────
+
+function EsteiraCTA({
+  result,
+  tracked,
+  trackSaving,
+  onToggle,
+  analysisId,
+  token,
+}: {
+  result: AnalysisResult;
+  tracked: boolean;
+  trackSaving: boolean;
+  onToggle: () => void;
+  analysisId: string | null;
+  token: string | null;
+}) {
+  const decision = normalizeDecision(result);
+  const isNoGo = decision.veredito === 'NO_GO';
+
+  const goStages: { key: string; label: string; done?: boolean; active?: boolean }[] = [
+    { key: 'analise', label: 'Análise', done: true },
+    { key: 'habilitacao', label: 'Habilitação', active: true },
+    { key: 'proposta', label: 'Proposta' },
+    { key: 'disputa', label: 'Disputa' },
+    { key: 'resultado', label: 'Resultado' },
+  ];
+
+  const noGoStages: { key: string; label: string; done?: boolean; active?: boolean }[] = [
+    { key: 'analise', label: 'Análise', done: true },
+    { key: 'monitoramento', label: 'Monitoramento', active: true },
+    { key: 'reanalise', label: 'Re-análise' },
+  ];
+
+  const stages = isNoGo ? noGoStages : goStages;
+  const nextStage = isNoGo ? 'Monitoramento' : 'Habilitação';
+
+  return (
+    <div className={`mb-6 overflow-hidden rounded-[1.5rem] border-2 print:hidden transition-all ${
+      tracked
+        ? 'border-emerald-300 bg-gradient-to-br from-emerald-50/60 to-white shadow-sm shadow-emerald-100'
+        : 'border-dashed border-indigo-200 bg-gradient-to-br from-indigo-50/40 to-white'
+    }`}>
+      <div className="px-6 py-6 md:px-8 md:py-7">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+
+          {/* Left: title + pipeline */}
+          <div className="min-w-0 flex-1">
+            <p className={`mb-1.5 text-[10px] font-black uppercase tracking-widest ${tracked ? 'text-emerald-600' : 'text-indigo-500'}`}>
+              {tracked ? '📌 Na esteira de gestão' : 'Próxima fase disponível'}
+            </p>
+            <h3 className="mb-4 text-lg font-black tracking-tight text-slate-900">
+              {tracked
+                ? `Este edital está sendo acompanhado · entrando em ${nextStage}`
+                : 'Levar este edital para a esteira de gestão?'}
+            </h3>
+
+            {/* Pipeline visual */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {stages.map((stage, i) => (
+                <React.Fragment key={stage.key}>
+                  {i > 0 && (
+                    <ChevronRight size={11} className="flex-shrink-0 text-slate-300" />
+                  )}
+                  <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black transition-all ${
+                    stage.done
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : stage.active
+                        ? tracked
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-300'
+                          : 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200'
+                        : 'bg-slate-100 text-slate-400'
+                  }`}>
+                    {stage.done && <Check size={9} className="flex-shrink-0" />}
+                    {stage.label}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: CTA button */}
+          <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
+            {tracked ? (
+              <>
+                <div className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-white">
+                  <Pin size={15} className="flex-shrink-0" />
+                  <span className="text-sm font-black">Acompanhando</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  disabled={!analysisId || !token || trackSaving}
+                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors disabled:opacity-50"
+                >
+                  Remover do acompanhamento
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  disabled={!analysisId || !token || trackSaving}
+                  className="flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/35 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {trackSaving ? (
+                    <RefreshCw size={15} className="animate-spin" />
+                  ) : (
+                    <Pin size={15} className="flex-shrink-0" />
+                  )}
+                  Acompanhar este edital →
+                </button>
+                {!token && (
+                  <p className="text-[10px] font-medium text-slate-400">Faça login para acompanhar</p>
+                )}
+              </>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sub-componente: conteúdo do Raio-X ──────────────────────────────────────
 
 interface ReportTabProps {
@@ -1769,7 +2384,9 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
       <ExpiredBanner result={result} />
 
       {/* SCORE + DATAS CRÍTICAS */}
-      <ScoreHeader result={result} />
+      <div id="section-score" className="scroll-mt-24">
+        <ScoreHeader result={result} />
+      </div>
 
       {/* SEMÁFORO DE VIABILIDADE */}
       <SemaforoSection result={result} />
@@ -1807,16 +2424,20 @@ function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult,
       )}
 
       {/* CRITÉRIOS CONFIGURADOS — logo após o veredito para decisão imediata */}
-      <ParametrosSection result={result} />
+      <div id="section-criterios" className="scroll-mt-24">
+        <ParametrosSection result={result} />
+      </div>
 
-      {/* SWOT & CARGA OPERACIONAL */}
-      <SwotSection result={result} />
-
-      {/* MATRIZ DE RISCOS */}
-      <RisksSection result={result} />
+      {/* SWOT & CARGA OPERACIONAL + MATRIZ DE RISCOS */}
+      <div id="section-analise" className="scroll-mt-24 space-y-8">
+        <SwotSection result={result} />
+        <RisksSection result={result} />
+      </div>
 
       {/* PARECER TÉCNICO-JURÍDICO */}
-      <PareceSection result={result} userTier={userTier} onUpgradeClick={onUpgradeClick} />
+      <div id="section-juridico" className="scroll-mt-24">
+        <PareceSection result={result} userTier={userTier} onUpgradeClick={onUpgradeClick} />
+      </div>
 
       {/* RACIOCÍNIO ESTRATÉGICO */}
       <div className="mt-8 pt-6 border-t border-slate-100 print:hidden">
@@ -2152,6 +2773,396 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
   );
 }
 
+// ─── Composição do Score (QA Engine — score auditável) ──────────────────────
+
+function ScoreBreakdownSection({ result }: { result: AnalysisResult }) {
+  const itens = result.score_breakdown || [];
+  if (itens.length === 0) return null;
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8">
+      <SectionLabel icon={<Calculator size={18} className="text-slate-700" />} label="Composição do Score" />
+      <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
+        Nota auditável: partimos de <strong>100</strong> e cada fator soma ou subtrai pontos com justificativa e evidência.
+      </p>
+      <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 mb-2">
+        <span className="text-xs font-black uppercase tracking-widest text-slate-500">Base de partida</span>
+        <div className="flex-1 border-t border-dashed border-slate-200" />
+        <span className="text-sm font-black text-slate-900">100</span>
+      </div>
+      <div className="space-y-2">
+        {itens.map((item, i) => {
+          const positivo = item.pontos > 0;
+          return (
+            <div key={i} className="rounded-xl border border-slate-100 bg-white px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-slate-800 leading-snug">{item.fator}</p>
+                <span className={`shrink-0 text-xs font-black px-2.5 py-1 rounded-lg tabular-nums ${positivo ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
+                  {positivo ? '+' : ''}{item.pontos}
+                </span>
+              </div>
+              {item.justificativa && (
+                <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">{item.justificativa}</p>
+              )}
+              {item.trecho && (
+                <blockquote className="mt-2 rounded-lg border-l-2 border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
+                  &ldquo;{item.trecho}&rdquo;
+                </blockquote>
+              )}
+              <div className="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${positivo ? 'bg-emerald-400' : 'bg-red-400'}`}
+                  style={{ width: `${Math.min(100, Math.abs(item.pontos) * 2)}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5">
+        <span className="text-xs font-black uppercase tracking-widest text-slate-300">Bawzi Score final</span>
+        <div className="flex-1 border-t border-dashed border-slate-700" />
+        <span className={`text-2xl font-black leading-none tabular-nums ${result.score >= 70 ? 'text-emerald-400' : result.score >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
+          {result.score}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Ficha Técnica do Edital (QA Engine — extração verificada) ───────────────
+
+function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
+  const ficha = result.ficha_tecnica || [];
+  if (ficha.length === 0) return null;
+  const isAusente = (item: NonNullable<AnalysisResult['ficha_tecnica']>[number]) =>
+    !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
+  const localizados = ficha.filter(f => !isAusente(f)).length;
+  const divergencias = result.qualidade_extracao?.divergencias_ia_texto || [];
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-4">
+        <SectionLabel icon={<FileSearch size={18} className="text-slate-700" />} label="Ficha Técnica do Edital" />
+        <span className="shrink-0 text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
+          {localizados}/{ficha.length} localizados
+        </span>
+      </div>
+      <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
+        Dados extraídos literalmente do material e cross-checados automaticamente contra o texto original.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {ficha.map((item, i) => {
+          const ausente = isAusente(item);
+          return (
+            <div
+              key={`${item.campo}-${i}`}
+              title={item.trecho ? `Trecho do edital: "${item.trecho}"` : undefined}
+              className={`rounded-xl border p-3.5 transition-colors ${
+                ausente ? 'border-dashed border-slate-200 bg-slate-50/60' : 'border-slate-200 bg-white hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-tight">{item.campo}</p>
+                {!ausente && item.fonte === 'verificado_texto' && (
+                  <span className="flex items-center gap-0.5 shrink-0 text-[8px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                    <Check size={8} strokeWidth={3.5} /> Texto
+                  </span>
+                )}
+              </div>
+              <p className={`mt-1 text-sm leading-snug ${ausente ? 'text-slate-400 italic font-medium' : 'text-slate-900 font-bold'}`}>
+                {ausente ? 'Não localizado' : item.valor}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      {divergencias.length > 0 && (
+        <div className="mt-4 rounded-xl bg-indigo-50/70 border border-indigo-100 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 flex items-center gap-1.5">
+            <RefreshCw size={11} /> Reconciliação automática IA × texto do edital
+          </p>
+          <div className="space-y-1.5">
+            {divergencias.slice(0, 3).map((d, i) => (
+              <p key={i} className="text-xs font-medium leading-relaxed text-indigo-900/80">• {d}</p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Wrappers colapsáveis — score e ficha técnica são prova/auditoria, não a
+// manchete do veredito. Ficam recolhidos por padrão para não competir com a
+// decisão e com o "por quê" no topo da aba. ─────────────────────────────────
+
+function CollapsibleScoreBreakdown({ result }: { result: AnalysisResult }) {
+  const itens = result.score_breakdown || [];
+  if (itens.length === 0) return null;
+  return (
+    <details className="group rounded-2xl border border-slate-200 overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
+        <span className="flex items-center gap-2 text-sm font-black text-slate-700">
+          <Calculator size={16} className="text-slate-400" />
+          Como chegamos ao score {result.score}
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-slate-200 bg-slate-50/50 p-4">
+        <ScoreBreakdownSection result={result} />
+      </div>
+    </details>
+  );
+}
+
+function CollapsibleFichaTecnica({ result }: { result: AnalysisResult }) {
+  const ficha = result.ficha_tecnica || [];
+  if (ficha.length === 0) return null;
+  const isAusente = (item: NonNullable<AnalysisResult['ficha_tecnica']>[number]) =>
+    !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
+  const localizados = ficha.filter((f) => !isAusente(f)).length;
+  return (
+    <details className="group rounded-2xl border border-slate-200 overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
+        <span className="flex items-center gap-2 text-sm font-black text-slate-700">
+          <FileSearch size={16} className="text-slate-400" />
+          Ficha técnica do edital
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            {localizados}/{ficha.length} localizados
+          </span>
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-slate-200 bg-slate-50/50 p-4">
+        <FichaTecnicaSection result={result} />
+      </div>
+    </details>
+  );
+}
+
+// ─── Red Flags — direcionamento & abusividade (QA Engine) ────────────────────
+
+// Um "red flag" nem sempre é uma cláusula abusiva — o motor também usa essa
+// lista para sinalizar lacunas (documento ausente, orçamento sigiloso etc.).
+// Sem isso, o subtítulo fixo da seção prometia "cláusula abusiva" para achados
+// que na verdade eram apenas "faltou publicar o documento" — confuso.
+type RedFlagKind = 'abusividade' | 'lacuna' | 'outro';
+
+function classifyRedFlag(flag: NonNullable<AnalysisResult['red_flags']>[number]): { kind: RedFlagKind; label: string } {
+  const texto = normalizeDecisionText(`${flag.tipo || ''} ${flag.tipo_label || ''} ${flag.descricao || ''}`);
+
+  const abusividadeMap: { test: RegExp; label: string }[] = [
+    { test: /direcionament/, label: 'Direcionamento' },
+    { test: /restri[cç][aã]o|restring/, label: 'Restrição de competitividade' },
+    { test: /clausula(s)? abusiva/, label: 'Cláusula abusiva' },
+    { test: /exigencia(s)? desproporcional/, label: 'Exigência desproporcional' },
+    { test: /marca especifica|marca exclusiva/, label: 'Marca específica' },
+    { test: /prazo exiguo|prazo curto demais/, label: 'Prazo exíguo' },
+  ];
+  for (const { test, label } of abusividadeMap) {
+    if (test.test(texto)) return { kind: 'abusividade', label };
+  }
+
+  if (/sigilos/.test(texto)) return { kind: 'lacuna', label: 'Informação sigilosa' };
+  if (/nenhum (arquivo|documento)|documento(s)? oficial(is)?.*(ausente|nao public|não public)|arquivo publicado|sem anexo/.test(texto)) {
+    return { kind: 'lacuna', label: 'Documentação ausente' };
+  }
+  if (/valor (global )?estimado|orcamento sigiloso|a apurar/.test(texto)) {
+    return { kind: 'lacuna', label: 'Dado financeiro ausente' };
+  }
+
+  return { kind: 'outro', label: flag.tipo_label || (flag.tipo && flag.tipo !== 'outro' ? flag.tipo : 'Outro achado') };
+}
+
+const RED_FLAG_SUBTITLES: Record<'abusividade' | 'lacuna' | 'misto' | 'outro', string> = {
+  abusividade: 'Indícios de direcionamento, restrição de competitividade e cláusulas abusivas — cada um com evidência literal e ação sugerida.',
+  lacuna: 'Informações que faltam no material publicado e impedem uma análise completa — cada uma com evidência literal e ação sugerida.',
+  misto: 'Possíveis irregularidades e lacunas de informação identificadas no edital — cada uma com evidência literal e ação sugerida.',
+  outro: 'Pontos de atenção identificados no material analisado — cada um com evidência literal e ação sugerida.',
+};
+
+function RedFlagsSection({ result }: { result: AnalysisResult }) {
+  const flags = result.red_flags;
+  if (flags === undefined) return null;
+
+  if (flags.length === 0) {
+    return (
+      <div className="relative border border-slate-200 rounded-2xl p-8">
+        <SectionLabel icon={<Flag size={18} className="text-slate-700" />} label="Red Flags do Edital" />
+        <div className="mt-2 flex items-center gap-4 bg-emerald-50 border border-emerald-100 rounded-xl p-5">
+          <CheckCircle2 size={28} className="shrink-0 text-emerald-500" />
+          <div>
+            <p className="text-sm font-black text-emerald-800">Varredura concluída sem indícios</p>
+            <p className="text-xs text-emerald-700 font-medium mt-0.5 leading-relaxed">
+              Nenhum indício concreto de direcionamento, restrição de competitividade ou cláusula abusiva foi detectado no material analisado.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const gravidadeCfg: Record<string, { bg: string; border: string; badge: string; label: string }> = {
+    alta:  { bg: 'bg-red-50',   border: 'border-red-200',   badge: 'bg-red-600 text-white',       label: 'GRAVIDADE ALTA' },
+    media: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-500 text-white',     label: 'GRAVIDADE MÉDIA' },
+    baixa: { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-400 text-white',     label: 'GRAVIDADE BAIXA' },
+  };
+  const acaoCfg: Record<string, { cls: string; label: string }> = {
+    impugnar:   { cls: 'bg-red-100 text-red-700 border-red-200',       label: '⚖️ Impugnar' },
+    esclarecer: { cls: 'bg-amber-100 text-amber-700 border-amber-200', label: '❓ Pedir esclarecimento' },
+    monitorar:  { cls: 'bg-slate-100 text-slate-600 border-slate-200', label: '👁 Monitorar' },
+  };
+
+  const classified = flags.map((flag) => ({ flag, ...classifyRedFlag(flag) }));
+  const hasAbuso = classified.some((c) => c.kind === 'abusividade');
+  const hasLacuna = classified.some((c) => c.kind === 'lacuna');
+  const subtitleKey = hasAbuso && hasLacuna ? 'misto' : hasAbuso ? 'abusividade' : hasLacuna ? 'lacuna' : 'outro';
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8">
+      <SectionLabel icon={<Flag size={18} className="text-slate-700" />} label="Red Flags do Edital" />
+      <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
+        {RED_FLAG_SUBTITLES[subtitleKey]}
+      </p>
+      <div className="space-y-3">
+        {classified.map(({ flag, kind, label }, i) => {
+          const g = gravidadeCfg[flag.gravidade] ?? gravidadeCfg.media;
+          const acao = acaoCfg[flag.acao_sugerida || 'esclarecer'] ?? acaoCfg.esclarecer;
+          return (
+            <div key={i} className={`${g.bg} ${g.border} border rounded-xl p-4`}>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${g.badge}`}>{g.label}</span>
+                <span
+                  className="text-[9px] font-black uppercase tracking-widest bg-white/80 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full"
+                  title={kind === 'lacuna' ? 'Lacuna de informação, não uma cláusula irregular' : undefined}
+                >
+                  {kind === 'lacuna' && '📄 '}{label}
+                </span>
+                <span className={`ml-auto text-[9px] font-black uppercase tracking-widest border px-2 py-0.5 rounded-full ${acao.cls}`}>
+                  {acao.label}
+                </span>
+              </div>
+              <p className="text-sm font-bold text-slate-800 leading-snug">{flag.descricao}</p>
+              {flag.trecho && (
+                <blockquote className="mt-2 rounded-lg border-l-4 border-slate-300 bg-white/70 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
+                  &ldquo;{flag.trecho}&rdquo;
+                </blockquote>
+              )}
+              {flag.base_legal && (
+                <p className="mt-2 text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                  <Scale size={11} /> Base legal: {flag.base_legal}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Checklist de Habilitação (QA Engine) ────────────────────────────────────
+
+const HABILITACAO_ORDEM = ['juridica', 'fiscal', 'tecnica', 'economico_financeira'] as const;
+const HABILITACAO_LABELS: Record<string, string> = {
+  juridica: 'Habilitação Jurídica',
+  fiscal: 'Regularidade Fiscal e Trabalhista',
+  tecnica: 'Qualificação Técnica',
+  economico_financeira: 'Qualificação Econômico-Financeira',
+};
+
+function HabilitacaoSection({ result }: { result: AnalysisResult }) {
+  const itens = result.habilitacao_checklist;
+  if (itens === undefined) return null;
+
+  if (itens.length === 0) {
+    return (
+      <div className="relative border border-slate-200 rounded-2xl p-8">
+        <SectionLabel icon={<ListChecks size={18} className="text-slate-700" />} label="Checklist de Habilitação" />
+        <div className="mt-2 flex items-center gap-4 bg-amber-50 border border-dashed border-amber-200 rounded-xl p-5">
+          <SearchX size={28} className="shrink-0 text-amber-600" />
+          <div>
+            <p className="text-sm font-black text-amber-800">Exigências não identificadas</p>
+            <p className="text-xs text-amber-700 font-medium mt-0.5 leading-relaxed">
+              O material analisado não trouxe as exigências de habilitação de forma legível. Confirme os anexos do edital antes de montar a proposta.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const grupos = HABILITACAO_ORDEM
+    .map(cat => ({ cat, label: HABILITACAO_LABELS[cat], lista: itens.filter(i => i.categoria === cat) }))
+    .filter(g => g.lista.length > 0);
+  const eliminatorias = itens.filter(i => i.criticidade === 'eliminatoria').length;
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8">
+      <div className="flex items-start justify-between gap-4">
+        <SectionLabel icon={<ListChecks size={18} className="text-slate-700" />} label="Checklist de Habilitação" />
+        {eliminatorias > 0 && (
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-full">
+            {eliminatorias} eliminatória{eliminatorias > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
+        Exigências extraídas do edital por categoria — itens eliminatórios desclassificam a proposta se falharem.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        {grupos.map(({ cat, label, lista }) => (
+          <div key={cat}>
+            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pb-2 border-b border-slate-100">
+              {label} <span className="text-slate-300">· {lista.length}</span>
+            </h4>
+            <ul className="space-y-2.5">
+              {lista.map((item, i) => (
+                <li key={i} title={item.trecho ? `Trecho: "${item.trecho}"` : undefined} className="flex gap-2.5">
+                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.criticidade === 'eliminatoria' ? 'bg-red-500' : 'bg-slate-300'}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-700 font-medium leading-snug">
+                      {item.exigencia}
+                      {item.criticidade === 'eliminatoria' && (
+                        <span className="ml-1.5 align-middle text-[8px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded-full">
+                          Eliminatória
+                        </span>
+                      )}
+                    </p>
+                    {item.dica && <p className="mt-0.5 text-[11px] text-slate-400 font-medium leading-snug">💡 {item.dica}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Oportunidades Estratégicas (QA Engine) ──────────────────────────────────
+
+function OportunidadesSection({ result }: { result: AnalysisResult }) {
+  const oportunidades = result.oportunidades || [];
+  if (oportunidades.length === 0) return null;
+  return (
+    <div className="relative border border-emerald-200 bg-emerald-50/40 rounded-2xl p-8">
+      <SectionLabel icon={<Gem size={18} className="text-emerald-600" />} label="Oportunidades Estratégicas" />
+      <ul className="space-y-3 mt-2">
+        {oportunidades.map((op, i) => (
+          <li key={i} className="flex gap-3 items-start">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+              <Sparkles size={11} />
+            </span>
+            <p className="text-sm text-slate-700 font-medium leading-relaxed">{op}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ─── SWOT & Carga Operacional ────────────────────────────────────────────────
 
 function SwotSection({ result }: { result: AnalysisResult }) {
@@ -2197,10 +3208,25 @@ function SwotSection({ result }: { result: AnalysisResult }) {
 // ─── Matriz de Riscos ─────────────────────────────────────────────────────────
 
 function RisksSection({ result }: { result: AnalysisResult }) {
+  // Distinguir "análise antiga sem esse campo" (precisa reprocessar) de
+  // "analisamos e não encontramos risco relevante" (resultado positivo) —
+  // as duas situações têm `result.risks` vazio, mas significam coisas opostas.
+  const risksEmpty = Array.isArray(result.risks) && result.risks.length === 0;
+
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
       <SectionLabel icon={<AlertTriangle size={18} className="text-slate-700" />} label="Matriz de Riscos" />
-      {result.risks && result.risks.length > 0 ? (
+      {risksEmpty ? (
+        <div className="mt-2 flex items-center gap-4 bg-emerald-50 border border-emerald-100 rounded-xl p-5">
+          <CheckCircle2 size={28} className="shrink-0 text-emerald-500" />
+          <div>
+            <p className="text-sm font-black text-emerald-800">Nenhum risco relevante identificado</p>
+            <p className="text-xs text-emerald-700 font-medium mt-0.5 leading-relaxed">
+              A análise avaliou o edital e não encontrou riscos de impacto alto, médio ou baixo dignos de nota.
+            </p>
+          </div>
+        </div>
+      ) : result.risks && result.risks.length > 0 ? (
         <div className="space-y-3 mt-2">
           {[...result.risks]
             // Dedup: a IA frequentemente lista o mesmo risco 2x com títulos
@@ -2567,12 +3593,40 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
           <h3 className="font-bold border-b border-slate-200 mb-2">1. Resumo da Análise</h3>
           <p>{result.summary}</p>
         </section>
+        {(result.ficha_tecnica || []).length > 0 && (
+          <section>
+            <h3 className="font-bold border-b border-slate-200 mb-2">2. Ficha Técnica do Certame</h3>
+            <table className="w-full text-xs">
+              <tbody>
+                {(result.ficha_tecnica || []).map((item, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1 pr-4 font-bold whitespace-nowrap align-top">{item.campo}</td>
+                    <td className="py-1">{item.valor}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+        {(result.red_flags || []).length > 0 && (
+          <section>
+            <h3 className="font-bold border-b border-slate-200 mb-2">3. Pontos de Atenção (Red Flags)</h3>
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {(result.red_flags || []).map((flag, i) => (
+                <li key={i}>
+                  <strong>[{(flag.gravidade || 'media').toUpperCase()}]</strong> {flag.descricao}
+                  {flag.base_legal ? ` (${flag.base_legal})` : ''}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <section>
-          <h3 className="font-bold border-b border-slate-200 mb-2">2. Fundamentação e Riscos</h3>
+          <h3 className="font-bold border-b border-slate-200 mb-2">4. Fundamentação e Riscos</h3>
           <p className="whitespace-pre-wrap">{result.parecer_especialista || result.rationale || 'Sem riscos críticos identificados.'}</p>
         </section>
         <section>
-          <h3 className="font-bold border-b border-slate-200 mb-2">3. Conclusão Estratégica</h3>
+          <h3 className="font-bold border-b border-slate-200 mb-2">5. Conclusão Estratégica</h3>
           <p>Veredito da Análise: <strong>{result.classification}</strong> (Score: {result.score}/100)</p>
         </section>
       </div>

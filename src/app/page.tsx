@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import EditaisFeed from '@/components/EditaisFeed';
+import HeroFeed from '@/components/HeroFeed';
+import HeroCards from '@/components/HeroCards';
 import {
   AlertTriangle,
   ArrowRight,
@@ -78,8 +79,8 @@ const FLOW = [
   },
   {
     n: '03',
-    title: 'Execute',
-    desc: 'Se for Go, siga checklist, próximos passos, preço limite, pontos jurídicos e plano de ataque.',
+    title: 'Aja com segurança',
+    desc: 'Se for Go, você já sabe o que fazer: checklist, preço-limite e pontos jurídicos vêm junto da decisão — sem chute.',
     Icon: ClipboardCheck,
   },
 ];
@@ -93,7 +94,7 @@ const PLANOS = [
     nivel: 'Nível 2',
     cor: 'from-sky-500 to-indigo-500',
     destaque: false,
-    itens: ['Radar PNCP e central de decisões', 'Gestão de execução', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais'],
+    itens: ['Radar PNCP e central de decisões', 'Plano de ação pós-decisão', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais'],
   },
   {
     nome: 'Profissional',
@@ -138,66 +139,99 @@ export default function LandingPage() {
 
   return (
     <div className="font-sans text-slate-900 overflow-x-hidden">
-      <section className="relative overflow-hidden bg-[#f8fafc] text-slate-950">
-        <div className="absolute inset-0 pointer-events-none opacity-70 [background-image:linear-gradient(rgba(15,23,42,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,0.045)_1px,transparent_1px)] [background-size:42px_42px]" />
-        <div className="absolute inset-x-0 bottom-0 h-40 bg-white" />
+      <section className="relative overflow-hidden bg-slate-950">
+        {/* Dark grid */}
+        <div className="absolute inset-0 pointer-events-none [background-image:linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:42px_42px]" />
+        {/* Glow blobs */}
+        <div className="pointer-events-none absolute -right-56 -top-56 h-[750px] w-[750px] rounded-full bg-emerald-500/[0.07] blur-[140px]" />
+        <div className="pointer-events-none absolute bottom-0 left-1/4 h-[450px] w-[600px] rounded-full bg-indigo-500/[0.05] blur-[110px]" />
 
-        <div className="relative mx-auto max-w-[1180px] px-6 pb-10 pt-12 md:pt-16">
-          {/* Layout 2 colunas no desktop */}
-          <div className="flex flex-col lg:flex-row lg:items-start lg:gap-16">
+        <div className="relative mx-auto max-w-[1280px] px-6 pt-12 pb-14 md:pt-16 md:pb-16">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:gap-12 xl:gap-16">
 
-            {/* Coluna esquerda — headline + CTA */}
-            <div className="flex-1 lg:pt-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            {/* Left — headline + CTAs */}
+            <div className="shrink-0 lg:w-[440px] xl:w-[480px] lg:pt-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
                 Decisão Go/No-Go para licitações
               </div>
 
-              <h1 className="mt-5 text-4xl font-black leading-[1.04] tracking-tight text-slate-950 md:text-5xl lg:text-[52px]">
+              <h1 className="mt-5 text-4xl font-black leading-[1.04] tracking-tight text-white md:text-5xl lg:text-[52px]">
                 Saiba em minutos se vale disputar uma licitação.
               </h1>
 
-              <p className="mt-4 text-base font-medium leading-7 text-slate-600 md:text-lg max-w-xl">
+              <p className="mt-4 max-w-[420px] text-base font-medium leading-7 text-slate-400 md:text-lg">
                 A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
               </p>
 
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-7 text-sm font-black text-white shadow-[0_18px_35px_-18px_rgba(16,185,129,0.85)] transition-all hover:bg-emerald-500">
+              <p className="mt-3 max-w-[420px] text-[13px] font-bold leading-6 text-slate-500">
+                Não fazemos a gestão do processo. Agimos na decisão — participar ou não — antes da execução.
+              </p>
+
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+                <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-[0_20px_50px_-16px_rgba(16,185,129,0.7)] transition-all hover:bg-emerald-400">
                   Testar com um edital <ArrowRight size={17} />
                 </Link>
-                <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-sm font-bold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50">
+                <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl bg-white px-7 text-sm font-bold text-slate-900 shadow-sm transition-all hover:bg-slate-100">
                   Ver planos e preços
                 </Link>
               </div>
 
-              {/* OutputCard só aparece no mobile abaixo do CTA */}
-              <div className="lg:hidden mt-8">
-                <OutputCard />
+              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+                {['PNCP oficial', 'Sem cartão', 'Veredito em minutos'].map((label) => (
+                  <span key={label} className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-500">
+                    <Check size={12} className="text-emerald-500" />
+                    {label}
+                  </span>
+                ))}
               </div>
-            </div>
 
-            {/* Coluna direita — feed de editais ao vivo */}
-            <div className="hidden lg:block w-[400px] xl:w-[440px] flex-shrink-0">
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4">
-                <div className="flex items-center justify-between mb-1">
-                  <h2 className="text-xs font-black uppercase tracking-widest text-slate-400">
-                    Editais publicados agora
-                  </h2>
+              {/* Mobile — live feed */}
+              <div className="mt-8 overflow-hidden rounded-2xl border border-white/[0.1] bg-white shadow-[0_20px_60px_-20px_rgba(0,0,0,0.5)] lg:hidden">
+                <div className="p-4">
+                  <HeroFeed />
                 </div>
-                <EditaisFeed />
               </div>
             </div>
 
-          </div>
+            {/* Right — card stack com análise */}
+            <div className="hidden lg:flex flex-1 flex-col justify-center pt-6">
+              {/* Label ao vivo */}
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+                  Editais abertos agora — PNCP
+                </span>
+              </div>
+              <HeroCards />
+            </div>
 
-          {/* OutputCard no desktop abaixo das 2 colunas */}
-          <div className="hidden lg:block mt-10">
-            <OutputCard />
           </div>
         </div>
       </section>
 
       <TrustBar />
+
+      {/* Simulação — análise de exemplo */}
+      <section className="bg-white pb-16 pt-14 md:pb-20 md:pt-16">
+        <div className="mx-auto max-w-[1280px] px-6">
+          <div className="mb-10 text-center">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Do edital ao veredito</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
+              Veja uma análise em ação.
+            </h2>
+            <p className="mt-3 mx-auto max-w-xl text-base font-medium leading-8 text-slate-500">
+              Em minutos, 4 agentes cruzam edital, CNAE, risco jurídico e concorrência — e entregam um veredito com próximos passos.
+            </p>
+          </div>
+          <div className="mx-auto max-w-5xl">
+            <OutputCard />
+          </div>
+        </div>
+      </section>
 
       <section id="problema" className="scroll-mt-24 bg-white py-16 md:py-20">
         <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.78fr_1fr] lg:items-center">
@@ -259,9 +293,9 @@ export default function LandingPage() {
           <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <div className="max-w-2xl">
             <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Como a plataforma trabalha</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Encontre, decida e execute.</h2>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Encontre. Decida com precisão.</h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
-              O Radar é a entrada. A decisão é o produto. A execução vem com checklist, riscos, preço e próximos passos.
+              O Radar é a entrada. A decisão é o produto — e ela vem pronta para agir, porque errar a escolha custa muito mais do que qualquer assinatura.
             </p>
             </div>
             <Link href="/login" className="inline-flex h-12 w-fit items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-black text-slate-900 transition-all hover:bg-slate-100">
@@ -375,7 +409,7 @@ export default function LandingPage() {
               {[
                 ['Decisão', 'Go/No-Go com justificativa'],
                 ['Evidências', 'riscos, fit e preço'],
-                ['Execução', 'checklist e próximos passos'],
+                ['Ação recomendada', 'checklist e próximos passos'],
               ].map(([title, desc]) => (
                 <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
                   <p className="text-sm font-black text-white">{title}</p>
@@ -1145,7 +1179,7 @@ function formatCurrency(value: number) {
 }
 
 
-function OutputCard() {
+function OutputCard({ className = '' }: { className?: string }) {
   const agents = [
     { Icon: BadgeCheck, label: 'CNAE', value: 'Match parcial', tone: 'text-sky-600', bar: 'w-[68%]' },
     { Icon: Scale, label: 'Jurídico', value: '2 cláusulas críticas', tone: 'text-amber-600', bar: 'w-[56%]' },
@@ -1155,7 +1189,7 @@ function OutputCard() {
   const nextSteps = ['Validar documentos', 'Definir preço mínimo', 'Revisar antes do lance'];
 
   return (
-    <div className="mt-8 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white text-left shadow-[0_34px_90px_-48px_rgba(15,23,42,0.45)] md:mt-9">
+    <div className={`w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white text-left shadow-[0_34px_90px_-48px_rgba(15,23,42,0.45)] ${className}`}>
       <div className="grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
         <div className="relative overflow-hidden border-b border-slate-100 bg-slate-50 p-5 sm:p-6 lg:border-b-0 lg:border-r">
           <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-amber-400" />

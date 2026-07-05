@@ -879,6 +879,17 @@ export default function AnalysisApp() {
                       token={token ?? ''}
                       companies={companies}
                       defaultUf={activeCompany?.uf || userData?.company?.uf || ''}
+                      onAnalyzeEdital={(textoExtraido, termoPesquisado, editalDados) => {
+                        setResult(null);
+                        setError(null);
+                        setText(textoExtraido);
+                        setTermoAlvo(termoPesquisado);
+                        setPncpData(editalDados || null);
+                        setActiveTab('analise');
+                        setTimeout(() => {
+                          document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 200);
+                      }}
                     />
                   </div>
                 );

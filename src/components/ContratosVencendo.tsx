@@ -8,6 +8,25 @@ import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 // ─────────────────────────────────────────────
 // Tipos
 // ─────────────────────────────────────────────
+interface CompraOrigem {
+  cnpj: string;
+  ano: string;
+  sequencial: string;
+  numero_controle?: string;
+}
+
+interface ContratoDetalhe {
+  data_assinatura?: string | null;
+  vigencia_inicio?: string | null;
+  duracao_meses?: number | null;
+  valor_inicial?: number | null;
+  valor_global?: number | null;
+  teve_aditivo?: boolean;
+  valor_mensal_estimado?: number | null;
+  tipo_contrato?: string | null;
+  objeto_contrato?: string | null;
+}
+
 interface ContratoVencendo {
   numeroControlePNCP?: string;
   objeto: string;
@@ -23,6 +42,8 @@ interface ContratoVencendo {
     fornecedor_cnpj?: string | null;
     modalidade?: string | null;
     situacao?: string | null;
+    compra_origem?: CompraOrigem | null;
+    contrato_detalhe?: ContratoDetalhe | null;
   };
   valores?: {
     global?: number;
@@ -35,6 +56,12 @@ interface ContratosVencendoProps {
   token: string;
   companies?: Array<{ razao_social?: string; cnpj?: string; cnae_descricao?: string; cnae_principal?: string }>;
   defaultUf?: string;
+  /** Dispara a análise Bawzi completa do edital que originou o contrato */
+  onAnalyzeEdital?: (
+    texto: string,
+    termo: string,
+    editalDados: { cnpj: string; ano: number; sequencial: number; uf?: string },
+  ) => void;
 }
 
 // ─────────────────────────────────────────────
@@ -134,7 +161,7 @@ function urgencia(dias?: number | null): {
 // ─────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────
-export default function ContratosVencendo({ token, companies = [], defaultUf }: ContratosVencendoProps) {
+export default function ContratosVencendo({ token, companies = [], defaultUf, onAnalyzeEdital }: ContratosVencendoProps) {
   const primeiraEmpresa = companies[0];
 
   // Keyword inicial — SOMENTE do CNAE se já disponível; vazio caso contrário
@@ -218,6 +245,72 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
     abortRef.current?.abort();
     setLoading(false);
   }, []);
+
+  // ── Análise Bawzi do edital de origem do contrato ─────────────────────────
+  const [analisandoNcp, setAnalisandoNcp] = useState<string | null>(null);
+
+  const analisarEditalOrigem = useCallback(async (c: ContratoVencendo) => {
+    const origem = c.metadados?.compra_origem;
+    if (!origem || !onAnalyzeEdital) return;
+
+    const chave = c.numeroControlePNCP || `${origem.cnpj}-${origem.sequencial}`;
+    setAnalisandoNcp(chave);
+    try {
+      const [resTexto, resMedia] = await Promise.all([
+        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${origem.cnpj}&ano=${origem.ano}&seq=${origem.sequencial}`),
+        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo.trim())}${uf ? `&uf=${uf}` : ''}`).catch(() => null),
+      ]);
+      if (!resTexto.ok) throw new Error('Falha ao carregar o edital de origem no PNCP.');
+      const dataTexto = await resTexto.json();
+      const historicoPrecos = resMedia && resMedia.ok
+        ? (await resMedia.json()).texto || 'Sem histórico recente para estabelecer média.'
+        : 'Sem histórico recente para estabelecer média.';
+
+      const det = c.metadados?.contrato_detalhe;
+      const fornecedorAtual = c.metadados?.fornecedor_nome || 'Não identificado';
+      const promptRenovacao = `
+  DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
+  ===================================================================
+  🎯 CONTEXTO: RENOVAÇÃO DE CONTRATO — o contrato vigente vence em ${c.dias_restantes ?? '?'} dia(s)
+  (${formatarData(c.data_vigencia_fim)}). O órgão tende a abrir nova disputa em breve.
+  A IA deve analisar o EDITAL DE ORIGEM abaixo como referência do que será exigido
+  na provável relicitação, e orientar o cliente sobre como competir.
+  ===================================================================
+
+  [1. CONTRATO VIGENTE (INTELIGÊNCIA DE RENOVAÇÃO)]
+  • Órgão: ${c.metadados?.orgao_nome || 'N/D'} (${c.metadados?.uf || ''}${c.metadados?.municipio ? ` / ${c.metadados?.municipio}` : ''})
+  • Fornecedor atual (incumbente): ${fornecedorAtual}${c.metadados?.fornecedor_cnpj ? ` — CNPJ ${c.metadados?.fornecedor_cnpj}` : ''}
+  • Objeto do contrato: ${det?.objeto_contrato || c.objeto || 'N/D'}
+  • Valor do contrato: ${formatarValor(getValorContrato(c))}${det?.valor_mensal_estimado ? ` (~${formatarValor(det.valor_mensal_estimado)}/mês)` : ''}
+  • Vigência: ${det?.vigencia_inicio ? formatarData(det.vigencia_inicio) : 'N/D'} → ${formatarData(c.data_vigencia_fim)}${det?.duracao_meses ? ` (${det.duracao_meses} meses)` : ''}
+  • Assinatura: ${det?.data_assinatura ? formatarData(det.data_assinatura) : 'N/D'}${det?.teve_aditivo ? ' | ⚠️ contrato já ADITIVADO (valor global > inicial)' : ''}
+
+  [2. EDITAL DE ORIGEM (ÍNTEGRA DA CONSULTA PNCP)]
+  ${dataTexto.texto || 'Detalhes não fornecidos pela API.'}
+
+  [3. INTELIGÊNCIA DE MERCADO E HISTÓRICO (PNCP)]
+  ${historicoPrecos}
+
+  ===================================================================
+  INSTRUÇÃO AO AVALIADOR: além da análise padrão, responda objetivamente —
+  o que o edital anterior exigiu (habilitação, atestados, prazos), qual preço
+  venceu, e o que a empresa do cliente precisa para bater o fornecedor atual
+  na renovação.
+  `;
+
+      onAnalyzeEdital(promptRenovacao, termo.trim(), {
+        cnpj: origem.cnpj,
+        ano: parseInt(origem.ano, 10),
+        sequencial: parseInt(origem.sequencial, 10),
+        uf: c.metadados?.uf || undefined,
+      });
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) return;
+      setErro(e.message || 'Erro ao carregar o edital de origem.');
+    } finally {
+      setAnalisandoNcp(null);
+    }
+  }, [onAnalyzeEdital, termo, uf]);
 
   const buscar = useCallback(async (
     ufOverride?: string,
@@ -642,7 +735,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                       </p>
 
                       {/* Fornecedor atual */}
-                      <div className={`flex items-center gap-2 mb-3 py-1.5 px-2.5 rounded-lg border ${
+                      <div className={`flex items-center gap-2 mb-2 py-1.5 px-2.5 rounded-lg border ${
                         fornecedor
                           ? 'bg-amber-50/60 border-amber-100'
                           : 'bg-slate-50 border-slate-100'
@@ -666,6 +759,35 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                         )}
                       </div>
 
+                      {/* Insights do contrato vigente (régua p/ competir na renovação) */}
+                      {(() => {
+                        const det = c.metadados?.contrato_detalhe;
+                        if (!det) return null;
+                        const chips: Array<{ icon: string; label: string; tone?: string }> = [];
+                        if (det.duracao_meses) chips.push({ icon: '⏱', label: `Contrato de ${det.duracao_meses} meses` });
+                        if (det.valor_mensal_estimado) chips.push({ icon: '📈', label: `~${formatarValor(det.valor_mensal_estimado)}/mês` });
+                        if (det.data_assinatura) chips.push({ icon: '✍️', label: `Assinado em ${formatarData(det.data_assinatura)}` });
+                        if (det.teve_aditivo) chips.push({ icon: '⚠️', label: 'Já aditivado', tone: 'amber' });
+                        if (det.tipo_contrato) chips.push({ icon: '📄', label: det.tipo_contrato });
+                        if (!chips.length) return null;
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                            {chips.map((chip, ci) => (
+                              <span
+                                key={ci}
+                                className={`inline-flex items-center gap-1 text-[9px] font-bold px-2 py-1 rounded-md border ${
+                                  chip.tone === 'amber'
+                                    ? 'bg-amber-50 border-amber-200 text-amber-700'
+                                    : 'bg-slate-50 border-slate-100 text-slate-500'
+                                }`}
+                              >
+                                <span>{chip.icon}</span> {chip.label}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+
                       {/* Linha inferior: metadados + ações */}
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                         <div className="flex flex-wrap items-center gap-3 text-[10px] font-medium text-slate-500">
@@ -679,6 +801,37 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
+                          {(() => {
+                            const origem = c.metadados?.compra_origem;
+                            if (!origem) return null;
+                            const urlEdital = `https://pncp.gov.br/app/editais/${origem.cnpj}/${origem.ano}/${parseInt(origem.sequencial, 10)}`;
+                            const chave = c.numeroControlePNCP || `${origem.cnpj}-${origem.sequencial}`;
+                            const carregando = analisandoNcp === chave;
+                            return (
+                              <>
+                                {onAnalyzeEdital && (
+                                  <button
+                                    onClick={() => analisarEditalOrigem(c)}
+                                    disabled={carregando || !!analisandoNcp}
+                                    title="Roda a análise Bawzi completa no edital que originou este contrato — exigências, preços vencedores e como bater o fornecedor atual."
+                                    className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {carregando
+                                      ? (<><Loader2 size={11} className="animate-spin" /> Carregando…</>)
+                                      : (<>🎯 Analisar edital de origem</>)}
+                                  </button>
+                                )}
+                                <a
+                                  href={urlEdital}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-slate-400 hover:bg-slate-50 text-slate-600 transition-all"
+                                >
+                                  Edital ↗
+                                </a>
+                              </>
+                            );
+                          })()}
                           {pncpUrl && (
                             <a
                               href={pncpUrl}
@@ -690,7 +843,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf }: 
                                   : 'bg-slate-50 border border-slate-200 hover:border-slate-400 hover:bg-slate-100 text-slate-600'
                               }`}
                             >
-                              Ver no PNCP ↗
+                              Contrato ↗
                             </a>
                           )}
                         </div>

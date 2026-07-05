@@ -109,6 +109,9 @@ export interface BusinessFitData {
   sinais_de_desalinhamento?: string[];
   termos_negocio?: string[];
   empresa?: string;
+  cnaes_secundarios?: { codigo?: string; descricao?: string }[];
+  cnae_correspondente?: string | null;
+  cnae_correspondente_descricao?: string | null;
 }
 
 export interface PegadinhaData {
@@ -116,6 +119,51 @@ export interface PegadinhaData {
   tipo?: string;
   descricao?: string;
   base_legal?: string;
+}
+
+// ─── Camada de qualidade (QA Engine) ─────────────────────────────────────────
+
+export interface FichaTecnicaItem {
+  campo: string;
+  valor: string;
+  trecho?: string;
+  /** 'verificado_texto' = confirmado por regex no texto | 'ia+texto' | 'ia' | 'ausente' */
+  fonte?: 'verificado_texto' | 'ia+texto' | 'ia' | 'ausente' | string;
+}
+
+export interface HabilitacaoItem {
+  categoria: 'juridica' | 'fiscal' | 'tecnica' | 'economico_financeira' | string;
+  categoria_label?: string;
+  exigencia: string;
+  criticidade: 'eliminatoria' | 'pontuavel' | 'comum' | string;
+  trecho?: string;
+  dica?: string;
+}
+
+export interface RedFlagItem {
+  tipo: string;
+  tipo_label?: string;
+  descricao: string;
+  gravidade: 'alta' | 'media' | 'baixa' | string;
+  trecho?: string;
+  base_legal?: string;
+  acao_sugerida?: 'impugnar' | 'esclarecer' | 'monitorar' | string;
+}
+
+export interface ScoreFactorItem {
+  fator: string;
+  pontos: number;
+  justificativa?: string;
+  trecho?: string;
+}
+
+export interface QualidadeExtracao {
+  cobertura_pct?: number;
+  nivel?: 'alta' | 'media' | 'baixa' | string;
+  campos_localizados?: string[];
+  campos_faltantes?: string[];
+  divergencias_ia_texto?: string[];
+  ajustes_congruencia?: string[];
 }
 
 export interface AnalysisResult {
@@ -172,6 +220,12 @@ export interface AnalysisResult {
   risks?: RiskItem[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   checklist?: any[];
+  ficha_tecnica?: FichaTecnicaItem[];
+  habilitacao_checklist?: HabilitacaoItem[];
+  red_flags?: RedFlagItem[];
+  score_breakdown?: ScoreFactorItem[];
+  oportunidades?: string[];
+  qualidade_extracao?: QualidadeExtracao;
   pricing_intelligence?: PricingIntelligence;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   orgao_risk?: any;
@@ -180,6 +234,7 @@ export interface AnalysisResult {
   pegadinha?: PegadinhaData;
   cockpit_status?: CockpitStatusMap;
   cockpit_updated_at?: string;
+  tracked_in_gestao?: boolean;
   avaliacao_parametros?: Array<{
     nome: string;
     peso: 'alto' | 'medio' | 'baixo';

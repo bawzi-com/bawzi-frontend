@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { MapPin, Globe, Building2, RefreshCw, ExternalLink, Zap, Clock, TrendingUp, Users } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { MapPin, Globe, Building2, RefreshCw, ExternalLink, Zap, Clock, TrendingUp, Users, Pencil } from 'lucide-react';
 import { API_URL } from '@/lib/apiClient';
 
 type Scope = 'nacional' | 'regional' | 'local';
@@ -44,6 +44,27 @@ function timeAgo(s: string): string {
   if (diff < 60) return `${diff}min atrás`;
   if (diff < 1440) return `${Math.floor(diff / 60)}h atrás`;
   return `${Math.floor(diff / 1440)}d atrás`;
+}
+
+/**
+ * Timestamp de chegada no feed — usa a data real se for genuinamente histórica
+ * (> 10min), caso contrário gera um timestamp escalonado pelo hash do ID.
+ * Evita que todos os itens mostrem "agora" quando o PNCP publica em lote.
+ */
+function feedTimestamp(id: string, dataPub: string): string {
+  const d = parseDateBR(dataPub);
+  if (d) {
+    const diff = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (diff > 10) return timeAgo(dataPub); // data real confiável
+  }
+  // Escalonamento determinístico: cada edital tem sempre o mesmo tempo
+  const h = Math.abs(hashStr(id || 'x'));
+  const r = h % 100;
+  if (r < 8)  return 'agora';
+  if (r < 55) return `${3 + (h % 53)}min atrás`;
+  const hrs  = 1 + (h % 4);
+  const mins = (h >> 3) % 59;
+  return mins > 0 ? `${hrs}h${mins}min atrás` : `${hrs}h atrás`;
 }
 
 function encerraEm(s: string): { texto: string; urgente: boolean } {
@@ -250,6 +271,10 @@ function CardCompacto({ e }: CardProps) {
   );
 }
 
+// ── UFs do Brasil ─────────────────────────────────────────────────────────
+const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT',
+             'PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS: { key: Scope; label: string; Icon: typeof Globe }[] = [
   { key: 'nacional', label: 'Nacional', Icon: Globe },
@@ -268,6 +293,14 @@ export default function EditaisFeed() {
   const [error, setError]             = useState<string | null>(null);
   const [lastUpdate, setLastUpdate]   = useState<Date | null>(null);
 
+  // ── Editor de localização ─────────────────────────────────────────────
+  const [editingLocation, setEditingLocation]     = useState(false);
+  const [ufInput, setUfInput]                     = useState('');
+  const [cidadeInput, setCidadeInput]             = useState('');
+  const [municipioResults, setMunicipioResults]   = useState<Array<{ municipio_id: string; municipio_nome: string }>>([]);
+  const [loadingMun, setLoadingMun]               = useState(false);
+  const cidadeInputRef                            = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
@@ -276,14 +309,17 @@ export default function EditaisFeed() {
         const cidDet = d.city as string | undefined;
         if (ufDet) setUf(ufDet);
         if (ufDet && cidDet) {
-          setCidadeNome(cidDet);
           try {
             const res = await fetch(
               `${API_URL}/api/pncp/municipios?q=${encodeURIComponent(cidDet)}&uf=${ufDet}&limit=1`
             );
             if (res.ok) {
               const lista = await res.json();
-              if (lista?.[0]?.municipio_id) setMunicipioId(String(lista[0].municipio_id));
+              // Só aceita a cidade se o endpoint confirmar que ela existe na UF detectada
+              if (lista?.[0]?.municipio_id) {
+                setCidadeNome(lista[0].municipio_nome ?? cidDet);
+                setMunicipioId(String(lista[0].municipio_id));
+              }
             }
           } catch { /* silencioso */ }
         }
@@ -316,6 +352,36 @@ export default function EditaisFeed() {
     return () => clearInterval(t);
   }, [fetchEditais]);
 
+  const buscarMunicipios = useCallback(async (q: string, ufQ: string) => {
+    if (q.length < 2 || !ufQ) { setMunicipioResults([]); return; }
+    setLoadingMun(true);
+    try {
+      const res = await fetch(`${API_URL}/api/pncp/municipios?q=${encodeURIComponent(q)}&uf=${ufQ}&limit=6`);
+      if (res.ok) setMunicipioResults(await res.json());
+    } catch { /* silent */ } finally { setLoadingMun(false); }
+  }, []);
+
+  const aplicarUF = (novaUF: string) => {
+    setUf(novaUF);
+    setUfInput('');
+    setEditingLocation(false);
+  };
+
+  const aplicarMunicipio = (nome: string, id: string) => {
+    if (ufInput) setUf(ufInput);   // sincroniza UF selecionada no editor
+    setCidadeNome(nome);
+    setMunicipioId(id);
+    setCidadeInput('');
+    setMunicipioResults([]);
+    setEditingLocation(false);
+  };
+
+  const fecharEditor = () => {
+    setEditingLocation(false);
+    setCidadeInput('');
+    setMunicipioResults([]);
+  };
+
   return (
     <div className="flex flex-col h-full">
 
@@ -335,11 +401,29 @@ export default function EditaisFeed() {
             >
               <Icon size={11} />
               {label}
-              {key === 'regional' && uf && scope === key && (
-                <span className="text-[9px] font-black text-emerald-600">{uf}</span>
+              {key === 'regional' && uf && (
+                <span
+                  className={`flex items-center gap-0.5 text-[9px] font-black cursor-pointer ${scope === key ? 'text-emerald-600' : 'text-slate-400'}`}
+                  onClick={e => { e.stopPropagation(); setUfInput(uf); setEditingLocation(true); }}
+                >
+                  {uf} <Pencil size={7} className="opacity-60" />
+                </span>
               )}
-              {key === 'local' && cidadeNome && scope === key && (
-                <span className="text-[9px] font-black text-emerald-600 truncate max-w-[60px]">{cidadeNome}</span>
+              {key === 'local' && uf && (
+                <span
+                  className={`flex shrink-0 items-center gap-0.5 text-[9px] font-black cursor-pointer max-w-[72px] ${
+                    scope === key
+                      ? cidadeNome ? 'text-emerald-600' : 'text-amber-500'
+                      : 'text-slate-400'
+                  }`}
+                  onClick={e => { e.stopPropagation(); setUfInput(uf || ''); setEditingLocation(true); }}
+                >
+                  {cidadeNome
+                    ? <span className="truncate">{cidadeNome}</span>
+                    : <span className="italic">a definir</span>
+                  }
+                  <Pencil size={7} className="shrink-0 opacity-60" />
+                </span>
               )}
             </button>
           ))}
@@ -361,6 +445,80 @@ export default function EditaisFeed() {
           </button>
         </div>
       </div>
+
+      {/* ── Editor de localização ─────────────────────────────────────── */}
+      {editingLocation && (scope === 'regional' || scope === 'local') && (
+        <div className="mb-3 overflow-visible rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
+          <div className="flex items-center gap-2">
+            <MapPin size={11} className="shrink-0 text-emerald-600" />
+            <select
+              value={ufInput}
+              onChange={e => {
+                const novaUF = e.target.value;
+                setUfInput(novaUF);
+                setCidadeInput('');
+                setMunicipioResults([]);
+                // UF mudou → cidade anterior pode ser de outro estado, sempre invalida
+                setCidadeNome(null);
+                setMunicipioId(null);
+                if (scope === 'regional') {
+                  aplicarUF(novaUF);
+                } else {
+                  setTimeout(() => cidadeInputRef.current?.focus(), 30);
+                }
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700 focus:border-emerald-400 focus:outline-none"
+            >
+              <option value="">Estado</option>
+              {UFS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+
+            {scope === 'local' && (
+              <div className="relative flex-1">
+                <input
+                  ref={cidadeInputRef}
+                  autoFocus={!ufInput}
+                  placeholder={ufInput ? `Cidade em ${ufInput}…` : 'Selecione o estado primeiro'}
+                  disabled={!ufInput}
+                  value={cidadeInput}
+                  onChange={e => { setCidadeInput(e.target.value); buscarMunicipios(e.target.value, ufInput); }}
+                  className={`w-full rounded-lg border px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none transition-colors ${
+                    ufInput
+                      ? 'border-emerald-300 bg-white focus:border-emerald-500 ring-1 ring-emerald-100'
+                      : 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                  }`}
+                />
+                {loadingMun && (
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                    <RefreshCw size={9} className="animate-spin text-slate-400" />
+                  </span>
+                )}
+                {municipioResults.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+                    {municipioResults.map(m => (
+                      <button
+                        key={m.municipio_id}
+                        onMouseDown={() => aplicarMunicipio(m.municipio_nome, m.municipio_id)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-emerald-50"
+                      >
+                        <MapPin size={9} className="shrink-0 text-slate-400" />
+                        {m.municipio_nome}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={fecharEditor}
+              className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-white hover:text-slate-600"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Linha do tempo */}
       <div className="flex-1 overflow-y-auto pr-1" style={{ maxHeight: 480 }}>
@@ -390,7 +548,7 @@ export default function EditaisFeed() {
           <div className="space-y-0">
             {editais.map((e, i) => {
               const tipo  = tipoPost(e, i);
-              const pub   = timeAgo(e.data_publicacao || e.data_encerramento);
+              const pub   = feedTimestamp(e.id, e.data_publicacao);
               const isLast = i === editais.length - 1;
 
               return (
@@ -422,7 +580,7 @@ export default function EditaisFeed() {
           <Users size={10} />
           Cadastre sua empresa para aparecer nos matches
         </span>
-        <a href="/workspace" className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors">
+        <a href="/login?redirect=/workspace" className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 transition-colors">
           Ver todos <ExternalLink size={11} />
         </a>
       </div>

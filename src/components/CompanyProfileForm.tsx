@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 import { setActiveCompanyContext } from '@/lib/activeContext';
 import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
-import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
+import CompanyLookup, { isSituacaoAtiva, type CompanyLookupResult } from './CompanyLookup';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
   const router = useRouter();
@@ -26,6 +26,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     nome_fantasia: string; website: string;
     capital_social: string; cnae_principal: string; cnae_descricao: string;
     cnaes_secundarios: { codigo: string; descricao: string }[];
+    situacao_cadastral: string;
     uf: string; municipio: string;
     core_business: string;
     produtos_servicos: string[];
@@ -39,6 +40,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
     nome_fantasia: '', website: '',
     cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [],
+    situacao_cadastral: '',
     uf: '', municipio: '',
     core_business: '', produtos_servicos: [], regioes_atendidas: [],
     capacidade_operacional: '', margem_minima_pct: '', limite_contrato: '',
@@ -97,7 +99,9 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     setFormData({
       _id: '', cnpj: '', razao_social: '', enquadramento: '', capital_social: '',
       nome_fantasia: '', website: '',
-      cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [], uf: '', municipio: '',
+      cnae_principal: '', cnae_descricao: '', cnaes_secundarios: [],
+      situacao_cadastral: '',
+      uf: '', municipio: '',
       core_business: '', produtos_servicos: [], regioes_atendidas: [],
       capacidade_operacional: '', margem_minima_pct: '', limite_contrato: '',
       historico_vitorias: '', observacoes_operacionais: '',
@@ -119,6 +123,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       cnae_principal: emp.cnae_principal || '',
       cnae_descricao: emp.cnae_descricao || '',
       cnaes_secundarios: emp.cnaes_secundarios || [],
+      situacao_cadastral: emp.situacao_cadastral || '',
       uf: emp.uf || '',
       municipio: emp.municipio || '',
       core_business: emp.core_business || emp.descricao || '',
@@ -162,10 +167,18 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
         cnae_principal: data.cnae_principal || '',
         cnae_descricao: data.cnae_descricao || '',
         cnaes_secundarios: data.cnaes_secundarios || [],
+        situacao_cadastral: data.situacao_cadastral || '',
         uf: data.uf || '',
         municipio: data.municipio || '',
       });
-            
+
+      if (data.situacao_cadastral && !isSituacaoAtiva(data.situacao_cadastral)) {
+        setMessage({
+          type: 'error',
+          text: `Este CNPJ consta como "${data.situacao_cadastral}" na Receita Federal — não será possível confirmar a monitorização até regularizar ou corrigir o número.`,
+        });
+      }
+
     } catch (error: any) {
       if (error instanceof SessionExpiredError) { clearSession(); return; }
       setMessage({ type: 'error', text: error.message });
@@ -178,7 +191,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     const cnpjLimpo = String(company.cnpj || '').replace(/\D/g, '');
     let enriched = company;
 
-    if (cnpjLimpo.length === 14 && (!company.cnae_principal || !company.cnae_descricao)) {
+    if (cnpjLimpo.length === 14 && (!company.cnae_principal || !company.cnae_descricao || !company.situacao_cadastral)) {
       setIsSearchingCnpj(true);
       try {
         const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
@@ -202,9 +215,18 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       cnae_principal: enriched.cnae_principal || prev.cnae_principal,
       cnae_descricao: enriched.cnae_descricao || prev.cnae_descricao,
       cnaes_secundarios: enriched.cnaes_secundarios || prev.cnaes_secundarios,
+      situacao_cadastral: enriched.situacao_cadastral || prev.situacao_cadastral,
       uf: enriched.uf || prev.uf,
       municipio: enriched.municipio || prev.municipio,
     }));
+
+    if (enriched.situacao_cadastral && !isSituacaoAtiva(enriched.situacao_cadastral)) {
+      setMessage({
+        type: 'error',
+        text: `Este CNPJ consta como "${enriched.situacao_cadastral}" na Receita Federal — não será possível confirmar a monitorização até regularizar ou corrigir o número.`,
+      });
+      return;
+    }
 
     setMessage({
       type: 'success',
@@ -219,6 +241,13 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     const cnpjLimpo = formData.cnpj.replace(/\D/g, '');
     if (cnpjLimpo.length !== 14) {
       setMessage({ type: 'error', text: 'Informe o CNPJ para confirmar a monitorização da empresa.' });
+      return;
+    }
+    if (formData.situacao_cadastral && !isSituacaoAtiva(formData.situacao_cadastral)) {
+      setMessage({
+        type: 'error',
+        text: `Este CNPJ consta como "${formData.situacao_cadastral}" na Receita Federal e não pode ser cadastrado para monitorização.`,
+      });
       return;
     }
     setIsLoading(true);
@@ -515,8 +544,19 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
                   <Search size={18} className={isSearchingCnpj ? 'animate-spin' : ''} />
                 </button>
               </div>
+              {formData.situacao_cadastral && (
+                isSituacaoAtiva(formData.situacao_cadastral) ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-emerald-700">
+                    <CheckCircle2 size={12} /> Situação cadastral: ativa na Receita Federal
+                  </p>
+                ) : (
+                  <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-red-600">
+                    <AlertTriangle size={12} /> Situação cadastral: {formData.situacao_cadastral} — não é possível monitorizar este CNPJ
+                  </p>
+                )
+              )}
             </div>
-            
+
             <div className="w-full">
               <label className={labelStyle}>Razão Social</label>
               <div className="relative">
@@ -682,7 +722,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
           </div>
 
           <div className="flex gap-3 mt-8">
-            <button type="submit" disabled={isLoading} className="flex-1 rounded-lg bg-slate-950 px-8 py-3.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60">
+            <button type="submit" disabled={isLoading || (!!formData.situacao_cadastral && !isSituacaoAtiva(formData.situacao_cadastral))} className="flex-1 rounded-lg bg-slate-950 px-8 py-3.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-60">
               {isLoading ? 'A Processar...' : 'Confirmar Monitorização ↗'}
             </button>
           </div>

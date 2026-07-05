@@ -40,6 +40,24 @@ import {
   type DecisionQueueTask,
 } from '@/lib/decisionQueue';
 
+type LearningStats = {
+  go: {
+    total_com_resultado: number;
+    vitorias: number;
+    derrotas: number;
+    taxa_acerto_pct: number | null;
+    amostra_suficiente: boolean;
+  };
+  no_go: {
+    total_participou_mesmo_assim: number;
+    alertas_validados: number;
+    alertas_nao_validados: number;
+    taxa_alerta_validado_pct: number | null;
+    amostra_suficiente: boolean;
+  };
+  amostra_minima: number;
+};
+
 type NoticeState = { type: 'success' | 'error' | 'info'; message: string } | null;
 type VerdictFilter = 'all' | 'go' | 'attention' | 'nogo';
 type UrgencyFilter = 'all' | 'late' | 'urgent' | 'week';
@@ -70,6 +88,7 @@ export default function DecisionManagementTab({
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [companies, setCompanies] = useState<Empresa[]>([]);
+  const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
@@ -111,9 +130,13 @@ export default function DecisionManagementTab({
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [historyRes, workspaceRes] = await Promise.all([
+        const [historyRes, workspaceRes, learningStatsRes] = await Promise.all([
           apiFetch(`${API_URL}/api/analyses/history`),
           apiFetch(`${API_URL}/api/workspace/details`),
+          apiFetch(`${API_URL}/api/analyses/learning-stats`).catch((err) => {
+            console.warn('[learning-stats] falha na requisição:', err);
+            return null;
+          }),
         ]);
 
         const data = await historyRes.json();
@@ -126,6 +149,13 @@ export default function DecisionManagementTab({
             ? workspaceData.companies
             : [];
           setCompanies(workspaceCompanies.filter((company: Empresa) => company?.cnpj));
+        }
+
+        if (learningStatsRes?.ok) {
+          const stats = await learningStatsRes.json().catch(() => null);
+          if (stats) setLearningStats(stats);
+        } else if (learningStatsRes) {
+          console.warn(`[learning-stats] resposta não-ok: ${learningStatsRes.status}`);
         }
       } catch (err) {
         if (err instanceof SessionExpiredError) return;
@@ -705,6 +735,8 @@ export default function DecisionManagementTab({
             })}
           </div>
         </div>
+
+        <LearningStatsBanner stats={learningStats} />
 
         <div className="border-t border-slate-100 bg-white p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -1384,6 +1416,71 @@ function OperationalSummaryModal({
             Abrir laudo
             <ArrowRight size={15} />
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Taxa de acerto real — cruza veredito x resultado registrado pelo usuário.
+// É prova baseada em dado (não a IA reavaliando a si mesma), por isso fica
+// visível tanto aqui na gestão quanto no Painel de Decisão de cada análise.
+function LearningStatsBanner({ stats }: { stats: LearningStats | null }) {
+  if (!stats) return null;
+  const { go, no_go: noGo, amostra_minima: amostraMinima } = stats;
+
+  if (go.total_com_resultado === 0 && noGo.total_participou_mesmo_assim === 0) {
+    return (
+      <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4 md:px-7">
+        <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          <Trophy size={12} className="text-slate-400" />
+          Taxa de acerto real — ainda sem resultados registrados
+        </p>
+        <p className="mt-1.5 text-xs font-medium text-slate-500">
+          Assim que você registrar "Ganhou" ou "Perdeu" em pelo menos {amostraMinima} disputas (botão "Registrar resultado" em cada card), essa métrica passa a comparar o veredito da Bawzi com o resultado real.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4 md:px-7">
+      <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+        <Trophy size={12} className="text-emerald-600" />
+        Taxa de acerto real — veredito Bawzi × resultado registrado
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quando dissemos GO</p>
+          {go.amostra_suficiente ? (
+            <>
+              <p className="mt-1 text-2xl font-black text-emerald-700">{go.taxa_acerto_pct}%</p>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                de vitória em {go.total_com_resultado} disputa{go.total_com_resultado === 1 ? '' : 's'} com resultado registrado
+                ({go.vitorias} ganha{go.vitorias === 1 ? '' : 's'}, {go.derrotas} perdida{go.derrotas === 1 ? '' : 's'})
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs font-semibold text-slate-400">
+              Ainda sem amostra suficiente ({go.total_com_resultado}/{amostraMinima} resultados registrados) — registre o resultado das disputas no Cockpit para ativar essa métrica.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quando dissemos No-Go (e participou mesmo assim)</p>
+          {noGo.amostra_suficiente ? (
+            <>
+              <p className="mt-1 text-2xl font-black text-amber-700">{noGo.taxa_alerta_validado_pct}%</p>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                dos alertas se confirmaram (perdeu em {noGo.alertas_validados} de {noGo.total_participou_mesmo_assim} casos onde participou contrariando o alerta)
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-xs font-semibold text-slate-400">
+              Ainda sem amostra suficiente ({noGo.total_participou_mesmo_assim}/{amostraMinima} resultados registrados) para calibrar os alertas de No-Go.
+            </p>
+          )}
         </div>
       </div>
     </div>

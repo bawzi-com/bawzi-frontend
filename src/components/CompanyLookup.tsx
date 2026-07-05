@@ -18,8 +18,14 @@ export type CompanyLookupResult = {
   cnaes_secundarios?: { codigo: string; descricao: string }[];
   uf?: string;
   municipio?: string;
+  situacao_cadastral?: string;
   source?: 'receita' | 'workspace' | 'domain' | string;
 };
+
+const normalizeStatus = (value?: string) =>
+  (value || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toUpperCase();
+
+export const isSituacaoAtiva = (value?: string) => !value || normalizeStatus(value) === 'ATIVA';
 
 type CompanyLookupProps = {
   label?: string;
@@ -162,6 +168,11 @@ export default function CompanyLookup({
                 {(company.cnae_descricao || company.municipio || company.uf) && (
                   <p className="mt-1 line-clamp-1 text-xs font-medium text-slate-500">
                     {[company.cnae_descricao, company.municipio, company.uf].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {company.situacao_cadastral && !isSituacaoAtiva(company.situacao_cadastral) && (
+                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-red-600">
+                    ⚠ {company.situacao_cadastral} na Receita Federal
                   </p>
                 )}
               </div>
