@@ -19,6 +19,7 @@ import {
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
+  ListOrdered, LayoutDashboard,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -52,6 +53,10 @@ interface AnalysisResultsProps {
   onCockpitStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
   /** Abre a aba Capital com o valor do edital pré-preenchido */
   onGoToCapital?: (valor: number) => void;
+  /** Avisa quem renderiza a lista (ex.: painel Gestão) quando o acompanhamento muda,
+   * já que o toggle é local a este componente e o "+ Gestão"/"Remover" precisa
+   * refletir imediatamente numa lista filtrada por tracked_in_gestao. */
+  onTrackedChange?: (tracked: boolean) => void;
 }
 
 type LearningStats = {
@@ -91,12 +96,13 @@ export default function AnalysisResults({
   onUpgradeClick,
   onCockpitStatusChange,
   onGoToCapital,
+  onTrackedChange,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
   const [tracked, setTracked] = useState<boolean>(!!result.tracked_in_gestao);
   const [trackSaving, setTrackSaving] = useState(false);
-  const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('veredito');
+  const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('panorama');
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   // Derived: concorrentes step is active when that tab is selected
   const activeStep = activeTab === 'concorrentes' ? 'concorrentes' : activeAnaliseStep;
@@ -141,6 +147,7 @@ export default function AnalysisResults({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ track: next }),
       });
+      onTrackedChange?.(next);
     } catch {
       setTracked(!next);
     } finally {
@@ -317,6 +324,18 @@ export default function AnalysisResults({
         {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
 
+          {/* ── 00 Panorama ── */}
+          {activeStep === 'panorama' && (
+            <div id="section-panorama" className="scroll-mt-24 space-y-8">
+              <ExpiredBanner result={liveResult} />
+
+              {/* Início-meio-fim antes de qualquer detalhe — quem só quer o
+                  quadro geral não precisa abrir as outras etapas para
+                  entender a história inteira. */}
+              <JourneySummary result={liveResult} onStepClick={handleStepClick} />
+            </div>
+          )}
+
           {/* ── 01 Veredito ── */}
           {activeStep === 'veredito' && (
             <div className="space-y-8">
@@ -378,35 +397,76 @@ export default function AnalysisResults({
 
           {/* ── 03 SWOT & Riscos ── */}
           {activeStep === 'analise' && (
-            <div id="section-analise" className="scroll-mt-24 space-y-8">
-              <RedFlagsSection result={liveResult} />
-              <SwotSection result={liveResult} />
-              <HabilitacaoSection result={liveResult} />
-              <RisksSection result={liveResult} />
+            <div id="section-analise" className="scroll-mt-24">
+              {(() => {
+                const item = buildJourneySummary(liveResult).find((i) => i.key === 'analise')!;
+                const tone: TimelineTone =
+                  item.status === 'alerta' ? 'red'
+                  : item.status === 'atencao' ? 'amber'
+                  : item.status === 'ok' ? 'emerald'
+                  : 'slate';
+                return (
+                  <StepHeadline
+                    tone={tone}
+                    eyebrow="SWOT & Riscos"
+                    headline={item.headline}
+                    toggleLabel="Ver detalhe completo (SWOT, riscos e habilitação)"
+                  >
+                    <RedFlagsSection result={liveResult} />
+                    <SwotSection result={liveResult} />
+                    <HabilitacaoSection result={liveResult} />
+                    <RisksSection result={liveResult} />
+                  </StepHeadline>
+                );
+              })()}
             </div>
           )}
 
           {/* ── 04 Jurídico ── */}
           {activeStep === 'juridico' && (
-            <div className="space-y-8">
-              <div id="section-juridico" className="scroll-mt-24">
-                <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
-              </div>
-              <div className="pt-6 border-t border-slate-100 print:hidden">
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
-                  Raciocínio Estratégico da IA
-                </h4>
-                <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
-                  {liveResult.rationale || liveResult.recommendation || 'Sem dados estratégicos.'}
-                </div>
-              </div>
+            <div id="section-juridico" className="scroll-mt-24">
+              {(() => {
+                const item = buildJourneySummary(liveResult).find((i) => i.key === 'juridico')!;
+                const tone: TimelineTone =
+                  item.status === 'alerta' ? 'red'
+                  : item.status === 'atencao' ? 'amber'
+                  : item.status === 'ok' ? 'emerald'
+                  : 'slate';
+                return (
+                  <StepHeadline
+                    tone={tone}
+                    eyebrow="Jurídico"
+                    headline={item.headline}
+                    toggleLabel="Ver parecer completo e raciocínio da IA"
+                  >
+                    <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
+                    <div className="pt-6 border-t border-slate-100 print:hidden">
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
+                        Raciocínio Estratégico da IA
+                      </h4>
+                      <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
+                        {liveResult.rationale || liveResult.recommendation || 'Sem dados estratégicos.'}
+                      </div>
+                    </div>
+                  </StepHeadline>
+                );
+              })()}
             </div>
           )}
 
           {/* ── 05 Concorrentes ── */}
           {activeStep === 'concorrentes' && (
             <div className="animate-in fade-in zoom-in-95 duration-300">
+              {(() => {
+                const item = buildJourneySummary(liveResult).find((i) => i.key === 'concorrentes')!;
+                const tone: TimelineTone =
+                  item.status === 'alerta' ? 'red'
+                  : item.status === 'atencao' ? 'amber'
+                  : item.status === 'ok' ? 'emerald'
+                  : 'slate';
+                return <StepHeadline tone={tone} eyebrow="Concorrentes" headline={item.headline} />;
+              })()}
               <PremiumLock
                 isLocked={Math.max(getCachedTier(userTier), currentTier) < 2}
                 featureTitle="Radar de Concorrentes"
@@ -427,7 +487,16 @@ export default function AnalysisResults({
           )}
 
           {/* ── 06 Cockpit ── */}
-          {activeStep === 'cockpit' && (
+          {activeStep === 'cockpit' && (() => {
+            // O painel Gestão (menu lateral) é onde o acompanhamento realmente
+            // acontece — é um recurso Nível 4. Quem ainda não tem acesso é
+            // levado para o upgrade em vez de um link que não leva a lugar nenhum.
+            const gestaoDisponivel = Math.max(getCachedTier(userTier), currentTier) >= 4;
+            const onGoToGestao = () => {
+              if (gestaoDisponivel) onSetActiveTab('gestao');
+              else onUpgradeClick();
+            };
+            return (
             <div className="space-y-6">
               <DecisionCockpit
                 result={liveResult}
@@ -437,6 +506,8 @@ export default function AnalysisResults({
                 tracked={tracked}
                 trackSaving={trackSaving}
                 onToggleTracking={toggleTracking}
+                onGoToGestao={onGoToGestao}
+                gestaoDisponivel={gestaoDisponivel}
               />
               <EsteiraCTA
                 result={liveResult}
@@ -445,6 +516,8 @@ export default function AnalysisResults({
                 onToggle={toggleTracking}
                 analysisId={analysisId}
                 token={token}
+                onGoToGestao={onGoToGestao}
+                gestaoDisponivel={gestaoDisponivel}
               />
               <PremiumLock
                 isLocked={currentTier < 4}
@@ -455,7 +528,8 @@ export default function AnalysisResults({
                 <PdfExportCard onExportPDF={onExportPDF} />
               </PremiumLock>
             </div>
-          )}
+            );
+          })()}
 
         </div>
 
@@ -688,7 +762,8 @@ function DecisionSnapshot({
             )}
             {businessFit.cnaesSecundarios.length > 0 && (
               <details className="mt-3 group">
-                <summary className="cursor-pointer list-none text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700">
+                  <ChevronDown size={12} className="shrink-0 transition-transform group-open:rotate-180" />
                   Ver {businessFit.cnaesSecundarios.length} CNAE(s) secundário(s) da empresa
                 </summary>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -710,67 +785,71 @@ function DecisionSnapshot({
           </div>
         )}
 
+        {/* ── Evidências, impedimentos, lacunas e base da confiança ficam
+             atrás de um toggle: a síntese acima já resume o essencial, e as
+             próximas ações (abaixo) já dizem o que fazer. Isso evita que o
+             veredito pareça "cheio" antes mesmo do usuário decidir explorar. */}
+        <details className="group mt-5">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-[11px] font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
+            <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
+            Ver evidências, impedimentos, lacunas e base da confiança
+          </summary>
+
         {/* ── Evidências ────────────────────────────────────────────────── */}
         {evidenceItems.length > 0 && (
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
             <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
               <Shield size={14} className={verdict.text} />
               Por que a decisão é segura
             </p>
-            <div className="space-y-3">
-              {evidenceItems.map((evidence, index) => (
-                <div key={`${evidence.titulo}-${index}`} className="rounded-xl border border-slate-200 bg-white p-4">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
-                      {evidence.categoria || 'Evidência'}
-                    </span>
-                    {(evidence.referencia || evidence.fonte) && (
-                      <span className="inline-block max-w-[20rem] truncate rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400 ring-1 ring-slate-200">
-                        {evidence.referencia || evidence.fonte}
-                      </span>
+            <Timeline
+              items={evidenceItems.map((evidence, index) => ({
+                key: `${evidence.titulo}-${index}`,
+                tone: 'slate',
+                icon: <span className="text-[10px] font-black">{index + 1}</span>,
+                eyebrow: evidence.categoria || 'Evidência',
+                badge: (evidence.referencia || evidence.fonte)
+                  ? { label: evidence.referencia || evidence.fonte, tone: 'slate' }
+                  : undefined,
+                title: evidence.titulo,
+                description: (
+                  <>
+                    {evidence.detalhe && <span className="block">{evidence.detalhe}</span>}
+                    {evidence.trecho && (
+                      <blockquote className="mt-2 rounded-lg border-l-4 border-slate-300 bg-white px-3 py-2 text-[11px] italic text-slate-600">
+                        "{evidence.trecho}"
+                      </blockquote>
                     )}
-                  </div>
-                  <p className="mt-2 text-sm font-black leading-snug text-slate-900">{evidence.titulo}</p>
-                  {evidence.detalhe && (
-                    <p className="mt-1.5 text-xs font-semibold leading-relaxed text-slate-600">{evidence.detalhe}</p>
-                  )}
-                  {evidence.trecho && (
-                    <blockquote className="mt-3 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
-                      "{evidence.trecho}"
-                    </blockquote>
-                  )}
-                  {evidence.impacto && (
-                    <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] font-bold text-slate-500">
-                      Impacto: {evidence.impacto}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
+                    {evidence.impacto && (
+                      <span className="mt-1.5 block text-[11px] font-bold text-slate-500">Impacto: {evidence.impacto}</span>
+                    )}
+                  </>
+                ),
+              }))}
+            />
           </div>
         )}
 
-        {/* ── Impedimentos / Motivos / O que mudaria ────────────────────── */}
-        <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-          <div className={`grid divide-y divide-slate-200 md:divide-x md:divide-y-0 ${decisionColsClass}`}>
-            {decisionColumns.map(({ label, Icon: ColumnIcon, items, tone }) => (
-              <div key={label} className="bg-white px-5 py-5">
-                <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <ColumnIcon size={14} className={tone} />
-                  {label}
-                </p>
-                <div className="space-y-2.5">
-                  {items.map((item, index) => (
-                    <div key={`${item}-${index}`} className="flex gap-2.5">
-                      <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${verdict.dot}`} />
-                      <p className="text-sm font-semibold leading-relaxed text-slate-600">{item}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+        {/* ── Impedimentos / Motivos / O que mudaria: uma única sequência,
+             ordenada por prioridade, para dar leitura clara de cima a baixo */}
+        {decisionColumns.length > 0 && (
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-5">
+            <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <ListOrdered size={14} className="text-slate-400" />
+              Leitura da decisão, em ordem
+            </p>
+            <Timeline
+              items={decisionColumns.flatMap(({ label, items, tone: colTone }) =>
+                items.map((item, index) => ({
+                  key: `${label}-${item}-${index}`,
+                  tone: (colTone.includes('red') ? 'red' : colTone.includes('amber') ? 'amber' : 'slate') as TimelineTone,
+                  eyebrow: label,
+                  title: item,
+                }))
+              )}
+            />
           </div>
-        </div>
+        )}
 
         {/* ── Lacunas ───────────────────────────────────────────────────── */}
         {gapItems.length > 0 && (
@@ -780,65 +859,69 @@ function DecisionSnapshot({
               Lacunas da análise
               <span className="font-medium normal-case tracking-normal text-slate-400">· o que ainda não está coberto acima</span>
             </p>
-            <div className="space-y-2">
-              {gapItems.slice(0, 4).map((item, index) => (
-                <div key={`${item}-${index}`} className="flex gap-2.5 rounded-xl bg-slate-50 px-4 py-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                  <p className="text-sm font-semibold leading-relaxed text-slate-600">{item}</p>
-                </div>
-              ))}
-            </div>
+            <Timeline
+              dense
+              items={gapItems.slice(0, 4).map((item, index) => ({
+                key: `${item}-${index}`,
+                tone: 'amber',
+                title: item,
+              }))}
+            />
           </div>
         )}
 
-        {/* ── Base da confiança (compacta, horizontal) ──────────────────── */}
+        {/* ── Base da confiança ──────────────────────────────────────────── */}
         {decision.fatores_confianca.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
             <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
               <FileText size={14} className="text-slate-400" />
               Base da confiança
             </p>
-            <div className="flex flex-wrap gap-2">
-              {decision.fatores_confianca.slice(0, 5).map((factor, index) => {
+            <Timeline
+              dense
+              items={decision.fatores_confianca.slice(0, 5).map((factor, index) => {
                 const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
-                return (
-                  <div key={`${factor.criterio}-${index}`} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                    <p className="text-xs font-bold text-slate-800">{factor.criterio}</p>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${status.pill}`}>
-                      {status.label}
-                    </span>
-                  </div>
-                );
+                const tone: TimelineTone =
+                  factor.status === 'confirmado' ? 'emerald'
+                  : factor.status === 'risco' ? 'red'
+                  : factor.status === 'ausente' ? 'slate'
+                  : 'amber';
+                return {
+                  key: `${factor.criterio}-${index}`,
+                  tone,
+                  title: factor.criterio,
+                  badge: { label: status.label, tone },
+                  description: factor.detalhe,
+                };
               })}
-            </div>
+            />
           </div>
         )}
+        </details>
 
         {/* ── Próxima ação ──────────────────────────────────────────────── */}
         {decision.proximas_acoes.length > 0 && (
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="flex-1 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <ClipboardList size={12} className="mr-1.5 inline" />
-                {decision.proximas_acoes[0].prazo || 'Próxima ação'}
-              </p>
-              <p className="mt-1 text-sm font-black leading-snug text-slate-900">
-                {decision.proximas_acoes[0].acao}
-              </p>
-              {(decision.proximas_acoes[0].responsavel || decision.proximas_acoes[0].resultado_esperado) && (
-                <p className="mt-1.5 text-xs font-medium leading-relaxed text-slate-500">
-                  {decision.proximas_acoes[0].responsavel ? `${decision.proximas_acoes[0].responsavel}: ` : ''}
-                  {decision.proximas_acoes[0].resultado_esperado}
-                </p>
-              )}
-            </div>
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <ClipboardList size={14} className="text-slate-400" />
+              Próximas ações, em ordem
+            </p>
+            <Timeline
+              items={decision.proximas_acoes.slice(0, 3).map((acao, index) => ({
+                key: `${acao.acao}-${index}`,
+                tone: 'blue' as TimelineTone,
+                hollow: index > 0,
+                eyebrow: acao.prazo || undefined,
+                title: acao.acao,
+                description: [acao.responsavel, acao.resultado_esperado].filter(Boolean).join(' · ') || undefined,
+              }))}
+            />
             <button
               type="button"
               onClick={() => document.getElementById('cockpit-pos-veredito')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className={`shrink-0 rounded-2xl px-5 py-4 text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
+              className={`mt-4 w-full rounded-xl px-5 py-3 text-center text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
             >
-              Plano completo no Cockpit<br />
-              <span className="font-normal opacity-80">({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓</span>
+              Ver plano completo no Cockpit ({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓
             </button>
           </div>
         )}
@@ -1071,6 +1154,8 @@ function DecisionCockpit({
   tracked,
   trackSaving,
   onToggleTracking,
+  onGoToGestao,
+  gestaoDisponivel,
 }: {
   result: AnalysisResult;
   analysisId: string | null;
@@ -1079,6 +1164,8 @@ function DecisionCockpit({
   tracked: boolean;
   trackSaving: boolean;
   onToggleTracking: () => void;
+  onGoToGestao: () => void;
+  gestaoDisponivel: boolean;
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
@@ -1191,6 +1278,13 @@ function DecisionCockpit({
                 ? 'Marque quando as condições mudarem e reprocesse a análise.'
                 : 'Preencha responsável e prazo para cada passo — os dados ficam salvos no histórico desta análise.'}
             </p>
+            <p className="mt-1.5 text-[11px] font-semibold text-slate-400">
+              Ative "+ Gestão" para acompanhar isto no{' '}
+              <button type="button" onClick={onGoToGestao} className="font-black text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+                painel Gestão, no menu lateral
+              </button>
+              {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
+            </p>
           </div>
 
           {/* Progresso + toggle Gestão — unified card */}
@@ -1228,6 +1322,15 @@ function DecisionCockpit({
               )}
               {tracked ? '✓ Em Gestão' : '+ Gestão'}
             </button>
+            {tracked && (
+              <button
+                type="button"
+                onClick={onGoToGestao}
+                className="flex w-full items-center justify-center gap-1 border-t border-emerald-100 bg-emerald-50/60 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                {gestaoDisponivel ? 'Ver no painel →' : 'Desbloquear painel →'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1245,18 +1348,20 @@ function DecisionCockpit({
         )}
       </div>
 
-      {/* Lista de tarefas — coluna única, numerada */}
-      <div className="divide-y divide-slate-100 px-6">
+      {/* Lista de tarefas — coluna única, numerada e conectada por uma linha
+          vertical atrás dos checkboxes, para reforçar a ordem de execução */}
+      <div className="relative px-6">
+        <div className="pointer-events-none absolute bottom-6 left-[34px] top-6 w-px bg-slate-200" aria-hidden="true" />
         {tasks.map((task, idx) => {
           const isDone = !!statusMap[task.id]?.done;
           const isOpen = expanded.has(task.id);
           const hasCustomData = !!(statusMap[task.id]?.responsavel || statusMap[task.id]?.prazo || statusMap[task.id]?.nota);
           return (
-            <div key={task.id} className={`py-4 transition-all ${isDone ? 'opacity-60' : ''}`}>
+            <div key={task.id} className={`relative border-b border-slate-100 py-4 last:border-b-0 transition-all ${isDone ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-4">
 
-                {/* Número + checkbox */}
-                <div className="flex shrink-0 flex-col items-center gap-1.5 pt-0.5">
+                {/* Número + checkbox: nó da linha do tempo */}
+                <div className="relative z-10 flex shrink-0 flex-col items-center gap-1.5 rounded-full bg-white pt-0.5">
                   <span className={`text-[10px] font-black tabular-nums ${isDone ? 'text-emerald-500' : 'text-slate-300'}`}>
                     {String(idx + 1).padStart(2, '0')}
                   </span>
@@ -2053,6 +2158,21 @@ function semaforoLabel(key: string) {
 
 const JOURNEY_STEPS = [
   {
+    key: 'panorama',
+    num: '00',
+    label: 'Panorama',
+    sublabel: 'A história em 1 minuto',
+    icon: LayoutDashboard,
+    tab: 'analise' as const,
+    sectionId: 'section-panorama',
+    activeBg: 'from-teal-500 to-cyan-600',
+    activeShadow: 'shadow-teal-500/25',
+    inactiveBg: 'bg-teal-50 hover:bg-teal-100',
+    inactiveBorder: 'border-teal-200',
+    inactiveIcon: 'text-teal-500',
+    inactiveLabel: 'text-teal-900',
+  },
+  {
     key: 'veredito',
     num: '01',
     label: 'Veredito',
@@ -2146,6 +2266,169 @@ const JOURNEY_STEPS = [
 
 type JourneyStepType = (typeof JOURNEY_STEPS)[number];
 
+// ─── Resumo da jornada: início-meio-fim em 6 linhas. Quem só quer o quadro
+// geral lê isto e já sabe a história inteira; quem precisa de detalhe clica
+// na linha e cai direto na etapa correspondente. ────────────────────────────
+
+type JourneySummaryStatus = 'ok' | 'atencao' | 'alerta' | 'pendente';
+
+type JourneySummaryItem = {
+  key: JourneyStepType['key'];
+  status: JourneySummaryStatus;
+  headline: string;
+};
+
+const JOURNEY_SUMMARY_TEXT: Record<JourneySummaryStatus, string> = {
+  ok: 'text-emerald-700',
+  atencao: 'text-amber-700',
+  alerta: 'text-red-700',
+  pendente: 'text-slate-400',
+};
+
+const JOURNEY_SUMMARY_LABEL: Record<JourneySummaryStatus, string> = {
+  ok: 'favorável',
+  atencao: 'atenção',
+  alerta: 'alerta',
+  pendente: 'a fazer',
+};
+
+function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
+  const decision = normalizeDecision(result);
+
+  const veredito: JourneySummaryItem = {
+    key: 'veredito',
+    status: decision.veredito === 'GO' ? 'ok' : decision.veredito === 'NO_GO' ? 'alerta' : 'atencao',
+    headline: `${decision.rotulo} — score ${result.score}/100.`,
+  };
+
+  const params = result.avaliacao_parametros || [];
+  const bloqueios = params.filter(p => p.status === 'bloqueio');
+  const alertasParam = params.filter(p => p.status === 'alerta');
+  const criterios: JourneySummaryItem =
+    params.length === 0
+      ? { key: 'criterios', status: 'pendente', headline: 'Nenhum critério personalizado avaliado nesta análise.' }
+      : bloqueios.length > 0
+        ? { key: 'criterios', status: 'alerta', headline: `${bloqueios.length} critério(s) não atende(m) — ${bloqueios[0].nome}.` }
+        : alertasParam.length > 0
+          ? { key: 'criterios', status: 'atencao', headline: `${alertasParam.length} critério(s) em atenção — ${alertasParam[0].nome}.` }
+          : { key: 'criterios', status: 'ok', headline: 'Todos os critérios configurados são atendidos.' };
+
+  const riscos = result.risks || [];
+  const riscosAltos = riscos.filter(r => r.impacto === 'alto');
+  const flags = result.red_flags || [];
+  const flagsAltas = flags.filter(f => f.gravidade === 'alta');
+  const analise: JourneySummaryItem =
+    riscosAltos.length > 0
+      ? { key: 'analise', status: 'alerta', headline: `${riscosAltos.length} risco(s) alto(s) — ${riscosAltos[0].titulo}.` }
+      : flagsAltas.length > 0
+        ? { key: 'analise', status: 'alerta', headline: `${flagsAltas.length} red flag(s) de gravidade alta identificada(s).` }
+        : (riscos.length > 0 || flags.length > 0)
+          ? { key: 'analise', status: 'atencao', headline: 'Riscos e pontos de atenção mapeados, nenhum de gravidade alta.' }
+          : { key: 'analise', status: 'ok', headline: 'Nenhum risco relevante identificado.' };
+
+  const abusivas = flags.filter(f => classifyRedFlag(f).kind === 'abusividade');
+  const juridico: JourneySummaryItem =
+    abusivas.length > 0
+      ? { key: 'juridico', status: 'alerta', headline: `${abusivas.length} cláusula(s) potencialmente abusiva(s) identificada(s).` }
+      : result.parecer_especialista
+        ? { key: 'juridico', status: 'ok', headline: 'Parecer jurídico sem apontamentos críticos.' }
+        : { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não gerado nesta análise.' };
+
+  const totalConcorrentes = (result.concorrentes_provaveis?.length || 0) + (result.concorrentes_regionais?.length || 0);
+  const nivelAmeaca = result.pricing_intelligence?.nivelAmeaca;
+  const concorrentes: JourneySummaryItem = nivelAmeaca
+    ? {
+        key: 'concorrentes',
+        status: /alt/i.test(nivelAmeaca) ? 'alerta' : /m[ée]d/i.test(nivelAmeaca) ? 'atencao' : 'ok',
+        headline: `Concorrência ${nivelAmeaca.toLowerCase()}${totalConcorrentes ? ` — ${totalConcorrentes} concorrente(s) mapeado(s)` : ''}.`,
+      }
+    : totalConcorrentes > 0
+      ? { key: 'concorrentes', status: 'atencao', headline: `${totalConcorrentes} concorrente(s) mapeado(s) na região.` }
+      : { key: 'concorrentes', status: 'pendente', headline: 'Nenhum concorrente identificado ainda.' };
+
+  const acoes = decision.proximas_acoes;
+  const cockpit: JourneySummaryItem =
+    acoes.length > 0
+      ? { key: 'cockpit', status: 'pendente', headline: `${acoes.length} tarefa(s) a fazer — próxima: ${acoes[0].acao}.` }
+      : { key: 'cockpit', status: 'pendente', headline: 'Nenhuma ação registrada no plano.' };
+
+  return [veredito, criterios, analise, juridico, concorrentes, cockpit];
+}
+
+const JOURNEY_SUMMARY_ICON_WRAP: Record<JourneySummaryStatus, string> = {
+  ok: 'bg-emerald-50 text-emerald-600',
+  atencao: 'bg-amber-50 text-amber-600',
+  alerta: 'bg-red-50 text-red-600',
+  pendente: 'bg-slate-100 text-slate-400',
+};
+
+function JourneySummary({
+  result,
+  onStepClick,
+}: {
+  result: AnalysisResult;
+  onStepClick: (step: JourneyStepType) => void;
+}) {
+  const decision = normalizeDecision(result);
+  const verdict = decisionUi[decision.veredito];
+  const items = buildJourneySummary(result).filter((item) => item.key !== 'veredito');
+  const verdictStep = JOURNEY_STEPS.find((s) => s.key === 'veredito')!;
+
+  return (
+    <div className="print:hidden">
+      {/* Hero: a resposta que importa, antes de qualquer lista */}
+      <button
+        type="button"
+        onClick={() => onStepClick(verdictStep)}
+        className={`mb-4 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-5 text-left transition-transform hover:-translate-y-0.5 ${verdict.summary}`}
+      >
+        <div className="min-w-0">
+          <p className={`text-[10px] font-black uppercase tracking-widest ${verdict.text}`}>Veredito executivo</p>
+          <p className="mt-1.5 text-xl font-black leading-snug text-slate-950 md:text-2xl">{decision.rotulo}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="text-right">
+            <p className={`text-3xl font-black leading-none ${verdict.text}`}>{result.score}</p>
+            <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">score / 100</p>
+          </div>
+          <ChevronRight size={18} className="text-slate-400" />
+        </div>
+      </button>
+
+      {/* O resto da jornada, em ordem — cada linha leva direto ao detalhe */}
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        {items.map((item, i) => {
+          const step = JOURNEY_STEPS.find((s) => s.key === item.key);
+          if (!step) return null;
+          const Icon = step.icon;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => onStepClick(step)}
+              className={`flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100' : ''}`}
+            >
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${JOURNEY_SUMMARY_ICON_WRAP[item.status]}`}>
+                <Icon size={16} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{step.num} · {step.label}</span>
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${JOURNEY_SUMMARY_TEXT[item.status]}`}>
+                    {JOURNEY_SUMMARY_LABEL[item.status]}
+                  </span>
+                </span>
+                <span className="mt-0.5 block text-sm font-semibold leading-snug text-slate-800">{item.headline}</span>
+              </span>
+              <ChevronRight size={15} className="shrink-0 text-slate-300" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function JourneyStepNav({
   activeStep,
   onStepClick,
@@ -2179,14 +2462,14 @@ function JourneyStepNav({
       {/* Trilha: nós conectados por uma linha — só a etapa ativa ganha cor,
           as demais ficam neutras para não competir com o veredito abaixo. */}
       <div className="overflow-x-auto pb-1">
-        <div className="relative min-w-[640px] px-4">
+        <div className="relative min-w-[720px] px-4">
           <div className="pointer-events-none absolute left-9 right-9 top-6 h-0.5 bg-slate-200" />
           <div
             className="pointer-events-none absolute left-9 top-6 h-0.5 bg-slate-900 transition-all duration-500"
             style={{ width: `calc((100% - 2.25rem) * ${progressPct / 100})` }}
           />
 
-          <div className="relative grid grid-cols-6 gap-1">
+          <div className="relative grid grid-cols-7 gap-1">
             {JOURNEY_STEPS.map((step) => {
               const Icon = step.icon;
               const isActive = activeStep === step.key;
@@ -2247,6 +2530,8 @@ function EsteiraCTA({
   onToggle,
   analysisId,
   token,
+  onGoToGestao,
+  gestaoDisponivel,
 }: {
   result: AnalysisResult;
   tracked: boolean;
@@ -2254,6 +2539,8 @@ function EsteiraCTA({
   onToggle: () => void;
   analysisId: string | null;
   token: string | null;
+  onGoToGestao: () => void;
+  gestaoDisponivel: boolean;
 }) {
   const decision = normalizeDecision(result);
   const isNoGo = decision.veredito === 'NO_GO';
@@ -2317,16 +2604,30 @@ function EsteiraCTA({
                 </React.Fragment>
               ))}
             </div>
+
+            <p className="mt-3 text-[11px] font-semibold text-slate-400">
+              Isso é acompanhado no{' '}
+              <button type="button" onClick={onGoToGestao} className="font-black text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+                painel Gestão, no menu lateral
+              </button>
+              {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
+            </p>
           </div>
 
           {/* Right: CTA button */}
           <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
             {tracked ? (
               <>
-                <div className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-white">
+                <button
+                  type="button"
+                  onClick={onGoToGestao}
+                  className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-white transition-all hover:bg-emerald-700"
+                >
                   <Pin size={15} className="flex-shrink-0" />
-                  <span className="text-sm font-black">Acompanhando</span>
-                </div>
+                  <span className="text-sm font-black">
+                    {gestaoDisponivel ? 'Acompanhando · ver painel →' : 'Acompanhando · desbloquear painel →'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={onToggle}
@@ -2491,6 +2792,132 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
     <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
       {icon}
       <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">{label}</h3>
+    </div>
+  );
+}
+
+// ─── Timeline: lista vertical conectada por linha, para dar ordem de leitura
+// clara a qualquer sequência de itens (critérios, riscos, evidências, ações
+// etc.). Reutilizada em todas as etapas da jornada de análise. ──────────────
+
+type TimelineTone = 'red' | 'amber' | 'emerald' | 'slate' | 'blue' | 'violet';
+
+const TIMELINE_DOT_TONE: Record<TimelineTone, string> = {
+  red: 'bg-red-500',
+  amber: 'bg-amber-500',
+  emerald: 'bg-emerald-500',
+  slate: 'bg-slate-400',
+  blue: 'bg-sky-500',
+  violet: 'bg-violet-500',
+};
+
+const TIMELINE_BADGE_TONE: Record<TimelineTone, string> = {
+  red: 'bg-red-100 text-red-700',
+  amber: 'bg-amber-100 text-amber-700',
+  emerald: 'bg-emerald-100 text-emerald-700',
+  slate: 'bg-slate-100 text-slate-500',
+  blue: 'bg-sky-100 text-sky-700',
+  violet: 'bg-violet-100 text-violet-700',
+};
+
+type TimelineItemData = {
+  key?: string | number;
+  tone?: TimelineTone;
+  icon?: React.ReactNode;
+  eyebrow?: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  badge?: { label: string; tone: TimelineTone };
+  meta?: React.ReactNode;
+  hollow?: boolean;
+};
+
+function Timeline({ items, dense }: { items: TimelineItemData[]; dense?: boolean }) {
+  if (!items.length) return null;
+  return (
+    <div className="relative pl-0.5">
+      <div className="absolute left-[9px] top-2 bottom-2 w-px bg-slate-200" aria-hidden="true" />
+      <div className={dense ? 'space-y-3.5' : 'space-y-5'}>
+        {items.map((item, i) => {
+          const tone = item.tone || 'slate';
+          return (
+            <div key={item.key ?? i} className="relative flex gap-3">
+              <span
+                className={`relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                  item.hollow ? 'border-2 border-slate-300 bg-white' : `${TIMELINE_DOT_TONE[tone]} text-white`
+                }`}
+              >
+                {!item.hollow && item.icon}
+              </span>
+              <div className="min-w-0 flex-1 pb-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  {item.eyebrow && (
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.eyebrow}</span>
+                  )}
+                  {item.badge && (
+                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${TIMELINE_BADGE_TONE[item.badge.tone]}`}>
+                      {item.badge.label}
+                    </span>
+                  )}
+                  {item.meta && <span className="ml-auto shrink-0 text-xs font-black text-slate-700">{item.meta}</span>}
+                </div>
+                <p className="text-sm font-semibold leading-relaxed text-slate-800">{item.title}</p>
+                {item.description && (
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{item.description}</p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── StepHeadline: a manchete de uma etapa vem primeiro, o detalhe completo
+// (as timelines de sempre) fica atrás de um "ver detalhe completo" — assim
+// cada etapa não despeja tudo de uma vez em quem só quer o essencial. ───────
+
+const HEADLINE_SHELL_TONE: Record<TimelineTone, string> = {
+  red: 'border-red-200 bg-red-50',
+  amber: 'border-amber-200 bg-amber-50',
+  emerald: 'border-emerald-200 bg-emerald-50',
+  slate: 'border-slate-200 bg-slate-50',
+  blue: 'border-sky-200 bg-sky-50',
+  violet: 'border-violet-200 bg-violet-50',
+};
+
+function StepHeadline({
+  tone,
+  eyebrow,
+  headline,
+  sub,
+  toggleLabel,
+  children,
+}: {
+  tone: TimelineTone;
+  eyebrow: string;
+  headline: React.ReactNode;
+  sub?: React.ReactNode;
+  toggleLabel?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-8">
+      <div className={`rounded-2xl border px-5 py-5 ${HEADLINE_SHELL_TONE[tone]}`}>
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{eyebrow}</p>
+        <p className="mt-1.5 text-base font-black leading-snug text-slate-900">{headline}</p>
+        {sub && <p className="mt-1.5 text-sm font-semibold text-slate-600">{sub}</p>}
+      </div>
+      {children && (
+        <details className="group mt-3 rounded-2xl border border-slate-200">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
+            <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
+            {toggleLabel || 'Ver detalhe completo'}
+          </summary>
+          <div className="space-y-8 border-t border-slate-100 px-5 py-6">{children}</div>
+        </details>
+      )}
     </div>
   );
 }
@@ -2789,35 +3216,29 @@ function ScoreBreakdownSection({ result }: { result: AnalysisResult }) {
         <div className="flex-1 border-t border-dashed border-slate-200" />
         <span className="text-sm font-black text-slate-900">100</span>
       </div>
-      <div className="space-y-2">
-        {itens.map((item, i) => {
+      <Timeline
+        dense
+        items={itens.map((item, i) => {
           const positivo = item.pontos > 0;
-          return (
-            <div key={i} className="rounded-xl border border-slate-100 bg-white px-4 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-bold text-slate-800 leading-snug">{item.fator}</p>
-                <span className={`shrink-0 text-xs font-black px-2.5 py-1 rounded-lg tabular-nums ${positivo ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
-                  {positivo ? '+' : ''}{item.pontos}
-                </span>
-              </div>
-              {item.justificativa && (
-                <p className="mt-1 text-xs text-slate-500 font-medium leading-relaxed">{item.justificativa}</p>
-              )}
-              {item.trecho && (
-                <blockquote className="mt-2 rounded-lg border-l-2 border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
-                  &ldquo;{item.trecho}&rdquo;
-                </blockquote>
-              )}
-              <div className="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${positivo ? 'bg-emerald-400' : 'bg-red-400'}`}
-                  style={{ width: `${Math.min(100, Math.abs(item.pontos) * 2)}%` }}
-                />
-              </div>
-            </div>
-          );
+          const tone: TimelineTone = positivo ? 'emerald' : 'red';
+          return {
+            key: i,
+            tone,
+            meta: <span className="tabular-nums">{positivo ? '+' : ''}{item.pontos}</span>,
+            title: item.fator,
+            description: (item.justificativa || item.trecho) && (
+              <>
+                {item.justificativa && <span className="block">{item.justificativa}</span>}
+                {item.trecho && (
+                  <blockquote className="mt-1.5 rounded-lg border-l-2 border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] italic text-slate-500">
+                    &ldquo;{item.trecho}&rdquo;
+                  </blockquote>
+                )}
+              </>
+            ),
+          };
         })}
-      </div>
+      />
       <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5">
         <span className="text-xs font-black uppercase tracking-widest text-slate-300">Bawzi Score final</span>
         <div className="flex-1 border-t border-dashed border-slate-700" />
@@ -3018,45 +3439,44 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
   const hasLacuna = classified.some((c) => c.kind === 'lacuna');
   const subtitleKey = hasAbuso && hasLacuna ? 'misto' : hasAbuso ? 'abusividade' : hasLacuna ? 'lacuna' : 'outro';
 
+  const sortedFlags = [...classified].sort((a, b) => {
+    const order: Record<string, number> = { alta: 0, media: 1, baixa: 2 };
+    return (order[a.flag.gravidade] ?? 1) - (order[b.flag.gravidade] ?? 1);
+  });
+
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8">
       <SectionLabel icon={<Flag size={18} className="text-slate-700" />} label="Red Flags do Edital" />
       <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
         {RED_FLAG_SUBTITLES[subtitleKey]}
       </p>
-      <div className="space-y-3">
-        {classified.map(({ flag, kind, label }, i) => {
-          const g = gravidadeCfg[flag.gravidade] ?? gravidadeCfg.media;
+      <Timeline
+        items={sortedFlags.map(({ flag, kind, label }, i) => {
           const acao = acaoCfg[flag.acao_sugerida || 'esclarecer'] ?? acaoCfg.esclarecer;
-          return (
-            <div key={i} className={`${g.bg} ${g.border} border rounded-xl p-4`}>
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${g.badge}`}>{g.label}</span>
-                <span
-                  className="text-[9px] font-black uppercase tracking-widest bg-white/80 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full"
-                  title={kind === 'lacuna' ? 'Lacuna de informação, não uma cláusula irregular' : undefined}
-                >
-                  {kind === 'lacuna' && '📄 '}{label}
-                </span>
-                <span className={`ml-auto text-[9px] font-black uppercase tracking-widest border px-2 py-0.5 rounded-full ${acao.cls}`}>
-                  {acao.label}
-                </span>
-              </div>
-              <p className="text-sm font-bold text-slate-800 leading-snug">{flag.descricao}</p>
-              {flag.trecho && (
-                <blockquote className="mt-2 rounded-lg border-l-4 border-slate-300 bg-white/70 px-3 py-2 text-[11px] font-semibold leading-relaxed text-slate-600">
-                  &ldquo;{flag.trecho}&rdquo;
-                </blockquote>
-              )}
-              {flag.base_legal && (
-                <p className="mt-2 text-[11px] font-bold text-slate-500 flex items-center gap-1">
-                  <Scale size={11} /> Base legal: {flag.base_legal}
-                </p>
-              )}
-            </div>
-          );
+          const tone: TimelineTone = flag.gravidade === 'alta' ? 'red' : flag.gravidade === 'baixa' ? 'slate' : 'amber';
+          return {
+            key: i,
+            tone,
+            eyebrow: `${kind === 'lacuna' ? '📄 ' : ''}${label}`,
+            badge: { label: acao.label.replace(/^[^\s]+\s/, ''), tone },
+            title: flag.descricao,
+            description: (
+              <>
+                {flag.trecho && (
+                  <blockquote className="mt-1 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-600">
+                    &ldquo;{flag.trecho}&rdquo;
+                  </blockquote>
+                )}
+                {flag.base_legal && (
+                  <span className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                    <Scale size={11} /> Base legal: {flag.base_legal}
+                  </span>
+                )}
+              </>
+            ),
+          };
         })}
-      </div>
+      />
     </div>
   );
 }
@@ -3116,24 +3536,21 @@ function HabilitacaoSection({ result }: { result: AnalysisResult }) {
             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pb-2 border-b border-slate-100">
               {label} <span className="text-slate-300">· {lista.length}</span>
             </h4>
-            <ul className="space-y-2.5">
-              {lista.map((item, i) => (
-                <li key={i} title={item.trecho ? `Trecho: "${item.trecho}"` : undefined} className="flex gap-2.5">
-                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${item.criticidade === 'eliminatoria' ? 'bg-red-500' : 'bg-slate-300'}`} />
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-700 font-medium leading-snug">
-                      {item.exigencia}
-                      {item.criticidade === 'eliminatoria' && (
-                        <span className="ml-1.5 align-middle text-[8px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded-full">
-                          Eliminatória
-                        </span>
-                      )}
-                    </p>
-                    {item.dica && <p className="mt-0.5 text-[11px] text-slate-400 font-medium leading-snug">💡 {item.dica}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <Timeline
+              dense
+              items={lista.map((item, i) => ({
+                key: i,
+                tone: (item.criticidade === 'eliminatoria' ? 'red' : 'slate') as TimelineTone,
+                badge: item.criticidade === 'eliminatoria' ? { label: 'Eliminatória', tone: 'red' as TimelineTone } : undefined,
+                title: item.exigencia,
+                description: (item.dica || item.trecho) ? (
+                  <>
+                    {item.dica && <span className="block">💡 {item.dica}</span>}
+                    {item.trecho && <span className="mt-1 block italic text-slate-400">"{item.trecho}"</span>}
+                  </>
+                ) : undefined,
+              }))}
+            />
           </div>
         ))}
       </div>
@@ -3149,16 +3566,9 @@ function OportunidadesSection({ result }: { result: AnalysisResult }) {
   return (
     <div className="relative border border-emerald-200 bg-emerald-50/40 rounded-2xl p-8">
       <SectionLabel icon={<Gem size={18} className="text-emerald-600" />} label="Oportunidades Estratégicas" />
-      <ul className="space-y-3 mt-2">
-        {oportunidades.map((op, i) => (
-          <li key={i} className="flex gap-3 items-start">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <Sparkles size={11} />
-            </span>
-            <p className="text-sm text-slate-700 font-medium leading-relaxed">{op}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-2">
+        <Timeline items={oportunidades.map((op, i) => ({ key: i, tone: 'emerald' as TimelineTone, icon: <Sparkles size={10} />, title: op }))} />
+      </div>
     </div>
   );
 }
@@ -3179,25 +3589,25 @@ function SwotSection({ result }: { result: AnalysisResult }) {
         {result.vantagens && result.vantagens.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsUp size={11} /> Vantagens (Por que avançar?)</h4>
-            <ul className="space-y-3">{result.vantagens.map((v, i) => <li key={i} className="text-sm text-slate-700 font-medium flex gap-2"><span className="text-emerald-500">＋</span> {v}</li>)}</ul>
+            <Timeline dense items={result.vantagens.map((v, i) => ({ key: i, tone: 'emerald' as TimelineTone, title: v }))} />
           </div>
         )}
         {result.desvantagens && result.desvantagens.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsDown size={11} /> Barreiras (Por que recuar?)</h4>
-            <ul className="space-y-3">{result.desvantagens.map((d, i) => <li key={i} className="text-sm text-slate-700 font-medium flex gap-2"><span className="text-orange-500">−</span> {d}</li>)}</ul>
+            <Timeline dense items={result.desvantagens.map((d, i) => ({ key: i, tone: 'amber' as TimelineTone, title: d }))} />
           </div>
         )}
         {result.exigencias_criticas && result.exigencias_criticas.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><Pin size={11} /> Exigências Críticas</h4>
-            <ul className="space-y-3">{result.exigencias_criticas.map((e, i) => <li key={i} className="text-sm text-slate-700 font-medium flex items-center gap-2"><div className="w-1 h-1 bg-slate-400 rounded-full shrink-0"></div> {e}</li>)}</ul>
+            <Timeline dense items={result.exigencias_criticas.map((e, i) => ({ key: i, tone: 'slate' as TimelineTone, title: e }))} />
           </div>
         )}
         {result.documentos_necessarios && result.documentos_necessarios.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><FolderOpen size={11} /> Documentação Necessária</h4>
-            <ul className="space-y-3">{result.documentos_necessarios.map((doc, i) => <li key={i} className="text-sm text-slate-700 font-medium flex items-center gap-2"><div className="w-1 h-1 bg-slate-400 rounded-full shrink-0"></div> {doc}</li>)}</ul>
+            <Timeline dense items={result.documentos_necessarios.map((doc, i) => ({ key: i, tone: 'blue' as TimelineTone, title: doc }))} />
           </div>
         )}
       </div>
@@ -3227,40 +3637,33 @@ function RisksSection({ result }: { result: AnalysisResult }) {
           </div>
         </div>
       ) : result.risks && result.risks.length > 0 ? (
-        <div className="space-y-3 mt-2">
-          {[...result.risks]
-            // Dedup: a IA frequentemente lista o mesmo risco 2x com títulos
-            // diferentes (ex: "Sem aderência ao CNAE" e "Desalinhamento de
-            // CNAE — Impeditivo Estrutural"). Mantém o primeiro de cada tema.
-            .filter((risk, idx, arr) =>
-              arr.findIndex(r =>
-                textosSimilares(`${r.titulo || ''} ${r.descricao || ''}`, `${risk.titulo || ''} ${risk.descricao || ''}`, 0.45)
-              ) === idx
-            )
-            .sort((a, b) => {
-              const order: Record<string, number> = { alto: 0, medio: 1, baixo: 2 };
-              return (order[a.impacto ?? 'medio'] ?? 1) - (order[b.impacto ?? 'medio'] ?? 1);
-            })
-            .map((risk, idx) => {
-              const impactoCfg: Record<string, { bg: string; border: string; badge: string }> = {
-                alto:  { bg: 'bg-red-50',    border: 'border-red-200',    badge: 'bg-red-100 text-red-700' },
-                medio: { bg: 'bg-amber-50',  border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700' },
-                baixo: { bg: 'bg-slate-50',  border: 'border-slate-100',  badge: 'bg-slate-100 text-slate-500' },
-              };
-              const ic = impactoCfg[risk.impacto ?? 'medio'] ?? impactoCfg['medio'];
-              const impactoLabel: Record<string, string> = { alto: 'ALTO', medio: 'MÉDIO', baixo: 'BAIXO' };
-              return (
-                <div key={idx} className={`${ic.bg} ${ic.border} border rounded-xl p-4`}>
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <span className="text-sm font-black text-slate-800">{risk.titulo}</span>
-                    <span className={`shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${ic.badge}`}>
-                      {impactoLabel[risk.impacto ?? 'medio'] ?? (risk.impacto || '—')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 font-medium leading-relaxed">{risk.descricao}</p>
-                </div>
-              );
-            })}
+        <div className="mt-2">
+          <Timeline
+            items={[...result.risks]
+              // Dedup: a IA frequentemente lista o mesmo risco 2x com títulos
+              // diferentes (ex: "Sem aderência ao CNAE" e "Desalinhamento de
+              // CNAE — Impeditivo Estrutural"). Mantém o primeiro de cada tema.
+              .filter((risk, idx, arr) =>
+                arr.findIndex(r =>
+                  textosSimilares(`${r.titulo || ''} ${r.descricao || ''}`, `${risk.titulo || ''} ${risk.descricao || ''}`, 0.45)
+                ) === idx
+              )
+              .sort((a, b) => {
+                const order: Record<string, number> = { alto: 0, medio: 1, baixo: 2 };
+                return (order[a.impacto ?? 'medio'] ?? 1) - (order[b.impacto ?? 'medio'] ?? 1);
+              })
+              .map((risk, idx) => {
+                const tone: TimelineTone = risk.impacto === 'alto' ? 'red' : risk.impacto === 'baixo' ? 'slate' : 'amber';
+                const impactoLabel: Record<string, string> = { alto: 'ALTO', medio: 'MÉDIO', baixo: 'BAIXO' };
+                return {
+                  key: idx,
+                  tone,
+                  badge: { label: impactoLabel[risk.impacto ?? 'medio'] ?? (risk.impacto || '—'), tone },
+                  title: risk.titulo,
+                  description: risk.descricao,
+                };
+              })}
+          />
         </div>
       ) : (
         <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
@@ -3438,49 +3841,41 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
         )}
       </div>
 
-      {/* Lista de parâmetros — sempre visíveis, sem expandir */}
-      <div className="divide-y divide-slate-100">
-        {sorted.map((p, i) => {
-          const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.alerta;
-          const peso = PARAM_PESO_CFG[p.peso]     ?? PARAM_PESO_CFG.medio;
-          const icon = PARAM_STATUS_ICON[p.status] ?? PARAM_STATUS_ICON.alerta;
-
-          return (
-            <div key={i} className="px-6 py-5">
-              <div className="flex gap-4">
-                {/* Ícone de status */}
-                <div className="mt-0.5">{icon}</div>
-
-                {/* Conteúdo */}
-                <div className="flex-1 min-w-0">
-                  {/* Linha do nome + badges */}
-                  <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <span className="text-sm font-black text-slate-900">{p.nome}</span>
-                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${st.bg} ${st.text} ${st.border}`}>
-                      {st.label}
-                    </span>
-                    <span className={`text-[9px] font-bold ${peso.color}`}>{peso.label}</span>
-                    <span className={`ml-auto text-sm font-black tabular-nums ${st.text}`}>{p.score}/10</span>
-                  </div>
-
-                  {/* Avaliação sempre visível */}
-                  {p.avaliacao && (
-                    <p className="text-xs font-semibold leading-relaxed text-slate-600 mb-2">{p.avaliacao}</p>
-                  )}
-
-                  {/* Trecho citado sempre visível */}
+      {/* O cabeçalho acima já é a manchete (contagem + alerta de bloqueio).
+          O detalhe critério a critério fica atrás de um toggle. */}
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4 text-xs font-black uppercase tracking-widest text-indigo-500 transition-colors hover:bg-indigo-50/40">
+          <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
+          Ver avaliação completa dos {params.length} critérios
+        </summary>
+        <div className="border-t border-indigo-100 px-6 py-6">
+        <Timeline
+          items={sorted.map((p, i) => {
+            const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.alerta;
+            const peso = PARAM_PESO_CFG[p.peso]     ?? PARAM_PESO_CFG.medio;
+            const tone: TimelineTone = p.status === 'bloqueio' ? 'red' : p.status === 'ok' ? 'emerald' : 'amber';
+            return {
+              key: i,
+              tone,
+              badge: { label: st.label, tone },
+              meta: <span className="tabular-nums">{p.score}/10</span>,
+              eyebrow: peso.label,
+              title: p.nome,
+              description: (
+                <>
+                  {p.avaliacao && <span className="block">{p.avaliacao}</span>}
                   {p.trecho_citado && (
-                    <div className="flex gap-2 rounded-lg border-l-4 border-slate-200 bg-slate-50 px-3 py-2">
-                      <Quote size={11} className="text-slate-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-[11px] italic text-slate-500 leading-relaxed">{p.trecho_citado}</span>
-                    </div>
+                    <blockquote className="mt-2 rounded-lg border-l-4 border-slate-200 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-500">
+                      "{p.trecho_citado}"
+                    </blockquote>
                   )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                </>
+              ),
+            };
+          })}
+        />
+        </div>
+      </details>
     </section>
   );
 }
@@ -3576,59 +3971,246 @@ function formatVersionDate(value: unknown) {
 
 // ─── Layout de impressão ──────────────────────────────────────────────────────
 
+// PrintLayout é o único bloco sempre montado no DOM independente da etapa
+// ativa na tela (as demais só existem quando `activeStep` bate com elas).
+// Por isso, para "Imprimir"/"Baixar" carregarem as 6 etapas da jornada, todo
+// o conteúdo relevante de cada etapa precisa estar reproduzido aqui.
 function PrintLayout({ result }: { result: AnalysisResult }) {
+  const decision = normalizeDecision(result);
+  const businessFit = normalizeBusinessFit(result);
+  const params: AvaliacaoParametro[] = result.avaliacao_parametros || [];
+  const redFlags = result.red_flags || [];
+  const habilitacao = result.habilitacao_checklist || [];
+  const riscos = result.risks || [];
+  const oportunidades = result.oportunidades || [];
+  const ficha = result.ficha_tecnica || [];
+  const scoreItens = result.score_breakdown || [];
+  const concorrentes = [...(result.concorrentes_provaveis || []), ...(result.concorrentes_regionais || [])];
+
+  let secaoAtual = 0;
+  const Secao = ({ title, children }: { title: string; children: React.ReactNode }) => {
+    secaoAtual += 1;
+    return (
+      <section className="mb-6 break-inside-avoid">
+        <h3 className="font-bold border-b border-slate-200 mb-2">{secaoAtual}. {title}</h3>
+        {children}
+      </section>
+    );
+  };
+
   return (
     <div className="hidden print:block bg-white p-10 font-serif text-slate-900 leading-relaxed text-sm">
       <div className="border-b-2 border-slate-900 pb-4 mb-6">
         <h1 className="text-2xl font-black uppercase">Bawzi Intelligence</h1>
-        <p className="font-bold text-slate-500 uppercase">Parecer Técnico-Jurídico Preliminar</p>
+        <p className="font-bold text-slate-500 uppercase">Laudo de Decisão — Go / No-Go de Licitação</p>
       </div>
       <div className="bg-slate-100 p-4 mb-6 border-l-4 border-slate-900">
         <p className="font-bold text-xs flex items-start gap-1">
-          <AlertTriangle size={12} className="shrink-0 mt-0.5" /> Nota de Responsabilidade: Este rascunho foi gerado por IA para facilitar a triagem. A revisão e validação por um profissional da área jurídica é indispensável.
+          <AlertTriangle size={12} className="shrink-0 mt-0.5" /> Nota de Responsabilidade: Este laudo foi gerado por IA para apoiar a decisão de participação. A revisão e validação por um profissional habilitado continua indispensável.
         </p>
       </div>
+
       <div className="space-y-6">
-        <section>
-          <h3 className="font-bold border-b border-slate-200 mb-2">1. Resumo da Análise</h3>
-          <p>{result.summary}</p>
-        </section>
-        {(result.ficha_tecnica || []).length > 0 && (
-          <section>
-            <h3 className="font-bold border-b border-slate-200 mb-2">2. Ficha Técnica do Certame</h3>
+
+        {/* 01 · Veredito */}
+        <Secao title="Veredito Executivo">
+          <p><strong>{decision.veredito.replace('_', ' ')}</strong> — {decision.rotulo}</p>
+          <p className="mt-1">{getDecisionSummary(decision)}</p>
+          <p className="mt-1">Score: <strong>{result.score}/100</strong> · Confiança: <strong>{decision.confianca}%</strong></p>
+        </Secao>
+
+        {businessFit && (
+          <Secao title="Aderência ao Negócio (CNAE)">
+            <p>{businessFit.label} — Match: <strong>{businessFit.score}/100</strong></p>
+            {businessFit.cnae && <p>CNAE: {businessFit.cnae}</p>}
+            <p className="text-slate-600">{businessFit.description}</p>
+          </Secao>
+        )}
+
+        {decision.evidencias.length > 0 && (
+          <Secao title="Evidências que Sustentam a Decisão">
+            {decision.evidencias.map((ev, i) => (
+              <div key={i} className="mb-2">
+                <p className="font-bold">{ev.titulo} <span className="font-normal text-slate-500">— {ev.referencia || ev.fonte}</span></p>
+                {ev.detalhe && <p>{ev.detalhe}</p>}
+                {ev.trecho && <blockquote className="border-l-2 border-slate-300 pl-2 italic text-slate-600">&ldquo;{ev.trecho}&rdquo;</blockquote>}
+              </div>
+            ))}
+          </Secao>
+        )}
+
+        {decision.lacunas.length > 0 && (
+          <Secao title="Lacunas da Análise">
+            <ul className="list-disc pl-5 space-y-1 text-xs">{decision.lacunas.map((l, i) => <li key={i}>{l}</li>)}</ul>
+          </Secao>
+        )}
+
+        {/* 06 · Cockpit — plano de ação */}
+        {decision.proximas_acoes.length > 0 && (
+          <Secao title="Plano de Ação (Cockpit)">
             <table className="w-full text-xs">
+              <thead><tr><th className="text-left">#</th><th className="text-left">Prazo</th><th className="text-left">Ação</th><th className="text-left">Responsável</th></tr></thead>
               <tbody>
-                {(result.ficha_tecnica || []).map((item, i) => (
+                {decision.proximas_acoes.map((a, i) => (
                   <tr key={i} className="border-b border-slate-100">
-                    <td className="py-1 pr-4 font-bold whitespace-nowrap align-top">{item.campo}</td>
-                    <td className="py-1">{item.valor}</td>
+                    <td className="py-1">{i + 1}</td>
+                    <td className="py-1">{a.prazo}</td>
+                    <td className="py-1">{a.acao}</td>
+                    <td className="py-1">{a.responsavel}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </section>
+          </Secao>
         )}
-        {(result.red_flags || []).length > 0 && (
-          <section>
-            <h3 className="font-bold border-b border-slate-200 mb-2">3. Pontos de Atenção (Red Flags)</h3>
+
+        <Secao title="Resumo Executivo do Edital">
+          <p>{result.summary}</p>
+        </Secao>
+
+        {ficha.length > 0 && (
+          <Secao title="Ficha Técnica do Edital">
+            <table className="w-full text-xs">
+              <tbody>
+                {ficha.map((item, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1 pr-4 font-bold whitespace-nowrap align-top">{item.campo}</td>
+                    <td className="py-1">{item.valor || 'Não localizado'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Secao>
+        )}
+
+        {result.datas_criticas && result.datas_criticas.length > 0 && (
+          <Secao title="Cronograma Crítico">
             <ul className="list-disc pl-5 space-y-1 text-xs">
-              {(result.red_flags || []).map((flag, i) => (
+              {result.datas_criticas.map((dc, i) => (
                 <li key={i}>
-                  <strong>[{(flag.gravidade || 'media').toUpperCase()}]</strong> {flag.descricao}
-                  {flag.base_legal ? ` (${flag.base_legal})` : ''}
+                  {dc.label}: {dc.data_iso ? new Date(dc.data_iso).toLocaleDateString('pt-BR') : 'não informado'}
+                  {dc.urgente ? ' (urgente)' : ''}
                 </li>
               ))}
             </ul>
-          </section>
+          </Secao>
         )}
-        <section>
-          <h3 className="font-bold border-b border-slate-200 mb-2">4. Fundamentação e Riscos</h3>
-          <p className="whitespace-pre-wrap">{result.parecer_especialista || result.rationale || 'Sem riscos críticos identificados.'}</p>
-        </section>
-        <section>
-          <h3 className="font-bold border-b border-slate-200 mb-2">5. Conclusão Estratégica</h3>
+
+        {/* 02 · Critérios */}
+        {params.length > 0 && (
+          <Secao title="Critérios Configurados">
+            <table className="w-full text-xs">
+              <thead><tr><th className="text-left">Critério</th><th className="text-left">Peso</th><th className="text-left">Status</th><th className="text-left">Score</th></tr></thead>
+              <tbody>
+                {params.map((p, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1">{p.nome}</td>
+                    <td className="py-1">{PARAM_PESO_CFG[p.peso]?.label || p.peso}</td>
+                    <td className="py-1">{PARAM_STATUS_CFG[p.status]?.label || p.status}</td>
+                    <td className="py-1">{p.score}/10</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Secao>
+        )}
+
+        {/* 03 · SWOT & Riscos */}
+        {redFlags.length > 0 && (
+          <Secao title="Red Flags do Edital">
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {redFlags.map((f, i) => (
+                <li key={i}>
+                  <strong>[{(f.gravidade || 'media').toUpperCase()}]</strong> {f.descricao}
+                  {f.base_legal ? ` (${f.base_legal})` : ''}
+                </li>
+              ))}
+            </ul>
+          </Secao>
+        )}
+
+        {(!!result.vantagens?.length || !!result.desvantagens?.length) && (
+          <Secao title="Carga Operacional & SWOT">
+            <div className="grid grid-cols-2 gap-6">
+              {!!result.vantagens?.length && (
+                <div>
+                  <p className="font-bold mb-1 text-xs">Vantagens</p>
+                  <ul className="list-disc pl-5 space-y-1 text-xs">{result.vantagens.map((v, i) => <li key={i}>{v}</li>)}</ul>
+                </div>
+              )}
+              {!!result.desvantagens?.length && (
+                <div>
+                  <p className="font-bold mb-1 text-xs">Barreiras</p>
+                  <ul className="list-disc pl-5 space-y-1 text-xs">{result.desvantagens.map((d, i) => <li key={i}>{d}</li>)}</ul>
+                </div>
+              )}
+            </div>
+          </Secao>
+        )}
+
+        {habilitacao.length > 0 && (
+          <Secao title="Checklist de Habilitação">
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {habilitacao.map((h, i) => (
+                <li key={i}>{h.exigencia}{h.criticidade === 'eliminatoria' ? ' (eliminatória)' : ''}</li>
+              ))}
+            </ul>
+          </Secao>
+        )}
+
+        {riscos.length > 0 && (
+          <Secao title="Matriz de Riscos">
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {riscos.map((r, i) => (
+                <li key={i}><strong>[{(r.impacto || 'medio').toUpperCase()}]</strong> {r.titulo} — {r.descricao}</li>
+              ))}
+            </ul>
+          </Secao>
+        )}
+
+        {oportunidades.length > 0 && (
+          <Secao title="Oportunidades Estratégicas">
+            <ul className="list-disc pl-5 space-y-1 text-xs">{oportunidades.map((o, i) => <li key={i}>{o}</li>)}</ul>
+          </Secao>
+        )}
+
+        {/* 04 · Jurídico */}
+        <Secao title="Fundamentação e Parecer Especialista">
+          <p className="whitespace-pre-wrap">{result.parecer_especialista || result.rationale || 'Sem parecer detalhado disponível para esta análise.'}</p>
+        </Secao>
+
+        {scoreItens.length > 0 && (
+          <Secao title="Composição do Score">
+            <table className="w-full text-xs">
+              <tbody>
+                {scoreItens.map((item, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1">{item.fator}</td>
+                    <td className="py-1 text-right font-bold">{item.pontos > 0 ? '+' : ''}{item.pontos}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Secao>
+        )}
+
+        {/* 05 · Concorrentes */}
+        {concorrentes.length > 0 && (
+          <Secao title="Concorrência">
+            <ul className="list-disc pl-5 space-y-1 text-xs">
+              {concorrentes.slice(0, 10).map((c: Record<string, unknown>, i: number) => (
+                <li key={i}>
+                  {String(c?.nome || c?.razao_social || c?.name || 'Concorrente identificado')}
+                  {c?.uf ? ` — ${c.uf}` : ''}
+                </li>
+              ))}
+            </ul>
+          </Secao>
+        )}
+
+        <Secao title="Conclusão Estratégica">
           <p>Veredito da Análise: <strong>{result.classification}</strong> (Score: {result.score}/100)</p>
-        </section>
+        </Secao>
       </div>
       <div className="mt-20 pt-10 border-t border-slate-300 flex flex-col items-center">
         <div className="w-64 h-px bg-slate-900 mb-2"></div>

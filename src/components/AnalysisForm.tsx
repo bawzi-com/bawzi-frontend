@@ -151,8 +151,8 @@ export default function AnalysisForm({
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="text-xl md:text-2xl font-black text-slate-950 tracking-tight">Analisar edital</h2>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Cole o texto completo ou envie o PDF. Depois escolha entre uma triagem rápida ou uma auditoria jurídica mais profunda.
+            <p className="mt-1.5 max-w-2xl text-[13px] font-medium leading-relaxed text-slate-500">
+              Cole o texto ou envie o PDF.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-[10px] font-black uppercase text-slate-500">
@@ -259,14 +259,6 @@ export default function AnalysisForm({
             ))}
           </div>
         )}
-
-        {/* Strip antes do balcão */}
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-5 py-4">
-          <p className="text-sm font-black text-emerald-800">🏆 A vitória começa antes do balcão.</p>
-          <p className="mt-1 text-xs font-medium leading-5 text-slate-600">
-            Você não perde no balcão por falta de agilidade — perde por ter entrado na licitação errada. Robôs trabalham nos lances. Nós trabalhamos agora.
-          </p>
-        </div>
 
         {/* Botões de análise */}
         <div className="mt-6 w-full">

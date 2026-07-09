@@ -1,9 +1,20 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { MessageCircle } from 'lucide-react';
 
+// Rotas do app autenticado — o usuário já está trabalhando aqui, o rodapé
+// institucional (Termos, Privacidade, links de marketing) só atrapalha o
+// scroll e não muda nada em cada visita. Fica reservado às páginas públicas.
+const HIDDEN_ON_PREFIXES = ['/workspace', '/gestao', '/history', '/profile', '/admin'];
+
 export default function Footer() {
+  const pathname = usePathname();
+  if (HIDDEN_ON_PREFIXES.some((prefix) => pathname?.startsWith(prefix))) {
+    return null;
+  }
+
   return (
     <footer className="bg-white text-slate-500 relative overflow-hidden border-t border-slate-200/60">
 

@@ -141,7 +141,13 @@ export default function DecisionManagementTab({
 
         const data = await historyRes.json();
         const history = data.history || (Array.isArray(data) ? data : []);
-        if (Array.isArray(history)) setAnalyses(history);
+        // Gestão é opt-in: só entra aqui o que o usuário adicionou de propósito
+        // pelo botão "+ Gestão" na análise. Sem esse filtro, esta tela mostrava
+        // o histórico inteiro — igual à aba Decisões — o que confundia o que
+        // "estar em Gestão" realmente significa.
+        if (Array.isArray(history)) {
+          setAnalyses(history.filter((item: SavedAnalysis) => item?.tracked_in_gestao === true));
+        }
 
         if (workspaceRes.ok) {
           const workspaceData = await workspaceRes.json().catch(() => null);
@@ -663,6 +669,19 @@ export default function DecisionManagementTab({
             setSelectedAnalysis(merged);
             setAnalyses((prev) => prev.map((item) => item.id === selectedAnalysis.id ? { ...item, ...merged } : item));
           }}
+          onTrackedChange={(tracked) => {
+            // Gestão só lista o que está marcado como tracked_in_gestao — se o
+            // usuário remove o acompanhamento aqui de dentro, o item precisa
+            // sumir do board assim que ele voltar, sem esperar um reload.
+            if (!tracked) {
+              setAnalyses((prev) => prev.filter((item) => item.id !== selectedAnalysis.id));
+              setNotice({ type: 'info', message: 'Removido da Gestão. O laudo continua disponível em Decisões.' });
+            } else {
+              setAnalyses((prev) => prev.map((item) => (
+                item.id === selectedAnalysis.id ? { ...item, tracked_in_gestao: true } : item
+              )));
+            }
+          }}
         />
       </div>
     );
@@ -720,6 +739,11 @@ export default function DecisionManagementTab({
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Fluxo completo dos editais</h2>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
               Acompanhe cada edital desde o primeiro contato operacional até envio, resultado e execução/encerramento.
+            </p>
+            <p className="mt-2 max-w-2xl text-[11px] font-bold text-slate-400">
+              Só aparecem aqui os editais que você adicionou de propósito, clicando em{' '}
+              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">+ Gestão</span>{' '}
+              na análise. As demais análises continuam em Decisões.
             </p>
           </div>
 
@@ -888,10 +912,23 @@ export default function DecisionManagementTab({
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
             <Search size={24} />
           </div>
-          <h3 className="text-lg font-black text-slate-800">Nada para gerir agora</h3>
-          <p className="mt-2 text-sm font-medium text-slate-500">
-            Nenhuma decisão salva corresponde à busca atual.
-          </p>
+          {analyses.length === 0 ? (
+            <>
+              <h3 className="text-lg font-black text-slate-800">Nenhum edital na Gestão ainda</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
+                A Gestão só mostra editais adicionados de propósito. Abra uma análise em Decisões e clique em{' '}
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-black text-emerald-700">+ Gestão</span>{' '}
+                para trazê-la para cá.
+              </p>
+            </>
+          ) : (
+            <>
+              <h3 className="text-lg font-black text-slate-800">Nada para gerir agora</h3>
+              <p className="mt-2 text-sm font-medium text-slate-500">
+                Nenhuma decisão salva corresponde à busca atual.
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="relative">

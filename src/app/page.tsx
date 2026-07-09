@@ -119,6 +119,9 @@ const PLANOS = [
 export default function LandingPage() {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  // Mesmo limite exibido na seção de degustação lá embaixo — buscado aqui
+  // também para o selo do hero mostrar o número real sem duplicar estado.
+  const [heroGuestLimit, setHeroGuestLimit] = useState(1);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -128,6 +131,14 @@ export default function LandingPage() {
       setChecked(true);
     }
   }, [router]);
+
+  useEffect(() => {
+    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+    fetch(`${API_URL}/api/tiers/guest-limit`)
+      .then(r => r.json())
+      .then(data => { if (data?.daily_limit > 0) setHeroGuestLimit(data.daily_limit); })
+      .catch(() => {});
+  }, []);
 
   if (!checked) {
     return (
@@ -192,10 +203,28 @@ export default function LandingPage() {
                   <HeroFeed />
                 </div>
               </div>
+
+              <a
+                href="#degustacao"
+                className="mt-5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 hover:bg-emerald-500/[0.14] lg:hidden"
+              >
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-black uppercase tracking-widest text-emerald-300">
+                    {heroGuestLimit} análise{heroGuestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro
+                  </span>
+                  <span className="mt-0.5 block text-[12.5px] font-semibold leading-snug text-emerald-200/70">
+                    Cole um trecho do edital e veja o veredito Go/No-Go em segundos ↓
+                  </span>
+                </span>
+              </a>
             </div>
 
             {/* Right — card stack com análise */}
-            <div className="hidden lg:flex flex-1 flex-col justify-center pt-6">
+            <div className="hidden lg:flex flex-1 min-w-0 flex-col justify-center pt-6">
               {/* Label ao vivo */}
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
                 <span className="relative flex h-1.5 w-1.5">
@@ -207,6 +236,24 @@ export default function LandingPage() {
                 </span>
               </div>
               <HeroCards />
+
+              <a
+                href="#degustacao"
+                className="mt-5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 hover:bg-emerald-500/[0.14]"
+              >
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[11px] font-black uppercase tracking-widest text-emerald-300">
+                    {heroGuestLimit} análise{heroGuestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro
+                  </span>
+                  <span className="mt-0.5 block text-[12.5px] font-semibold leading-snug text-emerald-200/70">
+                    Cole um trecho do edital e veja o veredito Go/No-Go em segundos ↓
+                  </span>
+                </span>
+              </a>
             </div>
 
           </div>

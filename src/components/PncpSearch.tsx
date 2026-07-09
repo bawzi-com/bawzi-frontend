@@ -8,7 +8,10 @@ import {
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
+import CnaeMismatchModal from './CnaeMismatchModal';
 import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { checarAderenciaObjetoEmpresa } from '@/lib/cnaeMatch';
+import { resolveActiveCompany } from '@/lib/activeContext';
 import type { Empresa } from '@/lib/types';
 
 interface PncpItem {
@@ -75,9 +78,13 @@ export default function PncpSearch({
   const [results, setResults] = useState<PncpItem[]>([]);
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
-  
+
   const [detectedUf, setDetectedUf] = useState('');
   const [marketData, setMarketData] = useState<any>(null);
+
+  // ── Cancelamento da extração/análise em andamento ───────────────────────
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const cancelRequestedRef = useRef(false);
 
   // Objeto expandido por card (ver descrição completa)
   const [objetoExpandido, setObjetoExpandido] = useState<string | null>(null);
@@ -92,6 +99,17 @@ export default function PncpSearch({
   const [bulkLoading, setBulkLoading]   = useState(false);
   const [bulkProgress, setBulkProgress] = useState(0);
   const MAX_BULK = 5;
+
+  // ── Confirmação de divergência de CNAE antes de gastar uma análise ──────
+  // Usa o mesmo helper do resto do app (compara CNPJ normalizado, sem
+  // pontuação) — comparar `c.cnpj === activeCnpj` direto falha sempre que um
+  // dos dois vier formatado ("00.000.000/0000-00") e o outro não.
+  const empresaAtiva = resolveActiveCompany(contextCompanies, activeCnpj);
+  const [cnaeConfirm, setCnaeConfirm] = useState<
+    | { tipo: 'unico'; edital: PncpItem }
+    | { tipo: 'lote'; editais: PncpItem[]; totalFora: number }
+    | null
+  >(null);
 
   /** Garante que a auto-busca por initialQuery só dispara uma vez. */
   const autoSearchFired = useRef(false);
@@ -518,11 +536,14 @@ export default function PncpSearch({
   }, [hydrationKey]);
 
   const handleDeepAnalyze = async (edital: PncpItem) => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    cancelRequestedRef.current = false;
     setLoadingId(edital.id);
     try {
       const [resTexto, resMedia] = await Promise.all([
-        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`),
-        fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`)
+        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`, { signal: controller.signal }),
+        fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`, { signal: controller.signal })
       ]);
 
       const dataTexto = await resTexto.json();
@@ -596,16 +617,46 @@ export default function PncpSearch({
       });
 
     } catch (err: any) {
-      setError(err.message || 'Erro ao carregar o edital. Tente novamente.');
+      if (err?.name === 'AbortError') {
+        setError('Extração cancelada.');
+      } else {
+        setError(err.message || 'Erro ao carregar o edital. Tente novamente.');
+      }
     } finally {
       setLoadingId(null);
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   };
 
+  // ── Cancela a extração/análise em andamento (botão vira "Cancelar" durante o loading) ──
+  const handleCancelAnalyze = () => {
+    cancelRequestedRef.current = true;
+    abortControllerRef.current?.abort();
+  };
+
+  // ── Checagem de CNAE antes de disparar uma análise individual ───────────
+  // Alerta preventivo: não bloqueia, só confirma antes de gastar o crédito
+  // quando o objeto do edital não parece ter relação com o negócio cadastrado.
+  const dispararAnaliseUnica = (edital: PncpItem) => {
+    const resultado = checarAderenciaObjetoEmpresa(edital.objeto, empresaAtiva);
+    // Log de diagnóstico: ajuda a entender, no console do navegador, por que
+    // o alerta de CNAE apareceu ou não apareceu num teste específico.
+    console.debug('[cnaeMatch]', {
+      empresa: empresaAtiva?.razao_social || empresaAtiva?.nome_fantasia || null,
+      cnaeDescricao: empresaAtiva?.cnae_descricao || null,
+      coreBusiness: empresaAtiva?.core_business || null,
+      objeto: edital.objeto,
+      resultado,
+    });
+    if (!resultado.indeterminado && !resultado.compativel) {
+      setCnaeConfirm({ tipo: 'unico', edital });
+      return;
+    }
+    handleDeepAnalyze(edital);
+  };
+
   // ── Analisar em lote ───────────────────────────────────────────────────
-  const handleBulkAnalyze = async () => {
-    if (selected.size === 0) return;
-    const editaisSelecionados = results.filter(e => selected.has(e.id || e.link));
+  const executarBulkAnalyze = async (editaisSelecionados: PncpItem[]) => {
     setBulkLoading(true);
     setBulkProgress(0);
     setBulkMode(false);
@@ -615,13 +666,29 @@ export default function PncpSearch({
       const edital = editaisSelecionados[i];
       setBulkProgress(i + 1);
       await handleDeepAnalyze(edital);
-      // Pequena pausa entre análises para não sobrecarregar
+      // Se o usuário cancelou a extração em andamento, interrompe o lote inteiro
+      // em vez de seguir para o próximo edital selecionado.
+      if (cancelRequestedRef.current) break;
       if (i < editaisSelecionados.length - 1) {
         await new Promise(r => setTimeout(r, 800));
       }
     }
     setBulkLoading(false);
     setBulkProgress(0);
+  };
+
+  const handleBulkAnalyze = () => {
+    if (selected.size === 0) return;
+    const editaisSelecionados = results.filter(e => selected.has(e.id || e.link));
+    const foraDoCnae = editaisSelecionados.filter((e) => {
+      const { compativel, indeterminado } = checarAderenciaObjetoEmpresa(e.objeto, empresaAtiva);
+      return !indeterminado && !compativel;
+    });
+    if (foraDoCnae.length > 0) {
+      setCnaeConfirm({ tipo: 'lote', editais: editaisSelecionados, totalFora: foraDoCnae.length });
+      return;
+    }
+    executarBulkAnalyze(editaisSelecionados);
   };
 
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
@@ -642,8 +709,8 @@ export default function PncpSearch({
             <h2 className="text-xl font-black tracking-tight text-slate-950 md:text-2xl">
               Busque oportunidades abertas e decida se vale participar.
             </h2>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Pesquise por segmento, órgão, cidade ou palavra-chave — ou deixe o campo vazio para varrer todos os editais vigentes do Brasil, de um estado ou de uma cidade. Quando encontrar um edital, a Bawzi extrai o conteúdo e leva direto para o veredito Go/No-Go.
+            <p className="mt-1.5 max-w-2xl text-[13px] font-medium leading-relaxed text-slate-500">
+              Pesquise por segmento, órgão, cidade ou palavra-chave — ou deixe vazio para varrer todos os editais.
             </p>
           </div>
 
@@ -832,7 +899,7 @@ export default function PncpSearch({
               <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
             </div>
             <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors">
-              Busca exata <span className="opacity-60">sem otimização automática do termo</span>
+              Busca exata <span className="opacity-60">— só o termo digitado, sem variações</span>
             </span>
           </label>
 
@@ -1178,8 +1245,12 @@ export default function PncpSearch({
                 
                 {/* BOTÕES DE AÇÃO */}
                 <div className="flex flex-col sm:flex-row gap-3 mt-auto">
-                  <button 
+                  <button
                     onClick={() => {
+                      if (loadingId === edital.id) {
+                        handleCancelAnalyze();
+                        return;
+                      }
                       const cnpjInvalido = !edital.cnpj || String(edital.cnpj) === "undefined";
                       const anoInvalido = !edital.ano || String(edital.ano) === "undefined";
                       const seqInvalido = !edital.sequencial || String(edital.sequencial) === "undefined";
@@ -1188,13 +1259,17 @@ export default function PncpSearch({
                         setError("Dados incompletos neste edital (CNPJ, ano ou sequencial ausente). Tente outro edital ou acesse o link original.");
                         return;
                       }
-                      handleDeepAnalyze(edital);
+                      dispararAnaliseUnica(edital);
                     }}
-                    disabled={loadingId !== null}
-                    className="flex-1 bg-slate-900 text-white font-black py-3 px-4 rounded-xl text-xs hover:bg-slate-800 transition-all disabled:bg-slate-500 disabled:cursor-not-allowed shadow-md flex items-center justify-center gap-2"
+                    disabled={loadingId !== null && loadingId !== edital.id}
+                    className={`flex-1 font-black py-3 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 ${
+                      loadingId === edital.id
+                        ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+                        : 'bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-500 disabled:cursor-not-allowed'
+                    }`}
                   >
                     {loadingId === edital.id ? (
-                      <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> Extraindo PDF...</>
+                      <><span className="w-3 h-3 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"></span> Cancelar extração</>
                     ) : 'Extrair e Analisar IA ⚡'}
                   </button>
                   {edital.link_sistema_origem && (
@@ -1238,6 +1313,32 @@ export default function PncpSearch({
           })}
         </div>
       )}
+
+      <CnaeMismatchModal
+        isOpen={cnaeConfirm !== null}
+        empresaNome={empresaAtiva?.razao_social || empresaAtiva?.nome_fantasia || empresaAtiva?.nome}
+        cnaeDescricao={empresaAtiva?.cnae_descricao || empresaAtiva?.core_business}
+        objetoEdital={
+          cnaeConfirm?.tipo === 'unico'
+            ? cnaeConfirm.edital.objeto
+            : cnaeConfirm?.editais.slice(0, 2).map((e) => e.objeto).join(' • ')
+        }
+        notaAdicional={
+          cnaeConfirm?.tipo === 'lote'
+            ? `${cnaeConfirm.totalFora} de ${cnaeConfirm.editais.length} editais selecionados parecem fora do seu CNAE.`
+            : undefined
+        }
+        onCancel={() => setCnaeConfirm(null)}
+        onConfirm={() => {
+          if (!cnaeConfirm) return;
+          if (cnaeConfirm.tipo === 'unico') {
+            handleDeepAnalyze(cnaeConfirm.edital);
+          } else {
+            executarBulkAnalyze(cnaeConfirm.editais);
+          }
+          setCnaeConfirm(null);
+        }}
+      />
     </div>
   );
 }

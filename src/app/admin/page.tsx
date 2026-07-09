@@ -35,6 +35,7 @@ import {
   Loader2,
   DollarSign,
   Trash2,
+  CreditCard,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -65,6 +66,17 @@ export default function AdminDashboard() {
   const [smtpName, setSmtpName] = useState('Bawzi');
   const [smtpFromEmail, setSmtpFromEmail] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
+
+  // Estados do Modo de Pagamento (Stripe teste x oficial/live)
+  const [stripeMode, setStripeMode] = useState<'test' | 'live'>('test');
+  const [stripeLiveSecretSet, setStripeLiveSecretSet] = useState(false);
+  const [stripeLiveSecretMasked, setStripeLiveSecretMasked] = useState('');
+  const [stripeLiveSecretInput, setStripeLiveSecretInput] = useState('');
+  const [stripeLivePublishable, setStripeLivePublishable] = useState('');
+  const [stripeConfigUpdatedAt, setStripeConfigUpdatedAt] = useState('');
+  const [stripeConfigUpdatedBy, setStripeConfigUpdatedBy] = useState('');
+  const [savingStripeConfig, setSavingStripeConfig] = useState(false);
+  const [stripeConfigMsg, setStripeConfigMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Estados PNCP
   const [pncpStats, setPncpStats] = useState<any>(null);
@@ -153,11 +165,12 @@ export default function AdminDashboard() {
           return;
         }
 
-        const [statsRes, usersRes, smtpRes, templatesRes] = await Promise.all([
+        const [statsRes, usersRes, smtpRes, templatesRes, stripeConfigRes] = await Promise.all([
           apiFetch(`${API_URL}/api/admin/stats`),
           apiFetch(`${API_URL}/api/admin/users`),
           apiFetch(`${API_URL}/api/email/smtp`),
           apiFetch(`${API_URL}/api/admin/email-templates`),
+          apiFetch(`${API_URL}/api/billing/admin/stripe-config`),
         ]);
 
         if (!isMounted) return;
@@ -190,6 +203,17 @@ export default function AdminDashboard() {
           if (templatesData.length > 0) {
               handleSelectTemplate(templatesData[0]);
           }
+        }
+
+        // Preenche o modo de pagamento (Stripe teste x oficial)
+        if (stripeConfigRes.ok) {
+          const stripeData = await stripeConfigRes.json();
+          setStripeMode(stripeData.mode === 'live' ? 'live' : 'test');
+          setStripeLiveSecretSet(!!stripeData.live_secret_key_set);
+          setStripeLiveSecretMasked(stripeData.live_secret_key_masked || '');
+          setStripeLivePublishable(stripeData.live_publishable_key || '');
+          setStripeConfigUpdatedAt(stripeData.updated_at || '');
+          setStripeConfigUpdatedBy(stripeData.updated_by || '');
         }
 
       } catch (err: any) {
@@ -581,6 +605,47 @@ export default function AdminDashboard() {
       alert("Erro ao comunicar com o servidor.");
     } finally {
       setSavingSmtp(false);
+    }
+  };
+
+  // ==========================================
+  // MODO DE PAGAMENTO (Stripe teste x oficial/live)
+  // ==========================================
+  const handleSaveStripeConfig = async (targetMode: 'test' | 'live') => {
+    setSavingStripeConfig(true);
+    setStripeConfigMsg(null);
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/admin/stripe-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: targetMode,
+          live_secret_key: stripeLiveSecretInput,
+          live_publishable_key: stripeLivePublishable,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setStripeMode(targetMode);
+        setStripeLiveSecretInput('');
+        setStripeConfigMsg({ text: data?.message || 'Configuração salva.', ok: true });
+        // Recarrega o estado mascarado da chave para refletir o que foi salvo
+        const refreshed = await apiFetch(`${API_URL}/api/billing/admin/stripe-config`);
+        if (refreshed.ok) {
+          const rd = await refreshed.json();
+          setStripeLiveSecretSet(!!rd.live_secret_key_set);
+          setStripeLiveSecretMasked(rd.live_secret_key_masked || '');
+          setStripeConfigUpdatedAt(rd.updated_at || '');
+          setStripeConfigUpdatedBy(rd.updated_by || '');
+        }
+      } else {
+        setStripeConfigMsg({ text: data?.detail || 'Erro ao salvar a configuração de pagamento.', ok: false });
+      }
+    } catch (e) {
+      if (e instanceof SessionExpiredError) return;
+      setStripeConfigMsg({ text: 'Erro ao comunicar com o servidor.', ok: false });
+    } finally {
+      setSavingStripeConfig(false);
     }
   };
 
@@ -2009,7 +2074,7 @@ export default function AdminDashboard() {
               </div>
 
               <div className="pt-4 border-t border-slate-800/50 flex justify-end">
-                <button 
+                <button
                   type="submit"
                   disabled={savingSmtp}
                   className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-amber-950 font-black px-6 py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2020,7 +2085,133 @@ export default function AdminDashboard() {
               </div>
             </form>
           </div>
-          
+
+          {/* 💳 MODO DE PAGAMENTO (STRIPE TESTE x OFICIAL/LIVE) */}
+          <div className={`mt-8 rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border ${
+            stripeMode === 'live' ? 'bg-red-950/30 border-red-500/40' : 'bg-slate-900/40 border-slate-800/60'
+          }`}>
+            <div className="flex items-center gap-4 mb-6">
+              <div className={`p-3 rounded-2xl ${stripeMode === 'live' ? 'bg-red-500/15' : 'bg-emerald-500/10'}`}>
+                <CreditCard size={24} className={stripeMode === 'live' ? 'text-red-400' : 'text-emerald-400'} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black tracking-tight">Modo de Pagamento (Stripe)</h2>
+                <p className="text-slate-500 text-sm mt-1">Controla se os checkouts usam chaves de teste ou chaves oficiais (cobrança real no cartão).</p>
+              </div>
+            </div>
+
+            {/* Aviso visual forte do estado atual */}
+            {stripeMode === 'live' ? (
+              <div className="flex items-start gap-3 rounded-2xl border border-red-500/50 bg-red-500/10 px-5 py-4 mb-6">
+                <ShieldAlert size={20} className="text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-red-300 uppercase tracking-wide text-sm">Modo oficial ativo — cobranças reais</p>
+                  <p className="text-red-200/80 text-xs mt-1">
+                    Todo checkout, assinatura e cobrança neste momento usa a chave live e movimenta dinheiro de verdade.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 mb-6">
+                <ShieldAlert size={20} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-black text-emerald-300 uppercase tracking-wide text-sm">Modo de teste ativo</p>
+                  <p className="text-emerald-200/80 text-xs mt-1">
+                    Checkouts usam as chaves de teste do .env — nenhuma cobrança real é processada.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Toggle Teste / Oficial */}
+            <div className="mb-8">
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Modo ativo</label>
+              <div className="inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
+                <button
+                  type="button"
+                  disabled={savingStripeConfig || stripeMode === 'test'}
+                  onClick={() => handleSaveStripeConfig('test')}
+                  className={`px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:cursor-not-allowed ${
+                    stripeMode === 'test' ? 'bg-emerald-500 text-emerald-950' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Teste
+                </button>
+                <button
+                  type="button"
+                  disabled={savingStripeConfig || stripeMode === 'live'}
+                  onClick={() => {
+                    if (!stripeLiveSecretSet && !stripeLiveSecretInput.trim()) {
+                      setStripeConfigMsg({ text: 'Cole a chave secreta live abaixo antes de ativar o modo oficial.', ok: false });
+                      return;
+                    }
+                    handleSaveStripeConfig('live');
+                  }}
+                  className={`px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:cursor-not-allowed ${
+                    stripeMode === 'live' ? 'bg-red-500 text-red-950' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Oficial (Live)
+                </button>
+              </div>
+              {(stripeConfigUpdatedAt || stripeConfigUpdatedBy) && (
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Última alteração: {stripeConfigUpdatedBy || 'admin'}
+                  {stripeConfigUpdatedAt ? ` · ${new Date(stripeConfigUpdatedAt).toLocaleString('pt-BR')}` : ''}
+                </p>
+              )}
+            </div>
+
+            {/* Chaves live */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Lock size={14} /> Chave secreta live (sk_live_...)
+                  </label>
+                  <input
+                    type="password"
+                    value={stripeLiveSecretInput}
+                    onChange={(e) => setStripeLiveSecretInput(e.target.value)}
+                    placeholder={stripeLiveSecretSet ? stripeLiveSecretMasked : 'Cole a chave secreta live'}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+                  />
+                  <p className="text-[11px] text-slate-500">Deixe em branco para manter a chave já salva.</p>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <CreditCard size={14} /> Chave publicável live (pk_live_...)
+                  </label>
+                  <input
+                    type="text"
+                    value={stripeLivePublishable}
+                    onChange={(e) => setStripeLivePublishable(e.target.value)}
+                    placeholder="pk_live_..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              {stripeConfigMsg && (
+                <p className={`text-sm font-bold ${stripeConfigMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {stripeConfigMsg.text}
+                </p>
+              )}
+
+              <div className="pt-4 border-t border-slate-800/50 flex justify-end">
+                <button
+                  type="button"
+                  disabled={savingStripeConfig}
+                  onClick={() => handleSaveStripeConfig(stripeMode)}
+                  className="flex items-center gap-2 bg-slate-100 hover:bg-white text-slate-900 font-black px-6 py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save size={18} />
+                  {savingStripeConfig ? 'A guardar...' : 'Salvar chaves live'}
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
       )}
 

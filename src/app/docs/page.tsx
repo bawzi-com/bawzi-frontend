@@ -71,8 +71,9 @@ const NAV: Section[] = [
     icon: BrainCircuit,
     articles: [
       { id: 'score-go-nogo', title: 'Score GO / NO-GO' },
-      { id: 'relatorio-ia', title: 'Relatório de análise' },
+      { id: 'relatorio-ia', title: 'Painel de decisão (7 etapas)' },
       { id: 'match-cnae', title: 'Match CNAE' },
+      { id: 'gestao-decisoes', title: 'Gestão vs. Central de Decisões' },
     ],
   },
   {
@@ -327,16 +328,27 @@ function SectionBusca() {
         evitar editais de outros estados.
       </Callout>
 
-      <H2 id="salvar-edital">Salvar e acompanhar editais</H2>
+      <H2 id="salvar-edital">Analisar e acompanhar editais</H2>
       <P>
-        Clique no ícone de <strong>bookmark</strong> para salvar um edital na sua lista de acompanhamento.
-        Editais salvos ficam em <strong>Gestão → Meus editais</strong> e você recebe alertas caso o status
-        mude (adiamento, cancelamento, retificação).
+        Em cada card de resultado, clique em <strong>Extrair e Analisar IA ⚡</strong> para rodar a análise
+        completa do edital. Também é possível selecionar vários editais e analisar em lote de uma vez.
       </P>
-      <Callout type="warning">
-        Editais cancelados ainda aparecem na lista com o status atualizado. Não os exclua — eles servem
-        de referência histórica para negociações futuras.
+      <Callout type="tip">
+        Enquanto a extração está em andamento, o botão vira <strong>Cancelar extração</strong>. Clique nele
+        se quiser interromper — a análise em lote também para no edital em que você cancelar, em vez de
+        seguir para os próximos.
       </Callout>
+      <P>
+        Antes de gastar a análise, a Bawzi compara o objeto do edital com o CNAE e o ramo de atuação
+        cadastrados da empresa ativa. Se não encontrar relação entre os dois, aparece uma confirmação —
+        <strong> "Este edital parece fora do seu CNAE"</strong> — para você decidir se quer prosseguir mesmo assim.
+      </P>
+      <P>
+        Toda análise concluída fica disponível na <strong>Central de Decisões</strong>, seu histórico completo.
+        Se quiser acompanhar um edital específico com checklist e prazos, abra o laudo e clique em
+        <strong> "+ Gestão"</strong> — só então ele passa a aparecer no painel Gestão (veja a seção
+        "Gestão & Decisões").
+      </P>
     </>
   );
 }
@@ -364,25 +376,43 @@ function SectionAnalise() {
         mais riscos do que o padrão. Use o relatório para decidir se vale o investimento de tempo.
       </Callout>
 
-      <H2 id="relatorio-ia">Relatório de análise</H2>
+      <H2 id="relatorio-ia">Painel de decisão (7 etapas)</H2>
       <P>
-        Além do score, a Bawzi gera um relatório estruturado com:
+        O resultado da análise é organizado como uma jornada de 7 etapas, pensada para dar uma leitura
+        clara do início ao fim — cada etapa tem uma manchete com o que mais importa, e o detalhe completo
+        fica um clique abaixo, atrás de "Ver detalhe completo":
       </P>
       <UL>
-        <LI><strong>Resumo executivo</strong> — objeto, valor, prazo, modalidade e órgão em linguagem simples</LI>
-        <LI><strong>Pontos de atenção</strong> — cláusulas que merecem revisão antes de licitar</LI>
-        <LI><strong>Documentos exigidos</strong> — lista de habilitação extraída automaticamente do edital</LI>
-        <LI><strong>Estimativa de preço</strong> — baseada no histórico de contratos similares no PNCP</LI>
-        <LI><strong>Recomendação final</strong> — GO, NO-GO ou ATENÇÃO (quando o resultado depende de dados que a empresa precisa confirmar)</LI>
+        <LI><strong>00 · Panorama</strong> — a história inteira em poucas linhas: veredito, score e o status das
+          outras 5 etapas, cada uma clicável para ir direto ao detalhe</LI>
+        <LI><strong>01 · Veredito</strong> — GO / GO condicionado / NO-GO, aderência ao negócio (CNAE), evidências,
+          impedimentos e o plano de próximas ações</LI>
+        <LI><strong>02 · Critérios</strong> — como o edital se sai nos critérios que você configurou, em ordem
+          de severidade</LI>
+        <LI><strong>03 · SWOT & Riscos</strong> — red flags, forças e fraquezas, checklist de habilitação e
+          matriz de riscos</LI>
+        <LI><strong>04 · Jurídico</strong> — parecer técnico-jurídico e o raciocínio estratégico da IA</LI>
+        <LI><strong>05 · Concorrentes</strong> — radar de concorrência e inteligência de preços</LI>
+        <LI><strong>06 · Cockpit</strong> — checklist de execução com responsável, prazo e status de cada tarefa</LI>
       </UL>
+      <Callout type="tip">
+        Os botões <strong>Imprimir</strong> e <strong>Baixar PDF</strong> trazem o conteúdo das 7 etapas
+        inteiras, não só a etapa que está aberta na tela no momento.
+      </Callout>
       <Callout type="info">
         Os relatórios ficam salvos no histórico por 90 dias no plano Starter e por tempo ilimitado no Pro e Enterprise.
       </Callout>
 
       <H2 id="match-cnae">Match CNAE</H2>
       <P>
-        O Match CNAE compara os CNAEs principais e secundários da sua empresa (via Receita Federal)
-        com o objeto do edital. O resultado é expresso em porcentagem de compatibilidade.
+        O Match CNAE compara os CNAEs da sua empresa (via Receita Federal) com o objeto do edital. O
+        resultado aparece na etapa <strong>Veredito → Aderência ao negócio</strong>, com o score de
+        compatibilidade e a justificativa.
+      </P>
+      <P>
+        A checagem considera tanto o <strong>CNAE principal</strong> quanto os <strong>CNAEs secundários</strong>
+        cadastrados na empresa — se o objeto do edital bater com qualquer um deles, isso aparece
+        destacado no relatório, com a indicação de qual CNAE gerou o match.
       </P>
       <P>
         Para configurar ou atualizar os CNAEs reconhecidos, acesse <strong>Perfil → Minha empresa</strong> e
@@ -392,6 +422,32 @@ function SectionAnalise() {
         Se o CNPJ estiver desatualizado na Receita Federal, o Match CNAE pode ficar impreciso. Verifique
         seus CNAEs no site da Receita antes de confiar 100% neste indicador.
       </Callout>
+      <Callout type="info">
+        Antes mesmo de rodar a análise, a busca de editais já compara o objeto com o CNAE/ramo de atuação
+        cadastrado e avisa se não encontrar relação — veja "Analisar e acompanhar editais" na seção Busca
+        de Editais.
+      </Callout>
+
+      <H2 id="gestao-decisoes">Gestão vs. Central de Decisões</H2>
+      <P>
+        Depois de analisado, todo edital fica em dois lugares diferentes, com propósitos diferentes:
+      </P>
+      <UL>
+        <LI><strong>Central de Decisões</strong> — o histórico completo, com todas as análises que você já rodou,
+          sem exceção. É o lugar para reabrir um laudo antigo ou reprocessar uma decisão.</LI>
+        <LI><strong>Gestão</strong> — um quadro (kanban) só com os editais que você adicionou de propósito,
+          clicando em <strong>"+ Gestão"</strong> dentro do laudo. É onde você acompanha checklist, prazos e
+          etapas (triagem → proposta → envio → resultado) só dos editais que realmente estão em jogo.</LI>
+      </UL>
+      <Callout type="tip">
+        Gestão é opt-in: analisar um edital não o coloca automaticamente lá. Se um edital que você esperava
+        ver na Gestão não aparece, abra o laudo dele na Central de Decisões e confira se o botão
+        "+ Gestão" está ativado.
+      </Callout>
+      <P>
+        Para remover um edital da Gestão, abra o laudo e clique em <strong>"Remover do acompanhamento"</strong>.
+        Ele some do quadro, mas continua disponível normalmente na Central de Decisões.
+      </P>
     </>
   );
 }
@@ -1026,7 +1082,7 @@ export default function DocsPage() {
 
           {/* Footer da doc */}
           <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
-            <p className="text-xs text-slate-400">Última atualização: Junho 2026</p>
+            <p className="text-xs text-slate-400">Última atualização: Julho 2026</p>
             <a
               href="mailto:development@bawzi.com"
               className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-emerald-600 transition-colors"

@@ -34,6 +34,7 @@ import AnalysisForm, { type QuotaInfo } from './AnalysisForm';
 import AnalysisLoadingOverlay from './AnalysisLoadingOverlay';
 import AnalysisResults from './AnalysisResults';
 import AppSidebar from './AppSidebar';
+import ActiveCompanyBanner from './ActiveCompanyBanner';
 import ShareModal from './ShareModal';
 import ImpugnacaoModal from './ImpugnacaoModal';
 
@@ -722,6 +723,7 @@ export default function AnalysisApp() {
 
         {/* ── CONTEÚDO PRINCIPAL ── */}
         <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0">
+          {token && contextCompanies.length === 0 && <ActiveCompanyBanner />}
           <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start print:block">
 
             {/* ── COLUNA ESQUERDA ── */}
@@ -1114,15 +1116,11 @@ export default function AnalysisApp() {
           </div>
         </section>
 
-        {/* ── SECÇÃO DE PLANOS ── */}
-        <section id="planos" className="bg-white py-24 px-6 border-t border-slate-100 print:hidden">
+        {/* ── PLANO ATUAL (resumo compacto) ── */}
+        <section id="planos" className="bg-white py-10 px-6 border-t border-slate-100 print:hidden">
           <div className="max-w-[1400px] mx-auto">
-            <div className="text-center mb-16">
-              <span className="text-slate-700 bg-slate-100 px-5 py-2 rounded-full font-black uppercase text-xs tracking-widest">Transparência e Escala</span>
-              <h2 className="text-4xl md:text-5xl font-black text-slate-900 mt-6 mb-4 tracking-tight">A IA certa para o desafio certo</h2>
-              <p className="text-slate-500 text-lg max-w-2xl mx-auto font-medium">Otimizamos o custo e a precisão roteando a sua análise automaticamente para os melhores modelos LLM do mundo.</p>
-            </div>
             <PricingSection
+              compact
               onRegister={() => { setAuthMode('register'); setShowAuthModal(true); }}
               onUpgrade={handleUpgrade}
               onChangePlan={userTier > 1 ? setChangePlanTargetTier : undefined}

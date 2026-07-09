@@ -163,6 +163,83 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     return `<table><thead><tr><th>#</th><th>Prazo</th><th>Ação</th><th>Responsável</th><th>Resultado esperado</th></tr></thead><tbody>${rows}</tbody></table>`;
   })();
 
+  const aderenciaHtml = (() => {
+    const fit = result.aderencia_negocio;
+    if (!fit) return '';
+    const rows = [
+      `<tr><td>Status</td><td>${esc(fit.status || '—')}</td></tr>`,
+      fit.score != null && `<tr><td>Match CNAE</td><td>${esc(fit.score)}/100</td></tr>`,
+      fit.cnae_principal && `<tr><td>CNAE</td><td>${esc(fit.cnae_principal)}${fit.cnae_descricao ? ` — ${esc(fit.cnae_descricao)}` : ''}</td></tr>`,
+      fit.objeto_detectado && `<tr><td>Objeto do edital</td><td>${esc(fit.objeto_detectado)}</td></tr>`,
+    ].filter(Boolean).join('');
+    const just = fit.justificativa ? `<p>${esc(fit.justificativa)}</p>` : '';
+    return `<table><thead><tr><th>Indicador</th><th>Valor</th></tr></thead><tbody>${rows}</tbody></table>${just}`;
+  })();
+
+  const parametrosHtml = (() => {
+    const params = result.avaliacao_parametros || [];
+    if (!params.length) return '';
+    const pesoLabel: Record<string, string> = { alto: 'Crítico', medio: 'Importante', baixo: 'Desejável' };
+    const statusLabel: Record<string, string> = { ok: 'Atende', alerta: 'Atenção', bloqueio: 'Não atende' };
+    const rows = params.map(p => `
+      <tr>
+        <td>${esc(p.nome)}</td>
+        <td>${esc(pesoLabel[p.peso] || p.peso)}</td>
+        <td>${esc(statusLabel[p.status] || p.status)}</td>
+        <td>${esc(p.score)}/10</td>
+      </tr>
+    `).join('');
+    return `<table><thead><tr><th>Critério</th><th>Peso</th><th>Status</th><th>Score</th></tr></thead><tbody>${rows}</tbody></table>`;
+  })();
+
+  const redFlagsHtml = (() => {
+    const flags = result.red_flags || [];
+    if (!flags.length) return '';
+    return `<ul>${flags.map(f => `<li><strong>[${esc((f.gravidade || 'media').toUpperCase())}]</strong> ${esc(f.descricao)}${f.base_legal ? ` (${esc(f.base_legal)})` : ''}</li>`).join('')}</ul>`;
+  })();
+
+  const habilitacaoHtml = (() => {
+    const itens = result.habilitacao_checklist || [];
+    if (!itens.length) return '';
+    return `<ul>${itens.map(h => `<li>${esc(h.exigencia)}${h.criticidade === 'eliminatoria' ? ' <strong>(eliminatória)</strong>' : ''}</li>`).join('')}</ul>`;
+  })();
+
+  const oportunidadesHtml = listHtml(result.oportunidades);
+
+  const fichaTecnicaHtml = (() => {
+    const ficha = result.ficha_tecnica || [];
+    if (!ficha.length) return '';
+    const rows = ficha.map(item => `
+      <tr>
+        <td style="font-weight:bold;white-space:nowrap">${esc(item.campo)}</td>
+        <td>${esc(item.valor || 'Não localizado')}</td>
+      </tr>
+    `).join('');
+    return `<table><tbody>${rows}</tbody></table>`;
+  })();
+
+  const scoreBreakdownHtml = (() => {
+    const itens = result.score_breakdown || [];
+    if (!itens.length) return '';
+    const rows = itens.map(item => `
+      <tr>
+        <td>${esc(item.fator)}</td>
+        <td style="text-align:right;font-weight:bold">${item.pontos > 0 ? '+' : ''}${esc(item.pontos)}</td>
+      </tr>
+    `).join('');
+    return `<table><tbody>${rows}</tbody></table>`;
+  })();
+
+  const concorrentesHtml = (() => {
+    const lista = [...(result.concorrentes_provaveis || []), ...(result.concorrentes_regionais || [])];
+    if (!lista.length) return '';
+    return `<ul>${lista.slice(0, 10).map((c: Record<string, unknown>) => {
+      const nome = esc(c?.nome || c?.razao_social || c?.name || 'Concorrente identificado');
+      const uf = c?.uf ? ` — ${esc(c.uf)}` : '';
+      return `<li>${nome}${uf}</li>`;
+    }).join('')}</ul>`;
+  })();
+
   const pricingHtml = (() => {
     const p = result.pricing_intelligence;
     if (!p) return '';
@@ -261,28 +338,36 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     </div>
   </div>
   ${decisionHtml ? section('1', 'Veredito Executivo', decisionHtml) : ''}
-  ${evidenceHtml ? section('2', 'Evidências que Sustentam a Decisão', evidenceHtml) : ''}
-  ${confidenceHtml ? section('3', 'Base da Confiança', confidenceHtml) : ''}
-  ${decision?.lacunas?.length ? section('4', 'Lacunas e Pontos Não Confirmados', listHtml(decision.lacunas)) : ''}
-  ${decision?.o_que_mudaria_decisao?.length ? section('5', 'O que Mudaria a Decisão', listHtml(decision.o_que_mudaria_decisao)) : ''}
-  ${actionPlanHtml ? section('6', 'Cockpit de Execução', actionPlanHtml) : ''}
-  ${section('7', 'Resumo Executivo do Edital', `<p>${esc(result.summary)}</p>`)}
-  ${semaforoHtml ? section('8', 'Semáforo de Viabilidade', semaforoHtml) : ''}
-  ${datasHtml ? section('9', 'Cronograma Crítico', datasHtml) : ''}
+  ${aderenciaHtml ? section('2', 'Aderência ao Negócio (CNAE)', aderenciaHtml) : ''}
+  ${evidenceHtml ? section('3', 'Evidências que Sustentam a Decisão', evidenceHtml) : ''}
+  ${confidenceHtml ? section('4', 'Base da Confiança', confidenceHtml) : ''}
+  ${decision?.lacunas?.length ? section('5', 'Lacunas e Pontos Não Confirmados', listHtml(decision.lacunas)) : ''}
+  ${decision?.o_que_mudaria_decisao?.length ? section('6', 'O que Mudaria a Decisão', listHtml(decision.o_que_mudaria_decisao)) : ''}
+  ${actionPlanHtml ? section('7', 'Cockpit de Execução', actionPlanHtml) : ''}
+  ${section('8', 'Resumo Executivo do Edital', `<p>${esc(result.summary)}</p>`)}
+  ${fichaTecnicaHtml ? section('9', 'Ficha Técnica do Edital', fichaTecnicaHtml) : ''}
+  ${semaforoHtml ? section('10', 'Semáforo de Viabilidade', semaforoHtml) : ''}
+  ${datasHtml ? section('11', 'Cronograma Crítico', datasHtml) : ''}
+  ${parametrosHtml ? section('12', 'Critérios Configurados', parametrosHtml) : ''}
+  ${redFlagsHtml ? section('13', 'Red Flags do Edital', redFlagsHtml) : ''}
   ${(result.vantagens?.length || result.desvantagens?.length) ? `
   <div class="two-col">
     ${result.vantagens?.length ? `<div class="col-box"><h4>✅ Pontos Favoráveis</h4>${listHtml(result.vantagens)}</div>` : ''}
     ${result.desvantagens?.length ? `<div class="col-box"><h4>❌ Pontos Desfavoráveis</h4>${listHtml(result.desvantagens)}</div>` : ''}
   </div>` : ''}
-  ${riscosHtml ? section('10', 'Matriz de Riscos', riscosHtml) : ''}
-  ${section('11', 'Fundamentação Legal e Parecer Especialista',
+  ${habilitacaoHtml ? section('14', 'Checklist de Habilitação', habilitacaoHtml) : ''}
+  ${riscosHtml ? section('15', 'Matriz de Riscos', riscosHtml) : ''}
+  ${oportunidadesHtml ? section('16', 'Oportunidades Estratégicas', oportunidadesHtml) : ''}
+  ${section('17', 'Fundamentação Legal e Parecer Especialista',
     `<p>${esc(result.parecer_especialista || result.rationale || 'Sem parecer detalhado disponível para esta análise.')}</p>`
   )}
-  ${result.exigencias_criticas?.length ? section('12', 'Exigências Críticas', listHtml(result.exigencias_criticas)) : ''}
-  ${result.documentos_necessarios?.length ? section('13', 'Documentos Necessários', listHtml(result.documentos_necessarios)) : ''}
-  ${checklistHtml ? section('14', 'Checklist de Participação', checklistHtml) : ''}
-  ${pricingHtml ? section('15', 'Inteligência de Preços', pricingHtml) : ''}
-  ${result.criterios_de_julgamento?.length ? section('16', 'Critérios de Julgamento', listHtml(result.criterios_de_julgamento)) : ''}
+  ${result.exigencias_criticas?.length ? section('18', 'Exigências Críticas', listHtml(result.exigencias_criticas)) : ''}
+  ${result.documentos_necessarios?.length ? section('19', 'Documentos Necessários', listHtml(result.documentos_necessarios)) : ''}
+  ${checklistHtml ? section('20', 'Checklist de Participação', checklistHtml) : ''}
+  ${scoreBreakdownHtml ? section('21', 'Composição do Score', scoreBreakdownHtml) : ''}
+  ${pricingHtml ? section('22', 'Inteligência de Preços', pricingHtml) : ''}
+  ${concorrentesHtml ? section('23', 'Concorrência', concorrentesHtml) : ''}
+  ${result.criterios_de_julgamento?.length ? section('24', 'Critérios de Julgamento', listHtml(result.criterios_de_julgamento)) : ''}
   <div class="signature">
     <div class="sig-box">
       <div class="sig-line"></div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { MapPin, Clock, TrendingUp, Zap, CheckCircle2, AlertTriangle, Globe, Building2, Pencil, RefreshCw, BadgeCheck, Scale, UsersRound, CornerDownRight } from 'lucide-react';
+import { MapPin, Globe, Building2, Pencil, RefreshCw } from 'lucide-react';
 import { API_URL } from '@/lib/apiClient';
 
 interface Edital {
@@ -40,13 +40,6 @@ function encerraEm(s: string): { texto: string; urgente: boolean } {
   return { texto: `${Math.floor(diff / 1440)}d`, urgente: false };
 }
 
-function formatValor(v: number | null): string {
-  if (!v) return '';
-  if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
-  if (v >= 1_000)     return `R$ ${(v / 1_000).toFixed(0)}K`;
-  return `R$ ${v.toLocaleString('pt-BR')}`;
-}
-
 function modShort(mod: string): string {
   const m = mod?.toLowerCase() || '';
   if (m.includes('pregão'))       return 'Pregão';
@@ -56,16 +49,14 @@ function modShort(mod: string): string {
   return mod.split(' ')[0] || 'Licitação';
 }
 
-function modColor(mod: string): { dot: string; badge: string; bar: string } {
+function modColor(mod: string): { dot: string; text: string; accent: string } {
   const m = mod?.toLowerCase() || '';
-  if (m.includes('pregão'))         return { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-100', bar: 'from-emerald-500 to-emerald-300' };
-  if (m.includes('concorrência'))   return { dot: 'bg-sky-500',     badge: 'bg-sky-50 text-sky-700 border-sky-100',             bar: 'from-sky-500 to-sky-300' };
-  if (m.includes('dispensa'))       return { dot: 'bg-amber-400',   badge: 'bg-amber-50 text-amber-700 border-amber-100',       bar: 'from-amber-500 to-amber-300' };
-  if (m.includes('credenciamento')) return { dot: 'bg-purple-500',  badge: 'bg-purple-50 text-purple-700 border-purple-100',    bar: 'from-purple-500 to-purple-300' };
-  return { dot: 'bg-slate-300', badge: 'bg-slate-50 text-slate-600 border-slate-100', bar: 'from-slate-300 to-slate-200' };
+  if (m.includes('pregão'))         return { dot: 'bg-emerald-400', text: 'text-emerald-300', accent: 'border-emerald-400' };
+  if (m.includes('concorrência'))   return { dot: 'bg-sky-400',     text: 'text-sky-300',      accent: 'border-sky-400' };
+  if (m.includes('dispensa'))       return { dot: 'bg-amber-400',   text: 'text-amber-300',    accent: 'border-amber-400' };
+  if (m.includes('credenciamento')) return { dot: 'bg-purple-400',  text: 'text-purple-300',   accent: 'border-purple-400' };
+  return { dot: 'bg-slate-400', text: 'text-slate-300', accent: 'border-slate-500' };
 }
-
-const AVATAR_COLORS = ['bg-violet-200','bg-sky-200','bg-emerald-200','bg-amber-200','bg-rose-200','bg-teal-200'];
 
 // ── Análise simulada (determinística por ID) ──────────────────────────────
 type Level = { label: string; color: string; bar: number };
@@ -73,20 +64,20 @@ type Level = { label: string; color: string; bar: number };
 function analise(id: string): { match: Level; risco: Level; competicao: Level; veredito: string } {
   const h = hashStr(id || 'x');
   const MATCH: Level[] = [
-    { label: 'Muito alto', color: 'text-emerald-600', bar: 92 },
-    { label: 'Alto',       color: 'text-emerald-500', bar: 74 },
-    { label: 'Médio',      color: 'text-amber-500',   bar: 52 },
-    { label: 'Baixo',      color: 'text-rose-500',    bar: 28 },
+    { label: 'Muito alto', color: 'emerald', bar: 92 },
+    { label: 'Alto',       color: 'emerald', bar: 74 },
+    { label: 'Médio',      color: 'amber',   bar: 52 },
+    { label: 'Baixo',      color: 'rose',    bar: 28 },
   ];
   const RISCO: Level[] = [
-    { label: 'Baixo',  color: 'text-emerald-500', bar: 18 },
-    { label: 'Médio',  color: 'text-amber-500',   bar: 52 },
-    { label: 'Alto',   color: 'text-rose-500',    bar: 80 },
+    { label: 'Baixo',  color: 'emerald', bar: 18 },
+    { label: 'Médio',  color: 'amber',   bar: 52 },
+    { label: 'Alto',   color: 'rose',    bar: 80 },
   ];
   const COMP: Level[] = [
-    { label: 'Baixa',  color: 'text-emerald-500', bar: 22 },
-    { label: 'Média',  color: 'text-amber-500',   bar: 55 },
-    { label: 'Alta',   color: 'text-rose-500',    bar: 82 },
+    { label: 'Baixa',  color: 'emerald', bar: 22 },
+    { label: 'Média',  color: 'amber',   bar: 55 },
+    { label: 'Alta',   color: 'rose',    bar: 82 },
   ];
   const match     = MATCH[(h)     % 4];
   const risco     = RISCO[(h >>2) % 3];
@@ -95,151 +86,16 @@ function analise(id: string): { match: Level; risco: Level; competicao: Level; v
   return { match, risco, competicao, veredito };
 }
 
-// ── Mini barra de nível ───────────────────────────────────────────────────
-function Bar({ pct, color }: { pct: number; color: string }) {
-  const bg = color.includes('emerald') ? 'bg-emerald-500'
-           : color.includes('amber')   ? 'bg-amber-400'
-           : 'bg-rose-500';
-  return (
-    <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-      <div className={`h-full rounded-full ${bg} transition-all duration-700`} style={{ width: `${pct}%` }} />
-    </div>
-  );
+function chipTone(color: string): string {
+  if (color === 'emerald') return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
+  if (color === 'amber')   return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
+  return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
 }
 
-// ── Painel de análise ─────────────────────────────────────────────────────
-function AnalysisPanel({ edital }: { edital: Edital }) {
-  const { match, risco, competicao, veredito } = analise(edital.id);
-  const isGo   = veredito === 'Recomendado disputar';
-  const isWarn = veredito === 'Vale analisar';
-  const tone = isGo
-    ? { shell: 'border-emerald-100 bg-emerald-50', text: 'text-emerald-700', Icon: CheckCircle2 }
-    : isWarn
-      ? { shell: 'border-amber-100 bg-amber-50', text: 'text-amber-700', Icon: AlertTriangle }
-      : { shell: 'border-slate-200 bg-slate-50', text: 'text-slate-500', Icon: AlertTriangle };
-  const ToneIcon = tone.Icon;
-
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-white shadow-[0_20px_60px_-20px_rgba(15,23,42,0.18)] p-4 w-full">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500">
-          <Zap size={12} className="text-white" />
-        </div>
-        <div className="min-w-0 leading-none">
-          <p className="text-[11px] font-black text-slate-900">Análise Bawzi</p>
-          <p className="mt-1 text-[9px] font-medium text-slate-400">gerada em segundos</p>
-        </div>
-      </div>
-
-      <div className="space-y-2.5 mb-4">
-        {[
-          { label: 'Match CNAE',     level: match,     Icon: BadgeCheck },
-          { label: 'Risco jurídico', level: risco,     Icon: Scale },
-          { label: 'Concorrência',   level: competicao, Icon: UsersRound },
-        ].map(({ label, level, Icon }) => (
-          <div key={label} className="flex items-center gap-2">
-            <Icon size={11} className="shrink-0 text-slate-300" />
-            <span className="w-[70px] shrink-0 text-[10px] font-semibold text-slate-500">{label}</span>
-            <Bar pct={level.bar} color={level.color} />
-            <span className={`w-14 text-right text-[10px] font-black shrink-0 ${level.color}`}>{level.label}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${tone.shell}`}>
-        <ToneIcon size={13} className={`shrink-0 ${tone.text}`} />
-        <span className={`text-[11px] font-black ${tone.text}`}>{veredito}</span>
-      </div>
-
-      <div className="mt-3 flex items-center gap-1.5 border-t border-slate-50 pt-2.5">
-        <span className="h-1 w-1 rounded-full bg-emerald-500" />
-        <span className="text-[9px] font-semibold text-slate-400">Fonte: PNCP oficial</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Card individual ───────────────────────────────────────────────────────
-function EditalCard({ edital, depth }: { edital: Edital; depth: 0 | 1 | 2 }) {
-  const enc   = encerraEm(edital.data_encerramento).texto;
-  const val   = formatValor(edital.valor);
-  const mod   = modColor(edital.modalidade);
-  const seed  = hashStr(edital.id || 'x');
-  const count = 2 + (seed % 5);
-  const avatars = Array.from({ length: Math.min(count, 3) }, (_, i) => AVATAR_COLORS[(seed + i) % AVATAR_COLORS.length]);
-
-  const depthStyles: Record<0 | 1 | 2, React.CSSProperties> = {
-    0: {},
-    1: { transform: 'translate(14px, -14px)', opacity: 0.55, pointerEvents: 'none' },
-    2: { transform: 'translate(28px, -28px)', opacity: 0.25, pointerEvents: 'none' },
-  };
-  const shadowClass = depth === 0
-    ? 'shadow-[0_24px_60px_-16px_rgba(15,23,42,0.22)]'
-    : 'shadow-md';
-
-  return (
-    <div
-      className={`absolute inset-0 rounded-2xl border border-slate-100 bg-white ${shadowClass}`}
-      style={{ zIndex: 3 - depth, ...depthStyles[depth] }}
-    >
-      {depth === 0 && (
-        <div className="p-5 h-full flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3">
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${mod.badge}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${mod.dot}`} />
-              {modShort(edital.modalidade)}
-            </span>
-            {edital.municipio && (
-              <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                <MapPin size={9} />
-                {edital.municipio} · {edital.uf}
-              </span>
-            )}
-          </div>
-
-          {/* Objeto */}
-          <p className="text-sm font-semibold text-slate-900 leading-snug line-clamp-3 flex-1 mb-3">
-            {edital.objeto || 'Sem descrição'}
-          </p>
-
-          {/* Org */}
-          <p className="text-[10px] text-slate-400 truncate mb-3">{edital.orgao}</p>
-
-          {/* Meta row */}
-          <div className="flex items-center gap-3 mb-3">
-            {val && (
-              <div className="flex items-center gap-1">
-                <TrendingUp size={10} className="text-emerald-600" />
-                <span className="text-xs font-black text-emerald-700">{val}</span>
-              </div>
-            )}
-            {enc && enc !== 'Encerrado' && (
-              <div className="flex items-center gap-1">
-                <Clock size={10} className="text-slate-400" />
-                <span className="text-xs text-slate-500 font-medium">{enc}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Matches */}
-          <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
-            <div className="flex -space-x-1.5">
-              {avatars.map((color, i) => (
-                <div key={i} className={`w-5 h-5 rounded-full ${color} border-2 border-white blur-[1.5px]`} />
-              ))}
-              <div className="w-5 h-5 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
-                <span className="text-[8px] font-black text-slate-400">+</span>
-              </div>
-            </div>
-            <span className="text-[10px] text-slate-400">
-              <span className="font-bold text-slate-600">{count}</span> empresas com perfil
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function veredictTone(v: string): string {
+  if (v === 'Recomendado disputar') return 'bg-emerald-500/15 text-emerald-300';
+  if (v === 'Vale analisar')        return 'bg-amber-500/15 text-amber-300';
+  return 'bg-slate-500/15 text-slate-400';
 }
 
 type Scope = 'nacional' | 'regional' | 'local';
@@ -359,6 +215,7 @@ export default function HeroCards() {
   const further = pool[(idx + 2) % pool.length];
   const mod     = current ? modColor(current.modalidade) : null;
   const enc     = current ? encerraEm(current.data_encerramento) : { texto: '', urgente: false };
+  const anl     = current ? analise(current.id) : null;
 
   const handleTabClick = (key: Scope) => {
     if (key === 'nacional') { setScope('nacional'); return; }
@@ -466,159 +323,92 @@ export default function HeroCards() {
     </div>
   );
 
-  if (!current) {
+  if (!current || !mod || !anl) {
     return (
       <div className="w-full">
         {tabBar}
-        <div className="flex gap-5">
-          <div className="flex-1 animate-pulse rounded-2xl bg-white/5 border border-white/10" style={{ minHeight: 280 }} />
-          <div className="w-52 animate-pulse rounded-2xl bg-white/5 border border-white/10" />
-        </div>
+        <div className="animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" style={{ minHeight: 220 }} />
       </div>
     );
   }
 
-  return (
-    <>
-      <style>{`
-        @keyframes cardOut {
-          to { opacity: 0; transform: translateY(-12px) scale(0.97); }
-        }
-        @keyframes cardIn {
-          from { opacity: 0; transform: translateY(12px) scale(0.97); }
-          to   { opacity: 1; transform: translateY(0)   scale(1); }
-        }
-        .card-out { animation: cardOut 0.35s ease forwards; }
-        .card-in  { animation: cardIn  0.35s ease both; }
-      `}</style>
+  const restantes = [next, further].filter((e): e is Edital => Boolean(e) && e.id !== current.id);
 
-      <div className="w-full">
+  return (
+    <div className="w-full min-w-0">
       {tabBar}
       {editor}
-      <div className="flex items-start gap-5 w-full">
 
-        {/* Stack de cartões */}
-        <div className="flex-1 min-w-0">
-          <div className="relative" style={{ paddingBottom: '28px', paddingRight: '28px' }}>
-            {/* Profundidade: cartões de baixo */}
-            {further && <div className="absolute inset-0 rounded-2xl border border-slate-100 bg-white" style={{ transform: 'translate(28px,-28px)', opacity: 0.22, zIndex: 1 }} />}
-            {next    && <div className="absolute inset-0 rounded-2xl border border-slate-100 bg-white shadow-md" style={{ transform: 'translate(14px,-14px)', opacity: 0.55, zIndex: 2 }} />}
-
-            {/* Cartão ativo */}
-            <div
-              className={`relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-[0_24px_60px_-16px_rgba(15,23,42,0.22)] ${animating ? 'card-out' : 'card-in'}`}
-              style={{ zIndex: 3 }}
-            >
-              {mod && <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${mod.bar}`} />}
-              <div className="p-5 pt-[22px]">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-3">
-                  {mod && (
-                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold ${mod.badge}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${mod.dot}`} />
-                      {modShort(current.modalidade)}
-                    </span>
-                  )}
-                  {current.municipio && (
-                    <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                      <MapPin size={9} />{current.municipio} · {current.uf}
-                    </span>
-                  )}
-                </div>
-
-                {/* Objeto */}
-                <p className="text-sm font-semibold text-slate-900 leading-snug line-clamp-3 mb-2.5">
-                  {current.objeto || 'Sem descrição'}
-                </p>
-
-                {/* Org */}
-                <p className="flex items-center gap-1.5 text-[10px] text-slate-400 mb-3">
-                  <Building2 size={9} className="shrink-0 text-slate-300" />
-                  <span className="truncate">{current.orgao}</span>
-                </p>
-
-                {/* Meta */}
-                <div className="flex items-center gap-2 mb-3">
-                  {current.valor && (
-                    <div className="flex items-center gap-1">
-                      <TrendingUp size={10} className="text-emerald-600" />
-                      <span className="text-xs font-black text-emerald-700">{formatValor(current.valor)}</span>
-                    </div>
-                  )}
-                  {enc.texto && enc.texto !== 'Encerrado' && (
-                    <div className={`flex items-center gap-1 ${enc.urgente ? 'rounded-full bg-red-50 px-2 py-0.5' : ''}`}>
-                      <Clock size={10} className={enc.urgente ? 'text-red-500' : 'text-slate-400'} />
-                      <span className={`text-xs font-medium ${enc.urgente ? 'font-black text-red-600' : 'text-slate-500'}`}>
-                        {enc.urgente ? `Encerra em ${enc.texto}` : enc.texto}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Matches */}
-                {(() => {
-                  const seed = hashStr(current.id || 'x');
-                  const count = 2 + (seed % 5);
-                  const avatars = Array.from({ length: Math.min(count, 3) }, (_, i) => AVATAR_COLORS[(seed + i) % AVATAR_COLORS.length]);
-                  return (
-                    <div className="flex items-center gap-2 pt-3 border-t border-slate-50">
-                      <div className="flex -space-x-1.5">
-                        {avatars.map((c, i) => <div key={i} className={`w-5 h-5 rounded-full ${c} border-2 border-white blur-[1.5px]`} />)}
-                        <div className="w-5 h-5 rounded-full bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center">
-                          <span className="text-[8px] font-black text-slate-400">+</span>
-                        </div>
-                      </div>
-                      <span className="text-[10px] text-slate-400">
-                        <span className="font-bold text-slate-600">{count}</span> empresas com perfil
-                      </span>
-                      <span className="ml-auto rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-400">
-                        match automático
-                      </span>
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
+      <div className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+        {/* Item em destaque */}
+        <div
+          className={`min-w-0 border-l-[3px] ${mod.accent} p-4 sm:p-5 transition-opacity duration-300 ${animating ? 'opacity-0' : 'opacity-100'}`}
+        >
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${mod.dot}`} />
+            <span className={`shrink-0 text-[11px] font-bold ${mod.text}`}>{modShort(current.modalidade)}</span>
+            {current.municipio && (
+              <span className="ml-auto min-w-0 truncate text-[10px] text-slate-500">{current.municipio} · {current.uf}</span>
+            )}
           </div>
 
-          {/* Indicador de paginação */}
-          <div className="flex items-center gap-2 mt-1.5">
-            <div className="flex items-center gap-1.5">
-              {pool.slice(0, Math.min(pool.length, 6)).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1 rounded-full transition-all duration-300 ${
-                    i === idx % Math.min(pool.length, 6)
-                      ? 'w-5 bg-emerald-500'
-                      : 'w-1.5 bg-white/15'
-                  }`}
-                />
-              ))}
-            </div>
-            <span className="ml-auto flex items-center gap-1.5 text-[9px] font-semibold text-white/35">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-              </span>
-              {pool.length} editais ativos
+          <p className="break-words text-sm font-semibold text-slate-100 leading-snug line-clamp-2 mb-1.5">
+            {current.objeto || 'Sem descrição'}
+          </p>
+
+          <p className="truncate text-[11px] text-slate-500 mb-3">
+            {current.orgao}
+            {enc.texto && enc.texto !== 'Encerrado' ? ` · encerra em ${enc.texto}` : ''}
+          </p>
+
+          <div className="flex flex-wrap gap-1.5">
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.match.color)}`}>
+              CNAE {anl.match.label.toLowerCase()}
+            </span>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.risco.color)}`}>
+              Jurídico {anl.risco.label.toLowerCase()}
+            </span>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.competicao.color)}`}>
+              Concorrência {anl.competicao.label.toLowerCase()}
+            </span>
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${veredictTone(anl.veredito)}`}>
+              {anl.veredito}
             </span>
           </div>
         </div>
 
-        {/* Painel de análise */}
-        <div
-          className={`w-52 shrink-0 transition-opacity duration-300 ${animating ? 'opacity-0' : 'opacity-100'}`}
-          style={{ paddingBottom: '28px' }}
-        >
-          <div className="mb-2 flex items-center gap-1.5 pl-1">
-            <CornerDownRight size={11} className="text-white/30" />
-            <span className="text-[9px] font-black uppercase tracking-widest text-white/30">Gerada automaticamente</span>
-          </div>
-          <AnalysisPanel edital={current} />
-        </div>
+        {/* Próximos da fila, em formato compacto */}
+        {restantes.map(item => {
+          const m = modColor(item.modalidade);
+          const t = encerraEm(item.data_encerramento).texto;
+          return (
+            <div key={item.id} className="flex items-center gap-2.5 px-4 sm:px-5 py-2.5 border-t border-white/5">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${m.dot}`} />
+              <span className="flex-1 min-w-0 truncate text-xs text-slate-400">{item.objeto || 'Sem descrição'}</span>
+              {t && t !== 'Encerrado' && <span className="shrink-0 text-[10px] text-slate-600">{t}</span>}
+            </div>
+          );
+        })}
 
+        {/* Rodapé */}
+        <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-t border-white/5">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+          </span>
+          <span className="text-[10px] font-semibold text-slate-500">{pool.length} editais ativos agora</span>
+          <div className="ml-auto flex items-center gap-1.5">
+            {pool.slice(0, Math.min(pool.length, 6)).map((_, i) => (
+              <div
+                key={i}
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === idx % Math.min(pool.length, 6) ? 'w-5 bg-emerald-500' : 'w-1.5 bg-white/15'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
-      </div>
-    </>
+    </div>
   );
 }

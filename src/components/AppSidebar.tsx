@@ -16,7 +16,7 @@ import React from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
-  ClipboardList, MessageCircle, SlidersHorizontal,
+  ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
@@ -76,6 +76,26 @@ function CountBadge({ count, color = 'amber' }: { count: number; color?: 'amber'
     <span className={`shrink-0 text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm ${styles[color]}`}>
       {count}
     </span>
+  );
+}
+
+/**
+ * Linha compacta para item de nav ainda bloqueado por nível.
+ * Agrupados à parte (fora da nav ativa) para não competir visualmente
+ * com o que o usuário já pode usar agora.
+ */
+function LockedNavRow({ label, tier, onClick }: { label: string; tier: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-slate-100"
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <Lock size={11} className="shrink-0 text-slate-400" />
+        <span className="truncate text-[12px] font-bold text-slate-500">{label}</span>
+      </span>
+      <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400">{tier}</span>
+    </button>
   );
 }
 
@@ -147,21 +167,7 @@ export default function AppSidebar({
         </button>
 
         {/* ── Histórico ──────────────────────────────────── */}
-        {token && currentTier < 2 ? (
-          <button
-            onClick={() => router.push('/plans')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-sky-50 opacity-60 hover:opacity-80"
-          >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-sky-50 border border-sky-100">
-              <Lock size={15} className="text-sky-600" />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Decisões</p>
-              <p className="text-[10px] font-medium leading-none text-slate-400">Laudos e resultados salvos</p>
-            </div>
-            <FeatureBadge label="NÍV. 2" color="sky" />
-          </button>
-        ) : (
+        {token && currentTier >= 2 && (
           <button
             onClick={() => onSetActiveTab('history')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -211,21 +217,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Gestão de execução ─────────────────────────── */}
-        {token && currentTier < 4 ? (
-          <button
-            onClick={() => router.push('/plans')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-50 opacity-60 hover:opacity-80"
-          >
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-50 border border-slate-200">
-              <Lock size={15} className="text-slate-600" />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Gestão</p>
-              <p className="text-[10px] font-medium leading-none text-slate-400">Fluxo dos editais</p>
-            </div>
-            <FeatureBadge label="NÍV. 4" color="slate" />
-          </button>
-        ) : (
+        {token && currentTier >= 4 && (
           <button
             onClick={() => router.push('/gestao')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -250,104 +242,57 @@ export default function AppSidebar({
         )}
 
         {/* ── Comparar editais ───────────────────────────── */}
-        {token && (
-          currentTier < 2 ? (
-            <button
-              onClick={() => router.push('/plans')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-violet-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-50 border border-violet-100">
-                <Lock size={15} className="text-violet-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Priorizar</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Escolha o melhor edital</p>
-              </div>
-              <FeatureBadge label="NÍV. 2" color="violet" />
-            </button>
-          ) : (
-            <button
-              onClick={() => onSetActiveTab('comparar')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
-              }`}>
-                <GitCompare size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
-                  Priorizar
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Escolha o melhor edital
-                </p>
-              </div>
-              {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
-            </button>
-          )
+        {token && currentTier >= 2 && (
+          <button
+            onClick={() => onSetActiveTab('comparar')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
+            }`}>
+              <GitCompare size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
+                Priorizar
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
+                Escolha o melhor edital
+              </p>
+            </div>
+            {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
+          </button>
         )}
 
         {/* ── Oportunidades — Feed CNAE (autenticados) ────── */}
-        {token && userData && (
-          currentTier < 3 ? (
-            <button
-              onClick={() => router.push('/plans')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-teal-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-teal-50 border border-teal-100">
-                <Lock size={15} className="text-teal-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Oportunidades</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Match CNAE e perfil</p>
-              </div>
-              <FeatureBadge label="NÍV. 3" color="teal" />
-            </button>
-          ) : (
-            <button
-              onClick={() => onSetActiveTab('cnae')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'cnae' ? 'bg-teal-600' : 'hover:bg-teal-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'cnae' ? 'bg-white/15' : 'bg-teal-50 border border-teal-100'
-              }`}>
-                <Target size={16} className={activeTab === 'cnae' ? 'text-white' : 'text-teal-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
-                  Oportunidades
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Match CNAE e perfil
-                </p>
-              </div>
-              {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
-            </button>
-          )
+        {token && userData && currentTier >= 3 && (
+          <button
+            onClick={() => onSetActiveTab('cnae')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === 'cnae' ? 'bg-teal-600' : 'hover:bg-teal-50'
+            }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              activeTab === 'cnae' ? 'bg-white/15' : 'bg-teal-50 border border-teal-100'
+            }`}>
+              <Target size={16} className={activeTab === 'cnae' ? 'text-white' : 'text-teal-600'} />
+            </div>
+            <div className="flex-1 text-left min-w-0">
+              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
+                Oportunidades
+              </p>
+              <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
+                Match CNAE e perfil
+              </p>
+            </div>
+            {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
+          </button>
         )}
 
         {/* ── Monitor inteligente (NÍV. 3) ────────────────── */}
-        {token && (
-          currentTier < 3 ? (
-            <button
-              onClick={() => router.push('/plans')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-amber-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 border border-amber-100">
-                <Lock size={15} className="text-amber-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Monitor</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Sinais críticos PNCP</p>
-              </div>
-              <FeatureBadge label="NÍV. 3" color="amber" />
-            </button>
-          ) : (
+        {token && currentTier >= 3 && (
             <button
               onClick={() => onSetActiveTab('alertas')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -369,30 +314,10 @@ export default function AppSidebar({
               </div>
               {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
             </button>
-          )
         )}
 
         {/* ── Capital / fôlego financeiro (NÍV. 3) ────────── */}
-        {token && (
-          currentTier < 3 ? (
-            /* Bloqueado */
-            <button
-              onClick={() => router.push('/plans')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-blue-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-blue-50 border border-blue-100">
-                <Lock size={15} className="text-blue-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Capital</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">
-                  Fôlego para executar
-                </p>
-              </div>
-              <FeatureBadge label="NÍV. 3" color="blue" />
-            </button>
-          ) : (
-            /* Desbloqueado */
+        {token && currentTier >= 3 && (
             <button
               onClick={() => onSetActiveTab('capital')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -414,29 +339,11 @@ export default function AppSidebar({
               </div>
               {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
             </button>
-          )
         )}
 
         {/* ── Renovações (NÍV. 4) ─────────────────────────── */}
-        {token && userData && (
-          currentTier < 4 ? (
-            /* Bloqueado */
-            <button
-              onClick={() => router.push('/plans')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-amber-50 opacity-60 hover:opacity-80"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 border border-amber-100">
-                <Lock size={15} className="text-amber-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Renovações</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">
-                  Contratos vencendo
-                </p>
-              </div>
-              <FeatureBadge label="NÍV. 4" color="amber" />
-            </button>
-          ) : (userData.companies?.length || userData.company) ? (
+        {token && userData && currentTier >= 4 && (
+          (userData.companies?.length || userData.company) ? (
             /* Desbloqueado + empresa configurada */
             <button
               onClick={() => onSetActiveTab('renovacoes')}
@@ -484,6 +391,42 @@ export default function AppSidebar({
         )}
       </div>
 
+      {/* ── RECURSOS BLOQUEADOS (agrupados, fora da nav ativa) ──────────────── */}
+      {token && (currentTier < 4) && (
+        <details open className="group rounded-[1.5rem] border border-slate-100 bg-slate-50/60 px-1 py-1">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:bg-white">
+            <span className="flex items-center gap-1.5">
+              <Lock size={11} className="shrink-0" />
+              Recursos por nível
+            </span>
+            <ChevronDown size={13} className="shrink-0 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="flex flex-col gap-0.5 px-1 pb-1 pt-1">
+            {currentTier < 2 && (
+              <LockedNavRow label="Decisões" tier="NÍV. 2" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 2 && (
+              <LockedNavRow label="Priorizar" tier="NÍV. 2" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 3 && (
+              <LockedNavRow label="Oportunidades" tier="NÍV. 3" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 3 && (
+              <LockedNavRow label="Monitor" tier="NÍV. 3" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 3 && (
+              <LockedNavRow label="Capital" tier="NÍV. 3" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 4 && (
+              <LockedNavRow label="Gestão" tier="NÍV. 4" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 4 && (
+              <LockedNavRow label="Renovações" tier="NÍV. 4" onClick={() => router.push('/plans')} />
+            )}
+          </div>
+        </details>
+      )}
+
       {/* ── IDENTIDADE ESTRATÉGICA ────────────────────────────────────────── */}
       {token && userData ? (
         <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
@@ -512,9 +455,9 @@ export default function AppSidebar({
         </div>
       )}
 
-      {/* ── MOTOR DE ANÁLISE — 4 agentes ─────────────────────────────────── */}
-      <div className="bg-white rounded-[2rem] border border-slate-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+      {/* ── MOTOR DE ANÁLISE — 4 agentes (colapsado por padrão) ───────────── */}
+      <details className="group bg-white rounded-[2rem] border border-slate-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] overflow-hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-4 transition-colors hover:bg-slate-50">
           <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
@@ -523,9 +466,10 @@ export default function AppSidebar({
           <span className="ml-auto text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold border border-slate-200">
             4 Agentes IA
           </span>
-        </div>
+          <ChevronDown size={13} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+        </summary>
 
-        <div className="divide-y divide-slate-50">
+        <div className="divide-y divide-slate-50 border-t border-slate-100">
           {[
             { bg: 'bg-amber-50',   border: 'border-amber-100',   Icon: Scale,        color: 'text-amber-500',  label: 'Agente Jurídico',   desc: 'Fundamentação legal · Impugnações · Lei 14.133/21' },
             { bg: 'bg-emerald-50', border: 'border-emerald-100', Icon: TrendingDown,  color: 'text-emerald-500',label: 'Agente Financeiro', desc: 'Score de deságio · Margens · Viabilidade real' },
@@ -551,7 +495,7 @@ export default function AppSidebar({
             </span>
           ))}
         </div>
-      </div>
+      </details>
 
       {/* ── SUPORTE ──────────────────────────────────────────────────────────── */}
       <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">

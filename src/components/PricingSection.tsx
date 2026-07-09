@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock, ChevronRight } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
@@ -14,6 +15,8 @@ interface PricingSectionProps {
   onUpgrade?: (tier: number) => void;
   onChangePlan?: (tier: number) => void;   // Abre o modal de troca de plano (para assinantes pagos)
   currentTier?: number;
+  /** Modo compacto: mostra só o resumo do plano atual + link para /plans, sem a grade completa dos 5 planos. Usado no workspace, onde a tabela inteira é ruído repetido a cada visita. */
+  compact?: boolean;
 }
 
 // Dados dos tiers: features são o DELTA de cada nível (o que é exclusivo deste tier).
@@ -169,7 +172,7 @@ const tierStyle: Record<string, Record<string, string>> = {
 // Nome curto dos tiers para o label "Inclui tudo do Nível N +"
 const TIER_SHORT: Record<number, string> = { 1: 'Gratuito', 2: 'Essencial', 3: 'Profissional' };
 
-export default function PricingSection({ onRegister, onUpgrade, onChangePlan, currentTier: propCurrentTier }: PricingSectionProps) {
+export default function PricingSection({ onRegister, onUpgrade, onChangePlan, currentTier: propCurrentTier, compact = false }: PricingSectionProps) {
   const router = useRouter();
 
   const { tier: hookTier, isPromo, promoExpiresAt, refresh: refreshTier } = useTier();
@@ -362,7 +365,28 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
         </div>
       )}
 
+      {/* Resumo compacto — usado no workspace, sem repetir a grade completa a cada visita */}
+      {compact && (
+        <div className="mb-10 flex flex-col items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center">
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Seu plano</p>
+            <p className="mt-0.5 text-sm font-black text-slate-900">
+              {activeTier > 0
+                ? `Nível ${activeTier} — ${tiers.find((t) => t.tierLevel === activeTier)?.name || ''}`
+                : 'Nível 0 — Teste gratuito'}
+            </p>
+          </div>
+          <Link
+            href="/plans"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-slate-800"
+          >
+            Ver todos os planos <ChevronRight size={14} />
+          </Link>
+        </div>
+      )}
+
       {/* Grid de cards */}
+      {!compact && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end mb-16">
         {tiers.map((tier) => {
           const s            = tierStyle[String(tier.tierLevel)];
@@ -452,6 +476,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           );
         })}
       </div>
+      )}
 
       <UpgradeModal
         isOpen={showUpgradeModal}

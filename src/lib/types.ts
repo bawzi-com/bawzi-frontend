@@ -88,6 +88,8 @@ export interface SavedAnalysis {
   } | null;
   company_cnpj?: string | null;
   company_name?: string | null;
+  /** true somente quando o usuário adiciona explicitamente a análise à Gestão ("+ Gestão"). */
+  tracked_in_gestao?: boolean;
   reviewed_at?: string;
   decision_reviews?: Record<string, unknown>[];
   decision_learning?: {
