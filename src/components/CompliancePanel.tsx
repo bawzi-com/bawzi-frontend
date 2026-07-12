@@ -235,6 +235,18 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
   const isCguApproved = cguData?.vereditto === 'APROVADO';
   const hasCguSanctions = cguData?.vereditto === 'REPROVADO_COM_SANCÃO';
+
+  // Achado crítico — abre o dossiê sozinho assim que a sanção é detectada.
+  // A informação mais importante do painel não pode ficar escondida atrás
+  // de um clique.
+  const autoExpandedRef = useRef(false);
+  useEffect(() => {
+    if (hasCguSanctions && !autoExpandedRef.current) {
+      autoExpandedRef.current = true;
+      setExpanded(true);
+    }
+  }, [hasCguSanctions]);
+
   const isAnyCertidaoProcessing =
     cndFederal?.statusForcado === 'processando' ||
     cndTst?.statusForcado === 'processando' ||
@@ -324,23 +336,22 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
       
       {/* CABEÇALHO */}
       <div className="flex items-center justify-between mb-3 px-2 pt-2 relative z-20">
-        <div className="flex items-center gap-2">
-          <ShieldCheck size={16} className="text-slate-400" />
-          <div>
-            <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <ShieldCheck size={16} className="text-slate-400 shrink-0" />
+          <div className="min-w-0">
+            <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
               Radar preliminar de habilitação
-              {companyName && <span className="font-bold text-slate-400 truncate max-w-[150px] lowercase capitalize">| {companyName}</span>}
             </h4>
-            <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-              CEIS/CNEP consultado. Certidões oficiais ficam pendentes até extração.
-            </p>
+            {companyName && (
+              <p className="text-[11px] font-bold text-slate-600 truncate max-w-[220px]">{companyName}</p>
+            )}
           </div>
         </div>
         {!isLocked && (
-          <button 
+          <button
             onClick={handleRefreshCgu}
             disabled={isRefreshingCgu}
-            className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+            className="text-slate-400 hover:text-indigo-600 transition-colors p-1 shrink-0"
             title="Atualizar CEIS / CNEP"
           >
             <RotateCw size={14} className={isRefreshingCgu ? "animate-spin text-indigo-500" : ""} />
@@ -350,10 +361,108 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
       {/* 🟢 O CONTAINER DOS DADOS (Com Blur) */}
       <div className={`transition-all duration-300 ${isLocked ? 'blur-[5px] opacity-40 select-none pointer-events-none' : ''}`}>
-        
+
+        {/* 🔴 ACHADO CRÍTICO: sanção CEIS/CNEP ativa — ganha um banner de
+            largura total, na frente de tudo. Não é mais um card pequeno do
+            mesmo tamanho que "CND válida até..."; é a informação que mais
+            importa neste painel. */}
+        {hasCguSanctions && !loadingCgu && (
+          <div className="mx-1 mb-3 rounded-xl border border-rose-300 bg-rose-50 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setExpanded(!expanded)}
+              className="w-full flex items-start gap-3 p-3.5 text-left hover:bg-rose-100/60 transition-colors"
+            >
+              <div className="shrink-0 w-8 h-8 rounded-full bg-rose-600 text-white flex items-center justify-center">
+                <ShieldAlert size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">CEIS / CNEP · CGU</p>
+                <p className="text-xs font-black text-rose-900 mt-0.5">
+                  {todasSancoes.length > 0
+                    ? `${todasSancoes.length} sanção${todasSancoes.length > 1 ? 'ões' : ''} federal${todasSancoes.length > 1 ? 'is' : ''} ativa${todasSancoes.length > 1 ? 's' : ''}`
+                    : 'Sanção federal encontrada'}
+                </p>
+                <p className="text-[10px] text-rose-700/80 font-medium mt-0.5">Impedimento/proibição de contratar com a administração pública.</p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {!isLocked && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => { e.stopPropagation(); fetchCompliance(true); }}
+                    className="text-rose-400 hover:text-rose-700 transition-colors p-1"
+                  >
+                    <RotateCw size={13} className={isRefreshingCgu ? "animate-spin" : ""} />
+                  </span>
+                )}
+                <span className="text-rose-500 bg-white rounded-lg shadow-sm p-1 border border-rose-200">
+                  {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                </span>
+              </div>
+            </button>
+
+            {/* Dossiê — abre sozinho na primeira detecção */}
+            {expanded && (
+              <div className="px-3.5 pb-3.5 pt-1 border-t border-rose-200 animate-in slide-in-from-top-2 duration-300">
+                {todasSancoes.length === 0 ? (
+                  <p className="text-[11px] text-rose-700 font-medium pt-2.5">Sanção detectada mas sem detalhes disponíveis. Consulte diretamente o Portal da Transparência.</p>
+                ) : (
+                  <div className="flex flex-col gap-2 pt-2.5">
+                    {todasSancoes.map(({ fonte, item }, idx) => {
+                      const toStr = (v: any): string => {
+                        if (!v) return '';
+                        if (typeof v === 'string') return v;
+                        if (typeof v === 'object') return v.descricaoResumida || v.descricaoPortal || '';
+                        return String(v);
+                      };
+                      const tipo = toStr(item.tipoSancao) || toStr(item.categoria_sancao) || toStr(item.tipo_sancao) || 'Sanção registrada';
+                      const orgao = toStr(item.orgaoSancionador) || toStr(item.orgao_sancionador);
+                      const cnpjLimpo = cnpj.replace(/\D/g, '');
+                      const portalUrl = item.id
+                        ? `https://portaldatransparencia.gov.br/sancoes/consulta/${item.id}`
+                        : `https://portaldatransparencia.gov.br/sancoes/consulta?cadastro=1&cadastro=2&cpfCnpj=${cnpjLimpo}&ordenarPor=nomeSancionado&direcao=asc`;
+                      return (
+                        <div key={idx} className="flex flex-col gap-1 p-2.5 bg-white border border-rose-100 rounded-lg">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-black text-rose-900 leading-tight">{tipo}</p>
+                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 shrink-0">{fonte}</span>
+                          </div>
+                          {orgao && (
+                            <p className="text-[9px] font-bold text-rose-700/70 uppercase tracking-wide">{orgao}</p>
+                          )}
+                          {(item.dataInicioPenalidade || item.dataFimPenalidade) && (
+                            <p className="text-[9px] text-rose-600/70 font-medium">
+                              {item.dataInicioPenalidade && `Início: ${item.dataInicioPenalidade}`}
+                              {item.dataInicioPenalidade && item.dataFimPenalidade && ' · '}
+                              {item.dataFimPenalidade && `Fim: ${item.dataFimPenalidade}`}
+                            </p>
+                          )}
+                          <a
+                            href={portalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 self-start text-[9px] font-black uppercase tracking-wide text-rose-600 underline underline-offset-2 hover:text-rose-800"
+                          >
+                            Ver no Portal da Transparência →
+                          </a>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="px-2 mb-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+          Certidões {hasCguSanctions ? '' : '· CEIS/CNEP consultado, oficiais ficam pendentes até extração'}
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-1">
-          {/* CGU */}
-          {loadingCgu && !isLocked ? (
+          {/* CGU — só ocupa um card na grade quando NÃO há sanção (o achado
+              crítico já virou o banner acima; repetir aqui seria redundante) */}
+          {hasCguSanctions ? null : loadingCgu && !isLocked ? (
             <div className="h-[76px] rounded-xl bg-slate-50 border border-slate-100 animate-pulse"></div>
           ) : cguError || !cguData ? (
             <div className="flex flex-col justify-center p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-500 h-[76px] relative">
@@ -364,10 +473,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
                <span className="text-[11px] font-bold">Falha ao consultar CGU.</span>
             </div>
           ) : (
-            <div 
-              onClick={() => hasCguSanctions && setExpanded(!expanded)}
-              className={`flex flex-col p-3 rounded-xl border transition-all duration-300 relative ${hasCguSanctions ? 'cursor-pointer hover:shadow-md' : ''} ${isCguApproved ? 'bg-emerald-50 border-emerald-200' : hasCguSanctions ? 'bg-rose-50 border-rose-200' : 'bg-amber-50 border-amber-200'}`}
-            >
+            <div className={`flex flex-col p-3 rounded-xl border transition-all duration-300 relative ${isCguApproved ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
               {isRefreshingCgu && (
                 <div className="absolute top-0 left-0 h-0.5 bg-indigo-500/20 w-full">
                    <div className="h-full bg-indigo-500 w-1/3 animate-[slide_1.5s_ease-in-out_infinite]"></div>
@@ -375,32 +481,25 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
               )}
               <div className="flex items-start justify-between mb-2 mt-1">
                 <div className="flex items-center gap-1.5">
-                  {isCguApproved ? <ShieldCheck size={14} className="text-emerald-600" /> : <ShieldAlert size={14} className="text-rose-600" />}
+                  {isCguApproved ? <ShieldCheck size={14} className="text-emerald-600" /> : <ShieldAlert size={14} className="text-amber-600" />}
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">CEIS / CNEP</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-white border ${isCguApproved ? 'border-emerald-200 text-emerald-600' : 'border-rose-200 text-rose-600'}`}>CGU</span>
-                  
+                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md bg-white border ${isCguApproved ? 'border-emerald-200 text-emerald-600' : 'border-amber-200 text-amber-600'}`}>CGU</span>
                   {!isLocked && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); fetchCompliance(true); }} 
+                    <button
+                      onClick={(e) => { e.stopPropagation(); fetchCompliance(true); }}
                       disabled={isRefreshingCgu}
                       className="text-slate-400 hover:text-indigo-600 transition-colors z-10"
                     >
                       <RotateCw size={12} className={isRefreshingCgu ? "animate-spin text-indigo-500" : ""} />
                     </button>
                   )}
-
-                  {hasCguSanctions && (
-                    <span className="text-rose-400 bg-white rounded shadow-sm p-0.5">
-                      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </span>
-                  )}
                 </div>
               </div>
-              <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : hasCguSanctions ? 'text-rose-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
-                {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />} 
-                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Sem sanções CGU encontradas' : hasCguSanctions ? 'Sanções encontradas' : 'Análise incompleta'}
+              <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
+                {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Sem sanções CGU encontradas' : 'Análise incompleta'}
               </div>
             </div>
           )}
@@ -430,62 +529,6 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
                 </>
               )}
             </button>
-          </div>
-        )}
-
-        {/* Dossiê CGU Expandido */}
-        {expanded && hasCguSanctions && (
-          <div className="mt-3 px-3 pb-3 pt-3 border border-rose-200 bg-white rounded-xl shadow-sm mx-1 animate-in slide-in-from-top-2 duration-300">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-rose-800/60 mb-3 flex items-center gap-1.5 px-1">
-              <AlertTriangle size={12} className="text-rose-500" />
-              Dossiê de Irregularidades ({todasSancoes.length})
-            </p>
-            {todasSancoes.length === 0 ? (
-              <p className="text-[11px] text-rose-700 font-medium px-1">Sanções detectadas mas sem detalhes disponíveis. Consulte diretamente o Portal da Transparência.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {todasSancoes.map(({ fonte, item }, idx) => {
-                  const toStr = (v: any): string => {
-                    if (!v) return '';
-                    if (typeof v === 'string') return v;
-                    if (typeof v === 'object') return v.descricaoResumida || v.descricaoPortal || '';
-                    return String(v);
-                  };
-                  const tipo = toStr(item.tipoSancao) || toStr(item.categoria_sancao) || toStr(item.tipo_sancao) || 'Sanção registrada';
-                  const orgao = toStr(item.orgaoSancionador) || toStr(item.orgao_sancionador);
-                  const cnpjLimpo = cnpj.replace(/\D/g, '');
-                  const portalUrl = item.id
-                    ? `https://portaldatransparencia.gov.br/sancoes/consulta/${item.id}`
-                    : `https://portaldatransparencia.gov.br/sancoes/consulta?cadastro=1&cadastro=2&cpfCnpj=${cnpjLimpo}&ordenarPor=nomeSancionado&direcao=asc`;
-                  return (
-                    <div key={idx} className="flex flex-col gap-1 p-2.5 bg-rose-50/50 border border-rose-100 rounded-lg">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-black text-rose-900 leading-tight">{tipo}</p>
-                        <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 shrink-0">{fonte}</span>
-                      </div>
-                      {orgao && (
-                        <p className="text-[9px] font-bold text-rose-700/70 uppercase tracking-wide">{orgao}</p>
-                      )}
-                      {(item.dataInicioPenalidade || item.dataFimPenalidade) && (
-                        <p className="text-[9px] text-rose-600/70 font-medium">
-                          {item.dataInicioPenalidade && `Início: ${item.dataInicioPenalidade}`}
-                          {item.dataInicioPenalidade && item.dataFimPenalidade && ' · '}
-                          {item.dataFimPenalidade && `Fim: ${item.dataFimPenalidade}`}
-                        </p>
-                      )}
-                      <a
-                        href={portalUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 self-start text-[9px] font-black uppercase tracking-wide text-rose-600 underline underline-offset-2 hover:text-rose-800"
-                      >
-                        Ver no Portal da Transparência →
-                      </a>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         )}
       </div>

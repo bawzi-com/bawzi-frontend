@@ -110,6 +110,26 @@ export default function Header() {
     return () => window.removeEventListener('bawzi_update', handleGlobalUpdate);
   }, [pathname]);
 
+  // Sessão expirada em qualquer lugar do app (token não renovável, refresh
+  // cookie inválido/expirado etc.) → apiClient já limpou tudo em memória e
+  // no localStorage; aqui só precisamos refletir isso na UI. Sem este
+  // listener, o Header (montado globalmente em app/layout.tsx) continuava
+  // mostrando avatar/tier/links como se o usuário ainda estivesse logado,
+  // mesmo depois de qualquer outra chamada já ter derrubado a sessão —
+  // dava a impressão de que "o sistema não desloga" depois de muito tempo
+  // parado.
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setToken(null);
+      setUserData(null);
+      setIsGlobalAdmin(false);
+      setUserTier('1');
+      setPromo(null);
+    };
+    window.addEventListener('bawzi_session_expired', handleSessionExpired);
+    return () => window.removeEventListener('bawzi_session_expired', handleSessionExpired);
+  }, []);
+
   // Fecha o menu ao clicar fora
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

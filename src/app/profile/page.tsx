@@ -292,7 +292,14 @@ function ProfileContent() {
       if (pmRes && pmRes.ok) { const pmData = await pmRes.json(); setSavedCard(pmData.card ?? null); }
       
     } catch (error) {
-      if (error instanceof SessionExpiredError) { clearSession(); return; }
+      if (error instanceof SessionExpiredError) {
+        // Sem isto, a tela ficava com dados vazios/parciais e nenhuma
+        // indicação de que a sessão caiu — parecia um bug de carregamento,
+        // não um logout. Redireciona para o login já preservando a volta.
+        clearSession();
+        router.push('/login?redirect=/profile');
+        return;
+      }
       console.error("Erro ao sincronizar dados:", error);
     } finally {
       setIsLoading(false);

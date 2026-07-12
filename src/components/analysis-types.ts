@@ -10,6 +10,15 @@ export interface EngenhariaReversa {
   margem_media_setor_pct: number;
 }
 
+/** Margem líquida ajustada pelo regime tributário (Simples Nacional ou não) + ponto de equilíbrio simplificado. */
+export interface ViabilidadeFinanceira {
+  margem_setor_pct: number;
+  margem_liquida_estimada_pct: number;
+  base_tributaria: string;
+  ponto_equilibrio_desconto_max_pct: number;
+  mensagem: string;
+}
+
 export interface PricingIntelligence {
   desagioPreditivoOrgao: number;
   nivelAmeaca: string;
@@ -19,8 +28,101 @@ export interface PricingIntelligence {
   estimated_discount?: number;
   valorMedioMercado?: number;
   engenharia_reversa?: EngenhariaReversa;
+  viabilidade_financeira?: ViabilidadeFinanceira;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
+}
+
+/** Nota CAPAG (Capacidade de Pagamento) do órgão comprador — Tesouro Transparente/STN. */
+export interface OrgaoRiskData {
+  escopo: 'municipio' | 'estado' | string;
+  classificacao: string;
+  descricao: string;
+  fonte: string;
+}
+
+/** Alerta quando a garantia exigida no edital excede o teto legal da Lei 14.133/2021. */
+export interface GarantiaAlertaItem {
+  campo: string;
+  valor_exigido: string;
+  teto_legal_pct: number;
+  excede: boolean;
+  mensagem: string;
+}
+
+export interface MatrizRiscoFormalItem {
+  risco: string;
+  impacto: string;
+  alocado_a: 'contratante' | 'contratado' | 'a_negociar' | string;
+}
+
+/** Matriz de risco formal (art. 6º, XXVII da Lei 14.133/2021) — só para contratos de grande vulto/contratação integrada. */
+export interface MatrizRiscoFormal {
+  motivo_obrigatoriedade: string;
+  itens: MatrizRiscoFormalItem[];
+  nota: string;
+}
+
+export interface ProgramaIntegridade {
+  exigido: boolean;
+  prazo: string;
+  mensagem: string;
+}
+
+/** Cruzamento entre a exigência de participação ME/EPP do edital e o porte da empresa (LC 123/2006, art. 48). */
+export interface ElegibilidadeMeEpp {
+  elegivel: boolean;
+  /** true quando é cota reservada (não exclusividade total) — nunca impede a participação, só orienta a estratégia de disputa. */
+  cota_reservada?: boolean;
+  mensagem: string;
+}
+
+/** Alerta heurístico (não legal) de prazo de entrega/execução apertado. */
+export interface AlertaPrazoEntrega {
+  prazo: string;
+  dias_equivalentes: number;
+  local?: string | null;
+  mensagem: string;
+}
+
+/** Alerta de cláusula de reajuste/repactuação sem índice especificado. */
+export interface AlertaIndiceReajuste {
+  mensagem: string;
+}
+
+/** Estimativa do valor total do contrato considerando prorrogações sucessivas (Lei 14.133/2021, arts. 106-107). */
+export interface ValorTotalComProrrogacao {
+  valor_inicial: number;
+  vigencia_inicial_meses: number;
+  anos_maximos_estimados: number;
+  multiplicador: number;
+  valor_total_estimado: number;
+  mensagem: string;
+}
+
+/** Prazo-limite de impugnação calculado deterministicamente (3 dias úteis antes da abertura — art. 164, I). */
+export interface PrazoImpugnacaoCalculado {
+  data_iso: string;
+  base_legal: string;
+  origem: 'calculado' | 'divergente' | 'confirmado' | string;
+  data_extraida_edital_iso?: string;
+  mensagem: string;
+}
+
+/** Data-limite em que a empresa fica vinculada à proposta enviada (Lei 14.133/2021, art. 90, §3º). */
+export interface ValidadePropostaCalculada {
+  dias: number | null;
+  base_legal: string;
+  origem: 'calculado' | 'sem_data_abertura' | 'nao_informado' | string;
+  data_iso?: string;
+  mensagem: string;
+}
+
+/** Nota informativa fixa sobre o prazo recursal pós-julgamento (Lei 14.133/2021, art. 165, §1º, I). */
+export interface PrazoRecursoPosJulgamento {
+  dias_uteis: number;
+  base_legal: string;
+  mensagem: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -148,6 +250,8 @@ export interface RedFlagItem {
   trecho?: string;
   base_legal?: string;
   acao_sugerida?: 'impugnar' | 'esclarecer' | 'monitorar' | string;
+  /** Súmula do TCU (262/263/272) quando o padrão detectado bate com a jurisprudência consolidada. */
+  sumula_tcu?: { referencia: string; texto: string };
 }
 
 export interface ScoreFactorItem {
@@ -227,8 +331,17 @@ export interface AnalysisResult {
   oportunidades?: string[];
   qualidade_extracao?: QualidadeExtracao;
   pricing_intelligence?: PricingIntelligence;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  orgao_risk?: any;
+  orgao_risk?: OrgaoRiskData | null;
+  garantias_alerta?: GarantiaAlertaItem[];
+  matriz_risco_formal?: MatrizRiscoFormal | null;
+  programa_integridade_obrigatorio?: ProgramaIntegridade | null;
+  elegibilidade_me_epp?: ElegibilidadeMeEpp | null;
+  valor_total_com_prorrogacao?: ValorTotalComProrrogacao | null;
+  prazo_impugnacao_calculado?: PrazoImpugnacaoCalculado | null;
+  validade_proposta_calculada?: ValidadePropostaCalculada | null;
+  prazo_recurso_pos_julgamento?: PrazoRecursoPosJulgamento | null;
+  alerta_prazo_entrega?: AlertaPrazoEntrega | null;
+  alerta_indice_reajuste?: AlertaIndiceReajuste | null;
   created_at?: string;
   parecer_especialista?: string;
   pegadinha?: PegadinhaData;

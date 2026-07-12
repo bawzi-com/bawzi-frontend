@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   AlertTriangle,
@@ -86,6 +87,7 @@ export default function DecisionManagementTab({
   token: string;
   userTier?: number;
 }) {
+  const router = useRouter();
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [companies, setCompanies] = useState<Empresa[]>([]);
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
@@ -164,7 +166,14 @@ export default function DecisionManagementTab({
           console.warn(`[learning-stats] resposta não-ok: ${learningStatsRes.status}`);
         }
       } catch (err) {
-        if (err instanceof SessionExpiredError) return;
+        if (err instanceof SessionExpiredError) {
+          // Sem isto, a tela ficava com "gestão vazia" em vez de deixar claro
+          // que a sessão caiu — o usuário só percebia o logout ao tentar
+          // clicar em algo e nada funcionar.
+          clearSession();
+          router.push('/login?redirect=/gestao');
+          return;
+        }
         setNotice({ type: 'error', message: 'Erro ao carregar a gestão de decisões.' });
       } finally {
         setIsLoading(false);

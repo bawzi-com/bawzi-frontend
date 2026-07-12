@@ -19,7 +19,7 @@ import {
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
-  ListOrdered, LayoutDashboard,
+  ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -340,6 +340,7 @@ export default function AnalysisResults({
           {activeStep === 'veredito' && (
             <div className="space-y-8">
               <ExpiredBanner result={liveResult} />
+              <MeEppImpeditivoBanner result={liveResult} />
 
               {/* O veredito e o porquê vêm primeiro — é a resposta que o usuário veio buscar.
                   Score, cronograma e evidências abaixo sustentam essa resposta. */}
@@ -347,6 +348,7 @@ export default function AnalysisResults({
                 <DecisionSnapshot result={liveResult} learningStats={learningStats} />
               </div>
               <SemaforoSection result={liveResult} />
+              <OrgaoContextoSection result={liveResult} />
               <CronogramaSection result={liveResult} />
 
               {/* Prova/auditoria do score — importante, mas é suporte, não a manchete */}
@@ -416,6 +418,7 @@ export default function AnalysisResults({
                     <SwotSection result={liveResult} />
                     <HabilitacaoSection result={liveResult} />
                     <RisksSection result={liveResult} />
+                    <MatrizRiscoFormalSection result={liveResult} />
                   </StepHeadline>
                 );
               })()}
@@ -2961,6 +2964,45 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
   );
 }
 
+// ─── Impeditivo: exclusividade ME/EPP × porte da empresa (LC 123/2006) ───────
+
+function MeEppImpeditivoBanner({ result }: { result: AnalysisResult }) {
+  const elegibilidade = result.elegibilidade_me_epp;
+  if (!elegibilidade) return null;
+
+  // Impeditivo real (exclusividade × porte incompatível) — crítico.
+  if (!elegibilidade.elegivel) {
+    return (
+      <div className="flex items-start gap-4 bg-rose-50 border border-rose-300 rounded-2xl px-5 py-4">
+        <div className="shrink-0 w-9 h-9 rounded-full bg-rose-600 text-white flex items-center justify-center">
+          <ShieldAlert size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Possível impeditivo · ME/EPP</span>
+          <p className="text-sm font-medium text-rose-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Cota reservada — nunca impede, mas muda a estratégia de disputa; nota informativa, não um alerta crítico.
+  if (elegibilidade.cota_reservada) {
+    return (
+      <div className="flex items-start gap-4 bg-indigo-50 border border-indigo-200 rounded-2xl px-5 py-4">
+        <div className="shrink-0 w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+          <ShieldAlert size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Cota reservada · ME/EPP</span>
+          <p className="text-sm font-medium text-indigo-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 // ─── Score + datas críticas ───────────────────────────────────────────────────
 
 function ScoreHeader({ result }: { result: AnalysisResult }) {
@@ -3116,6 +3158,54 @@ function SemaforoSection({ result }: { result: AnalysisResult }) {
   );
 }
 
+// ─── Contexto do órgão comprador (CAPAG + programa de integridade) ────────────
+
+const CAPAG_TOM: Record<string, { bg: string; border: string; txt: string }> = {
+  'A+': { bg: 'bg-emerald-50', border: 'border-emerald-200', txt: 'text-emerald-700' },
+  A:    { bg: 'bg-emerald-50', border: 'border-emerald-200', txt: 'text-emerald-700' },
+  'B+': { bg: 'bg-sky-50',     border: 'border-sky-200',     txt: 'text-sky-700' },
+  B:    { bg: 'bg-amber-50',   border: 'border-amber-200',   txt: 'text-amber-700' },
+  C:    { bg: 'bg-orange-50',  border: 'border-orange-200',  txt: 'text-orange-700' },
+  D:    { bg: 'bg-red-50',     border: 'border-red-200',     txt: 'text-red-700' },
+};
+
+function OrgaoContextoSection({ result }: { result: AnalysisResult }) {
+  const capag = result.orgao_risk;
+  const integridade = result.programa_integridade_obrigatorio;
+  if (!capag && !integridade?.exigido) return null;
+
+  const tom = capag ? (CAPAG_TOM[capag.classificacao] ?? CAPAG_TOM.B) : null;
+
+  return (
+    <div className="grid gap-4 mb-8 sm:grid-cols-2">
+      {capag && tom && (
+        <div className={`rounded-2xl border ${tom.border} ${tom.bg} p-5`}>
+          <div className="flex items-center gap-2">
+            <Landmark size={16} className={tom.txt} />
+            <p className={`text-[10px] font-black uppercase tracking-widest ${tom.txt}`}>
+              CAPAG do órgão {capag.escopo === 'municipio' ? '(município)' : '(estado)'}
+            </p>
+          </div>
+          <p className={`mt-2 text-2xl font-black ${tom.txt}`}>{capag.classificacao}</p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{capag.descricao}</p>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{capag.fonte}</p>
+        </div>
+      )}
+      {integridade?.exigido && (
+        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={16} className="text-violet-700" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">Programa de integridade</p>
+          </div>
+          <p className="mt-2 text-sm font-black text-violet-800">Exigido pela Lei 14.133/2021</p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{integridade.mensagem}</p>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-violet-500">Prazo: {integridade.prazo}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Cronograma Crítico ───────────────────────────────────────────────────────
 
 function CronogramaSection({ result }: { result: AnalysisResult }) {
@@ -3193,6 +3283,53 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+      {result.prazo_impugnacao_calculado && result.prazo_impugnacao_calculado.origem !== 'confirmado' && (
+        <div className={`mt-4 flex items-start gap-3 rounded-xl border px-4 py-3 ${
+          result.prazo_impugnacao_calculado.origem === 'divergente'
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-slate-50 border-slate-200'
+        }`}>
+          <Scale size={14} className={`mt-0.5 shrink-0 ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-600' : 'text-slate-500'}`} />
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-700' : 'text-slate-500'}`}>
+              Prazo de impugnação calculado (art. 164, I)
+            </p>
+            <p className={`text-xs font-medium leading-relaxed mt-0.5 ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-900/90' : 'text-slate-600'}`}>
+              {result.prazo_impugnacao_calculado.mensagem}
+            </p>
+          </div>
+        </div>
+      )}
+      {result.validade_proposta_calculada && (
+        <div className={`mt-4 flex items-start gap-3 rounded-xl border px-4 py-3 ${
+          result.validade_proposta_calculada.origem === 'nao_informado'
+            ? 'bg-amber-50 border-amber-200'
+            : 'bg-slate-50 border-slate-200'
+        }`}>
+          <Scale size={14} className={`mt-0.5 shrink-0 ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-600' : 'text-slate-500'}`} />
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-700' : 'text-slate-500'}`}>
+              Validade da proposta (art. 90, §3º)
+            </p>
+            <p className={`text-xs font-medium leading-relaxed mt-0.5 ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-900/90' : 'text-slate-600'}`}>
+              {result.validade_proposta_calculada.mensagem}
+            </p>
+          </div>
+        </div>
+      )}
+      {result.prazo_recurso_pos_julgamento && (
+        <div className="mt-4 flex items-start gap-3 rounded-xl border px-4 py-3 bg-slate-50 border-slate-200">
+          <Scale size={14} className="mt-0.5 shrink-0 text-slate-500" />
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+              Prazo de recurso pós-julgamento (art. 165, §1º, I)
+            </p>
+            <p className="text-xs font-medium leading-relaxed mt-0.5 text-slate-600">
+              {result.prazo_recurso_pos_julgamento.mensagem}
+            </p>
           </div>
         </div>
       )}
@@ -3307,6 +3444,50 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
               <p key={i} className="text-xs font-medium leading-relaxed text-indigo-900/80">• {d}</p>
             ))}
           </div>
+        </div>
+      )}
+      {(result.garantias_alerta?.length ?? 0) > 0 && (
+        <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2 flex items-center gap-1.5">
+            <AlertTriangle size={11} /> Garantia acima do teto legal
+          </p>
+          <div className="space-y-2">
+            {result.garantias_alerta!.map((g, i) => (
+              <p key={i} className="text-xs font-medium leading-relaxed text-amber-900/90">
+                <strong className="font-black">{g.campo}:</strong> {g.mensagem}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+      {result.valor_total_com_prorrogacao && (
+        <div className="mt-4 rounded-xl bg-indigo-50 border border-indigo-200 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
+            <TrendingUp size={11} /> Valor total estimado com prorrogação
+          </p>
+          <p className="text-sm font-black text-indigo-900">
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(result.valor_total_com_prorrogacao.valor_total_estimado)}
+            <span className="ml-1.5 text-[10px] font-bold text-indigo-500 uppercase tracking-wide">
+              ({result.valor_total_com_prorrogacao.multiplicador.toFixed(1)}x o valor inicial)
+            </span>
+          </p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-indigo-900/80">{result.valor_total_com_prorrogacao.mensagem}</p>
+        </div>
+      )}
+      {result.alerta_prazo_entrega && (
+        <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1.5 flex items-center gap-1.5">
+            <AlertTriangle size={11} /> Prazo de entrega/execução apertado
+          </p>
+          <p className="text-xs font-medium leading-relaxed text-amber-900/90">{result.alerta_prazo_entrega.mensagem}</p>
+        </div>
+      )}
+      {result.alerta_indice_reajuste && (
+        <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1.5 flex items-center gap-1.5">
+            <AlertTriangle size={11} /> Índice de reajuste não especificado
+          </p>
+          <p className="text-xs font-medium leading-relaxed text-amber-900/90">{result.alerta_indice_reajuste.mensagem}</p>
         </div>
       )}
     </div>
@@ -3471,6 +3652,14 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
                   <span className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-slate-500">
                     <Scale size={11} /> Base legal: {flag.base_legal}
                   </span>
+                )}
+                {flag.sumula_tcu && (
+                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1.5">
+                    <Landmark size={11} className="mt-0.5 shrink-0 text-indigo-600" />
+                    <p className="text-[11px] font-medium leading-relaxed text-indigo-700">
+                      <strong className="font-black">{flag.sumula_tcu.referencia}:</strong> {flag.sumula_tcu.texto}
+                    </p>
+                  </div>
                 )}
               </>
             ),
@@ -3673,6 +3862,45 @@ function RisksSection({ result }: { result: AnalysisResult }) {
             <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ver a matriz de riscos ranqueada por impacto — <strong>Alto · Médio · Baixo</strong> com fundamentação jurídica.</p>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Matriz de Risco Formal (Lei 14.133/2021, art. 6º, XXVII — grande vulto) ──
+
+const ALOCACAO_CFG: Record<string, { label: string; cls: string }> = {
+  contratante: { label: 'Órgão contratante', cls: 'bg-sky-100 text-sky-700 border-sky-200' },
+  contratado: { label: 'Contratada', cls: 'bg-amber-100 text-amber-700 border-amber-200' },
+  a_negociar: { label: 'A negociar', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+};
+
+function MatrizRiscoFormalSection({ result }: { result: AnalysisResult }) {
+  const matriz = result.matriz_risco_formal;
+  if (!matriz || !matriz.itens || matriz.itens.length === 0) return null;
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
+      <SectionLabel icon={<Scale3d size={18} className="text-slate-700" />} label="Matriz de Risco Formal" />
+      <p className="text-xs text-slate-500 font-medium mt-1 mb-4">{matriz.motivo_obrigatoriedade}</p>
+      <div className="space-y-2">
+        {matriz.itens.map((item, i) => {
+          const cfg = ALOCACAO_CFG[item.alocado_a] ?? ALOCACAO_CFG.a_negociar;
+          return (
+            <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-black text-slate-800">{item.risco}</p>
+                <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${cfg.cls}`}>
+                  {cfg.label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{item.impacto}</p>
+            </div>
+          );
+        })}
+      </div>
+      {matriz.nota && (
+        <p className="mt-4 text-[11px] font-medium leading-relaxed text-slate-400">{matriz.nota}</p>
       )}
     </div>
   );
@@ -4129,6 +4357,29 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
           </Secao>
         )}
 
+        {(result.orgao_risk || result.programa_integridade_obrigatorio?.exigido || (result.garantias_alerta?.length ?? 0) > 0) && (
+          <Secao title="Contexto do Órgão, Garantias e Integridade">
+            {result.orgao_risk && (
+              <p className="mb-1">
+                <strong>CAPAG do órgão ({result.orgao_risk.escopo === 'municipio' ? 'município' : 'estado'}):</strong>{' '}
+                {result.orgao_risk.classificacao} — {result.orgao_risk.descricao}
+              </p>
+            )}
+            {result.programa_integridade_obrigatorio?.exigido && (
+              <p className="mb-1">
+                <strong>Programa de integridade obrigatório</strong> (Lei 14.133/2021): {result.programa_integridade_obrigatorio.mensagem} Prazo: {result.programa_integridade_obrigatorio.prazo}.
+              </p>
+            )}
+            {(result.garantias_alerta?.length ?? 0) > 0 && (
+              <ul className="list-disc pl-5 space-y-1 text-xs mt-1">
+                {result.garantias_alerta!.map((g, i) => (
+                  <li key={i}><strong>{g.campo}:</strong> {g.mensagem}</li>
+                ))}
+              </ul>
+            )}
+          </Secao>
+        )}
+
         {(!!result.vantagens?.length || !!result.desvantagens?.length) && (
           <Secao title="Carga Operacional & SWOT">
             <div className="grid grid-cols-2 gap-6">
@@ -4165,6 +4416,24 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
                 <li key={i}><strong>[{(r.impacto || 'medio').toUpperCase()}]</strong> {r.titulo} — {r.descricao}</li>
               ))}
             </ul>
+          </Secao>
+        )}
+
+        {(result.matriz_risco_formal?.itens?.length ?? 0) > 0 && (
+          <Secao title="Matriz de Risco Formal (Contratação de Grande Vulto)">
+            <p className="text-xs text-slate-600 mb-1">{result.matriz_risco_formal!.motivo_obrigatoriedade}</p>
+            <table className="w-full text-xs">
+              <thead><tr><th className="text-left">Risco</th><th className="text-left">Impacto</th><th className="text-left">Alocado a</th></tr></thead>
+              <tbody>
+                {result.matriz_risco_formal!.itens.map((item, i) => (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1 pr-2">{item.risco}</td>
+                    <td className="py-1 pr-2">{item.impacto}</td>
+                    <td className="py-1">{ALOCACAO_CFG[item.alocado_a]?.label || item.alocado_a}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </Secao>
         )}
 

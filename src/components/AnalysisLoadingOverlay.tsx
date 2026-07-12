@@ -50,7 +50,6 @@ export default function AnalysisLoadingOverlay({
   };
   const isExternalFinalizing = remainingSeconds <= 0 && progress >= 94;
   const remainingLabel = remainingSeconds > 0 ? `~${formatSeconds(remainingSeconds)} restantes` : 'Conferindo dados externos';
-  const estimateLabel = isExternalFinalizing ? 'PNCP pode levar mais alguns segundos' : `Estimativa ${formatSeconds(estimatedSeconds)}`;
   // Ordem REAL do pipeline (reportada pelo backend etapa a etapa)
   const steps = [
     { label: 'Documento', icon: FileSearch },
@@ -101,24 +100,8 @@ export default function AnalysisLoadingOverlay({
               key={safeStep}
               className="mx-auto max-w-xl animate-in fade-in slide-in-from-bottom-2 duration-500"
             >
-              <p className="mb-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">
+              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">
                 Etapa {safeStep + 1} de {totalSteps}
-                {isLive ? (
-                  <span
-                    title="O backend está reportando a etapa real da análise"
-                    className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 tracking-widest text-emerald-700"
-                  >
-                    <span className="h-1 w-1 animate-pulse rounded-full bg-emerald-500" />
-                    ao vivo
-                  </span>
-                ) : (
-                  <span
-                    title="Progresso estimado — o backend ainda não reportou a etapa real"
-                    className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 tracking-widest text-slate-400"
-                  >
-                    estimado
-                  </span>
-                )}
               </p>
               <h3 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                 {currentMessage.title}
@@ -131,7 +114,7 @@ export default function AnalysisLoadingOverlay({
 
           <div className="space-y-4">
             <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              <span>{estimateLabel}</span>
+              <span>Progresso</span>
               <span>{progress}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white border border-slate-100">
@@ -202,13 +185,6 @@ export default function AnalysisLoadingOverlay({
             <X size={14} />
             Cancelar análise
           </button>
-
-          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-            <p className="text-xs font-black text-emerald-800">🏆 A vitória começa antes do balcão.</p>
-            <p className="mt-1.5 text-[11px] font-medium leading-5 text-emerald-700">
-              Robôs trabalham nos lances. Nós trabalhamos agora — para você entrar só onde vale ganhar.
-            </p>
-          </div>
         </aside>
       </div>
     </div>

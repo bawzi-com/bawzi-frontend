@@ -45,7 +45,11 @@ export default function ReverseEngineeringBlock({
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
   };
 
-  const margemSetor = engenhariaData?.margem_media_setor_pct || 20;
+  const viabilidade = engenhariaData?.viabilidade_financeira;
+  // Prioriza a margem líquida já ajustada pelo regime tributário (Simples Nacional ou não),
+  // calculada no backend por analysis_enrichment.aplicar_viabilidade_financeira. Sem esse
+  // dado (análises antigas ou falha do enriquecimento), cai para a média setorial genérica.
+  const margemSetor = viabilidade?.margem_liquida_estimada_pct ?? engenhariaData?.margem_media_setor_pct ?? 20;
   const setorNome = engenhariaData?.setor_identificado || 'Item da Licitação';
 
   const isServico = /reforma|engenharia|obra|servi[çc]o|constru[çc][ãa]o|repar|loca[çc]|manuten[çc][ãa]o/i.test(setorNome);
@@ -141,6 +145,19 @@ export default function ReverseEngineeringBlock({
           </p>
         </div>
       </div>
+
+      {viabilidade && (
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Margem ajustada ao regime tributário</span>
+            <span className="text-[10px] font-bold text-emerald-600 bg-white border border-emerald-200 px-2 py-0.5 rounded-full">{viabilidade.base_tributaria}</span>
+          </div>
+          <p className="text-xs font-medium leading-relaxed text-emerald-900/80 mt-2">{viabilidade.mensagem}</p>
+          <p className="text-xs font-bold text-emerald-800 mt-2">
+            Ponto de equilíbrio: desconto máximo de <span className="text-emerald-600">{viabilidade.ponto_equilibrio_desconto_max_pct}%</span> sobre o teto antes da margem zerar.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

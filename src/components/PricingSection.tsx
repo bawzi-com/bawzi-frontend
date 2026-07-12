@@ -378,7 +378,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           </div>
           <Link
             href="/plans"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-slate-800"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700"
           >
             Ver todos os planos <ChevronRight size={14} />
           </Link>

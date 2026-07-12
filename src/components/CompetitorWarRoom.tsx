@@ -178,9 +178,6 @@ export default function CompetitorWarRoom({
   const [dossieTarget, setDossieTarget] = useState<ConcorrenteData | null>(null);
   const [dossieContracts, setDossieContracts] = useState<ContratoData[] | null>(null);
 
-  const [sancoesStatus, setSancoesStatus] = useState<'idle' | 'loading' | 'clean' | 'dirty' | 'error'>('idle');
-  const [sancoesLista, setSancoesLista] = useState<any[]>([]);
-
   // Feedback de cópia — guarda o key do botão que acabou de copiar por 2s
   const [copiadoKey, setCopiadoKey] = useState<string | null>(null);
   const copiar = (texto: string, key: string) => {
@@ -711,23 +708,6 @@ export default function CompetitorWarRoom({
     return 'Usar como referência de preço e histórico, sem consumir esforço jurídico pesado.';
   };
 
-  const fetchSancoes = async (cnpjToFind: string) => {
-    setSancoesStatus('loading');
-    try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const res = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/fornecedor/sancoes/${cnpjToFind}`);
-        if (!res.ok) throw new Error("Falha");
-        const json = await res.json();
-        if (json?.possui_sancoes || (json?.sancoes && json.sancoes.length > 0)) {
-            setSancoesStatus('dirty');
-            setSancoesLista(json.sancoes || []);
-        } else { setSancoesStatus('clean'); }
-    } catch (e) {
-        if (e instanceof SessionExpiredError) { clearSession(); return; }
-        setSancoesStatus('error');
-    }
-  };
-
   const normalizarTexto = (texto: any): string =>
     String(texto || '')
       .normalize('NFD')
@@ -797,7 +777,6 @@ export default function CompetitorWarRoom({
     const cnpjKey = competitor.cleanCnpj ?? '';
     if (cnpjKey && cache[cnpjKey]) setOffensiveData(cache[cnpjKey]);
     else setOffensiveData(null);
-    if (competitor.cleanCnpj) fetchSancoes(competitor.cleanCnpj);
   };
 
   const handleClearHistory = async () => {
@@ -1246,31 +1225,8 @@ export default function CompetitorWarRoom({
           </div>
 
           {target.cleanCnpj && target.cleanCnpj.length >= 11 && (
-            <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row items-stretch justify-between gap-6">
-              <div className="flex-1 w-full">
-                <CompliancePanel cnpj={target.cleanCnpj} companyName={target.nome} userTier={userTier} onUpgradeClick={() => {}} />
-              </div>
-              <div className="w-full md:w-1/3 bg-slate-50 rounded-xl border border-slate-200 p-5 shrink-0 flex flex-col justify-center">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-1.5"><Scale size={14} /> Sanções federais CGU</h4>
-                {sancoesStatus === 'loading' && ( <div className="flex items-center gap-3 text-slate-500"><span className="animate-spin text-lg">⏳</span><span className="text-[10px] font-bold uppercase tracking-widest">Consultando...</span></div> )}
-                {sancoesStatus === 'clean' && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0"><ShieldCheck size={20} /></div>
-                    <div><p className="text-xs font-black text-emerald-700 uppercase">Sem sanções encontradas</p><p className="text-[10px] text-slate-500 font-medium">Nada consta nas bases federais consultadas.</p></div>
-                  </div>
-                )}
-                {sancoesStatus === 'dirty' && (
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-3"><div className="w-10 h-10 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center shrink-0"><AlertTriangle size={20} /></div><div><p className="text-xs font-black text-rose-700 uppercase">Sanções Encontradas!</p></div></div>
-                    {getSancoesLink(target.cleanCnpj) && ( <a href={getSancoesLink(target.cleanCnpj)!} target="_blank" rel="noopener noreferrer" className="w-full py-2 bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase text-center">Ver Detalhes</a> )}
-                  </div>
-                )}
-                {sancoesStatus === 'error' && (
-                  <div className="flex flex-col gap-3">
-                    {getSancoesLink(target.cleanCnpj) && ( <a href={getSancoesLink(target.cleanCnpj)!} target="_blank" rel="noopener noreferrer" style={{ color: '#ffffff' }} className="w-full py-2.5 bg-slate-900 !text-white rounded-xl text-[10px] font-black uppercase flex items-center justify-center gap-1.5"><ExternalLink size={14} color="#ffffff" /> Consultar Portal CGU</a> )}
-                  </div>
-                )}
-              </div>
+            <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
+              <CompliancePanel cnpj={target.cleanCnpj} companyName={target.nome} userTier={userTier} onUpgradeClick={() => {}} />
             </div>
           )}
 
@@ -1291,7 +1247,7 @@ export default function CompetitorWarRoom({
                 <ReverseEngineeringBlock
                   valorReferencia={extrairValorExato(currentItem.valor_estimado_raw)} 
                   desagio={currentItem.desagioPreditivoOrgao || pricing?.desagioPreditivoOrgao || 0}
-                  engenhariaData={{ ...(pricing?.engenharia_reversa ?? {}), setor_identificado: currentItem.produto }}
+                  engenhariaData={{ ...(pricing?.engenharia_reversa ?? {}), viabilidade_financeira: pricing?.viabilidade_financeira, setor_identificado: currentItem.produto }}
                   userTier={userTier}
                   quantidade={currentItem.quantidade}
                 />

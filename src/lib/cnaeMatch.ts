@@ -51,6 +51,35 @@ function radicais(texto: string, minLen = 5): Set<string> {
 
 const GENERICOS_CNAE_PREFIXOS = new Set([...GENERICOS_CNAE].map((g) => g.slice(0, PREFIXO_LEN)));
 
+// Grupos de sinônimos de setor — espelham `_GRUPOS_SINONIMOS_ADERENCIA` do
+// backend (router_analyses.py). Sem isso, radicais diferentes para o MESMO
+// mercado (ex.: CNAE "instrumentos médico-hospitalares" × edital
+// "materiais de fisioterapia") não batem por prefixo puro e disparam um
+// alerta de "fora do CNAE" que é falso alarme. Aqui usamos os grupos de
+// saúde já UNIFICADOS (sem a distinção farma × saúde geral do backend) —
+// essa checagem é só um alerta preventivo antes de gastar crédito, não o
+// veredito final; a nuance regulatória mais fina fica pro guardrail do
+// backend, que roda depois com mais contexto.
+const GRUPOS_SINONIMOS: string[][] = [
+  ['hospi', 'saude', 'clini', 'enfer', 'ambul', 'cirur', 'odont', 'labor', 'medic', 'farma', 'remed', 'fisio', 'terap', 'reabi', 'ortop', 'fonoa'],
+  ['alime', 'comes', 'nutri', 'meren', 'hortf', 'refei', 'gener'],
+  ['limpe', 'higie', 'sanea', 'desin'],
+  ['infor', 'tecno', 'softw', 'hardw', 'sistm', 'digit', 'compu'],
+  ['const', 'engen', 'obras', 'refor', 'predi'],
+  ['veicu', 'autom', 'transp', 'frota', 'combu'],
+  ['educa', 'escol', 'ensin', 'pedag', 'didat'],
+  ['segur', 'vigil', 'monit', 'alarm'],
+];
+const RADICAL_PARA_GRUPO = new Map<string, string[]>();
+for (const grupo of GRUPOS_SINONIMOS) {
+  for (const radical of grupo) RADICAL_PARA_GRUPO.set(radical, grupo);
+}
+
+/** Devolve o próprio radical + sinônimos de setor conhecidos (ou só ele, se não houver grupo). */
+function radicaisEquivalentes(radical: string): string[] {
+  return RADICAL_PARA_GRUPO.get(radical) ?? [radical];
+}
+
 export interface CnaeMatchResult {
   /** true = há sinal textual de aderência entre o CNAE/negócio e o objeto do edital */
   compativel: boolean;
@@ -87,7 +116,17 @@ export function checarAderenciaObjetoEmpresa(objeto: string, empresa: Empresa | 
     return { compativel: true, indeterminado: true, termosEncontrados: [] };
   }
 
-  const termosEncontrados = tokensNegocio.filter((t) => palavrasEdital.has(t));
+  // Radicais do edital já expandidos com sinônimos de setor — cobre casos
+  // onde o CNAE e o edital usam palavras diferentes para o mesmo mercado
+  // (ex.: "médico-hospitalar" × "fisioterapia").
+  const palavrasEditalExpandido = new Set<string>();
+  for (const p of palavrasEdital) {
+    for (const equiv of radicaisEquivalentes(p)) palavrasEditalExpandido.add(equiv);
+  }
+
+  const termosEncontrados = tokensNegocio.filter(
+    (t) => palavrasEdital.has(t) || palavrasEditalExpandido.has(t),
+  );
 
   return {
     compativel: termosEncontrados.length > 0,
