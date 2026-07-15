@@ -2,13 +2,17 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import { apiFetch, API_URL, getAccessToken, initSession } from '@/lib/apiClient';
+import { apiFetch, API_URL, getAccessToken, initSession, SessionExpiredError } from '@/lib/apiClient';
 import AuthModal from './AuthModal';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   cta?: boolean; // mensagem com botão de login
+  // Mensagem gerada pela própria UI (saudação inicial, convite de login) —
+  // não é uma troca real da conversa, então não deve virar "histórico"
+  // enviado ao modelo (poluiria o contexto com texto de marketing).
+  uiOnly?: boolean;
 }
 
 /** Renderiza markdown básico: **negrito**, listas com -, quebras de linha */
@@ -41,8 +45,14 @@ function MessageContent({ text }: { text: string }) {
 const CTA_MESSAGE: Message = {
   role: 'assistant',
   cta: true,
+  uiOnly: true,
   content: 'Para receber respostas personalizadas, você precisa ter uma conta na Bawzi.\n\nCom ela você terá acesso a:\n- Análise de editais com IA (score GO/NO-GO)\n- Busca de oportunidades no PNCP\n- Radar de alertas e monitoramento de concorrentes',
 };
+
+// Requisições ao chat esperam no máximo 30s — sem isso, uma trava na API da
+// OpenAI deixava o loading do widget preso indefinidamente, sem forma de
+// cancelar.
+const CHAT_TIMEOUT_MS = 30_000;
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false);
@@ -51,12 +61,14 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Olá! Sou o assistente da Bawzi 👋\n\nComo posso te ajudar com a plataforma hoje?',
+      uiOnly: true,
+      content: 'Olá! Sou o assistente da Bawzi.\n\nComo posso te ajudar com a plataforma hoje?',
     },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -106,7 +118,12 @@ export default function ChatWidget() {
     }
 
     setLoading(true);
-    const history = [...messages, userMsg];
+    // Exclui mensagens uiOnly (saudação, CTA de login) — são só interface,
+    // não trocas reais da conversa, e não devem virar contexto pro modelo.
+    const history = [...messages, userMsg].filter((m) => !m.uiOnly);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
 
     try {
       const res = await apiFetch(`${API_URL}/api/chat/message`, {
@@ -116,16 +133,28 @@ export default function ChatWidget() {
           message: text,
           history: history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
         }),
+        signal: controller.signal,
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const errBody: { detail?: string } | null = await res.json().catch(() => null);
+        throw new Error(errBody?.detail || undefined);
+      }
       const data = await res.json();
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Desculpe, ocorreu um erro. Tente novamente em instantes.' },
-      ]);
+    } catch (err) {
+      let content = 'Desculpe, ocorreu um erro. Tente novamente em instantes.';
+      if (err instanceof SessionExpiredError) {
+        content = 'Sua sessão expirou. Faça login novamente para continuar a conversa.';
+      } else if (err instanceof DOMException && err.name === 'AbortError') {
+        content = 'A resposta demorou demais e foi cancelada. Tente novamente em instantes.';
+      } else if (err instanceof Error && err.message) {
+        // Mensagem específica devolvida pelo backend (ex.: "chave de API não
+        // configurada", "consentimento LGPD revogado") em vez do genérico.
+        content = err.message;
+      }
+      setMessages((prev) => [...prev, { role: 'assistant', content }]);
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, [input, loading, messages, isLoggedIn]);
@@ -148,7 +177,7 @@ export default function ChatWidget() {
           style={{ width: 368, height: 500, boxShadow: '0 20px 60px -10px rgba(5,150,105,0.18), 0 4px 16px rgba(0,0,0,0.08)', border: '1px solid #d1fae5' }}
         >
           {/* Header */}
-          <div style={{ background: 'linear-gradient(135deg, #059669, #047857)' }} className="flex items-center justify-between px-4 py-3.5 text-white">
+          <div className="flex items-center justify-between px-4 py-3.5 text-white bg-emerald-700">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
                 <Image src="/icon.png" alt="Bawzi" width={26} height={26} className="object-contain" />
@@ -180,17 +209,15 @@ export default function ChatWidget() {
                 <div
                   className={`max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
                     msg.role === 'user'
-                      ? 'text-white rounded-tr-sm shadow-sm'
+                      ? 'bg-emerald-600 text-white rounded-tr-sm shadow-sm'
                       : 'bg-white text-slate-700 border border-slate-100 rounded-tl-sm shadow-sm'
                   }`}
-                  style={msg.role === 'user' ? { background: 'linear-gradient(135deg, #059669, #047857)' } : {}}
                 >
                   <MessageContent text={msg.content} />
                   {msg.cta && (
                     <button
                       onClick={openAuthModal}
-                      className="mt-3 w-full py-2 px-4 rounded-xl text-white text-sm font-semibold transition-all hover:opacity-90 active:scale-95"
-                      style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                      className="mt-3 w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors active:scale-95"
                     >
                       Entrar / Criar conta grátis →
                     </button>
@@ -235,8 +262,7 @@ export default function ChatWidget() {
               <button
                 onClick={sendMessage}
                 disabled={loading || !input.trim()}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all hover:opacity-90 active:scale-95 shrink-0"
-                style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors active:scale-95 shrink-0"
                 aria-label="Enviar"
               >
                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
@@ -259,20 +285,18 @@ export default function ChatWidget() {
         }}
       />
 
-      {/* Hint flutuante — aparece uma vez, some após interação */}
+      {/* Hint flutuante — aparece uma vez sozinho, some após interação, e
+          volta a aparecer sempre que o mouse passar por cima do ícone. */}
       <div
         className="fixed bottom-[82px] right-5 z-50 pointer-events-none"
         style={{
-          opacity: showHint && !open ? 1 : 0,
-          transform: showHint && !open ? 'translateY(0)' : 'translateY(6px)',
+          opacity: (showHint || isHovering) && !open ? 1 : 0,
+          transform: (showHint || isHovering) && !open ? 'translateY(0)' : 'translateY(6px)',
           transition: 'opacity 0.3s ease, transform 0.3s ease',
         }}
       >
-        <div
-          className="text-white text-xs font-medium px-3 py-1.5 rounded-full whitespace-nowrap shadow-lg"
-          style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
-        >
-          💬 Precisa de ajuda?
+        <div className="bg-emerald-700 text-white text-xs font-medium px-3 py-1.5 rounded-full whitespace-nowrap shadow-lg">
+          Precisa de ajuda?
           {/* Seta apontando para baixo */}
           <span
             className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-0 h-0"
@@ -287,8 +311,10 @@ export default function ChatWidget() {
           setOpen((v) => !v);
           setShowHint(false);
         }}
-        className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-2xl text-white flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
-        style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 8px 24px rgba(5,150,105,0.35)' }}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+        className="fixed bottom-5 right-5 z-50 w-14 h-14 rounded-2xl text-white bg-emerald-600 hover:bg-emerald-700 flex items-center justify-center transition-all duration-200 hover:scale-105 active:scale-95"
+        style={{ boxShadow: '0 8px 24px rgba(5,150,105,0.35)' }}
         aria-label={open ? 'Fechar chat' : 'Abrir chat'}
       >
         {open ? (

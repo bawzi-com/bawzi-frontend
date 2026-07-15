@@ -163,6 +163,10 @@ export default function AnalysisApp() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
+  // Permite ganhar os 350px do menu lateral — usado tanto pelo laudo aberto
+  // pela Gestão (DecisionManagementTab) quanto pelo painel de resultados
+  // principal (AnalysisResults), cada um com seu próprio botão de toggle.
+  const [sidebarHidden, setSidebarHidden] = useState(false);
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
@@ -724,7 +728,7 @@ export default function AnalysisApp() {
         {/* ── CONTEÚDO PRINCIPAL ── */}
         <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0">
           {token && contextCompanies.length === 0 && <ActiveCompanyBanner />}
-          <div className="grid lg:grid-cols-[1fr_350px] gap-8 md:gap-12 items-start print:block">
+          <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_350px]'}`}>
 
             {/* ── COLUNA ESQUERDA ── */}
             <div className="flex flex-col gap-8 w-full overflow-hidden print:m-0">
@@ -842,6 +846,8 @@ export default function AnalysisApp() {
                           document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }, 150);
                       }}
+                      sidebarHidden={sidebarHidden}
+                      onToggleSidebar={() => setSidebarHidden((v) => !v)}
                     />
                   ) : null}
                 </div>
@@ -1035,7 +1041,12 @@ export default function AnalysisApp() {
                       onUpgrade={() => handleUpgrade(2)}
                     />
                   ) : (
-                    <DecisionManagementTab token={token} userTier={userTier} />
+                    <DecisionManagementTab
+                      token={token}
+                      userTier={userTier}
+                      sidebarHidden={sidebarHidden}
+                      onToggleSidebar={() => setSidebarHidden((v) => !v)}
+                    />
                   )}
                 </div>
               )}
@@ -1100,19 +1111,21 @@ export default function AnalysisApp() {
               </div>
             )}
 
-            {/* Desktop: sidebar normal */}
-            <div className="hidden lg:block">
-              <AppSidebar
-                token={token}
-                userData={userData}
-                currentTier={currentTier}
-                activeTab={activeTab}
-                onSetActiveTab={setActiveTab}
-                renovacoesCount={renovacoesCount}
-                onNotifCountChange={setNotifCount}
-                onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-              />
-            </div>
+            {/* Desktop: sidebar normal — some quando o laudo da Gestão ou o painel de resultados pede mais espaço */}
+            {!sidebarHidden && (
+              <div className="hidden lg:block">
+                <AppSidebar
+                  token={token}
+                  userData={userData}
+                  currentTier={currentTier}
+                  activeTab={activeTab}
+                  onSetActiveTab={setActiveTab}
+                  renovacoesCount={renovacoesCount}
+                  onNotifCountChange={setNotifCount}
+                  onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+                />
+              </div>
+            )}
           </div>
         </section>
 

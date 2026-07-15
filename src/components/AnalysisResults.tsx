@@ -7,7 +7,7 @@
  * técnico-jurídico, checklist e exportação PDF.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 import {
@@ -20,6 +20,7 @@ import {
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
   ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
+  Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -57,6 +58,11 @@ interface AnalysisResultsProps {
    * já que o toggle é local a este componente e o "+ Gestão"/"Remover" precisa
    * refletir imediatamente numa lista filtrada por tracked_in_gestao. */
   onTrackedChange?: (tracked: boolean) => void;
+  /** Menu lateral do app-shell (AppSidebar) — só passado por quem tem esse menu
+   * pra ocultar (workspace principal). Sem essas props o botão de menu não
+   * aparece (ex.: dentro da Gestão, que já tem seu próprio controle). */
+  sidebarHidden?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 type LearningStats = {
@@ -97,6 +103,8 @@ export default function AnalysisResults({
   onCockpitStatusChange,
   onGoToCapital,
   onTrackedChange,
+  sidebarHidden = false,
+  onToggleSidebar,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
@@ -106,6 +114,26 @@ export default function AnalysisResults({
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   // Derived: concorrentes step is active when that tab is selected
   const activeStep = activeTab === 'concorrentes' ? 'concorrentes' : activeAnaliseStep;
+
+  // ── Tela cheia do painel de resultados ──────────────────────────────────
+  // Fullscreen real (API do navegador): 100% da largura pra quem quer ler sem
+  // distração, disponível sempre que este componente é montado. Independente
+  // do toggle de menu (onToggleSidebar), que só existe quando quem chama este
+  // componente tem um menu lateral pra ocultar.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      rootRef.current?.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     setLiveResult(result);
@@ -198,7 +226,8 @@ export default function AnalysisResults({
 
   return (
     <div
-      className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden relative animate-in fade-in duration-500 font-sans"
+      ref={rootRef}
+      className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden relative animate-in fade-in duration-500 font-sans [&:fullscreen]:overflow-y-auto [&:fullscreen]:rounded-none"
       id="area-resultados"
     >
       <div className={`h-2 ${getScoreBg(result.score)}`}></div>
@@ -248,11 +277,11 @@ export default function AnalysisResults({
                     );
                     onGoToCapital(isNaN(num) ? 0 : num);
                   }}
-                  className="shrink-0 px-5 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-black rounded-xl transition-all text-sm flex items-center gap-2 shadow-md shadow-teal-500/30 hover:shadow-lg hover:shadow-teal-500/40 ring-1 ring-teal-400/30 print:hidden"
+                  className="shrink-0 px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition-colors text-sm flex items-center gap-2 print:hidden"
                   title={result.estimated_value ? `Abrir Capital com ${result.estimated_value} pré-preenchido` : 'Abrir Capital de Giro'}
                 >
                   <Banknote size={15} />
-                  💰 Capital de Giro
+                  Capital de Giro
                 </button>
               )}
 
@@ -309,6 +338,22 @@ export default function AnalysisResults({
                 <Share2 size={15} />
               </button>
             )}
+            {onToggleSidebar && (
+              <button
+                onClick={onToggleSidebar}
+                title={sidebarHidden ? 'Mostrar menu' : 'Ocultar menu para ganhar espaço'}
+                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                {sidebarHidden ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
+              </button>
+            )}
+            <button
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia — usar 100% da largura'}
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
           </div>
 
           </div>
@@ -320,6 +365,12 @@ export default function AnalysisResults({
           currentTier={currentTier}
           userTier={userTier}
         />
+
+        {/* Score, veredito e aderência ao CNAE viviam repetidos em ~4 formatos
+            diferentes espalhados pelas etapas. Esta barra é o único lugar
+            "canônico" — fica visível em qualquer etapa, sempre no mesmo
+            lugar, para dar uma referência estável enquanto se navega. */}
+        <PersistentSummaryBar result={liveResult} />
 
         {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
@@ -333,6 +384,11 @@ export default function AnalysisResults({
                   quadro geral não precisa abrir as outras etapas para
                   entender a história inteira. */}
               <JourneySummary result={liveResult} onStepClick={handleStepClick} />
+
+              {/* "Log de trabalho" da IA: todas as frentes avaliadas, o que
+                  sustenta cada uma e o que não precisa de atenção — em um só
+                  lugar, sem precisar reabrir as 6 etapas pra confirmar. */}
+              <EscopoAnaliseSection result={liveResult} onStepClick={handleStepClick} />
             </div>
           )}
 
@@ -351,11 +407,6 @@ export default function AnalysisResults({
               <OrgaoContextoSection result={liveResult} />
               <CronogramaSection result={liveResult} />
 
-              {/* Prova/auditoria do score — importante, mas é suporte, não a manchete */}
-              <ScoreHeader result={liveResult} />
-              <CollapsibleScoreBreakdown result={liveResult} />
-              <CollapsibleFichaTecnica result={liveResult} />
-
               <div className="relative border border-slate-200 rounded-2xl p-8">
                 <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
                 <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
@@ -363,37 +414,36 @@ export default function AnalysisResults({
                 </div>
               </div>
               <OportunidadesSection result={liveResult} />
-              {liveResult.pricing_intelligence && !isNoGoVerdict(liveResult) && (
-                <div className="print:hidden">
-                  <TacticalSimulator
-                    pricing={liveResult.pricing_intelligence}
-                    fullResult={liveResult}
-                    userTier={userTier}
-                  />
-                </div>
-              )}
-              {liveResult.pricing_intelligence && isNoGoVerdict(liveResult) && (
-                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
-                  <span className="text-lg leading-none">🎯</span>
-                  <p className="text-sm font-medium leading-relaxed text-slate-500">
-                    <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
-                    proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
-                  </p>
-                </div>
-              )}
-              <DecisionVersionMonitor
-                result={liveResult}
-                analysisId={analysisId}
-                token={token}
-                onAnalysisUpdate={(updated) => setLiveResult(updated)}
-              />
             </div>
           )}
 
           {/* ── 02 Critérios ── */}
+          {/* Prova/auditoria da decisão: parâmetros avaliados, ficha técnica e
+              composição do score — tudo o que sustenta o veredito, num só
+              lugar, visível por padrão (antes ficava escondido dentro de
+              "Veredito" atrás de dois cliques em <details>). */}
           {activeStep === 'criterios' && (
-            <div id="section-criterios" className="scroll-mt-24">
-              <ParametrosSection result={liveResult} />
+            <div id="section-criterios" className="scroll-mt-24 space-y-10">
+              {/* 1 · dados brutos extraídos → 2 · critérios aplicados sobre eles →
+                  3 · resultado (score) que sai dessa aplicação. Cada bloco tinha o
+                  mesmo peso visual antes, sem indicar essa relação — o "1 · 2 · 3"
+                  deixa explícito que ficha técnica não é um critério, é a base de
+                  dados que os critérios e o score usam. */}
+              <section className="space-y-4">
+                <ChapterDivider index={1} title="Dados extraídos do edital" />
+                <CollapsibleFichaTecnica result={liveResult} />
+              </section>
+
+              <section className="space-y-4">
+                <ChapterDivider index={2} title="Critérios aplicados" />
+                <ParametrosSection result={liveResult} />
+              </section>
+
+              <section className="space-y-4">
+                <ChapterDivider index={3} title="Como chegamos ao score" />
+                <ScoreHeader result={liveResult} />
+                <CollapsibleScoreBreakdown result={liveResult} />
+              </section>
             </div>
           )}
 
@@ -412,7 +462,6 @@ export default function AnalysisResults({
                     tone={tone}
                     eyebrow="SWOT & Riscos"
                     headline={item.headline}
-                    toggleLabel="Ver detalhe completo (SWOT, riscos e habilitação)"
                   >
                     <RedFlagsSection result={liveResult} />
                     <SwotSection result={liveResult} />
@@ -440,7 +489,6 @@ export default function AnalysisResults({
                     tone={tone}
                     eyebrow="Jurídico"
                     headline={item.headline}
-                    toggleLabel="Ver parecer completo e raciocínio da IA"
                   >
                     <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
                     <div className="pt-6 border-t border-slate-100 print:hidden">
@@ -522,6 +570,36 @@ export default function AnalysisResults({
                 onGoToGestao={onGoToGestao}
                 gestaoDisponivel={gestaoDisponivel}
               />
+
+              {/* Ferramentas operacionais — precificar a proposta e acompanhar
+                  mudanças no edital ao longo do tempo. Ficam aqui, junto do
+                  resto do que se faz DEPOIS da decisão, não misturadas com o
+                  veredito em si. */}
+              {liveResult.pricing_intelligence && !isNoGoVerdict(liveResult) && (
+                <div className="print:hidden">
+                  <TacticalSimulator
+                    pricing={liveResult.pricing_intelligence}
+                    fullResult={liveResult}
+                    userTier={userTier}
+                  />
+                </div>
+              )}
+              {liveResult.pricing_intelligence && isNoGoVerdict(liveResult) && (
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
+                  <Target size={18} className="mt-0.5 shrink-0 text-slate-400" />
+                  <p className="text-sm font-medium leading-relaxed text-slate-500">
+                    <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
+                    proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
+                  </p>
+                </div>
+              )}
+              <DecisionVersionMonitor
+                result={liveResult}
+                analysisId={analysisId}
+                token={token}
+                onAnalysisUpdate={(updated) => setLiveResult(updated)}
+              />
+
               <PremiumLock
                 isLocked={currentTier < 4}
                 featureTitle="Laudo de Decisão Bawzi (PDF)"
@@ -671,16 +749,28 @@ function DecisionSnapshot({
 
           {/* Indicadores compactos no cabeçalho */}
           <div className="flex shrink-0 gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]">
+            <div
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
+              title="Bawzi Score: nota de 0 a 100 que resume a recomendação, calculada a partir dos critérios técnicos, financeiros, jurídicos e de documentação avaliados. Quanto maior, mais favorável é participar."
+            >
               <p className={`text-2xl font-black leading-none ${verdict.text}`}>{result.score}</p>
-              <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Viabilidade</p>
+              <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Viabilidade
+                <CircleHelp size={10} className="shrink-0 opacity-70" />
+              </p>
               <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
                 <div className={`h-full rounded-full ${verdict.bar}`} style={{ width: `${result.score}%` }} />
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]">
+            <div
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
+              title="O quanto a IA está segura desta decisão, com base na quantidade e qualidade das evidências encontradas no edital. Cai quando há lacunas ou fatores não confirmados — não é a mesma coisa que viabilidade."
+            >
               <p className="text-2xl font-black leading-none text-slate-700">{decision.confianca}%</p>
-              <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Confiança</p>
+              <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Confiança
+                <CircleHelp size={10} className="shrink-0 opacity-70" />
+              </p>
               <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
                 <div className="h-full rounded-full bg-slate-500" style={{ width: `${decision.confianca}%` }} />
               </div>
@@ -689,9 +779,11 @@ function DecisionSnapshot({
               <div
                 className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
                 title={
-                  result.qualidade_extracao.campos_faltantes?.length
-                    ? `Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
-                    : 'Todos os campos críticos foram localizados no material.'
+                  `Percentual de campos críticos do edital (objeto, valores, prazos, garantias etc.) que a IA conseguiu localizar para basear a análise. ${
+                    result.qualidade_extracao.campos_faltantes?.length
+                      ? `Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
+                      : 'Todos os campos críticos foram localizados no material.'
+                  }`
                 }
               >
                 <p className={`text-2xl font-black leading-none ${
@@ -699,7 +791,10 @@ function DecisionSnapshot({
                   : result.qualidade_extracao.cobertura_pct >= 45 ? 'text-amber-600'
                   : 'text-red-600'
                 }`}>{result.qualidade_extracao.cobertura_pct}%</p>
-                <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">Cobertura</p>
+                <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  Cobertura
+                  <CircleHelp size={10} className="shrink-0 opacity-70" />
+                </p>
                 <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
                   <div className={`h-full rounded-full ${
                     result.qualidade_extracao.cobertura_pct >= 75 ? 'bg-emerald-500'
@@ -725,6 +820,28 @@ function DecisionSnapshot({
         <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese do veredito</p>
           <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">{summaryText}</p>
+          {decision.veredito === 'NO_GO' && blockers.length > 0 && (
+            <div className="mt-3 border-t border-red-200/60 pt-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Motivo exato do No-Go</p>
+              <ul className="mt-1.5 space-y-1.5">
+                {blockers.slice(0, 3).map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs font-semibold leading-relaxed text-slate-700">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-red-500" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              {evidenceItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('veredito-evidencias')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className="mt-3 text-[11px] font-black text-red-700 underline underline-offset-2 hover:text-red-900"
+                >
+                  Ver o trecho do edital que comprova isso ↓
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Aderência ao negócio ──────────────────────────────────────── */}
@@ -792,7 +909,7 @@ function DecisionSnapshot({
              atrás de um toggle: a síntese acima já resume o essencial, e as
              próximas ações (abaixo) já dizem o que fazer. Isso evita que o
              veredito pareça "cheio" antes mesmo do usuário decidir explorar. */}
-        <details className="group mt-5">
+        <details className="group mt-5" open={decision.veredito === 'NO_GO'}>
           <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-[11px] font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
             <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
             Ver evidências, impedimentos, lacunas e base da confiança
@@ -800,7 +917,7 @@ function DecisionSnapshot({
 
         {/* ── Evidências ────────────────────────────────────────────────── */}
         {evidenceItems.length > 0 && (
-          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
+          <div id="veredito-evidencias" className="mt-3 scroll-mt-24 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
             <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
               <Shield size={14} className={verdict.text} />
               Por que a decisão é segura
@@ -919,13 +1036,6 @@ function DecisionSnapshot({
                 description: [acao.responsavel, acao.resultado_esperado].filter(Boolean).join(' · ') || undefined,
               }))}
             />
-            <button
-              type="button"
-              onClick={() => document.getElementById('cockpit-pos-veredito')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              className={`mt-4 w-full rounded-xl px-5 py-3 text-center text-xs font-black text-white transition-all hover:opacity-90 ${verdict.bar}`}
-            >
-              Ver plano completo no Cockpit ({buildDecisionCockpitTasks(decision, result).length} tarefas) ↓
-            </button>
           </div>
         )}
 
@@ -1283,7 +1393,7 @@ function DecisionCockpit({
             </p>
             <p className="mt-1.5 text-[11px] font-semibold text-slate-400">
               Ative "+ Gestão" para acompanhar isto no{' '}
-              <button type="button" onClick={onGoToGestao} className="font-black text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+              <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
                 painel Gestão, no menu lateral
               </button>
               {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
@@ -1315,7 +1425,7 @@ function DecisionCockpit({
               className={`flex w-full items-center justify-center gap-1.5 border-t px-4 py-2.5 text-[11px] font-black transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                 tracked
                   ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                  : 'border-slate-100 text-indigo-600 hover:bg-indigo-50'
+                  : 'border-slate-100 text-slate-600 hover:bg-slate-100'
               }`}
             >
               {trackSaving ? (
@@ -2168,12 +2278,6 @@ const JOURNEY_STEPS = [
     icon: LayoutDashboard,
     tab: 'analise' as const,
     sectionId: 'section-panorama',
-    activeBg: 'from-teal-500 to-cyan-600',
-    activeShadow: 'shadow-teal-500/25',
-    inactiveBg: 'bg-teal-50 hover:bg-teal-100',
-    inactiveBorder: 'border-teal-200',
-    inactiveIcon: 'text-teal-500',
-    inactiveLabel: 'text-teal-900',
   },
   {
     key: 'veredito',
@@ -2183,27 +2287,15 @@ const JOURNEY_STEPS = [
     icon: Target,
     tab: 'analise' as const,
     sectionId: 'section-score',
-    activeBg: 'from-emerald-500 to-teal-600',
-    activeShadow: 'shadow-emerald-500/25',
-    inactiveBg: 'bg-emerald-50 hover:bg-emerald-100',
-    inactiveBorder: 'border-emerald-200',
-    inactiveIcon: 'text-emerald-500',
-    inactiveLabel: 'text-emerald-900',
   },
   {
     key: 'criterios',
     num: '02',
     label: 'Critérios',
-    sublabel: 'Parâmetros configurados',
+    sublabel: 'Dados, critérios e score',
     icon: SlidersHorizontal,
     tab: 'analise' as const,
     sectionId: 'section-criterios',
-    activeBg: 'from-indigo-500 to-violet-600',
-    activeShadow: 'shadow-indigo-500/25',
-    inactiveBg: 'bg-indigo-50 hover:bg-indigo-100',
-    inactiveBorder: 'border-indigo-200',
-    inactiveIcon: 'text-indigo-500',
-    inactiveLabel: 'text-indigo-900',
   },
   {
     key: 'analise',
@@ -2213,12 +2305,6 @@ const JOURNEY_STEPS = [
     icon: AlertTriangle,
     tab: 'analise' as const,
     sectionId: 'section-analise',
-    activeBg: 'from-amber-500 to-orange-500',
-    activeShadow: 'shadow-amber-500/25',
-    inactiveBg: 'bg-amber-50 hover:bg-amber-100',
-    inactiveBorder: 'border-amber-200',
-    inactiveIcon: 'text-amber-500',
-    inactiveLabel: 'text-amber-900',
   },
   {
     key: 'juridico',
@@ -2228,12 +2314,6 @@ const JOURNEY_STEPS = [
     icon: Scale,
     tab: 'analise' as const,
     sectionId: 'section-juridico',
-    activeBg: 'from-purple-500 to-fuchsia-600',
-    activeShadow: 'shadow-purple-500/25',
-    inactiveBg: 'bg-purple-50 hover:bg-purple-100',
-    inactiveBorder: 'border-purple-200',
-    inactiveIcon: 'text-purple-500',
-    inactiveLabel: 'text-purple-900',
   },
   {
     key: 'concorrentes',
@@ -2243,12 +2323,6 @@ const JOURNEY_STEPS = [
     icon: Radar,
     tab: 'concorrentes' as const,
     sectionId: null as string | null,
-    activeBg: 'from-sky-500 to-cyan-600',
-    activeShadow: 'shadow-sky-500/25',
-    inactiveBg: 'bg-sky-50 hover:bg-sky-100',
-    inactiveBorder: 'border-sky-200',
-    inactiveIcon: 'text-sky-500',
-    inactiveLabel: 'text-sky-900',
   },
   {
     key: 'cockpit',
@@ -2258,12 +2332,6 @@ const JOURNEY_STEPS = [
     icon: ClipboardList,
     tab: 'analise' as const,
     sectionId: 'cockpit-pos-veredito',
-    activeBg: 'from-slate-700 to-slate-900',
-    activeShadow: 'shadow-slate-700/25',
-    inactiveBg: 'bg-slate-100 hover:bg-slate-200',
-    inactiveBorder: 'border-slate-300',
-    inactiveIcon: 'text-slate-500',
-    inactiveLabel: 'text-slate-800',
   },
 ] as const;
 
@@ -2432,6 +2500,369 @@ function JourneySummary({
   );
 }
 
+// ─── Escopo da análise: "log de trabalho" da IA ──────────────────────────────
+// Todas as frentes que rodaram para chegar ao veredito, com o motivo de cada
+// uma e link direto pra seção completa. Existe pra responder duas perguntas
+// de quem só quer confirmar sem reabrir as 6 etapas: "o que vocês já
+// verificaram" (o que eu não preciso me preocupar) e "em que a decisão se
+// baseou" (de onde veio cada conclusão).
+
+type ScopeStatus = 'ok' | 'atencao' | 'alerta' | 'pendente';
+
+type ScopeRow = {
+  key: string;
+  Icon: typeof Gauge;
+  label: string;
+  status: ScopeStatus;
+  headline: string;
+  detail?: string[];
+  stepKey?: JourneyStepType['key'];
+};
+
+const SCOPE_STATUS_CFG: Record<ScopeStatus, { dot: string; text: string; label: string }> = {
+  ok: { dot: 'bg-emerald-500', text: 'text-emerald-700', label: 'Sem pendência' },
+  atencao: { dot: 'bg-amber-500', text: 'text-amber-700', label: 'Atenção' },
+  alerta: { dot: 'bg-red-500', text: 'text-red-700', label: 'Alerta' },
+  pendente: { dot: 'bg-slate-300', text: 'text-slate-400', label: 'Não avaliado' },
+};
+
+const SEMAFORO_EIXO_LABEL: Record<string, string> = {
+  tecnica: 'Técnica',
+  financeira: 'Financeira',
+  juridica: 'Jurídica',
+  documentacao: 'Documentação',
+};
+
+function buildEscopoAnalise(result: AnalysisResult): ScopeRow[] {
+  const rows: ScopeRow[] = [];
+
+  // 1. Semáforo de viabilidade
+  const eixos = result.semaforo ? Object.entries(result.semaforo) : [];
+  const eixosRisco = eixos.filter(([, s]) => s.status === 'risco').length;
+  const eixosAlerta = eixos.filter(([, s]) => s.status === 'alerta').length;
+  rows.push({
+    key: 'semaforo',
+    Icon: Gauge,
+    label: 'Semáforo de Viabilidade',
+    status: !result.semaforo ? 'pendente' : eixosRisco > 0 ? 'alerta' : eixosAlerta > 0 ? 'atencao' : 'ok',
+    headline: !result.semaforo
+      ? 'Não avaliado nesta análise — reprocesse o edital para ativar.'
+      : `4 eixos avaliados — Técnica, Financeira, Jurídica e Documentação${
+          eixosRisco || eixosAlerta ? ` (${eixosRisco} em risco, ${eixosAlerta} em atenção)` : ', todos OK'
+        }.`,
+    detail: result.semaforo
+      ? Object.entries(result.semaforo).map(([k, s]) => `${SEMAFORO_EIXO_LABEL[k] || k}: ${s.motivo}`)
+      : undefined,
+    stepKey: 'veredito',
+  });
+
+  // 2. Ficha técnica (extração de dados)
+  const ficha = result.ficha_tecnica || [];
+  const isFichaAusente = (item: NonNullable<AnalysisResult['ficha_tecnica']>[number]) =>
+    !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
+  const fichaLocalizados = ficha.filter((f) => !isFichaAusente(f)).length;
+  const coberturaPct = result.qualidade_extracao?.cobertura_pct;
+  rows.push({
+    key: 'ficha',
+    Icon: FileSearch,
+    label: 'Ficha Técnica do Edital',
+    status:
+      ficha.length === 0 ? 'pendente'
+      : typeof coberturaPct === 'number'
+        ? (coberturaPct >= 75 ? 'ok' : coberturaPct >= 45 ? 'atencao' : 'alerta')
+        : 'ok',
+    headline: ficha.length === 0
+      ? 'Extração estruturada não disponível nesta análise.'
+      : `${fichaLocalizados}/${ficha.length} campos localizados e cross-checados contra o texto original${
+          typeof coberturaPct === 'number' ? ` (${coberturaPct}% de cobertura)` : ''
+        }.`,
+    detail: result.qualidade_extracao?.campos_faltantes?.length
+      ? [`Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`]
+      : undefined,
+    stepKey: 'criterios',
+  });
+
+  // 3. Composição do score
+  const scoreItens = result.score_breakdown || [];
+  rows.push({
+    key: 'score',
+    Icon: Calculator,
+    label: 'Composição do Score',
+    status: scoreItens.length === 0 ? 'pendente' : 'ok',
+    headline: scoreItens.length === 0
+      ? `Score de ${result.score}/100 calculado sem detalhamento de fatores nesta análise.`
+      : `${scoreItens.length} fator(es) somaram ou subtraíram pontos a partir de 100, chegando a ${result.score}/100.`,
+    stepKey: 'criterios',
+  });
+
+  // 4. Critérios personalizados
+  const params = result.avaliacao_parametros || [];
+  const bloqueios = params.filter((p) => p.status === 'bloqueio').length;
+  const alertasParam = params.filter((p) => p.status === 'alerta').length;
+  rows.push({
+    key: 'criterios',
+    Icon: SlidersHorizontal,
+    label: 'Critérios Personalizados',
+    status: params.length === 0 ? 'pendente' : bloqueios > 0 ? 'alerta' : alertasParam > 0 ? 'atencao' : 'ok',
+    headline: params.length === 0
+      ? 'Nenhum critério personalizado configurado (ative em Parametrização, no menu).'
+      : `${params.length} critério(s) avaliado(s) — ${params.length - bloqueios - alertasParam} atende(m), ${alertasParam} em atenção, ${bloqueios} bloqueiam.`,
+    stepKey: 'criterios',
+  });
+
+  // 5. SWOT / carga operacional
+  const vantagens = result.vantagens || [];
+  const desvantagens = result.desvantagens || [];
+  const oportunidades = result.oportunidades || [];
+  const hasSwot = vantagens.length > 0 || desvantagens.length > 0 || oportunidades.length > 0
+    || (result.exigencias_criticas?.length || 0) > 0 || (result.documentos_necessarios?.length || 0) > 0;
+  rows.push({
+    key: 'swot',
+    Icon: ClipboardList,
+    label: 'Carga Operacional & SWOT',
+    status: hasSwot ? 'ok' : 'pendente',
+    headline: hasSwot
+      ? `${vantagens.length} vantagem(ns), ${desvantagens.length} barreira(s) e ${oportunidades.length} oportunidade(s) mapeada(s).`
+      : 'Não disponível nesta análise.',
+    stepKey: 'analise',
+  });
+
+  // 6. Matriz de riscos
+  const risks = result.risks;
+  const riscosAltos = (risks || []).filter((r) => r.impacto === 'alto').length;
+  rows.push({
+    key: 'riscos',
+    Icon: AlertTriangle,
+    label: 'Matriz de Riscos',
+    status: risks === undefined ? 'pendente' : risks.length === 0 ? 'ok' : riscosAltos > 0 ? 'alerta' : 'atencao',
+    headline: risks === undefined
+      ? 'Execute uma nova análise para ativar a matriz de riscos.'
+      : risks.length === 0
+        ? 'Nenhum risco relevante identificado.'
+        : `${risks.length} risco(s) mapeado(s) (${riscosAltos} de impacto alto).`,
+    stepKey: 'analise',
+  });
+
+  // 7. Red flags (varredura de irregularidades)
+  const flags = result.red_flags;
+  const flagsAltas = (flags || []).filter((f) => f.gravidade === 'alta').length;
+  rows.push({
+    key: 'redflags',
+    Icon: Flag,
+    label: 'Varredura de Irregularidades',
+    status: flags === undefined ? 'pendente' : flags.length === 0 ? 'ok' : flagsAltas > 0 ? 'alerta' : 'atencao',
+    headline: flags === undefined
+      ? 'Não verificado nesta análise.'
+      : flags.length === 0
+        ? 'Varredura concluída — nenhum indício de direcionamento, restrição ou cláusula abusiva.'
+        : `${flags.length} achado(s) (${flagsAltas} de gravidade alta) — direcionamento, restrição ou lacunas de informação.`,
+    stepKey: 'analise',
+  });
+
+  // 8. Checklist de habilitação
+  const habilitacao = result.habilitacao_checklist;
+  const eliminatorias = (habilitacao || []).filter((h) => h.criticidade === 'eliminatoria').length;
+  rows.push({
+    key: 'habilitacao',
+    Icon: ListChecks,
+    label: 'Checklist de Habilitação',
+    status: !habilitacao || habilitacao.length === 0 ? 'pendente' : eliminatorias > 0 ? 'atencao' : 'ok',
+    headline: !habilitacao || habilitacao.length === 0
+      ? 'Exigências de habilitação não identificadas de forma legível no material.'
+      : `${habilitacao.length} exigência(s) mapeada(s) por categoria (${eliminatorias} eliminatória(s)).`,
+    stepKey: 'analise',
+  });
+
+  // 9. Matriz de risco formal (condicional — só grande vulto/contratação integrada)
+  if (result.matriz_risco_formal?.itens?.length) {
+    rows.push({
+      key: 'matrizformal',
+      Icon: Scale3d,
+      label: 'Matriz de Risco Formal',
+      status: 'ok',
+      headline: `${result.matriz_risco_formal.itens.length} risco(s) formalmente alocado(s) entre contratante e contratada (Lei 14.133, art. 6º, XXVII).`,
+      stepKey: 'analise',
+    });
+  }
+
+  // 10. Parecer técnico-jurídico
+  rows.push({
+    key: 'parecer',
+    Icon: Scale,
+    label: 'Parecer Técnico-Jurídico',
+    status: result.parecer_especialista ? 'ok' : 'pendente',
+    headline: result.parecer_especialista
+      ? 'Parecer jurídico especializado gerado com base legal.'
+      : 'Parecer jurídico não gerado nesta análise.',
+    stepKey: 'juridico',
+  });
+
+  // 11. Aderência ao negócio (CNAE)
+  const businessFit = normalizeBusinessFit(result);
+  if (businessFit) {
+    rows.push({
+      key: 'aderencia',
+      Icon: Settings2,
+      label: 'Aderência ao Negócio (CNAE)',
+      status:
+        businessFit.status === 'match_forte' ? 'ok'
+        : businessFit.status === 'match_parcial' ? 'atencao'
+        : businessFit.status === 'sem_match' ? 'alerta'
+        : 'pendente',
+      headline: businessFit.label,
+      stepKey: 'veredito',
+    });
+  }
+
+  // 12. Contexto do órgão comprador (condicional)
+  if (result.orgao_risk || result.programa_integridade_obrigatorio?.exigido) {
+    const partes: string[] = [];
+    if (result.orgao_risk) partes.push(`CAPAG ${result.orgao_risk.classificacao}`);
+    if (result.programa_integridade_obrigatorio?.exigido) partes.push('Programa de integridade exigido');
+    rows.push({
+      key: 'orgao',
+      Icon: Landmark,
+      label: 'Contexto do Órgão Comprador',
+      status: 'ok',
+      headline: `${partes.join(' · ')}.`,
+      stepKey: 'veredito',
+    });
+  }
+
+  // 13. Radar de concorrentes
+  const totalConcorrentes = (result.concorrentes_provaveis?.length || 0) + (result.concorrentes_regionais?.length || 0);
+  const nivelAmeaca = result.pricing_intelligence?.nivelAmeaca;
+  rows.push({
+    key: 'concorrentes',
+    Icon: Radar,
+    label: 'Radar de Concorrentes',
+    status: !nivelAmeaca && totalConcorrentes === 0
+      ? 'pendente'
+      : /alt/i.test(nivelAmeaca || '') ? 'alerta' : /m[ée]d/i.test(nivelAmeaca || '') ? 'atencao' : 'ok',
+    headline: totalConcorrentes > 0
+      ? `${totalConcorrentes} concorrente(s) mapeado(s)${nivelAmeaca ? ` — ameaça ${nivelAmeaca.toLowerCase()}` : ''}.`
+      : 'Nenhum concorrente mapeado ainda (recurso Nível 2+).',
+    stepKey: 'concorrentes',
+  });
+
+  return rows;
+}
+
+function EscopoAnaliseSection({
+  result,
+  onStepClick,
+}: {
+  result: AnalysisResult;
+  onStepClick: (step: JourneyStepType) => void;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const rows = useMemo(() => buildEscopoAnalise(result), [result]);
+  const okCount = rows.filter((r) => r.status === 'ok').length;
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8">
+      <SectionLabel icon={<ListOrdered size={18} className="text-slate-700" />} label="O Que Esta Análise Avaliou" />
+      <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
+        {rows.length} frentes verificadas pela IA para chegar ao veredito — {okCount} sem pendência. Clique numa linha
+        para ver o motivo e ir direto à seção completa.
+      </p>
+      <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
+        {rows.map((row) => {
+          const cfg = SCOPE_STATUS_CFG[row.status];
+          const isOpen = !!expanded[row.key];
+          const step = row.stepKey ? JOURNEY_STEPS.find((s) => s.key === row.stepKey) : undefined;
+          const hasExtra = Boolean(row.detail?.length || step);
+          return (
+            <div key={row.key}>
+              <button
+                type="button"
+                onClick={() => hasExtra && setExpanded((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${hasExtra ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
+              >
+                <row.Icon size={16} className="mt-0.5 shrink-0 text-slate-400" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-bold text-slate-800">{row.label}</span>
+                    <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${cfg.text}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                      {cfg.label}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{row.headline}</p>
+                </div>
+                {hasExtra && (
+                  <ChevronDown size={14} className={`mt-1 shrink-0 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+              {isOpen && hasExtra && (
+                <div className="px-4 pb-4 pl-[2.1rem]">
+                  {row.detail && row.detail.length > 0 && (
+                    <ul className="space-y-1.5">
+                      {row.detail.map((d, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
+                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+                          {d}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {step && (
+                    <button
+                      type="button"
+                      onClick={() => onStepClick(step)}
+                      className={`text-[11px] font-black text-slate-700 underline underline-offset-2 hover:text-slate-950 ${row.detail?.length ? 'mt-2.5' : ''}`}
+                    >
+                      Ver seção completa →
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Barra persistente: score, veredito e aderência ao CNAE ──────────────────
+// Único lugar "canônico" para esses 3 dados — antes o score aparecia em até 4
+// formatos diferentes (hero do Panorama, card do Veredito, gauge do
+// ScoreHeader, resumo do CollapsibleScoreBreakdown) e a aderência ao CNAE em
+// pelo menos 2. Fica visível em qualquer etapa, sempre no mesmo lugar.
+function PersistentSummaryBar({ result }: { result: AnalysisResult }) {
+  const decision = normalizeDecision(result);
+  const verdict = decisionUi[decision.veredito];
+  const businessFit = normalizeBusinessFit(result);
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 print:hidden">
+      <div className="flex items-center gap-2">
+        <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verdict.pill}`}>
+          {decision.veredito.replace('_', ' ')}
+        </span>
+        <span className="hidden text-xs font-bold text-slate-600 sm:inline">{decision.rotulo}</span>
+      </div>
+
+      <div className="hidden h-4 w-px bg-slate-300 sm:block" />
+
+      <div className="flex items-center gap-1.5">
+        <span className={`text-sm font-black leading-none ${verdict.text}`}>{result.score}</span>
+        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Viabilidade</span>
+      </div>
+
+      {businessFit && (
+        <>
+          <div className="hidden h-4 w-px bg-slate-300 sm:block" />
+          <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${businessFit.shell} ${businessFit.text}`}>
+            Match CNAE {businessFit.score}/100
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
 function JourneyStepNav({
   activeStep,
   onStepClick,
@@ -2489,7 +2920,7 @@ function JourneyStepNav({
                   <div
                     className={`relative z-10 flex items-center justify-center rounded-full transition-all ${
                       isActive
-                        ? `h-12 w-12 bg-gradient-to-br ${step.activeBg} shadow-lg ${step.activeShadow} ring-4 ring-white`
+                        ? 'h-12 w-12 bg-slate-900 shadow-lg shadow-slate-900/20 ring-4 ring-white'
                         : 'h-10 w-10 border border-slate-200 bg-white text-slate-400 group-hover:border-slate-300 group-hover:bg-slate-50'
                     }`}
                   >
@@ -2569,15 +3000,15 @@ function EsteiraCTA({
     <div className={`mb-6 overflow-hidden rounded-[1.5rem] border-2 print:hidden transition-all ${
       tracked
         ? 'border-emerald-300 bg-gradient-to-br from-emerald-50/60 to-white shadow-sm shadow-emerald-100'
-        : 'border-dashed border-indigo-200 bg-gradient-to-br from-indigo-50/40 to-white'
+        : 'border-dashed border-slate-300 bg-slate-50/60'
     }`}>
       <div className="px-6 py-6 md:px-8 md:py-7">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
 
           {/* Left: title + pipeline */}
           <div className="min-w-0 flex-1">
-            <p className={`mb-1.5 text-[10px] font-black uppercase tracking-widest ${tracked ? 'text-emerald-600' : 'text-indigo-500'}`}>
-              {tracked ? '📌 Na esteira de gestão' : 'Próxima fase disponível'}
+            <p className={`mb-1.5 text-[10px] font-black uppercase tracking-widest ${tracked ? 'text-emerald-600' : 'text-slate-500'}`}>
+              {tracked ? 'Na esteira de gestão' : 'Próxima fase disponível'}
             </p>
             <h3 className="mb-4 text-lg font-black tracking-tight text-slate-900">
               {tracked
@@ -2597,8 +3028,8 @@ function EsteiraCTA({
                       ? 'bg-emerald-100 text-emerald-700'
                       : stage.active
                         ? tracked
-                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-300'
-                          : 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-200'
+                          ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/30'
+                          : 'bg-slate-200 text-slate-700 ring-2 ring-slate-300'
                         : 'bg-slate-100 text-slate-400'
                   }`}>
                     {stage.done && <Check size={9} className="flex-shrink-0" />}
@@ -2610,7 +3041,7 @@ function EsteiraCTA({
 
             <p className="mt-3 text-[11px] font-semibold text-slate-400">
               Isso é acompanhado no{' '}
-              <button type="button" onClick={onGoToGestao} className="font-black text-indigo-600 underline underline-offset-2 hover:text-indigo-800">
+              <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
                 painel Gestão, no menu lateral
               </button>
               {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
@@ -2646,7 +3077,7 @@ function EsteiraCTA({
                   type="button"
                   onClick={onToggle}
                   disabled={!analysisId || !token || trackSaving}
-                  className="flex items-center gap-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-xl hover:shadow-indigo-500/35 hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex items-center gap-2.5 rounded-2xl bg-slate-900 px-6 py-3.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {trackSaving ? (
                     <RefreshCw size={15} className="animate-spin" />
@@ -2799,6 +3230,20 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
   );
 }
 
+// ─── Divisor de capítulo: agrupa sub-seções dentro de uma etapa que misturam
+// tipos de conteúdo diferentes (dado bruto, critério, resultado), deixando
+// explícito o que é cada bloco em vez de empilhar tudo com o mesmo peso visual.
+function ChapterDivider({ index, title }: { index: number; title: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+        {index} · {title}
+      </span>
+      <div className="h-px flex-1 bg-slate-200" />
+    </div>
+  );
+}
+
 // ─── Timeline: lista vertical conectada por linha, para dar ordem de leitura
 // clara a qualquer sequência de itens (critérios, riscos, evidências, ações
 // etc.). Reutilizada em todas as etapas da jornada de análise. ──────────────
@@ -2866,7 +3311,10 @@ function Timeline({ items, dense }: { items: TimelineItemData[]; dense?: boolean
                 </div>
                 <p className="text-sm font-semibold leading-relaxed text-slate-800">{item.title}</p>
                 {item.description && (
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{item.description}</p>
+                  // <div>, não <p>: várias chamadas passam um <blockquote> (elemento de
+                  // bloco) dentro de `description` — dentro de <p> isso é HTML inválido
+                  // e quebra a hidratação do Next.js.
+                  <div className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{item.description}</div>
                 )}
               </div>
             </div>
@@ -2895,14 +3343,12 @@ function StepHeadline({
   eyebrow,
   headline,
   sub,
-  toggleLabel,
   children,
 }: {
   tone: TimelineTone;
   eyebrow: string;
   headline: React.ReactNode;
   sub?: React.ReactNode;
-  toggleLabel?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -2912,14 +3358,13 @@ function StepHeadline({
         <p className="mt-1.5 text-base font-black leading-snug text-slate-900">{headline}</p>
         {sub && <p className="mt-1.5 text-sm font-semibold text-slate-600">{sub}</p>}
       </div>
+      {/* Entrar nesta etapa já É pedir o detalhe — antes o conteúdo ficava
+          atrás de um <details> fechado por padrão ("Ver detalhe completo"),
+          escondendo riscos/parecer que o usuário veio justamente ver. */}
       {children && (
-        <details className="group mt-3 rounded-2xl border border-slate-200">
-          <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
-            <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
-            {toggleLabel || 'Ver detalhe completo'}
-          </summary>
-          <div className="space-y-8 border-t border-slate-100 px-5 py-6">{children}</div>
-        </details>
+        <div className="mt-3 space-y-8 rounded-2xl border border-slate-200 px-5 py-6">
+          {children}
+        </div>
       )}
     </div>
   );
@@ -2931,13 +3376,23 @@ function StepHeadline({
 // 'abertura' = sessão de análise (ocorre APÓS o prazo) — não é indicador de expiração.
 const LABELS_CHAVE_EXPIRACAO = ['encerramento', 'recebimento', 'prazo', 'limite'];
 
+// 'prazo' e 'limite' são genéricos demais — batem também em datas que
+// acontecem ANTES da abertura (ex.: "Prazo de Impugnação", que por lei ocorre
+// dias antes do encerramento) ou DEPOIS dela (ex.: "Prazo de recurso"). Sem
+// esta exclusão, o banner "Edital Encerrado" disparava assim que a janela de
+// impugnação passava — bem antes do edital realmente fechar para propostas —
+// fazendo editais totalmente abertos aparecerem como vencidos.
+const LABELS_EXCLUIDOS_EXPIRACAO = ['impugna', 'esclarec', 'recurso', 'entrega', 'vigenc', 'pagamento'];
+
 function getDataExpirada(result: AnalysisResult) {
   if (!result.datas_criticas?.length) return null;
   const agora = new Date();
   return result.datas_criticas.find(dc => {
     if (!dc.data_iso) return false;
-    const isChave = LABELS_CHAVE_EXPIRACAO.some(k => dc.label.toLowerCase().includes(k));
-    return isChave && new Date(dc.data_iso) < agora;
+    const labelLower = dc.label.toLowerCase();
+    const isChave = LABELS_CHAVE_EXPIRACAO.some(k => labelLower.includes(k));
+    const isExcluido = LABELS_EXCLUIDOS_EXPIRACAO.some(k => labelLower.includes(k));
+    return isChave && !isExcluido && new Date(dc.data_iso) < agora;
   }) ?? null;
 }
 
@@ -2988,13 +3443,13 @@ function MeEppImpeditivoBanner({ result }: { result: AnalysisResult }) {
   // Cota reservada — nunca impede, mas muda a estratégia de disputa; nota informativa, não um alerta crítico.
   if (elegibilidade.cota_reservada) {
     return (
-      <div className="flex items-start gap-4 bg-indigo-50 border border-indigo-200 rounded-2xl px-5 py-4">
-        <div className="shrink-0 w-9 h-9 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+      <div className="flex items-start gap-4 bg-sky-50 border border-sky-200 rounded-2xl px-5 py-4">
+        <div className="shrink-0 w-9 h-9 rounded-full bg-sky-600 text-white flex items-center justify-center">
           <ShieldAlert size={18} />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Cota reservada · ME/EPP</span>
-          <p className="text-sm font-medium text-indigo-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
+          <span className="text-[10px] font-black text-sky-600 uppercase tracking-widest">Cota reservada · ME/EPP</span>
+          <p className="text-sm font-medium text-sky-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
         </div>
       </div>
     );
@@ -3192,14 +3647,14 @@ function OrgaoContextoSection({ result }: { result: AnalysisResult }) {
         </div>
       )}
       {integridade?.exigido && (
-        <div className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
           <div className="flex items-center gap-2">
-            <ShieldCheck size={16} className="text-violet-700" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-violet-700">Programa de integridade</p>
+            <ShieldCheck size={16} className="text-sky-700" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Programa de integridade</p>
           </div>
-          <p className="mt-2 text-sm font-black text-violet-800">Exigido pela Lei 14.133/2021</p>
+          <p className="mt-2 text-sm font-black text-sky-800">Exigido pela Lei 14.133/2021</p>
           <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{integridade.mensagem}</p>
-          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-violet-500">Prazo: {integridade.prazo}</p>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-sky-600">Prazo: {integridade.prazo}</p>
         </div>
       )}
     </div>
@@ -3435,13 +3890,13 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
         })}
       </div>
       {divergencias.length > 0 && (
-        <div className="mt-4 rounded-xl bg-indigo-50/70 border border-indigo-100 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-2 flex items-center gap-1.5">
+        <div className="mt-4 rounded-xl bg-sky-50/70 border border-sky-100 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-sky-600 mb-2 flex items-center gap-1.5">
             <RefreshCw size={11} /> Reconciliação automática IA × texto do edital
           </p>
           <div className="space-y-1.5">
             {divergencias.slice(0, 3).map((d, i) => (
-              <p key={i} className="text-xs font-medium leading-relaxed text-indigo-900/80">• {d}</p>
+              <p key={i} className="text-xs font-medium leading-relaxed text-sky-900/80">• {d}</p>
             ))}
           </div>
         </div>
@@ -3461,17 +3916,17 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
         </div>
       )}
       {result.valor_total_com_prorrogacao && (
-        <div className="mt-4 rounded-xl bg-indigo-50 border border-indigo-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-700 mb-1.5 flex items-center gap-1.5">
+        <div className="mt-4 rounded-xl bg-sky-50 border border-sky-200 px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-widest text-sky-700 mb-1.5 flex items-center gap-1.5">
             <TrendingUp size={11} /> Valor total estimado com prorrogação
           </p>
-          <p className="text-sm font-black text-indigo-900">
+          <p className="text-sm font-black text-sky-900">
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(result.valor_total_com_prorrogacao.valor_total_estimado)}
-            <span className="ml-1.5 text-[10px] font-bold text-indigo-500 uppercase tracking-wide">
+            <span className="ml-1.5 text-[10px] font-bold text-sky-600 uppercase tracking-wide">
               ({result.valor_total_com_prorrogacao.multiplicador.toFixed(1)}x o valor inicial)
             </span>
           </p>
-          <p className="mt-1 text-xs font-medium leading-relaxed text-indigo-900/80">{result.valor_total_com_prorrogacao.mensagem}</p>
+          <p className="mt-1 text-xs font-medium leading-relaxed text-sky-900/80">{result.valor_total_com_prorrogacao.mensagem}</p>
         </div>
       )}
       {result.alerta_prazo_entrega && (
@@ -3502,7 +3957,9 @@ function CollapsibleScoreBreakdown({ result }: { result: AnalysisResult }) {
   const itens = result.score_breakdown || [];
   if (itens.length === 0) return null;
   return (
-    <details className="group rounded-2xl border border-slate-200 overflow-hidden">
+    // Aberto por padrão: esta etapa (Critérios) é o lugar de prova/auditoria —
+    // entrar aqui já deve mostrar o conteúdo, sem clique extra.
+    <details open className="group rounded-2xl border border-slate-200 overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
         <span className="flex items-center gap-2 text-sm font-black text-slate-700">
           <Calculator size={16} className="text-slate-400" />
@@ -3524,7 +3981,8 @@ function CollapsibleFichaTecnica({ result }: { result: AnalysisResult }) {
     !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
   const localizados = ficha.filter((f) => !isAusente(f)).length;
   return (
-    <details className="group rounded-2xl border border-slate-200 overflow-hidden">
+    // Aberto por padrão — mesmo raciocínio do bloco de score acima.
+    <details open className="group rounded-2xl border border-slate-200 overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
         <span className="flex items-center gap-2 text-sm font-black text-slate-700">
           <FileSearch size={16} className="text-slate-400" />
@@ -3610,9 +4068,9 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
     baixa: { bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-400 text-white',     label: 'GRAVIDADE BAIXA' },
   };
   const acaoCfg: Record<string, { cls: string; label: string }> = {
-    impugnar:   { cls: 'bg-red-100 text-red-700 border-red-200',       label: '⚖️ Impugnar' },
-    esclarecer: { cls: 'bg-amber-100 text-amber-700 border-amber-200', label: '❓ Pedir esclarecimento' },
-    monitorar:  { cls: 'bg-slate-100 text-slate-600 border-slate-200', label: '👁 Monitorar' },
+    impugnar:   { cls: 'bg-red-100 text-red-700 border-red-200',       label: 'Impugnar' },
+    esclarecer: { cls: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Pedir esclarecimento' },
+    monitorar:  { cls: 'bg-slate-100 text-slate-600 border-slate-200', label: 'Monitorar' },
   };
 
   const classified = flags.map((flag) => ({ flag, ...classifyRedFlag(flag) }));
@@ -3632,14 +4090,14 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
         {RED_FLAG_SUBTITLES[subtitleKey]}
       </p>
       <Timeline
-        items={sortedFlags.map(({ flag, kind, label }, i) => {
+        items={sortedFlags.map(({ flag, label }, i) => {
           const acao = acaoCfg[flag.acao_sugerida || 'esclarecer'] ?? acaoCfg.esclarecer;
           const tone: TimelineTone = flag.gravidade === 'alta' ? 'red' : flag.gravidade === 'baixa' ? 'slate' : 'amber';
           return {
             key: i,
             tone,
-            eyebrow: `${kind === 'lacuna' ? '📄 ' : ''}${label}`,
-            badge: { label: acao.label.replace(/^[^\s]+\s/, ''), tone },
+            eyebrow: label,
+            badge: { label: acao.label, tone },
             title: flag.descricao,
             description: (
               <>
@@ -3654,9 +4112,9 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
                   </span>
                 )}
                 {flag.sumula_tcu && (
-                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-1.5">
-                    <Landmark size={11} className="mt-0.5 shrink-0 text-indigo-600" />
-                    <p className="text-[11px] font-medium leading-relaxed text-indigo-700">
+                  <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-sky-50 border border-sky-100 px-2.5 py-1.5">
+                    <Landmark size={11} className="mt-0.5 shrink-0 text-sky-600" />
+                    <p className="text-[11px] font-medium leading-relaxed text-sky-700">
                       <strong className="font-black">{flag.sumula_tcu.referencia}:</strong> {flag.sumula_tcu.texto}
                     </p>
                   </div>
@@ -3734,7 +4192,7 @@ function HabilitacaoSection({ result }: { result: AnalysisResult }) {
                 title: item.exigencia,
                 description: (item.dica || item.trecho) ? (
                   <>
-                    {item.dica && <span className="block">💡 {item.dica}</span>}
+                    {item.dica && <span className="block"><strong className="font-black text-slate-600">Dica:</strong> {item.dica}</span>}
                     {item.trecho && <span className="mt-1 block italic text-slate-400">"{item.trecho}"</span>}
                   </>
                 ) : undefined,
@@ -3999,11 +4457,11 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
   // Sem critérios avaliados: nudge para o usuário configurar
   if (!params.length) {
     return (
-      <div className="mb-8 flex items-start gap-4 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/40 px-5 py-4 print:hidden">
-        <SlidersHorizontal size={18} className="mt-0.5 flex-shrink-0 text-indigo-400" />
+      <div className="mb-8 flex items-start gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-4 print:hidden">
+        <SlidersHorizontal size={18} className="mt-0.5 flex-shrink-0 text-slate-400" />
         <div>
-          <p className="text-sm font-bold text-indigo-700">Nenhum critério personalizado avaliado nesta análise</p>
-          <p className="mt-0.5 text-xs font-medium text-indigo-500">
+          <p className="text-sm font-bold text-slate-700">Nenhum critério personalizado avaliado nesta análise</p>
+          <p className="mt-0.5 text-xs font-medium text-slate-500">
             Configure seus critérios em <strong>Parametrização</strong> e gere uma nova análise para ver a avaliação por critério aqui.
           </p>
         </div>
@@ -4021,12 +4479,12 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
   });
 
   return (
-    <section className="mb-8 overflow-hidden rounded-[1.5rem] border-2 border-indigo-100 bg-white shadow-sm">
+    <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
       {/* Cabeçalho */}
-      <div className="border-b border-indigo-100 bg-indigo-50/60 px-6 py-5">
+      <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-400">
+            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
               <SlidersHorizontal size={13} />
               Critérios configurados
             </p>
@@ -4072,11 +4530,11 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
       {/* O cabeçalho acima já é a manchete (contagem + alerta de bloqueio).
           O detalhe critério a critério fica atrás de um toggle. */}
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4 text-xs font-black uppercase tracking-widest text-indigo-500 transition-colors hover:bg-indigo-50/40">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50">
           <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
           Ver avaliação completa dos {params.length} critérios
         </summary>
-        <div className="border-t border-indigo-100 px-6 py-6">
+        <div className="border-t border-slate-200 px-6 py-6">
         <Timeline
           items={sorted.map((p, i) => {
             const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.alerta;
@@ -4113,7 +4571,7 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
 function ChecklistSection({ result }: { result: AnalysisResult }) {
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8 mt-12 print:hidden">
-      <SectionLabel icon={<span className="text-lg">✅</span>} label="Roadmap de Execução" />
+      <SectionLabel icon={<CheckCircle2 size={18} className="text-slate-700" />} label="Roadmap de Execução" />
       <div className="space-y-3 mt-2">
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         {result.checklist!.map((item: any, idx: number) => {

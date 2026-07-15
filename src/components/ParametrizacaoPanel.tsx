@@ -4,7 +4,9 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   SlidersHorizontal, Sparkles, Plus, Trash2, ChevronDown,
   CheckCircle2, Circle, Save, RotateCcw,
+  HardHat, Laptop, HeartPulse, Wrench, BarChart3,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { apiFetch, API_URL } from '@/lib/apiClient';
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
@@ -21,12 +23,14 @@ interface ParametrosData {
 }
 
 // ── Templates por setor (hardcoded — estáticos, não precisam de API) ─────
-const SETORES: { key: string; label: string; emoji: string }[] = [
-  { key: 'construcao',  label: 'Construção & Obras',       emoji: '🏗️' },
-  { key: 'ti',          label: 'Tecnologia da Informação', emoji: '💻' },
-  { key: 'saude',       label: 'Saúde & Farmácia',         emoji: '🏥' },
-  { key: 'servicos',    label: 'Serviços Gerais',           emoji: '🧹' },
-  { key: 'consultoria', label: 'Consultoria',               emoji: '📊' },
+// Ícones lucide (consistentes com o resto do app) em vez de emoji cru — cada
+// setor ganha um "chip" colorido, mais alinhado ao resto da UI profissional.
+const SETORES: { key: string; label: string; icon: LucideIcon; iconBg: string; iconColor: string }[] = [
+  { key: 'construcao',  label: 'Construção & Obras',       icon: HardHat,    iconBg: 'bg-amber-100',  iconColor: 'text-amber-700' },
+  { key: 'ti',          label: 'Tecnologia da Informação', icon: Laptop,     iconBg: 'bg-sky-100',    iconColor: 'text-sky-700' },
+  { key: 'saude',       label: 'Saúde & Farmácia',         icon: HeartPulse, iconBg: 'bg-rose-100',   iconColor: 'text-rose-700' },
+  { key: 'servicos',    label: 'Serviços Gerais',          icon: Wrench,     iconBg: 'bg-slate-200',  iconColor: 'text-slate-700' },
+  { key: 'consultoria', label: 'Consultoria',              icon: BarChart3,  iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700' },
 ];
 
 type Peso = 'alto' | 'medio' | 'baixo';
@@ -190,7 +194,7 @@ export default function ParametrizacaoPanel() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <SlidersHorizontal size={20} className="text-indigo-600" />
+            <SlidersHorizontal size={20} className="text-emerald-600" />
             <h2 className="text-xl font-black text-slate-900">Critérios de Avaliação</h2>
           </div>
           <p className="text-sm text-slate-500">
@@ -199,7 +203,7 @@ export default function ParametrizacaoPanel() {
         </div>
 
         {/* Badge IA */}
-        <div className="flex-shrink-0 flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[10px] font-black px-2.5 py-1.5 rounded-xl">
+        <div className="flex-shrink-0 flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-black px-2.5 py-1.5 rounded-xl">
           <Sparkles size={11} />
           IA vai sugerir ajustes
         </div>
@@ -213,24 +217,38 @@ export default function ParametrizacaoPanel() {
         <div className="relative">
           <button
             onClick={() => setSetorOpen(p => !p)}
-            className="w-full flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 hover:border-indigo-300 transition-colors"
+            className="w-full flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 hover:border-emerald-300 transition-colors"
           >
-            <span>{setor ? `${setor.emoji} ${setor.label}` : 'Escolher setor...'}</span>
+            {setor ? (
+              <span className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${setor.iconBg}`}>
+                  <setor.icon size={14} className={setor.iconColor} strokeWidth={2.2} />
+                </span>
+                {setor.label}
+              </span>
+            ) : (
+              <span className="text-slate-400">Escolher setor...</span>
+            )}
             <ChevronDown size={15} className={`text-slate-400 transition-transform ${setorOpen ? 'rotate-180' : ''}`} />
           </button>
           {setorOpen && (
             <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
-              {SETORES.map(s => (
-                <button
-                  key={s.key}
-                  onClick={() => aplicarTemplate(s.key)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-indigo-50 transition-colors text-left ${data.setor === s.key ? 'bg-indigo-50 text-indigo-700 font-bold' : 'text-slate-700'}`}
-                >
-                  <span className="text-base">{s.emoji}</span>
-                  {s.label}
-                  {data.setor === s.key && <CheckCircle2 size={14} className="ml-auto text-indigo-600" />}
-                </button>
-              ))}
+              {SETORES.map(s => {
+                const Icon = s.icon;
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => aplicarTemplate(s.key)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-emerald-50 transition-colors text-left ${data.setor === s.key ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-slate-700'}`}
+                  >
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${s.iconBg}`}>
+                      <Icon size={14} className={s.iconColor} strokeWidth={2.2} />
+                    </span>
+                    {s.label}
+                    {data.setor === s.key && <CheckCircle2 size={14} className="ml-auto text-emerald-600" />}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -265,7 +283,7 @@ export default function ParametrizacaoPanel() {
                 {/* Toggle */}
                 <button onClick={() => toggleAtivo(p.id)} className="flex-shrink-0">
                   {p.ativo
-                    ? <CheckCircle2 size={18} className="text-indigo-600" />
+                    ? <CheckCircle2 size={18} className="text-emerald-600" />
                     : <Circle size={18} className="text-slate-300" />
                   }
                 </button>
@@ -316,13 +334,13 @@ export default function ParametrizacaoPanel() {
           onChange={e => setNovoNome(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && adicionarNovo()}
           placeholder="Adicionar critério personalizado..."
-          className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 placeholder:text-slate-400"
+          className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-100 placeholder:text-slate-400"
         />
         {/* Peso do novo */}
         <select
           value={novoPeso}
           onChange={e => setNovoPeso(e.target.value as 'alto' | 'medio' | 'baixo')}
-          className="text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-400 text-slate-600 bg-white"
+          className="text-xs border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-400 text-slate-600 bg-white"
         >
           <option value="alto">Crítico</option>
           <option value="medio">Importante</option>
@@ -331,7 +349,7 @@ export default function ParametrizacaoPanel() {
         <button
           onClick={adicionarNovo}
           disabled={!novoNome.trim()}
-          className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <Plus size={14} />
           Adicionar
@@ -349,7 +367,7 @@ export default function ParametrizacaoPanel() {
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${
             saved
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50'
+              : 'bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50'
           }`}
         >
           {saved ? (

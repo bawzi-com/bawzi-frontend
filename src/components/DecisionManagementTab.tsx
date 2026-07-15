@@ -15,6 +15,10 @@ import {
   DollarSign,
   FileText,
   Loader2,
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
   RefreshCw,
   RotateCcw,
   Save,
@@ -83,9 +87,16 @@ const columnOrder = decisionQueueOrder;
 export default function DecisionManagementTab({
   token,
   userTier = 1,
+  sidebarHidden = false,
+  onToggleSidebar,
 }: {
   token: string;
   userTier?: number;
+  /** Estado do menu lateral do app-shell — só relevante quando esta aba vive
+   * dentro do grid com AppSidebar (analysis-app.tsx). A página standalone
+   * /gestao não tem esse menu, então não passa essas props e o botão some. */
+  sidebarHidden?: boolean;
+  onToggleSidebar?: () => void;
 }) {
   const router = useRouter();
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
@@ -119,6 +130,25 @@ export default function DecisionManagementTab({
   const [detailTab, setDetailTab] = useState<'analise' | 'concorrentes'>('analise');
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
   const [boardScroll, setBoardScroll] = useState({ left: false, right: false });
+
+  // ── Tela cheia do laudo aberto pela gestão ──────────────────────────────
+  // Fullscreen real (API do navegador) some até com a barra do navegador; o
+  // toggle de menu (via onToggleSidebar) libera os 350px da coluna lateral
+  // do app-shell para o laudo respirar mais. São dois controles independentes.
+  const laudoRef = useRef<HTMLDivElement | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      laudoRef.current?.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
 
   const CARDS_PER_COLUMN = 20;
   const [expandedColumns, setExpandedColumns] = useState<Partial<Record<DecisionQueueKey, boolean>>>({});
@@ -631,11 +661,16 @@ export default function DecisionManagementTab({
 
   if (selectedAnalysis) {
     return (
-      <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-500 pb-16">
+      <div
+        ref={laudoRef}
+        className="space-y-5 overflow-y-auto animate-in fade-in slide-in-from-right-4 duration-500 pb-16 [&:fullscreen]:bg-slate-50 [&:fullscreen]:p-4"
+      >
         {renderNotice()}
         <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
           <button
             onClick={() => {
+              if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+              if (sidebarHidden) onToggleSidebar?.();
               setSelectedAnalysis(null);
               setDetailTab('analise');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -644,9 +679,31 @@ export default function DecisionManagementTab({
           >
             ← Voltar para gestão
           </button>
-          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">
-            Laudo aberto pela gestão
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">
+              Laudo aberto pela gestão
+            </span>
+            {onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                title={sidebarHidden ? 'Mostrar menu' : 'Ocultar menu para ganhar espaço'}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
+              >
+                {sidebarHidden ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
+                {sidebarHidden ? 'Mostrar menu' : 'Ocultar menu'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              {isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
+            </button>
+          </div>
         </div>
 
         <AnalysisResults
