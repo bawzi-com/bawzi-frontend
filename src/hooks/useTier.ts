@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { getAuthToken } from '@/lib/apiClient';
+import { getAuthToken, initSession } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -32,7 +32,16 @@ export function useTier(): TierState {
   const [isLoading, setIsLoading]           = useState(false);
 
   const refresh = useCallback(async () => {
-    const token = getAuthToken();
+    // Em navegação full-page (ex: abrir /plans direto), o token de acesso
+    // ainda não foi hidratado na memória do módulo apiClient quando este
+    // hook monta — getAuthToken() sozinho devolve null e o refresh() abortava
+    // aqui, deixando "tier" preso no valor (possivelmente desatualizado) que
+    // veio do localStorage no useState inicial. Sem mais nada re-disparando
+    // o refresh depois, a página ficava mostrando um tier errado (ex: "Nível 1"
+    // como PLANO ATUAL) mesmo com o Header, ao lado, já mostrando o tier
+    // correto — porque o Header hidrata a sessão via initSession() antes de
+    // validar o tier, e este hook não hidratava.
+    const token = getAuthToken() || await initSession();
     if (!token) return;
 
     setIsLoading(true);

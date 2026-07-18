@@ -20,7 +20,7 @@ import {
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
   ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
-  Maximize2, Minimize2, PanelRightClose, PanelRightOpen,
+  Maximize2, Minimize2, PanelRightClose, PanelRightOpen, ExternalLink,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -108,6 +108,7 @@ export default function AnalysisResults({
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
+  const pncpEditalUrl = useMemo(() => buildPncpEditalUrl(liveResult), [liveResult]);
   const [tracked, setTracked] = useState<boolean>(!!result.tracked_in_gestao);
   const [trackSaving, setTrackSaving] = useState(false);
   const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('panorama');
@@ -338,6 +339,17 @@ export default function AnalysisResults({
                 <Share2 size={15} />
               </button>
             )}
+            {pncpEditalUrl && (
+              <a
+                href={pncpEditalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Ver edital original no Portal Nacional de Contratações Públicas (PNCP)"
+                className="p-2 rounded-lg text-slate-400 hover:text-sky-700 hover:bg-sky-50 transition-colors"
+              >
+                <ExternalLink size={15} />
+              </a>
+            )}
             {onToggleSidebar && (
               <button
                 onClick={onToggleSidebar}
@@ -367,10 +379,13 @@ export default function AnalysisResults({
         />
 
         {/* Score, veredito e aderência ao CNAE viviam repetidos em ~4 formatos
-            diferentes espalhados pelas etapas. Esta barra é o único lugar
-            "canônico" — fica visível em qualquer etapa, sempre no mesmo
-            lugar, para dar uma referência estável enquanto se navega. */}
-        <PersistentSummaryBar result={liveResult} />
+            diferentes espalhados pelas etapas. Esta barra é a referência
+            "canônica" nas etapas 02-06 — some em Panorama e Veredito, que já
+            abrem com o veredito em destaque (repeti-lo aqui em cima seria a
+            mesma informação 2x antes de qualquer conteúdo novo). */}
+        {activeStep !== 'panorama' && activeStep !== 'veredito' && (
+          <PersistentSummaryBar result={liveResult} />
+        )}
 
         {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
@@ -384,6 +399,21 @@ export default function AnalysisResults({
                   quadro geral não precisa abrir as outras etapas para
                   entender a história inteira. */}
               <JourneySummary result={liveResult} onStepClick={handleStepClick} />
+
+              {/* Semáforo (o "porquê" por eixo) e Resumo Executivo (o "o quê"
+                  em prosa) viviam dentro de Veredito, mas são leitura panorâmica
+                  por natureza — o usuário tinha que abrir uma etapa a mais só
+                  para ver a foto geral que "Panorama" promete no nome. Vieram
+                  pra cá; Veredito manteve o que é decisão/contexto prático
+                  (score, órgão, cronograma, oportunidades). */}
+              <SemaforoSection result={liveResult} />
+
+              <div className="relative border border-slate-200 rounded-2xl p-8">
+                <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
+                <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
+                  {liveResult.summary}
+                </div>
+              </div>
 
               {/* "Log de trabalho" da IA: todas as frentes avaliadas, o que
                   sustenta cada uma e o que não precisa de atenção — em um só
@@ -399,20 +429,13 @@ export default function AnalysisResults({
               <MeEppImpeditivoBanner result={liveResult} />
 
               {/* O veredito e o porquê vêm primeiro — é a resposta que o usuário veio buscar.
-                  Score, cronograma e evidências abaixo sustentam essa resposta. */}
+                  Cronograma e evidências abaixo sustentam essa resposta. Semáforo e Resumo
+                  Executivo mudaram para Panorama (ver comentário lá). */}
               <div id="section-score" className="scroll-mt-24">
                 <DecisionSnapshot result={liveResult} learningStats={learningStats} />
               </div>
-              <SemaforoSection result={liveResult} />
               <OrgaoContextoSection result={liveResult} />
               <CronogramaSection result={liveResult} />
-
-              <div className="relative border border-slate-200 rounded-2xl p-8">
-                <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
-                <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
-                  {liveResult.summary}
-                </div>
-              </div>
               <OportunidadesSection result={liveResult} />
             </div>
           )}
@@ -463,11 +486,17 @@ export default function AnalysisResults({
                     eyebrow="SWOT & Riscos"
                     headline={item.headline}
                   >
-                    <RedFlagsSection result={liveResult} />
-                    <SwotSection result={liveResult} />
-                    <HabilitacaoSection result={liveResult} />
-                    <RisksSection result={liveResult} />
-                    <MatrizRiscoFormalSection result={liveResult} />
+                    <section className="space-y-4">
+                      <ChapterDivider index={1} title="Forças e fraquezas" />
+                      <SwotSection result={liveResult} />
+                    </section>
+                    <section className="space-y-4">
+                      <ChapterDivider index={2} title="Riscos e conformidade" />
+                      <RedFlagsSection result={liveResult} />
+                      <RisksSection result={liveResult} />
+                      <MatrizRiscoFormalSection result={liveResult} />
+                      <HabilitacaoSection result={liveResult} />
+                    </section>
                   </StepHeadline>
                 );
               })()}
@@ -557,16 +586,6 @@ export default function AnalysisResults({
                 tracked={tracked}
                 trackSaving={trackSaving}
                 onToggleTracking={toggleTracking}
-                onGoToGestao={onGoToGestao}
-                gestaoDisponivel={gestaoDisponivel}
-              />
-              <EsteiraCTA
-                result={liveResult}
-                tracked={tracked}
-                trackSaving={trackSaving}
-                onToggle={toggleTracking}
-                analysisId={analysisId}
-                token={token}
                 onGoToGestao={onGoToGestao}
                 gestaoDisponivel={gestaoDisponivel}
               />
@@ -1061,6 +1080,7 @@ function DecisionVersionMonitor({
   const monitor = toUiRecord(result.pncp_monitor);
   const ref = toUiRecord(result.pncp_ref);
   const hasPncpRef = Boolean(ref.cnpj || result.pncp_cnpj) && Boolean(ref.ano || result.pncp_ano) && Boolean(ref.sequencial || result.pncp_sequencial);
+  const pncpEditalUrl = buildPncpEditalUrl(result);
   const events = toUiRecords(result.pncp_monitor_events).slice().reverse();
   const reviews = toUiRecords(result.decision_reviews).slice().reverse();
   const files = toUiRecords(monitor.files);
@@ -1136,15 +1156,28 @@ function DecisionVersionMonitor({
             </p>
             <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">Validade contínua da decisão</h3>
           </div>
-          <button
-            type="button"
-            onClick={checkPncp}
-            disabled={!hasPncpRef || !token || !analysisId || isChecking}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isChecking ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Verificar PNCP
-          </button>
+          <div className="flex items-center gap-2">
+            {pncpEditalUrl && (
+              <a
+                href={pncpEditalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 transition-all hover:bg-slate-50"
+              >
+                <ExternalLink size={14} />
+                Ver edital no PNCP
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={checkPncp}
+              disabled={!hasPncpRef || !token || !analysisId || isChecking}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isChecking ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Verificar PNCP
+            </button>
+          </div>
         </div>
         {notice && (
           <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-bold text-sky-800">
@@ -1375,6 +1408,23 @@ function DecisionCockpit({
     ? 'Condições a acompanhar para revisar esta decisão'
     : 'Passos para protocolar a proposta — registrados em Gestão';
 
+  // Onde este edital está no ciclo de vida do negócio — antes vivia isolada
+  // num card próprio (EsteiraCTA) logo abaixo deste, duplicando o mesmo botão
+  // de "acompanhar em Gestão" que já existe aqui ao lado.
+  const pipelineStages: { key: string; label: string; done?: boolean; active?: boolean }[] = isNoGo
+    ? [
+        { key: 'analise', label: 'Análise', done: true },
+        { key: 'monitoramento', label: 'Monitoramento', active: true },
+        { key: 'reanalise', label: 'Re-análise' },
+      ]
+    : [
+        { key: 'analise', label: 'Análise', done: true },
+        { key: 'habilitacao', label: 'Habilitação', active: true },
+        { key: 'proposta', label: 'Proposta' },
+        { key: 'disputa', label: 'Disputa' },
+        { key: 'resultado', label: 'Resultado' },
+      ];
+
   return (
     <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
       {/* Cabeçalho */}
@@ -1391,7 +1441,29 @@ function DecisionCockpit({
                 ? 'Marque quando as condições mudarem e reprocesse a análise.'
                 : 'Preencha responsável e prazo para cada passo — os dados ficam salvos no histórico desta análise.'}
             </p>
-            <p className="mt-1.5 text-[11px] font-semibold text-slate-400">
+
+            {/* Pipeline: onde este edital está no ciclo Análise → ... */}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              {pipelineStages.map((stage, i) => (
+                <React.Fragment key={stage.key}>
+                  {i > 0 && <ChevronRight size={11} className="flex-shrink-0 text-slate-300" />}
+                  <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black transition-all ${
+                    stage.done
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : stage.active
+                        ? tracked
+                          ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/30'
+                          : 'bg-slate-200 text-slate-700 ring-2 ring-slate-300'
+                        : 'bg-slate-100 text-slate-400'
+                  }`}>
+                    {stage.done && <Check size={9} className="flex-shrink-0" />}
+                    {stage.label}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+
+            <p className="mt-2.5 text-[11px] font-semibold text-slate-400">
               Ative "+ Gestão" para acompanhar isto no{' '}
               <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
                 painel Gestão, no menu lateral
@@ -2250,6 +2322,20 @@ function dedupTextos(itens: string[], vistos: string[]): string[] {
 }
 
 /** Veredito No-Go (campo da decisão ou score muito baixo). */
+// ─── Link para o edital original no portal do PNCP ───────────────────────────
+// Só existe quando a análise partiu de uma busca no Radar PNCP (carrega
+// cnpj/ano/sequencial do órgão) — análises por texto colado ou upload de PDF
+// não têm essa referência e o link simplesmente não aparece.
+function buildPncpEditalUrl(result: AnalysisResult): string | null {
+  const ref = result.pncp_ref || {};
+  const cnpj = String(ref.cnpj || result.pncp_cnpj || '').replace(/\D/g, '');
+  const ano = String(ref.ano || result.pncp_ano || '').trim();
+  const sequencialRaw = String(ref.sequencial || result.pncp_sequencial || '').trim();
+  const sequencial = parseInt(sequencialRaw, 10);
+  if (cnpj.length !== 14 || !ano || !sequencialRaw || !Number.isFinite(sequencial)) return null;
+  return `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${sequencial}`;
+}
+
 function isNoGoVerdict(result: AnalysisResult): boolean {
   const decisao = (result as unknown as { decisao?: { veredito?: string } }).decisao;
   const v = String(decisao?.veredito || '').toUpperCase();
@@ -2349,20 +2435,6 @@ type JourneySummaryItem = {
   headline: string;
 };
 
-const JOURNEY_SUMMARY_TEXT: Record<JourneySummaryStatus, string> = {
-  ok: 'text-emerald-700',
-  atencao: 'text-amber-700',
-  alerta: 'text-red-700',
-  pendente: 'text-slate-400',
-};
-
-const JOURNEY_SUMMARY_LABEL: Record<JourneySummaryStatus, string> = {
-  ok: 'favorável',
-  atencao: 'atenção',
-  alerta: 'alerta',
-  pendente: 'a fazer',
-};
-
 function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
   const decision = normalizeDecision(result);
 
@@ -2426,13 +2498,6 @@ function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
   return [veredito, criterios, analise, juridico, concorrentes, cockpit];
 }
 
-const JOURNEY_SUMMARY_ICON_WRAP: Record<JourneySummaryStatus, string> = {
-  ok: 'bg-emerald-50 text-emerald-600',
-  atencao: 'bg-amber-50 text-amber-600',
-  alerta: 'bg-red-50 text-red-600',
-  pendente: 'bg-slate-100 text-slate-400',
-};
-
 function JourneySummary({
   result,
   onStepClick,
@@ -2442,61 +2507,30 @@ function JourneySummary({
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
-  const items = buildJourneySummary(result).filter((item) => item.key !== 'veredito');
   const verdictStep = JOURNEY_STEPS.find((s) => s.key === 'veredito')!;
 
+  // Só o veredito aqui — a lista das outras 5 etapas foi absorvida por
+  // EscopoAnaliseSection (mais abaixo), que cobre o mesmo território já
+  // agrupado por etapa e em mais detalhe. Duas listas de status uma embaixo
+  // da outra repetiam a mesma informação em granularidades diferentes.
   return (
-    <div className="print:hidden">
-      {/* Hero: a resposta que importa, antes de qualquer lista */}
-      <button
-        type="button"
-        onClick={() => onStepClick(verdictStep)}
-        className={`mb-4 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-5 text-left transition-transform hover:-translate-y-0.5 ${verdict.summary}`}
-      >
-        <div className="min-w-0">
-          <p className={`text-[10px] font-black uppercase tracking-widest ${verdict.text}`}>Veredito executivo</p>
-          <p className="mt-1.5 text-xl font-black leading-snug text-slate-950 md:text-2xl">{decision.rotulo}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-3">
-          <div className="text-right">
-            <p className={`text-3xl font-black leading-none ${verdict.text}`}>{result.score}</p>
-            <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">score / 100</p>
-          </div>
-          <ChevronRight size={18} className="text-slate-400" />
-        </div>
-      </button>
-
-      {/* O resto da jornada, em ordem — cada linha leva direto ao detalhe */}
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        {items.map((item, i) => {
-          const step = JOURNEY_STEPS.find((s) => s.key === item.key);
-          if (!step) return null;
-          const Icon = step.icon;
-          return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => onStepClick(step)}
-              className={`flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100' : ''}`}
-            >
-              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${JOURNEY_SUMMARY_ICON_WRAP[item.status]}`}>
-                <Icon size={16} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{step.num} · {step.label}</span>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${JOURNEY_SUMMARY_TEXT[item.status]}`}>
-                    {JOURNEY_SUMMARY_LABEL[item.status]}
-                  </span>
-                </span>
-                <span className="mt-0.5 block text-sm font-semibold leading-snug text-slate-800">{item.headline}</span>
-              </span>
-              <ChevronRight size={15} className="shrink-0 text-slate-300" />
-            </button>
-          );
-        })}
+    <button
+      type="button"
+      onClick={() => onStepClick(verdictStep)}
+      className={`mb-6 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-5 text-left transition-transform hover:-translate-y-0.5 print:hidden ${verdict.summary}`}
+    >
+      <div className="min-w-0">
+        <p className={`text-[10px] font-black uppercase tracking-widest ${verdict.text}`}>Veredito executivo</p>
+        <p className="mt-1.5 text-xl font-black leading-snug text-slate-950 md:text-2xl">{decision.rotulo}</p>
       </div>
-    </div>
+      <div className="flex shrink-0 items-center gap-3">
+        <div className="text-right">
+          <p className={`text-3xl font-black leading-none ${verdict.text}`}>{result.score}</p>
+          <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">score / 100</p>
+        </div>
+        <ChevronRight size={18} className="text-slate-400" />
+      </div>
+    </button>
   );
 }
 
@@ -2526,37 +2560,15 @@ const SCOPE_STATUS_CFG: Record<ScopeStatus, { dot: string; text: string; label: 
   pendente: { dot: 'bg-slate-300', text: 'text-slate-400', label: 'Não avaliado' },
 };
 
-const SEMAFORO_EIXO_LABEL: Record<string, string> = {
-  tecnica: 'Técnica',
-  financeira: 'Financeira',
-  juridica: 'Jurídica',
-  documentacao: 'Documentação',
-};
-
 function buildEscopoAnalise(result: AnalysisResult): ScopeRow[] {
   const rows: ScopeRow[] = [];
 
-  // 1. Semáforo de viabilidade
-  const eixos = result.semaforo ? Object.entries(result.semaforo) : [];
-  const eixosRisco = eixos.filter(([, s]) => s.status === 'risco').length;
-  const eixosAlerta = eixos.filter(([, s]) => s.status === 'alerta').length;
-  rows.push({
-    key: 'semaforo',
-    Icon: Gauge,
-    label: 'Semáforo de Viabilidade',
-    status: !result.semaforo ? 'pendente' : eixosRisco > 0 ? 'alerta' : eixosAlerta > 0 ? 'atencao' : 'ok',
-    headline: !result.semaforo
-      ? 'Não avaliado nesta análise — reprocesse o edital para ativar.'
-      : `4 eixos avaliados — Técnica, Financeira, Jurídica e Documentação${
-          eixosRisco || eixosAlerta ? ` (${eixosRisco} em risco, ${eixosAlerta} em atenção)` : ', todos OK'
-        }.`,
-    detail: result.semaforo
-      ? Object.entries(result.semaforo).map(([k, s]) => `${SEMAFORO_EIXO_LABEL[k] || k}: ${s.motivo}`)
-      : undefined,
-    stepKey: 'veredito',
-  });
+  // Semáforo de Viabilidade não entra mais aqui como linha de checklist: desde
+  // que passou a ser exibido por inteiro logo no topo do Panorama (ver
+  // JSX da etapa 00), uma linha resumindo-o de novo alguns parágrafos abaixo
+  // seria a mesma informação duas vezes na mesma tela.
 
-  // 2. Ficha técnica (extração de dados)
+  // 1. Ficha técnica (extração de dados)
   const ficha = result.ficha_tecnica || [];
   const isFichaAusente = (item: NonNullable<AnalysisResult['ficha_tecnica']>[number]) =>
     !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
@@ -2759,67 +2771,80 @@ function EscopoAnaliseSection({
   const rows = useMemo(() => buildEscopoAnalise(result), [result]);
   const okCount = rows.filter((r) => r.status === 'ok').length;
 
+  // Agrupado pelas mesmas 5 etapas da jornada (Veredito, Critérios, SWOT &
+  // Riscos, Jurídico, Concorrentes) — é o mesmo mapa da navegação acima, só
+  // que em maior detalhe. Antes disto ser agrupado, as 13 linhas formavam uma
+  // sequência plana sem relação visível com as etapas da jornada.
+  const grouped = JOURNEY_STEPS
+    .map((step) => ({ step, items: rows.filter((r) => r.stepKey === step.key) }))
+    .filter((g) => g.items.length > 0);
+
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8">
       <SectionLabel icon={<ListOrdered size={18} className="text-slate-700" />} label="O Que Esta Análise Avaliou" />
       <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
-        {rows.length} frentes verificadas pela IA para chegar ao veredito — {okCount} sem pendência. Clique numa linha
-        para ver o motivo e ir direto à seção completa.
+        {rows.length} frentes verificadas pela IA para chegar ao veredito, agrupadas pelas etapas da jornada acima
+        — {okCount} sem pendência. Clique numa linha para ver o motivo.
       </p>
-      <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-200">
-        {rows.map((row) => {
-          const cfg = SCOPE_STATUS_CFG[row.status];
-          const isOpen = !!expanded[row.key];
-          const step = row.stepKey ? JOURNEY_STEPS.find((s) => s.key === row.stepKey) : undefined;
-          const hasExtra = Boolean(row.detail?.length || step);
-          return (
-            <div key={row.key}>
-              <button
-                type="button"
-                onClick={() => hasExtra && setExpanded((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
-                className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${hasExtra ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
-              >
-                <row.Icon size={16} className="mt-0.5 shrink-0 text-slate-400" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-bold text-slate-800">{row.label}</span>
-                    <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${cfg.text}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
-                      {cfg.label}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{row.headline}</p>
-                </div>
-                {hasExtra && (
-                  <ChevronDown size={14} className={`mt-1 shrink-0 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                )}
-              </button>
-              {isOpen && hasExtra && (
-                <div className="px-4 pb-4 pl-[2.1rem]">
-                  {row.detail && row.detail.length > 0 && (
-                    <ul className="space-y-1.5">
-                      {row.detail.map((d, i) => (
-                        <li key={i} className="flex items-start gap-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
-                          <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
-                          {d}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {step && (
+      <div className="mt-4 space-y-5">
+        {grouped.map(({ step, items }) => (
+          <div key={step.key}>
+            <p className="mb-2 flex items-center gap-1.5 px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <step.icon size={12} />
+              {step.num} · {step.label}
+            </p>
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+              {items.map((row) => {
+                const cfg = SCOPE_STATUS_CFG[row.status];
+                const isOpen = !!expanded[row.key];
+                const hasExtra = Boolean(row.detail?.length);
+                return (
+                  <div key={row.key}>
                     <button
                       type="button"
-                      onClick={() => onStepClick(step)}
-                      className={`text-[11px] font-black text-slate-700 underline underline-offset-2 hover:text-slate-950 ${row.detail?.length ? 'mt-2.5' : ''}`}
+                      onClick={() => hasExtra && setExpanded((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                      className={`flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${hasExtra ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default'}`}
                     >
-                      Ver seção completa →
+                      <row.Icon size={16} className="mt-0.5 shrink-0 text-slate-400" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-bold text-slate-800">{row.label}</span>
+                          <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${cfg.text}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+                            {cfg.label}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">{row.headline}</p>
+                      </div>
+                      {hasExtra && (
+                        <ChevronDown size={14} className={`mt-1 shrink-0 text-slate-300 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                      )}
                     </button>
-                  )}
-                </div>
-              )}
+                    {isOpen && hasExtra && row.detail && row.detail.length > 0 && (
+                      <div className="px-4 pb-4 pl-[2.1rem]">
+                        <ul className="space-y-1.5">
+                          {row.detail.map((d, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
+                              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-300" />
+                              {d}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+            <button
+              type="button"
+              onClick={() => onStepClick(step)}
+              className="mt-2 text-[11px] font-black text-slate-700 underline underline-offset-2 hover:text-slate-950"
+            >
+              Ver {step.label.toLowerCase()} completo →
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2950,270 +2975,6 @@ function JourneyStepNav({
             })}
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Esteira CTA: convite proeminente para gestão ─────────────────────────────
-
-function EsteiraCTA({
-  result,
-  tracked,
-  trackSaving,
-  onToggle,
-  analysisId,
-  token,
-  onGoToGestao,
-  gestaoDisponivel,
-}: {
-  result: AnalysisResult;
-  tracked: boolean;
-  trackSaving: boolean;
-  onToggle: () => void;
-  analysisId: string | null;
-  token: string | null;
-  onGoToGestao: () => void;
-  gestaoDisponivel: boolean;
-}) {
-  const decision = normalizeDecision(result);
-  const isNoGo = decision.veredito === 'NO_GO';
-
-  const goStages: { key: string; label: string; done?: boolean; active?: boolean }[] = [
-    { key: 'analise', label: 'Análise', done: true },
-    { key: 'habilitacao', label: 'Habilitação', active: true },
-    { key: 'proposta', label: 'Proposta' },
-    { key: 'disputa', label: 'Disputa' },
-    { key: 'resultado', label: 'Resultado' },
-  ];
-
-  const noGoStages: { key: string; label: string; done?: boolean; active?: boolean }[] = [
-    { key: 'analise', label: 'Análise', done: true },
-    { key: 'monitoramento', label: 'Monitoramento', active: true },
-    { key: 'reanalise', label: 'Re-análise' },
-  ];
-
-  const stages = isNoGo ? noGoStages : goStages;
-  const nextStage = isNoGo ? 'Monitoramento' : 'Habilitação';
-
-  return (
-    <div className={`mb-6 overflow-hidden rounded-[1.5rem] border-2 print:hidden transition-all ${
-      tracked
-        ? 'border-emerald-300 bg-gradient-to-br from-emerald-50/60 to-white shadow-sm shadow-emerald-100'
-        : 'border-dashed border-slate-300 bg-slate-50/60'
-    }`}>
-      <div className="px-6 py-6 md:px-8 md:py-7">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-
-          {/* Left: title + pipeline */}
-          <div className="min-w-0 flex-1">
-            <p className={`mb-1.5 text-[10px] font-black uppercase tracking-widest ${tracked ? 'text-emerald-600' : 'text-slate-500'}`}>
-              {tracked ? 'Na esteira de gestão' : 'Próxima fase disponível'}
-            </p>
-            <h3 className="mb-4 text-lg font-black tracking-tight text-slate-900">
-              {tracked
-                ? `Este edital está sendo acompanhado · entrando em ${nextStage}`
-                : 'Levar este edital para a esteira de gestão?'}
-            </h3>
-
-            {/* Pipeline visual */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {stages.map((stage, i) => (
-                <React.Fragment key={stage.key}>
-                  {i > 0 && (
-                    <ChevronRight size={11} className="flex-shrink-0 text-slate-300" />
-                  )}
-                  <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black transition-all ${
-                    stage.done
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : stage.active
-                        ? tracked
-                          ? 'bg-slate-900 text-white shadow-sm shadow-slate-900/30'
-                          : 'bg-slate-200 text-slate-700 ring-2 ring-slate-300'
-                        : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    {stage.done && <Check size={9} className="flex-shrink-0" />}
-                    {stage.label}
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
-
-            <p className="mt-3 text-[11px] font-semibold text-slate-400">
-              Isso é acompanhado no{' '}
-              <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                painel Gestão, no menu lateral
-              </button>
-              {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
-            </p>
-          </div>
-
-          {/* Right: CTA button */}
-          <div className="flex shrink-0 flex-col items-start gap-2 lg:items-end">
-            {tracked ? (
-              <>
-                <button
-                  type="button"
-                  onClick={onGoToGestao}
-                  className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-white transition-all hover:bg-emerald-700"
-                >
-                  <Pin size={15} className="flex-shrink-0" />
-                  <span className="text-sm font-black">
-                    {gestaoDisponivel ? 'Acompanhando · ver painel →' : 'Acompanhando · desbloquear painel →'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onToggle}
-                  disabled={!analysisId || !token || trackSaving}
-                  className="text-[10px] font-bold text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors disabled:opacity-50"
-                >
-                  Remover do acompanhamento
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={onToggle}
-                  disabled={!analysisId || !token || trackSaving}
-                  className="flex items-center gap-2.5 rounded-2xl bg-slate-900 px-6 py-3.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {trackSaving ? (
-                    <RefreshCw size={15} className="animate-spin" />
-                  ) : (
-                    <Pin size={15} className="flex-shrink-0" />
-                  )}
-                  Acompanhar este edital →
-                </button>
-                {!token && (
-                  <p className="text-[10px] font-medium text-slate-400">Faça login para acompanhar</p>
-                )}
-              </>
-            )}
-          </div>
-
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Sub-componente: conteúdo do Raio-X ──────────────────────────────────────
-
-interface ReportTabProps {
-  result: AnalysisResult;
-  userTier: number;
-  currentTier: number;
-  modelSource: string | null;
-  isCachedResult: boolean;
-  onUpgradeClick: () => void;
-  onExportPDF: () => void;
-}
-
-function ReportTab({ result, userTier, currentTier, modelSource, isCachedResult, onUpgradeClick, onExportPDF }: ReportTabProps) {
-  return (
-    <div className="space-y-8 animate-in fade-in duration-500">
-
-      {/* BANNER: EDITAL EXPIRADO */}
-      <ExpiredBanner result={result} />
-
-      {/* SCORE + DATAS CRÍTICAS */}
-      <div id="section-score" className="scroll-mt-24">
-        <ScoreHeader result={result} />
-      </div>
-
-      {/* SEMÁFORO DE VIABILIDADE */}
-      <SemaforoSection result={result} />
-
-      {/* CRONOGRAMA CRÍTICO */}
-      <CronogramaSection result={result} />
-
-      {/* RESUMO EXECUTIVO */}
-      <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
-        <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
-        <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
-          {result.summary}
-        </div>
-      </div>
-
-      {/* SIMULADOR TÁTICO — oculto em No-Go: simular lance para um edital
-          que a própria análise mandou evitar é ruído de decisão */}
-      {result.pricing_intelligence && !isNoGoVerdict(result) && (
-        <div className="space-y-4 print:hidden mb-12">
-          <TacticalSimulator
-            pricing={result.pricing_intelligence}
-            fullResult={result}
-            userTier={userTier}
-          />
-        </div>
-      )}
-      {result.pricing_intelligence && isNoGoVerdict(result) && (
-        <div className="mb-12 flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
-          <span className="text-lg leading-none">🎯</span>
-          <p className="text-sm font-medium leading-relaxed text-slate-500">
-            <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
-            proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
-          </p>
-        </div>
-      )}
-
-      {/* CRITÉRIOS CONFIGURADOS — logo após o veredito para decisão imediata */}
-      <div id="section-criterios" className="scroll-mt-24">
-        <ParametrosSection result={result} />
-      </div>
-
-      {/* SWOT & CARGA OPERACIONAL + MATRIZ DE RISCOS */}
-      <div id="section-analise" className="scroll-mt-24 space-y-8">
-        <SwotSection result={result} />
-        <RisksSection result={result} />
-      </div>
-
-      {/* PARECER TÉCNICO-JURÍDICO */}
-      <div id="section-juridico" className="scroll-mt-24">
-        <PareceSection result={result} userTier={userTier} onUpgradeClick={onUpgradeClick} />
-      </div>
-
-      {/* RACIOCÍNIO ESTRATÉGICO */}
-      <div className="mt-8 pt-6 border-t border-slate-100 print:hidden">
-        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-          <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
-          Raciocínio Estratégico da IA
-        </h4>
-        <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
-          {result.rationale || result.recommendation || 'Sem dados estratégicos.'}
-        </div>
-      </div>
-
-      {/* ROADMAP / CHECKLIST — removido: os mesmos itens vivem no Cockpit
-          pós-veredito (com responsável, prazo, nota e impacto), que é a fonte
-          operacional única. Duplicar a lista aqui só inflava o relatório. */}
-
-      {/* EXPORTAR PDF */}
-      <PremiumLock
-        isLocked={currentTier < 4}
-        featureTitle="Laudo de Decisão Bawzi (PDF)"
-        requiredTierName="Nível 4 (Avançado)"
-        onUpgradeClick={onUpgradeClick}
-      >
-        <PdfExportCard onExportPDF={onExportPDF} />
-      </PremiumLock>
-
-      {/* LAYOUT DE IMPRESSÃO */}
-      <PrintLayout result={result} />
-
-      {/* RODAPÉ METADADOS */}
-      <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium print:hidden">
-        <div className="flex items-center gap-2">
-          <span>Gerado por:</span>
-          <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-bold uppercase tracking-widest">{modelSource || 'Motor Bawzi IA'}</span>
-        </div>
-        {isCachedResult && (
-          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
-            <Zap size={14} />
-            <span className="font-bold uppercase tracking-widest text-[10px]">Recuperado do Cache</span>
-          </div>
-        )}
       </div>
     </div>
   );

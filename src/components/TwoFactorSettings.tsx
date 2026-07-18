@@ -107,15 +107,32 @@ export default function TwoFactorSettings() {
 
   return (
     <div className="space-y-4">
-      {/* Status */}
-      <div className={`flex items-center justify-between rounded-xl border px-4 py-3 ${ativo ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>
+      {/* Status — quando inativo, usa tom âmbar de alerta para chamar atenção
+          para a lacuna de segurança (antes era um cinza neutro, fácil de
+          ignorar/confundir com um item "ok"). */}
+      <div className={`relative flex items-center justify-between rounded-xl border-2 px-4 py-3.5 ${ativo ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50 shadow-sm shadow-amber-100'}`}>
         <div className="flex items-center gap-3">
-          {ativo
-            ? <ShieldCheck size={20} className="text-emerald-600" />
-            : <ShieldOff size={20} className="text-slate-400" />}
+          <span className="relative flex shrink-0">
+            {ativo
+              ? <ShieldCheck size={24} className="text-emerald-600" />
+              : <ShieldOff size={24} className="text-amber-600" />}
+            {!ativo && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+              </span>
+            )}
+          </span>
           <div>
-            <p className="text-sm font-black text-slate-800">Autenticação em 2 fatores (TOTP)</p>
-            <p className="text-xs font-medium text-slate-500">
+            <p className="flex items-center gap-2 text-sm font-black text-slate-800">
+              Autenticação em 2 fatores (TOTP)
+              {!ativo && (
+                <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                  Recomendado
+                </span>
+              )}
+            </p>
+            <p className={`text-xs font-medium ${ativo ? 'text-slate-500' : 'text-amber-800'}`}>
               {ativo
                 ? `Ativa · ${backupRestantes} código(s) de backup restante(s)`
                 : 'Inativa — proteja sua conta com um app autenticador (Google Authenticator, Authy…)'}
@@ -127,8 +144,8 @@ export default function TwoFactorSettings() {
             Desativar
           </button>
         ) : etapa === 'idle' && (
-          <button onClick={iniciarSetup} disabled={loading} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-black text-white hover:bg-slate-800 disabled:opacity-50 transition-colors">
-            {loading ? 'Gerando…' : 'Ativar'}
+          <button onClick={iniciarSetup} disabled={loading} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-amber-700 disabled:opacity-50 transition-colors">
+            {loading ? 'Gerando…' : 'Ativar agora'}
           </button>
         )}
       </div>

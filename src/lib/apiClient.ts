@@ -53,6 +53,28 @@ function resolveApiUrl(rawUrl: string): string {
 
 export const API_URL = resolveApiUrl(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
+// ─── fetch com timeout ────────────────────────────────────────────────────────
+// `fetch()` nativo não tem timeout: se a aba fica aberta por horas (ex: notebook
+// suspenso/durmiu com a aba em background), a conexão TCP fica "morta" sem que o
+// browser detecte isso rapidamente — o fetch simplesmente nunca resolve nem
+// rejeita. Como apiFetch()/doRefresh() são sempre aguardados dentro de
+// try/finally (ex: fetchData() do /profile), um fetch pendurado deixa a tela
+// presa no spinner de carregamento para sempre — e como nenhum erro é lançado,
+// o catch(SessionExpiredError) também nunca dispara, então a página nem
+// recarrega os dados nem redireciona para o login. Sintoma relatado: "o site
+// ficou parado na tela de perfil e não fez logout".
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: options.signal ?? controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Token em memória (não persiste entre reloads — o cookie renova) ──────────
 let _accessToken: string | null = null;
 let _refreshPromise: Promise<string | null> | null = null; // evita refreshes paralelos
@@ -105,7 +127,7 @@ function isTokenExpiringSoon(token: string, bufferSeconds = 120): boolean {
 // ─── Renovar via cookie HttpOnly (POST /api/auth/refresh) ────────────────────
 async function doRefresh(): Promise<string | null> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+    const res = await fetchWithTimeout(`${API_URL}/api/auth/refresh`, {
       method: 'POST',
       credentials: 'include',  // envia o cookie bawzi_refresh automaticamente
     });
@@ -233,14 +255,14 @@ export async function apiFetch(
   options: RequestInit = {},
   skipAuth = false,
 ): Promise<Response> {
-  if (skipAuth) return fetch(url, options);
+  if (skipAuth) return fetchWithTimeout(url, options);
 
   const token = await getFreshToken();
 
   const headers = new Headers(options.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetchWithTimeout(url, { ...options, headers });
 
   // 401 do servidor → tenta renovar + repete uma vez
   if (response.status === 401 && token) {
@@ -249,7 +271,7 @@ export async function apiFetch(
       _accessToken = newToken;
       const retryHeaders = new Headers(options.headers);
       retryHeaders.set('Authorization', `Bearer ${newToken}`);
-      return fetch(url, { ...options, headers: retryHeaders });
+      return fetchWithTimeout(url, { ...options, headers: retryHeaders });
     }
     clearSession();
     throw new SessionExpiredError();

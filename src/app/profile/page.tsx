@@ -87,10 +87,16 @@ function getFallbackSeats(tier: number) {
   return 1;
 }
 
+// Nomes alinhados com o resto do app (PricingSection, ChangePlanModal e a
+// grade "Trocar plano" logo abaixo, nesta mesma página) — antes esta função
+// usava um naming antigo (Pro/Scale/Enterprise) enquanto tudo o mais já
+// tinha migrado para Essencial/Profissional/Avançado, fazendo o mesmo
+// Nível 4 aparecer como "Enterprise" no topo da página e "Avançado" na
+// seção de troca de plano, alguns parágrafos abaixo.
 function getTierName(tier: number) {
-  if (tier >= 4) return 'Enterprise';
-  if (tier === 3) return 'Scale';
-  if (tier === 2) return 'Pro';
+  if (tier >= 4) return 'Avançado';
+  if (tier === 3) return 'Profissional';
+  if (tier === 2) return 'Essencial';
   return 'Gratuito';
 }
 
@@ -206,7 +212,7 @@ function ProfileContent() {
 
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-  const fetchData = async () => {
+  const fetchData = async (isRetry = false) => {
     // Após navegação full-page, _accessToken está nulo e bawzi_token foi limpo
     // pelo initSession() anterior. Precisamos reidratar antes de ler o token.
     const token = getAuthToken() || await initSession();
@@ -301,9 +307,20 @@ function ProfileContent() {
         return;
       }
       console.error("Erro ao sincronizar dados:", error);
-    } finally {
+      // Falha de rede genérica (ex: timeout do apiFetch) — muito comum logo
+      // após o notebook acordar de suspensão com a aba aberta desde antes:
+      // a primeira requisição falha enquanto a rede ainda está se
+      // restabelecendo. Uma retentativa automática evita cair numa tela
+      // "quebrada" (sem dados) por causa de um hiccup passageiro; mantém o
+      // spinner até essa segunda tentativa terminar.
+      if (!isRetry) {
+        setTimeout(() => fetchData(true), 1500);
+        return;
+      }
       setIsLoading(false);
+      return;
     }
+    setIsLoading(false);
   };
 
   // Scroll para seção solicitada via sessionStorage (definido antes do router.push)
@@ -1072,7 +1089,7 @@ function ProfileContent() {
                             onClick={() => setInvoicesVisible(v => Math.min(v + 10, invoices.length))}
                             className="text-[11px] font-black uppercase tracking-wider text-emerald-600 hover:text-emerald-700 transition-colors"
                           >
-                            Mostrar mais 10
+                            Mostrar mais {Math.min(10, invoices.length - invoicesVisible)}
                           </button>
                         </div>
                       )}
