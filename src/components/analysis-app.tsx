@@ -407,15 +407,23 @@ export default function AnalysisApp() {
             // Contagem silenciosa de contratos a vencer (só tier 4)
             if (nivelFinal >= 4 && companiesArr.length > 0) {
               const companies = orderCompaniesByActive(companiesArr, activeCnpj);
-              const cnpjs = companies.map((c: Empresa) => c.cnpj).filter(Boolean);
-              if (cnpjs.length > 0) {
+              // Esta chamada estava errada em TRÊS pontos, e o catch silencioso
+              // escondia todos: faltava o prefixo /api/pncp (404), mandava
+              // `cnpj` quando o endpoint exige `q` com o termo do segmento
+              // (422), e lia `data.contratos`/`data.results` quando a resposta
+              // é `{status, count, data: [...]}` — então mesmo um 200 daria 0.
+              // O termo vem do CNAE da empresa, igual ao ContratosVencendo.tsx.
+              const termoSegmento = (companies[0]?.cnae_descricao || '').trim();
+              if (termoSegmento.length >= 2) {
                 try {
-                  const params = new URLSearchParams({ cnpj: cnpjs[0], dias: '90' });
-                  const r = await apiFetch(`${API_URL}/api/contratos-vencendo?${params}`);
+                  const params = new URLSearchParams({ q: termoSegmento, dias: '90' });
+                  const r = await apiFetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`);
                   if (r.ok) {
                     const data = await r.json();
-                    const contratos = data.contratos || data.results || data || [];
-                    setRenovacoesCount(Array.isArray(contratos) ? contratos.length : 0);
+                    const total = typeof data.count === 'number'
+                      ? data.count
+                      : (Array.isArray(data.data) ? data.data.length : 0);
+                    setRenovacoesCount(total);
                   }
                 } catch { /* silencioso */ }
               }

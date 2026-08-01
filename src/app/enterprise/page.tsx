@@ -18,9 +18,14 @@ import 'swagger-ui-react/swagger-ui.css';
 // ─── Dados ───────────────────────────────────────────────────────────────────
 
 const FEATURES = [
-  { icon: Zap,        title: 'Análise Multi-LLM',       desc: 'Score GO/NO-GO, riscos jurídicos e estratégia de precificação em segundos.', color: 'emerald' },
-  { icon: TrendingUp, title: 'Inteligência de Preços',   desc: 'Médias de mercado, deságio preditivo e shadow price sobre a base do PNCP.',  color: 'sky'     },
-  { icon: Users,      title: 'Radar de Concorrentes',    desc: 'Ranking de vencedores históricos por segmento, capital social e taxa de vitórias.', color: 'teal'  },
+  // "em segundos" descrevia a análise COMPLETA (jurídico + precificação), que
+  // roda os agentes de mercado e leva de 1 a 2 minutos. A promessa era
+  // desmentida pela primeira execução.
+  { icon: Zap,        title: 'Análise Multi-LLM',       desc: 'Score GO/NO-GO, riscos jurídicos e estratégia de precificação em poucos minutos.', color: 'emerald' },
+  { icon: TrendingUp, title: 'Inteligência de Preços',   desc: 'Mediana de mercado, deságio preditivo e shadow price sobre a base do PNCP.',  color: 'sky'     },
+  // "taxa de vitórias" não existe: o PNCP publica resultado, não participação —
+  // não há denominador. O que o radar mostra é contagem de contratos vencidos.
+  { icon: Users,      title: 'Radar de Concorrentes',    desc: 'Ranking de vencedores históricos por segmento, com capital social e contratos vencidos localizados.', color: 'teal'  },
   { icon: FileText,   title: 'Extração de Documentos',   desc: 'Texto completo de editais via CNPJ/ano/sequencial sem scraping manual.',     color: 'amber'   },
   { icon: Globe,      title: 'Feed PNCP em Tempo Real',  desc: 'Editais abertos por termo, UF e município com deduplicação semântica.',       color: 'sky'     },
   { icon: Shield,     title: 'Parecer Jurídico IA',      desc: 'Minutas de impugnação e pareceres de conformidade com base na Lei 14.133/21.', color: 'emerald' },

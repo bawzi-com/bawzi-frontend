@@ -9,10 +9,15 @@
  */
 
 import { useEffect, useState } from 'react';
-import { ShieldCheck, ShieldOff, Loader2, Copy, Check } from 'lucide-react';
+import { ShieldCheck, ShieldOff, Loader2, Copy, Check, QrCode, KeyRound, Smartphone } from 'lucide-react';
 import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 type Etapa = 'idle' | 'qr' | 'backup';
+
+/** Quebra o segredo em grupos de 4 para leitura e digitação manual.
+ *  "2XELYSG64TXEQMKT" numa linha só é uma parede de caracteres: quem digita à
+ *  mão perde a posição e erra. Em blocos, o olho reencontra onde parou. */
+const emGrupos = (s: string, tam = 4) => (s.match(new RegExp(`.{1,${tam}}`, 'g')) || []).join(' ');
 
 export default function TwoFactorSettings() {
   const [ativo, setAtivo] = useState<boolean | null>(null);
@@ -28,6 +33,7 @@ export default function TwoFactorSettings() {
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
   const [copiado, setCopiado] = useState(false);
+  const [segredoCopiado, setSegredoCopiado] = useState(false);
 
   // Estado inicial
   useEffect(() => {
@@ -101,6 +107,15 @@ export default function TwoFactorSettings() {
     } catch { /* clipboard indisponível */ }
   };
 
+  const copiarSegredo = async () => {
+    try {
+      // Copia SEM os espaços dos grupos — o app autenticador rejeita o segredo
+      // formatado. O agrupamento é só para o olho humano.
+      await navigator.clipboard.writeText(segredoManual);
+      setSegredoCopiado(true); setTimeout(() => setSegredoCopiado(false), 2000);
+    } catch { /* clipboard indisponível */ }
+  };
+
   if (ativo === null) {
     return <div className="flex items-center gap-2 p-4 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Carregando 2FA…</div>;
   }
@@ -152,32 +167,96 @@ export default function TwoFactorSettings() {
 
       {erro && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">{erro}</p>}
 
-      {/* Etapa: escanear QR + confirmar primeiro código */}
+      {/* Etapa: escanear QR + confirmar primeiro código.
+          A versão anterior espremia as duas etapas numa linha de texto de 12px
+          ("1. Escaneie … · 2. Digite …") e jogava o segredo manual — 32
+          caracteres sem separação e sem botão de copiar — dentro de um
+          parágrafo cinza. Aqui cada passo tem número, ícone e área própria, e
+          o segredo virou um bloco copiável. */}
       {!ativo && etapa === 'qr' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-xs font-bold text-slate-600">
-            1. Escaneie o QR no app autenticador &nbsp;·&nbsp; 2. Digite o código de 6 dígitos para confirmar
-          </p>
-          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-            {qrBase64 && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`data:image/png;base64,${qrBase64}`} alt="QR Code 2FA" className="h-40 w-40 rounded-lg border border-slate-200" />
-            )}
-            <div className="flex-1 space-y-3">
-              <p className="break-all rounded-lg bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-500">
-                Sem câmera? Digite manualmente: <strong className="text-slate-700">{segredoManual}</strong>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-3">
+            <p className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
+              <Smartphone size={13} /> Configurar aplicativo autenticador
+            </p>
+          </div>
+
+          <div className="grid gap-6 p-5 sm:grid-cols-[auto,1fr]">
+            {/* ── Passo 1: QR ── */}
+            <div className="flex flex-col items-center gap-3">
+              <span className="flex items-center gap-2 self-start text-[11px] font-black text-slate-700">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[10px] text-white">1</span>
+                Escaneie o código
+              </span>
+              {qrBase64 ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`data:image/png;base64,${qrBase64}`}
+                  alt="QR Code para configurar a autenticação em 2 fatores"
+                  className="h-44 w-44 rounded-xl border-4 border-white bg-white shadow-md ring-1 ring-slate-200"
+                />
+              ) : (
+                <div className="flex h-44 w-44 items-center justify-center rounded-xl border border-dashed border-slate-200 text-slate-300">
+                  <QrCode size={32} />
+                </div>
+              )}
+              <p className="max-w-[11rem] text-center text-[10px] font-medium leading-snug text-slate-400">
+                Google Authenticator, Authy, 1Password ou similar
               </p>
-              <input
-                type="text" inputMode="numeric" autoComplete="one-time-code"
-                value={codigo} onChange={e => setCodigo(e.target.value)}
-                placeholder="000000"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xl font-black tracking-[0.35em] text-slate-900 outline-none focus:border-emerald-400"
-              />
+            </div>
+
+            {/* ── Passo 2: código ── */}
+            <div className="flex flex-col gap-4">
+              <div className="space-y-2">
+                <span className="flex items-center gap-2 text-[11px] font-black text-slate-700">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900 text-[10px] text-white">2</span>
+                  Digite o código de 6 dígitos que o app mostrar
+                </span>
+                <input
+                  type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6}
+                  value={codigo}
+                  // Só dígitos, no máximo 6. Antes aceitava qualquer caractere:
+                  // colar "123 456" do app deixava o botão travado sem explicar.
+                  onChange={e => setCodigo(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-4 py-3.5 text-center text-2xl font-black tracking-[0.4em] text-slate-900 outline-none transition-colors placeholder:text-slate-300 focus:border-emerald-400 focus:bg-white"
+                />
+                <p className="text-[10px] font-medium text-slate-400">
+                  O código muda a cada 30 segundos — se expirar, use o próximo.
+                </p>
+              </div>
+
+              {/* Segredo manual — bloco próprio, agrupado e copiável */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <KeyRound size={11} /> Sem câmera? Use a chave
+                  </span>
+                  <button
+                    type="button" onClick={copiarSegredo}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-black text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                  >
+                    {segredoCopiado ? <Check size={10} className="text-emerald-600" /> : <Copy size={10} />}
+                    {segredoCopiado ? 'Copiada' : 'Copiar'}
+                  </button>
+                </div>
+                <code className="block break-all font-mono text-[11px] font-bold leading-relaxed tracking-wide text-slate-700">
+                  {emGrupos(segredoManual)}
+                </code>
+              </div>
+
               <div className="flex gap-2">
-                <button onClick={confirmarAtivacao} disabled={loading || codigo.trim().length < 6} className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-sm font-black text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
-                  {loading ? 'Confirmando…' : 'Confirmar e ativar'}
+                <button
+                  onClick={confirmarAtivacao}
+                  disabled={loading || codigo.length < 6}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loading ? <><Loader2 size={14} className="animate-spin" /> Confirmando…</> : <><ShieldCheck size={14} /> Confirmar e ativar</>}
                 </button>
-                <button onClick={() => setEtapa('idle')} className="rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors">
+                <button
+                  onClick={() => setEtapa('idle')}
+                  className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                >
                   Cancelar
                 </button>
               </div>

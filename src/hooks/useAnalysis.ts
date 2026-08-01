@@ -212,26 +212,35 @@ export function useAnalysis({
   const getEstimateSeconds = useCallback((motor: Motor): number => {
     // 1º: mediana das últimas análises REAIS com o mesmo perfil (tier, motor,
     // tamanho, PNCP). Só cai na fórmula estática quando não há histórico.
+    // O teto do histórico era 240s. Com a auditoria profunda rodando em
+    // `effort=high` na Anthropic, uma análise real passa disso — e um teto
+    // abaixo da duração verdadeira faz a barra encher, parar em 100% e ficar
+    // girando, que é a pior leitura possível: parece travamento, não espera.
+    // Deixar o histórico falar é o ponto: ele é medição, não chute.
     const historica = lerEstimativaHistorica(getPerfilAnalise(motor));
     if (historica && historica >= 6) {
-      return Math.min(historica, 240);
+      return Math.min(historica, motor === 'claude' ? 900 : 240);
     }
 
     const loggedIn = Boolean(token);
     const runsMarketAgents = loggedIn && userTier >= 2;
 
-    let base = motor === 'claude' ? 35 : 30;
+    // Na primeira execução (sem histórico) é melhor superestimar a auditoria
+    // profunda: terminar antes do previsto é uma boa surpresa, estourar a
+    // previsão na frente de um cliente não é.
+    let base = motor === 'claude' ? 180 : 30;
     if (runsMarketAgents) {
-      if (userTier >= 4) base = motor === 'claude' ? 95 : 80;
-      else if (userTier >= 3) base = motor === 'claude' ? 90 : 75;
-      else base = motor === 'claude' ? 70 : 55;
+      if (userTier >= 4) base = motor === 'claude' ? 300 : 80;
+      else if (userTier >= 3) base = motor === 'claude' ? 285 : 75;
+      else base = motor === 'claude' ? 240 : 55;
     }
 
     const filePenalty = files.length > 0 ? (runsMarketAgents ? 10 : 4) : 0;
     const textPenalty = text.length > 80000 ? (runsMarketAgents ? 18 : 8) : text.length > 30000 ? (runsMarketAgents ? 10 : 4) : 0;
     const pncpPenalty = pncpData && runsMarketAgents ? 12 : 0;
 
-    return Math.min(base + filePenalty + textPenalty + pncpPenalty, runsMarketAgents ? 130 : 45);
+    const teto = motor === 'claude' ? 900 : (runsMarketAgents ? 130 : 45);
+    return Math.min(base + filePenalty + textPenalty + pncpPenalty, teto);
   }, [token, userTier, files.length, text.length, pncpData, getPerfilAnalise]);
 
   // ── handleCancelAnalysis ──────────────────────────────────────────────────
@@ -344,8 +353,18 @@ export function useAnalysis({
       }
 
       setResult(analysisData as AnalysisResult);
-      setAnalysisId(data.id || data.record_id || data.analysis_hash || null);
-      setModelSource(data.source || data.model_source || 'Motor Bawzi IA');
+      // O caminho de cache devolve { analysis: {...}, is_cached: true } e o
+      // caminho fresco devolve o dict achatado. Ler só de `data` fazia o id e o
+      // source virem nulos em todo cache hit — e sem id o compartilhar/reabrir
+      // do laudo quebra. Procura nos dois níveis.
+      setAnalysisId(
+        analysisData.id || analysisData.record_id || analysisData.analysis_hash ||
+        data.id || data.record_id || data.analysis_hash || null
+      );
+      setModelSource(
+        analysisData.source || analysisData.model_source ||
+        data.source || data.model_source || 'Motor Bawzi IA'
+      );
       setIsCachedResult(data.is_cached || false);
 
       // 📊 Grava a duração REAL — vira a estimativa das próximas análises

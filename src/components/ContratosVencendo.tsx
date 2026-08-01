@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe } from 'lucide-react';
+// FileSearch no lugar do 🎯: o botão abre a análise do edital que originou o
+// contrato, e um ícone de documento sendo examinado diz isso. Emoji também
+// destoava — o resto da interface usa lucide, e emoji num botão de ação num
+// produto vendido a analista lê como protótipo.
+import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe, FileSearch } from 'lucide-react';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
 import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
@@ -271,7 +275,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
       const promptRenovacao = `
   DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
   ===================================================================
-  🎯 CONTEXTO: RENOVAÇÃO DE CONTRATO — o contrato vigente vence em ${c.dias_restantes ?? '?'} dia(s)
+  ▸ CONTEXTO: RENOVAÇÃO DE CONTRATO — o contrato vigente vence em ${c.dias_restantes ?? '?'} dia(s)
   (${formatarData(c.data_vigencia_fim)}). O órgão tende a abrir nova disputa em breve.
   A IA deve analisar o EDITAL DE ORIGEM abaixo como referência do que será exigido
   na provável relicitação, e orientar o cliente sobre como competir.
@@ -346,6 +350,8 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
 
       if (!res.ok) throw new Error('Erro ao consultar o servidor.');
       const data = await res.json();
+      // Descarta resposta de busca já substituída por outra (ver nota abaixo).
+      if (abortRef.current !== controller) return;
       setContratos(data.data || []);
       setFallback(!!data.fallback_nacional);
       setUfSolicitada(data.uf_solicitada || '');
@@ -353,11 +359,29 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
       setPagina(1);
     } catch (e: any) {
       if (e instanceof SessionExpiredError) return;
-      if (e.name === 'AbortError') return; // cancelamento intencional — não mostra erro
+      // ⚠️ "Fetch is aborted" — o erro que aparecia na tela COM os resultados
+      // carregados logo abaixo. Duas causas somadas:
+      //
+      // 1. Detecção incompleta. Só se testava `e.name === 'AbortError'`, que é o
+      //    que o Chrome lança. O Safari lança um TypeError com a mensagem
+      //    "Fetch is aborted" — nome diferente, então passava direto pelo guard
+      //    e a mensagem crua do browser ia parar na interface do usuário.
+      //
+      // 2. Corrida entre buscas. Toda busca nova aborta a anterior (linha do
+      //    abortRef acima). A busca abortada caía no catch DEPOIS de a nova já
+      //    ter limpado o erro, e reescrevia a mensagem por cima de um resultado
+      //    que tinha dado certo. Daí o sintoma absurdo: erro exibido junto de
+      //    "105 CONTRATOS".
+      //
+      // O teste de `controller.signal.aborted` cobre qualquer browser, porque
+      // olha o nosso próprio sinal em vez de adivinhar o formato do erro.
+      if (controller.signal.aborted || abortRef.current !== controller) return;
       setErro(e.message || 'Erro de ligação.');
       setContratos([]);
     } finally {
-      setLoading(false);
+      // Só a busca mais recente controla o spinner — senão uma requisição
+      // antiga terminando desliga o "Carregando" da que ainda está rodando.
+      if (abortRef.current === controller) setLoading(false);
     }
   }, [termo, uf, municipioId, municipioNome, dias, token]);
 
@@ -818,7 +842,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                                   >
                                     {carregando
                                       ? (<><Loader2 size={11} className="animate-spin" /> Carregando…</>)
-                                      : (<>🎯 Analisar edital de origem</>)}
+                                      : (<><FileSearch size={11} /> Analisar edital de origem</>)}
                                   </button>
                                 )}
                                 <a

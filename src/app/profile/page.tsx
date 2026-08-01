@@ -690,19 +690,83 @@ function ProfileContent() {
                 })}
               </nav>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Olá, {firstName}</p>
-                <p className="mt-2 text-sm font-bold leading-5 text-slate-700">
-                  {twoFAOn ? 'Sua conta está com autenticação em dois fatores ativa.' : 'Ative a autenticação em dois fatores para reforçar a proteção.'}
-                </p>
-                <button
-                  onClick={() => scrollTo('sec-seguranca')}
-                  className="mt-4 inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-700 transition-colors hover:text-emerald-800"
-                >
-                  Revisar segurança
-                  <ChevronRight size={13} />
-                </button>
-              </div>
+              {/* Cartão de segurança da conta.
+                  ANTES: rótulo cinza, uma frase e um link — visualmente idêntico
+                  com a 2FA ligada ou desligada. Uma lacuna de segurança tinha o
+                  mesmo peso de um "está tudo certo", e o olho aprende a pular.
+                  AGORA o cartão inteiro muda de estado: cor, ícone, título e a
+                  força do apelo. Sem proteção → âmbar, ponto pulsando, botão
+                  cheio. Protegida → verde discreto, sem urgência inventada.
+                  O texto também deixou de descrever o recurso e passou a dizer
+                  o que ele evita — "ninguém entra sem o seu celular" convence
+                  mais que "reforçar a proteção". */}
+              {(() => {
+                const carregando = twoFAOn === null;
+                const protegido  = twoFAOn === true;
+                return (
+                  <div className={`relative overflow-hidden rounded-lg border p-4 shadow-sm transition-colors ${
+                    carregando ? 'border-slate-200 bg-white'
+                      : protegido ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white'
+                      : 'border-amber-300 bg-gradient-to-br from-amber-50 to-white'
+                  }`}>
+                    {/* Brilho decorativo — profundidade sem competir com o texto */}
+                    {!carregando && (
+                      <div className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${
+                        protegido ? 'bg-emerald-200/40' : 'bg-amber-200/40'
+                      }`} />
+                    )}
+
+                    <div className="relative flex items-start gap-3">
+                      <span className="relative mt-0.5 flex shrink-0">
+                        <Shield
+                          size={20}
+                          className={carregando ? 'text-slate-300' : protegido ? 'text-emerald-600' : 'text-amber-600'}
+                        />
+                        {!carregando && !protegido && (
+                          <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                          </span>
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                          Olá, {firstName}
+                        </p>
+                        <p className={`mt-0.5 text-sm font-black leading-tight ${
+                          carregando ? 'text-slate-400' : protegido ? 'text-emerald-800' : 'text-amber-900'
+                        }`}>
+                          {carregando ? 'Verificando segurança…' : protegido ? 'Conta protegida' : 'Proteção incompleta'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className={`relative mt-2.5 text-xs font-medium leading-relaxed ${
+                      carregando ? 'text-slate-400' : protegido ? 'text-emerald-800/80' : 'text-amber-900/80'
+                    }`}>
+                      {carregando
+                        ? 'Conferindo o estado da autenticação em dois fatores.'
+                        : protegido
+                          ? 'Autenticação em dois fatores ativa. Mesmo que sua senha vaze, ninguém entra sem o seu celular.'
+                          : 'Só a senha protege sua conta hoje. Configurar um app autenticador leva dois minutos e bloqueia o acesso mesmo com a senha vazada.'}
+                    </p>
+
+                    {!carregando && (
+                      <button
+                        onClick={() => scrollTo('sec-seguranca')}
+                        className={`relative mt-3.5 inline-flex w-full items-center justify-center gap-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-colors ${
+                          protegido
+                            ? 'py-1.5 text-emerald-700 hover:text-emerald-900'
+                            : 'bg-amber-600 py-2.5 text-white shadow-sm hover:bg-amber-700'
+                        }`}
+                      >
+                        {protegido ? 'Revisar segurança' : 'Ativar agora'}
+                        <ChevronRight size={13} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </aside>
 

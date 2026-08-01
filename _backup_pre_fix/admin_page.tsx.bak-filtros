@@ -477,25 +477,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // Recorte ativo da aba de uso de IA. Um objeto só, porque os quatro filtros
-  // são aplicados juntos no servidor — manter quatro estados soltos convidaria
-  // a disparar quatro requisições e mostrar quatro respostas incoerentes.
-  const [analyticsFiltros, setAnalyticsFiltros] = useState<{
-    dias: number; tier: number | null; userId: string | null; modelo: string | null;
-  }>({ dias: 0, tier: null, userId: null, modelo: null });
-
-  const loadAnalytics = async (f: Partial<typeof analyticsFiltros> = {}) => {
-    const alvo = { ...analyticsFiltros, ...f };
-    setAnalyticsFiltros(alvo);
+  const loadAnalytics = async () => {
     setAnalyticsLoading(true);
     try {
-      const qs = new URLSearchParams();
-      if (alvo.dias) qs.set('dias', String(alvo.dias));
-      if (alvo.tier !== null && alvo.tier !== undefined) qs.set('tier', String(alvo.tier));
-      if (alvo.userId) qs.set('user_id', alvo.userId);
-      if (alvo.modelo) qs.set('modelo', alvo.modelo);
-      const sufixo = qs.toString() ? `?${qs}` : '';
-      const res = await apiFetch(`${API_URL}/api/admin/analytics/usage${sufixo}`);
+      const res = await apiFetch(`${API_URL}/api/admin/analytics/usage`);
       if (res.ok) setAnalyticsData(await res.json());
     } catch {}
     setAnalyticsLoading(false);
@@ -2871,89 +2856,19 @@ export default function AdminDashboard() {
               <h2 className="text-xl font-black text-white">Uso por Modelo de IA</h2>
               <p className="text-slate-500 text-sm mt-1">Requisições salvas no histórico (usuários autenticados)</p>
             </div>
-            <button onClick={() => loadAnalytics()} disabled={analyticsLoading} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+            <button onClick={loadAnalytics} disabled={analyticsLoading} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
               <RefreshCw size={13} className={analyticsLoading ? 'animate-spin' : ''} /> Atualizar
             </button>
           </div>
 
-          {/* ── Filtros: uma linha, acima de tudo que eles escopam ──
-              Período vem primeiro porque é o controle que todo mundo procura
-              antes dos outros. O recorte vale para KPIs, série e as duas
-              tabelas — se cada bloco filtrasse sozinho, o total do topo
-              divergiria da soma da tabela. */}
-          {analyticsData && (() => {
-            const f = analyticsFiltros;
-            const disp = analyticsData.filtros_disponiveis || {};
-            const usuarioAtivo = f.userId
-              ? (analyticsData.by_user || []).find((u: any) => u.user_id === f.userId)
-              : null;
-            const temFiltro = !!(f.dias || f.tier !== null || f.userId || f.modelo);
-            const sel = 'bg-slate-800 border-slate-700 text-white';
-            const nao = 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200';
-            return (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 mr-1">
-                  {[{ d: 0, r: 'Tudo' }, { d: 7, r: '7 dias' }, { d: 30, r: '30 dias' }, { d: 90, r: '90 dias' }]
-                    .map(({ d, r }) => (
-                    <button key={d} onClick={() => loadAnalytics({ dias: d })}
-                      className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${f.dias === d ? sel : nao}`}>
-                      {f.dias === d && <span className="mr-1">✓</span>}{r}
-                    </button>
-                  ))}
-                </div>
-
-                <select value={f.tier ?? ''} onChange={e => loadAnalytics({ tier: e.target.value === '' ? null : Number(e.target.value) })}
-                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold outline-none ${f.tier !== null ? sel : nao}`}>
-                  <option value="">Todos os planos</option>
-                  {(disp.tiers || []).map((t: any) => (
-                    <option key={t.tier} value={t.tier}>#{t.tier} {t.nome}</option>
-                  ))}
-                </select>
-
-                <select value={f.modelo ?? ''} onChange={e => loadAnalytics({ modelo: e.target.value || null })}
-                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold outline-none max-w-[230px] ${f.modelo ? sel : nao}`}>
-                  <option value="">Todos os modelos</option>
-                  {(disp.modelos || []).map((m: string) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-
-                {usuarioAtivo && (
-                  <button onClick={() => loadAnalytics({ userId: null })}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-200 text-[11px] font-bold">
-                    <span className="truncate max-w-[190px]">{usuarioAtivo.email || usuarioAtivo.user_id}</span>
-                    <span className="text-violet-400">×</span>
-                  </button>
-                )}
-
-                {temFiltro && (
-                  <button onClick={() => loadAnalytics({ dias: 0, tier: null, userId: null, modelo: null })}
-                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-300 transition-colors">
-                    Limpar
-                  </button>
-                )}
-
-                {analyticsLoading && (
-                  <span className="flex items-center gap-1.5 text-[11px] text-slate-500 ml-auto">
-                    <Loader2 size={12} className="animate-spin" /> atualizando
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Só mostra o spinner de tela cheia na PRIMEIRA carga. Nas seguintes
-              o conteúdo antigo fica com opacidade reduzida (ver abaixo): trocar
-              números por um vazio a cada clique de filtro faz o operador perder
-              o contexto do que estava comparando. */}
-          {analyticsLoading && !analyticsData && (
+          {analyticsLoading && (
             <div className="flex items-center justify-center py-20 text-slate-500">
               <Loader2 size={28} className="animate-spin mr-3" /> Carregando dados…
             </div>
           )}
 
-          {analyticsData && (
-            <div className={`space-y-8 transition-opacity duration-200 ${analyticsLoading ? 'opacity-40 pointer-events-none' : ''}`}>
+          {!analyticsLoading && analyticsData && (
+            <>
               {/* ── KPIs ────────────────────────────────────────────
                   Custo POR ANÁLISE é o número principal, e não o total.
                   Total responde "quanto já gastei"; custo por análise responde
@@ -3051,15 +2966,6 @@ export default function AdminDashboard() {
                 💡 {analyticsData.pricing_note || 'Custo estimado em USD.'} <span className="text-slate-500">~ = estimado</span>
               </p>
 
-              {(analyticsData.resumo?.analises ?? 0) === 0 && (
-                <div className="py-16 text-center border-2 border-dashed border-slate-800 rounded-2xl">
-                  <p className="font-bold text-sm text-slate-400">Nenhuma análise neste recorte</p>
-                  <p className="text-[12px] text-slate-600 mt-1">
-                    Os filtros ativos não retornaram dados. Afrouxe o período ou limpe os filtros.
-                  </p>
-                </div>
-              )}
-
               {/* Por Tier */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-800 flex items-center gap-2">
@@ -3125,11 +3031,7 @@ export default function AdminDashboard() {
                     </thead>
                     <tbody>
                       {analyticsData.by_user.map((row: any) => (
-                        <tr key={row.user_id}
-                            onClick={() => loadAnalytics({ userId: analyticsFiltros.userId === row.user_id ? null : row.user_id })}
-                            title="Clique para filtrar por este usuário"
-                            className={`border-b border-slate-800/50 transition-colors cursor-pointer ${
-                              analyticsFiltros.userId === row.user_id ? 'bg-violet-500/10' : 'hover:bg-slate-800/30'}`}>
+                        <tr key={row.user_id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                           <td className="px-6 py-4">
                             <p className="font-bold text-white text-xs">{row.email}</p>
                             {row.name && <p className="text-[11px] text-slate-500 mt-0.5">{row.name}</p>}
@@ -3157,7 +3059,7 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               </div>
-            </div>
+            </>
           )}
 
           {!analyticsLoading && !analyticsData && (

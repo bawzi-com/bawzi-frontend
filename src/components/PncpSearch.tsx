@@ -561,7 +561,7 @@ export default function PncpSearch({
   const cabecalhoPrompt = `
   DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
   ===================================================================
-  🎯 TERMO ALVO DA BUSCA DO CLIENTE: ${termoAlvo}
+  ▸ TERMO ALVO DA BUSCA DO CLIENTE: ${termoAlvo}
   (A IA DEVE FOCAR A SUA ANÁLISE E PRECIFICAÇÃO PRIORITARIAMENTE NESTE ITEM/SERVIÇO)
   ===================================================================
 
@@ -932,7 +932,9 @@ export default function PncpSearch({
         <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 relative z-10">
           {(uf || municipioNome) && (
             <div className="mb-5 bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-3 shadow-sm">
-              <span className="text-amber-500 text-lg">🎯</span>
+              {/* MapPin no lugar do 🎯: o aviso é sobre FILTRO REGIONAL, e um
+                  alfinete de mapa diz exatamente isso. O alvo não dizia nada. */}
+              <MapPin size={18} className="text-amber-500 shrink-0 mt-0.5" />
               <div>
                 <p className="text-[11px] font-black text-amber-900 uppercase tracking-wider">
                   Filtro Regional Ativo: {municipioNome ? `${municipioNome}${uf ? ` · ${uf}` : ''}` : uf}

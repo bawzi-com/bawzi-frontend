@@ -210,7 +210,7 @@ export default function CnaeOportunidades({
       const prompt = `
 DOCUMENTO OFICIAL PARA ANÁLISE — FEED CNAE PERSONALIZADO
 =========================================================
-🎯 CNAE DA EMPRESA: ${cnaeInfo?.cnae || '—'} | Termo: "${edital.cnae_match || termo}"
+▸ CNAE DA EMPRESA: ${cnaeInfo?.cnae || '—'} | Termo: "${edital.cnae_match || termo}"
 =========================================================
 
 [1. DADOS CADASTRAIS]

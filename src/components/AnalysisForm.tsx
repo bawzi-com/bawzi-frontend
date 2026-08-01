@@ -45,6 +45,19 @@ interface AnalysisFormProps {
   onUpgradeClick?: () => void;
 }
 
+// ─── Tempo estimado honesto ───────────────────────────────────────────────────
+// ANTES o card prometia "triagem em segundos". O próprio estimador do
+// useAnalysis (getEstimateSeconds) calcula 30-45s sem agentes de mercado e
+// 55-130s com eles — ou seja, a promessa era desmentida pela primeira execução,
+// no primeiro minuto de uma demonstração. "Normalmente" mantém a afirmação
+// verdadeira mesmo quando o PNCP está lento.
+function tempoEstimadoLabel(token: string | null, userTier: number): string {
+  const comAgentesDeMercado = Boolean(token) && userTier >= 2;
+  return comAgentesDeMercado
+    ? 'normalmente de 1 a 2 minutos'
+    : 'normalmente menos de 1 minuto';
+}
+
 // ─── Indicador de quota mensal ────────────────────────────────────────────────
 
 function QuotaBar({
@@ -274,6 +287,8 @@ export default function AnalysisForm({
               onAnalyze={onAnalyze}
               error={error}
               successMsg={successMsg}
+              token={token}
+              userTier={userTier}
             />
           ) : (
             <button
@@ -307,9 +322,13 @@ interface TierFourButtonsProps {
   onAnalyze: (motor: 'openai' | 'claude') => void;
   error: string | null;
   successMsg: string | null;
+  // Necessários para a estimativa de tempo do card — o componente não os
+  // recebia, e usá-los aqui sem passar quebrava a página em runtime.
+  token: string | null;
+  userTier: number;
 }
 
-function TierFourButtons({ provider, onProviderChange, onAnalyze, error, successMsg }: TierFourButtonsProps) {
+function TierFourButtons({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier }: TierFourButtonsProps) {
   return (
     <>
       {error && (
@@ -347,7 +366,7 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
               <div>
                 <span className="block text-base font-black text-slate-900 tracking-tight">Análise rápida</span>
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700">
-                  <Clock3 size={11} /> triagem em segundos
+                  <Clock3 size={11} /> {tempoEstimadoLabel(token, userTier)}
                 </span>
               </div>
             </div>
@@ -362,14 +381,19 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
             Melhor para primeira leitura, extração de campos e decisão preliminar de continuidade.
           </p>
 
-          {/* Badges de modelo */}
+          {/* Badges de motor — por PAPEL, não por versão de modelo.
+              ANTES: "GPT-4o + GPT-4o". Dois problemas. (1) Era falso: o backend
+              trata "gpt-4o"/"o3-mini" como RÓTULO DE ROTEAMENTO e resolve o
+              modelo real via settings (hoje gpt-5-mini / gpt-5) — a tela ficou
+              duas gerações atrás. (2) Versão em UI apodrece a cada troca de
+              modelo e ninguém lembra de atualizar. Papel + provedor não muda. */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-emerald-100">
-              <ScanSearch size={10} /> GPT-4o
+              <ScanSearch size={10} /> OpenAI · extração
             </span>
             <span className="text-slate-300 font-bold">+</span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white text-[10px] font-bold text-slate-600 uppercase tracking-wider border border-emerald-100">
-              <BrainCircuit size={10} /> GPT-4o
+              <BrainCircuit size={10} /> OpenAI · redação
             </span>
           </div>
 
@@ -418,8 +442,12 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
               </div>
               <div>
                 <span className="block text-base font-black text-slate-900 tracking-tight">Auditoria profunda</span>
+                {/* O tempo precisa estar no card, não só na barra de progresso.
+                    A auditoria roda com raciocínio em profundidade máxima e leva
+                    minutos; quem clica esperando "rápida" acha que travou. Dizer
+                    antes transforma espera em expectativa. */}
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-sky-700">
-                  <ShieldCheck size={11} /> jurídica e concorrencial
+                  <ShieldCheck size={11} /> jurídica e concorrencial · vários minutos
                 </span>
               </div>
             </div>
@@ -434,14 +462,16 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
             Melhor para cruzar exigências, riscos legais, concorrentes prováveis e próximos passos.
           </p>
 
-          {/* Badges de modelo */}
+          {/* Badges de motor — por PAPEL. "CLAUDE 3.5" era o pior caso: o
+              settings aponta para claude-sonnet-5, duas gerações à frente, e é
+              um nome que um interlocutor técnico reconhece como antigo. */}
           <div className="flex flex-wrap items-center gap-2 relative z-10">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-sky-100 text-[10px] font-black text-sky-700 uppercase tracking-wider shadow-sm">
-              <ScanSearch size={10} /> O3-MINI
+              <ScanSearch size={10} /> OpenAI · raciocínio
             </span>
             <span className="text-slate-300 font-bold">+</span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-sky-100 text-[10px] font-black text-sky-700 uppercase tracking-wider shadow-sm">
-              <BrainCircuit size={10} /> CLAUDE 3.5
+              <BrainCircuit size={10} /> Anthropic · parecer
             </span>
           </div>
 

@@ -229,11 +229,29 @@ export interface FichaTecnicaItem {
   campo: string;
   valor: string;
   trecho?: string;
-  /** 'verificado_texto' = confirmado por regex no texto | 'ia+texto' | 'ia' | 'ausente' */
-  fonte?: 'verificado_texto' | 'ia+texto' | 'ia' | 'ausente' | string;
+  /**
+   * 'verificado_texto' = confirmado por regex no texto literal
+   * 'ia+texto'         = IA e texto concordam
+   * 'ia'               = só a IA localizou
+   * 'conflito'         = IA e texto DIVERGEM e o motor não escolheu por você
+   *                      (`valor` traz o literal do edital, `valor_ia` a leitura da IA)
+   * 'ausente'          = não localizado
+   */
+  fonte?: 'verificado_texto' | 'ia+texto' | 'ia' | 'conflito' | 'ausente' | string;
+  /** Só existe quando fonte === 'conflito': o que a IA havia respondido. */
+  valor_ia?: string;
 }
 
 export interface HabilitacaoItem {
+  /** Id estável (hash de categoria+exigência) — usado para marcar o atendimento. */
+  id?: string;
+  /**
+   * Atendimento declarado pelo usuário. Um item com criticidade 'eliminatoria'
+   * e status 'nao_atendido' derruba o score para a banda vermelha e força NO-GO.
+   */
+  status_atendimento?: 'atendido' | 'nao_atendido' | 'nao_avaliado';
+  observacao?: string;
+  atualizado_em?: string;
   categoria: 'juridica' | 'fiscal' | 'tecnica' | 'economico_financeira' | string;
   categoria_label?: string;
   exigencia: string;
@@ -268,10 +286,22 @@ export interface QualidadeExtracao {
   campos_faltantes?: string[];
   divergencias_ia_texto?: string[];
   ajustes_congruencia?: string[];
+  /**
+   * false quando a camada determinística de qualidade falhou: score, veredito e
+   * ficha técnica NÃO foram validados e o laudo deve ser tratado como preliminar.
+   */
+  qa_executado?: boolean;
+  qa_erro?: string;
+  aviso?: string;
+  /** Quantas citações legais geradas pela IA foram removidas pelo sanitizador. */
+  citacoes_legais_sanitizadas?: number;
 }
 
 export interface AnalysisResult {
   id?: string;
+  /** false quando o laudo não foi gravado no histórico (convidado ou falha). */
+  persistido?: boolean;
+  persistencia_motivo?: 'convidado' | 'falha_gravacao' | string;
   title: string;
   summary: string;
   score: number;

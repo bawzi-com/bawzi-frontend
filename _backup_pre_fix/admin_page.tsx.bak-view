@@ -477,25 +477,10 @@ export default function AdminDashboard() {
     }
   };
 
-  // Recorte ativo da aba de uso de IA. Um objeto só, porque os quatro filtros
-  // são aplicados juntos no servidor — manter quatro estados soltos convidaria
-  // a disparar quatro requisições e mostrar quatro respostas incoerentes.
-  const [analyticsFiltros, setAnalyticsFiltros] = useState<{
-    dias: number; tier: number | null; userId: string | null; modelo: string | null;
-  }>({ dias: 0, tier: null, userId: null, modelo: null });
-
-  const loadAnalytics = async (f: Partial<typeof analyticsFiltros> = {}) => {
-    const alvo = { ...analyticsFiltros, ...f };
-    setAnalyticsFiltros(alvo);
+  const loadAnalytics = async () => {
     setAnalyticsLoading(true);
     try {
-      const qs = new URLSearchParams();
-      if (alvo.dias) qs.set('dias', String(alvo.dias));
-      if (alvo.tier !== null && alvo.tier !== undefined) qs.set('tier', String(alvo.tier));
-      if (alvo.userId) qs.set('user_id', alvo.userId);
-      if (alvo.modelo) qs.set('modelo', alvo.modelo);
-      const sufixo = qs.toString() ? `?${qs}` : '';
-      const res = await apiFetch(`${API_URL}/api/admin/analytics/usage${sufixo}`);
+      const res = await apiFetch(`${API_URL}/api/admin/analytics/usage`);
       if (res.ok) setAnalyticsData(await res.json());
     } catch {}
     setAnalyticsLoading(false);
@@ -2871,194 +2856,23 @@ export default function AdminDashboard() {
               <h2 className="text-xl font-black text-white">Uso por Modelo de IA</h2>
               <p className="text-slate-500 text-sm mt-1">Requisições salvas no histórico (usuários autenticados)</p>
             </div>
-            <button onClick={() => loadAnalytics()} disabled={analyticsLoading} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+            <button onClick={loadAnalytics} disabled={analyticsLoading} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
               <RefreshCw size={13} className={analyticsLoading ? 'animate-spin' : ''} /> Atualizar
             </button>
           </div>
 
-          {/* ── Filtros: uma linha, acima de tudo que eles escopam ──
-              Período vem primeiro porque é o controle que todo mundo procura
-              antes dos outros. O recorte vale para KPIs, série e as duas
-              tabelas — se cada bloco filtrasse sozinho, o total do topo
-              divergiria da soma da tabela. */}
-          {analyticsData && (() => {
-            const f = analyticsFiltros;
-            const disp = analyticsData.filtros_disponiveis || {};
-            const usuarioAtivo = f.userId
-              ? (analyticsData.by_user || []).find((u: any) => u.user_id === f.userId)
-              : null;
-            const temFiltro = !!(f.dias || f.tier !== null || f.userId || f.modelo);
-            const sel = 'bg-slate-800 border-slate-700 text-white';
-            const nao = 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200';
-            return (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 mr-1">
-                  {[{ d: 0, r: 'Tudo' }, { d: 7, r: '7 dias' }, { d: 30, r: '30 dias' }, { d: 90, r: '90 dias' }]
-                    .map(({ d, r }) => (
-                    <button key={d} onClick={() => loadAnalytics({ dias: d })}
-                      className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${f.dias === d ? sel : nao}`}>
-                      {f.dias === d && <span className="mr-1">✓</span>}{r}
-                    </button>
-                  ))}
-                </div>
-
-                <select value={f.tier ?? ''} onChange={e => loadAnalytics({ tier: e.target.value === '' ? null : Number(e.target.value) })}
-                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold outline-none ${f.tier !== null ? sel : nao}`}>
-                  <option value="">Todos os planos</option>
-                  {(disp.tiers || []).map((t: any) => (
-                    <option key={t.tier} value={t.tier}>#{t.tier} {t.nome}</option>
-                  ))}
-                </select>
-
-                <select value={f.modelo ?? ''} onChange={e => loadAnalytics({ modelo: e.target.value || null })}
-                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold outline-none max-w-[230px] ${f.modelo ? sel : nao}`}>
-                  <option value="">Todos os modelos</option>
-                  {(disp.modelos || []).map((m: string) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
-
-                {usuarioAtivo && (
-                  <button onClick={() => loadAnalytics({ userId: null })}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-200 text-[11px] font-bold">
-                    <span className="truncate max-w-[190px]">{usuarioAtivo.email || usuarioAtivo.user_id}</span>
-                    <span className="text-violet-400">×</span>
-                  </button>
-                )}
-
-                {temFiltro && (
-                  <button onClick={() => loadAnalytics({ dias: 0, tier: null, userId: null, modelo: null })}
-                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-300 transition-colors">
-                    Limpar
-                  </button>
-                )}
-
-                {analyticsLoading && (
-                  <span className="flex items-center gap-1.5 text-[11px] text-slate-500 ml-auto">
-                    <Loader2 size={12} className="animate-spin" /> atualizando
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Só mostra o spinner de tela cheia na PRIMEIRA carga. Nas seguintes
-              o conteúdo antigo fica com opacidade reduzida (ver abaixo): trocar
-              números por um vazio a cada clique de filtro faz o operador perder
-              o contexto do que estava comparando. */}
-          {analyticsLoading && !analyticsData && (
+          {analyticsLoading && (
             <div className="flex items-center justify-center py-20 text-slate-500">
               <Loader2 size={28} className="animate-spin mr-3" /> Carregando dados…
             </div>
           )}
 
-          {analyticsData && (
-            <div className={`space-y-8 transition-opacity duration-200 ${analyticsLoading ? 'opacity-40 pointer-events-none' : ''}`}>
-              {/* ── KPIs ────────────────────────────────────────────
-                  Custo POR ANÁLISE é o número principal, e não o total.
-                  Total responde "quanto já gastei"; custo por análise responde
-                  "meu plano fecha a conta?", que é o que decide preço e cota. */}
-              {analyticsData.resumo && (
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { k: 'Custo por análise',
-                      v: `$${(analyticsData.resumo.custo_por_analise ?? 0).toFixed(3)}`,
-                      n: `${analyticsData.resumo.analises ?? 0} análises · $${(analyticsData.resumo.custo_usd ?? 0).toFixed(2)} no total`,
-                      c: 'text-amber-400' },
-                    { k: 'Confiança do dado',
-                      v: `${(analyticsData.resumo.pct_medido ?? 0).toFixed(0)}%`,
-                      n: `${analyticsData.resumo.analises_medidas ?? 0} com token real · resto pela média`,
-                      c: (analyticsData.resumo.pct_medido ?? 0) >= 60 ? 'text-emerald-400'
-                        : (analyticsData.resumo.pct_medido ?? 0) >= 30 ? 'text-amber-400' : 'text-red-400' },
-                    { k: 'Tokens processados',
-                      v: `${(((analyticsData.resumo.tokens_in ?? 0) + (analyticsData.resumo.tokens_out ?? 0)) / 1e6).toFixed(1)}M`,
-                      n: `${((analyticsData.resumo.tokens_in ?? 0) / 1e6).toFixed(1)}M entrada · ${((analyticsData.resumo.tokens_out ?? 0) / 1e6).toFixed(2)}M saída`,
-                      c: 'text-violet-400' },
-                    { k: 'Custo de quem não paga',
-                      v: `$${(analyticsData.resumo.custo_anonimo_usd ?? 0).toFixed(2)}`,
-                      n: `${analyticsData.resumo.analises_anonimas ?? 0} análises sem plano pago`,
-                      c: 'text-sky-400' },
-                  ].map((kpi) => (
-                    <div key={kpi.k} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{kpi.k}</p>
-                      <p className={`text-2xl font-black mt-1.5 ${kpi.c}`}>{kpi.v}</p>
-                      <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpi.n}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* ── Avisos de qualidade do dado ─────────────────────
-                  Vêm do servidor, ao lado do cálculo. Um número que o operador
-                  não sabe se pode confiar é pior do que número nenhum. */}
-              {Array.isArray(analyticsData.avisos) && analyticsData.avisos.length > 0 && (
-                <div className="space-y-2">
-                  {analyticsData.avisos.map((a: any, i: number) => (
-                    <div key={i} className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-[12px] leading-relaxed ${
-                      a.nivel === 'atencao'
-                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
-                        : 'bg-sky-500/10 border-sky-500/30 text-sky-200'
-                    }`}>
-                      <span className="shrink-0 font-black">{a.nivel === 'atencao' ? '⚠' : 'ℹ'}</span>
-                      <span>{a.texto}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* ── Série de 30 dias ────────────────────────────────
-                  A tela não tinha eixo de tempo. Sem ele não dá para distinguir
-                  "gastei $34" de "estou gastando $34 por semana e acelerando". */}
-              {Array.isArray(analyticsData.serie) && analyticsData.serie.length > 0 && (() => {
-                const s = analyticsData.serie as { dia: string; analises: number; cost_usd: number }[];
-                const max = Math.max(...s.map(d => d.cost_usd), 0.0001);
-                const soma = s.reduce((a, d) => a + d.cost_usd, 0);
-                const nAn = s.reduce((a, d) => a + d.analises, 0);
-                return (
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <BarChart3 size={16} className="text-amber-400" />
-                        <span className="font-black text-white text-sm">Custo diário — últimos 30 dias</span>
-                      </div>
-                      <span className="text-[11px] text-slate-500 tabular-nums">
-                        ${soma.toFixed(2)} no período · {nAn} análises · pico ${max.toFixed(3)}
-                      </span>
-                    </div>
-                    <div className="px-6 py-5">
-                      <div className="flex items-end gap-[3px] h-28">
-                        {s.map((d) => (
-                          <div key={d.dia}
-                               title={`${new Date(d.dia + 'T12:00:00').toLocaleDateString('pt-BR')} — $${d.cost_usd.toFixed(4)} · ${d.analises} análise(s)`}
-                               className="flex-1 min-w-[3px] bg-amber-400/70 hover:bg-amber-300 rounded-t transition-colors cursor-default"
-                               style={{ height: `${Math.max(2, (d.cost_usd / max) * 100)}%` }} />
-                        ))}
-                      </div>
-                      <div className="flex justify-between text-[10px] text-slate-600 mt-2 tabular-nums">
-                        <span>{new Date(s[0].dia + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
-                        <span>{new Date(s[s.length - 1].dia + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Metodologia — vem do servidor, gerada ao lado do cálculo.
-                  Antes este texto era fixo no HTML e continuou anunciando
-                  "média de 8k input + 2,5k output" mesmo depois de a média
-                  passar a sair dos dados reais. */}
+          {!analyticsLoading && analyticsData && (
+            <>
+              {/* Nota sobre estimativa */}
               <p className="text-[11px] text-slate-600 -mb-4">
-                💡 {analyticsData.pricing_note || 'Custo estimado em USD.'} <span className="text-slate-500">~ = estimado</span>
+                💡 Custo estimado em USD · análises sem token real usam média de 8k input + 2,5k output · <span className="text-slate-500">~ = estimado</span>
               </p>
-
-              {(analyticsData.resumo?.analises ?? 0) === 0 && (
-                <div className="py-16 text-center border-2 border-dashed border-slate-800 rounded-2xl">
-                  <p className="font-bold text-sm text-slate-400">Nenhuma análise neste recorte</p>
-                  <p className="text-[12px] text-slate-600 mt-1">
-                    Os filtros ativos não retornaram dados. Afrouxe o período ou limpe os filtros.
-                  </p>
-                </div>
-              )}
 
               {/* Por Tier */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -3073,7 +2887,6 @@ export default function AdminDashboard() {
                         <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Tier</th>
                         <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Modelos</th>
                         <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Total</th>
-                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">$/análise</th>
                         <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Custo USD</th>
                       </tr>
                     </thead>
@@ -3095,7 +2908,6 @@ export default function AdminDashboard() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right font-black text-white">{row.total}</td>
-                          <td className="px-6 py-4 text-right text-slate-400 tabular-nums whitespace-nowrap">${(row.custo_por_analise ?? 0).toFixed(3)}</td>
                           <td className="px-6 py-4 text-right font-black text-amber-400 whitespace-nowrap">${row.cost_usd.toFixed(3)}</td>
                         </tr>
                       ))}
@@ -3119,17 +2931,12 @@ export default function AdminDashboard() {
                         <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Tier</th>
                         <th className="text-left px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Modelos</th>
                         <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Total</th>
-                        <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">$/análise</th>
                         <th className="text-right px-6 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500">Custo USD</th>
                       </tr>
                     </thead>
                     <tbody>
                       {analyticsData.by_user.map((row: any) => (
-                        <tr key={row.user_id}
-                            onClick={() => loadAnalytics({ userId: analyticsFiltros.userId === row.user_id ? null : row.user_id })}
-                            title="Clique para filtrar por este usuário"
-                            className={`border-b border-slate-800/50 transition-colors cursor-pointer ${
-                              analyticsFiltros.userId === row.user_id ? 'bg-violet-500/10' : 'hover:bg-slate-800/30'}`}>
+                        <tr key={row.user_id} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                           <td className="px-6 py-4">
                             <p className="font-bold text-white text-xs">{row.email}</p>
                             {row.name && <p className="text-[11px] text-slate-500 mt-0.5">{row.name}</p>}
@@ -3149,7 +2956,6 @@ export default function AdminDashboard() {
                             </div>
                           </td>
                           <td className="px-6 py-4 text-right font-black text-white">{row.total}</td>
-                          <td className="px-6 py-4 text-right text-slate-400 tabular-nums whitespace-nowrap">${(row.custo_por_analise ?? 0).toFixed(3)}</td>
                           <td className="px-6 py-4 text-right font-black text-amber-400 whitespace-nowrap">${row.cost_usd.toFixed(3)}</td>
                         </tr>
                       ))}
@@ -3157,7 +2963,7 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               </div>
-            </div>
+            </>
           )}
 
           {!analyticsLoading && !analyticsData && (

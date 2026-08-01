@@ -561,8 +561,6 @@ export default function AnalysisResults({
                   analysisId={analysisId || ''}
                   userTier={userTier}
                   fullResult={liveResult as import('./CompetitorWarRoom').FullResultData}
-                  diagnostico={(liveResult as { concorrentes_diagnostico?: import('./CompetitorWarRoom').DiagnosticoConcorrentes }).concorrentes_diagnostico}
-                  atualizadoEm={(liveResult as { concorrentes_atualizado_em?: string }).concorrentes_atualizado_em}
                 />
               </PremiumLock>
             </div>
