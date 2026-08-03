@@ -200,7 +200,6 @@ export default function Header() {
   const landingLinks = [
     { href: '/#problema', label: 'Problema' },
     { href: '/#como-funciona', label: 'Como funciona' },
-    { href: '/#vantagens', label: 'Por que a Bawzi' },
     { href: '/#economia', label: 'Economia' },
     { href: '/#planos', label: 'Planos' },
   ];

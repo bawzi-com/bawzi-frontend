@@ -327,14 +327,32 @@ export function useAnalysis({
         signal: abortRef.current.signal,
       });
 
-      // 403 — Limite de análises atingido (upsell)
+      // 403 — limites de uso.
+      //
+      // ⚠️ O corpo é lido UMA vez e a função SEMPRE retorna aqui. Antes, um 403
+      // com código diferente de LIMIT_REACHED saía deste `if` e caía no
+      // `await response.json()` de baixo — no mesmo Response, já consumido —,
+      // lançando "body stream already read" em vez de mostrar a mensagem.
+      // Quem passava por ali era o convidado que gastou a análise do dia:
+      // recebia um erro de stream no lugar do convite para criar conta.
       if (response.status === 403) {
-        const errorData = await response.json();
-        if (errorData.detail?.codigo === 'LIMIT_REACHED') {
-          onUpsellNeeded({ title: errorData.detail.titulo, desc: errorData.detail.mensagem });
-          setIsAnalyzing(false);
-          return;
+        const detalhe = await response.json().then(d => d?.detail).catch(() => null);
+        const codigo = detalhe?.codigo;
+
+        if (codigo === 'LIMIT_REACHED') {
+          // Teto do plano: aqui o upsell faz sentido.
+          onUpsellNeeded({ title: detalhe.titulo, desc: detalhe.mensagem });
+        } else if (codigo === 'MODE_LIMIT_REACHED') {
+          // Teto de UM dos modos. Nada de upsell: quem esbarra no limite da
+          // auditoria profunda já está no plano que a inclui, e o outro modo
+          // continua disponível — o backend diz qual em `alternativa`.
+          setError(detalhe.mensagem || 'Limite deste tipo de análise atingido neste período.');
+        } else {
+          setError(detalhe?.mensagem || detalhe?.titulo ||
+                   (typeof detalhe === 'string' ? detalhe : 'Limite de uso atingido.'));
         }
+        setIsAnalyzing(false);
+        return;
       }
 
       // 402 — Precisa de upgrade de tier

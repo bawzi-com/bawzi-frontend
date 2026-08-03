@@ -120,9 +120,11 @@ function ProfileContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
-  const [lgpdConsent, setLgpdConsent] = useState(() =>
-    typeof window !== 'undefined' && localStorage.getItem('bawzi_consent_accepted') === 'true'
-  );
+  // Mesma classe de defeito das outras duas telas: ler localStorage no
+  // inicializador do `useState`, mesmo com guarda `typeof window`, faz a
+  // primeira renderização do cliente divergir do HTML do servidor. A leitura
+  // desceu para o efeito que já sincroniza este estado, logo abaixo.
+  const [lgpdConsent, setLgpdConsent] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [billingAction, setBillingAction] = useState<string | null>(null);
   const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
@@ -155,6 +157,13 @@ function ProfileContent() {
 
   // Sincroniza consentimento LGPD: escuta banner + verifica backend no mount
   useEffect(() => {
+    // Valor otimista do storage — o backend logo abaixo é a autoridade e
+    // corrige em seguida. Aqui já estamos depois da hidratação, então ler o
+    // localStorage é seguro.
+    try {
+      if (localStorage.getItem('bawzi_consent_accepted') === 'true') setLgpdConsent(true);
+    } catch { /* navegador sem storage */ }
+
     // Escuta o banner aceitar em outra aba ou na mesma página
     const onAccepted = () => setLgpdConsent(true);
     window.addEventListener('bawzi_lgpd_accepted', onAccepted);

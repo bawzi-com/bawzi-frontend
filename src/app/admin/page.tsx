@@ -36,7 +36,191 @@ import {
   DollarSign,
   Trash2,
   CreditCard,
+  Layers,
 } from 'lucide-react';
+
+
+/** Custo e margem de um plano, ao vivo, com os valores que estão nos campos.
+ *
+ *  MODELO DE CUSTO
+ *    custo = agentes × (caracteres ÷ CPT) × (p_entrada + razão × p_saída)
+ *          + redator com tokens fixos (ele lê os ACHADOS, não o edital)
+ *
+ *  Calibrado contra a rápida medida no painel (112.560 car., 3 agentes, par
+ *  luna, US$ 0,1540) com razão de saída 0,05. Na profunda medida projeta
+ *  US$ 1,77 contra US$ 1,457 reais — superestima 21%, e fica assim de
+ *  propósito: numa calculadora de PREÇO, errar para cima na margem é o lado
+ *  seguro. Subestimar custo faz aprovar plano que sangra.
+ *
+ *  Os preços vêm da tabela de modelos, resolvidos pelo `model_resolution` da
+ *  própria rota — trocar o `.env` muda a resolução, que muda o preço, que muda
+ *  a margem, sem ninguém transcrever número.
+ */
+function CalculadoraMargem({ tier, edit, precos }: { tier: any; edit: any; precos: any[] }) {
+  const [caracteres, setCaracteres] = useState(112560);
+  const [alvoMargem, setAlvoMargem] = useState(60);
+  const [cambio, setCambio] = useState(5.4);
+  const [razaoSaida, setRazaoSaida] = useState(0.05);
+  const [cpt, setCpt] = useState(3.6);
+  const [redIn, setRedIn] = useState(8000);
+  const [redOut, setRedOut] = useState(4000);
+  const [abrirCalibragem, setAbrirCalibragem] = useState(false);
+
+  const v = (campo: string, padrao: any) => edit?.[campo] ?? tier?.[campo] ?? padrao;
+
+  const precoDe = (rotulo: string): [number, number] => {
+    const real = tier?.model_resolution?.[rotulo] || rotulo;
+    const p = precos.find((m: any) => m.modelo === real);
+    return p ? [p.entrada, p.saida] : [0, 0];
+  };
+
+  const custoAnalise = (inv: string, red: string) => {
+    const agentes = Number(v('agent_count', 1)) || 1;
+    const tokensEdital = (caracteres || 0) / (cpt || 3.6);
+    const entInv = agentes * tokensEdital;
+    const [pi, po] = precoDe(inv);
+    const [ri, ro] = precoDe(red);
+    return (entInv * pi + entInv * razaoSaida * po + redIn * ri + redOut * ro) / 1e6;
+  };
+
+  const custoRapida  = custoAnalise(v('investigator_model_rapido', 'gpt-4o-mini'),
+                                    v('writer_model_rapido', 'gpt-4o-mini'));
+  const custoProfunda = custoAnalise(v('investigator_model', 'gpt-4o-mini'),
+                                     v('writer_model', 'gpt-4o-mini'));
+
+  const unidade = Number(v('caracteres_por_credito', 50000)) || 50000;
+  const mult    = Number(v('peso_profunda', 1)) || 1;
+  const cota    = Number(v('monthly_limit', 0)) || 0;
+
+  // Créditos que a análise de referência consome, por modo.
+  const credRapida   = Math.max(1, Math.ceil((caracteres || 0) / unidade));
+  const credProfunda = credRapida * mult;
+  // Custo de UM crédito em cada modo — é o custo da análise dividido pelos
+  // créditos que ela debita. O da profunda é o que importa para o pior caso.
+  const custoCredRapida   = credRapida   ? custoRapida   / credRapida   : 0;
+  const custoCredProfunda = credProfunda ? custoProfunda / credProfunda : 0;
+
+  const receita = (Number(tier?.price_brl) || 0) / (cambio || 5.4);
+  const piorCaso = cota > 0 ? cota * custoCredProfunda : null;   // cota inteira em profunda
+  const margem = receita > 0 && piorCaso !== null ? (1 - piorCaso / receita) * 100 : null;
+  const cotaSugerida = receita > 0 && custoCredProfunda > 0
+    ? Math.round(receita * (1 - alvoMargem / 100) / custoCredProfunda)
+    : null;
+
+  const usd = (n: number) => `US$ ${n.toFixed(n < 1 ? 4 : 2)}`;
+  const corMargem = margem === null ? 'text-slate-500'
+    : margem >= alvoMargem ? 'text-emerald-400'
+    : margem >= 0 ? 'text-amber-400' : 'text-red-400';
+
+  return (
+    <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-[10px] font-black uppercase tracking-widest text-violet-400">
+          Custo e margem
+        </h4>
+        <button onClick={() => setAbrirCalibragem(!abrirCalibragem)}
+                className="text-[10px] font-bold text-slate-500 hover:text-slate-300">
+          {abrirCalibragem ? 'fechar calibragem' : 'calibrar'}
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3 mb-3">
+        <div>
+          <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">
+            Edital de referência (car.)
+          </label>
+          <input type="number" min={1000} step={5000} value={caracteres}
+                 onChange={e => setCaracteres(Math.max(1000, parseInt(e.target.value) || 1000))}
+                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-violet-500" />
+        </div>
+        <div>
+          <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">
+            Margem alvo (%)
+          </label>
+          <input type="number" min={0} max={95} value={alvoMargem}
+                 onChange={e => setAlvoMargem(Math.min(95, Math.max(0, parseInt(e.target.value) || 0)))}
+                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-violet-500" />
+        </div>
+        <div>
+          <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">
+            Câmbio (R$/US$)
+          </label>
+          <input type="number" min={1} step={0.1} value={cambio}
+                 onChange={e => setCambio(Math.max(1, parseFloat(e.target.value) || 5.4))}
+                 className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-violet-500" />
+        </div>
+      </div>
+
+      {abrirCalibragem && (
+        <div className="grid gap-3 sm:grid-cols-4 mb-3 rounded-lg bg-slate-900/70 p-3">
+          {([['Razão de saída', razaoSaida, setRazaoSaida, 0.01],
+             ['Caracteres/token', cpt, setCpt, 0.1],
+             ['Redator entrada', redIn, setRedIn, 500],
+             ['Redator saída', redOut, setRedOut, 500]] as const).map(([rot, val, set, passo]) => (
+            <div key={rot}>
+              <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">{rot}</label>
+              <input type="number" step={passo} value={val as number}
+                     onChange={e => (set as any)(parseFloat(e.target.value) || 0)}
+                     className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-bold focus:outline-none focus:border-violet-500" />
+            </div>
+          ))}
+          <p className="sm:col-span-4 text-[10px] text-slate-500 leading-relaxed">
+            Ajuste a razão de saída até o custo por análise bater com o painel de custo por
+            modalidade. O modelo superestima a auditoria profunda em ~21% na medição atual —
+            erra para cima de propósito, porque subestimar custo faz aprovar plano que sangra.
+          </p>
+        </div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2 text-xs">
+        <div className="rounded-lg bg-slate-900/70 px-3 py-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Análise rápida</p>
+          <p className="font-bold text-white mt-0.5">{usd(custoRapida)}
+            <span className="text-slate-500 font-medium"> · {credRapida} créd. · {usd(custoCredRapida)}/créd.</span>
+          </p>
+        </div>
+        <div className="rounded-lg bg-slate-900/70 px-3 py-2">
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Auditoria profunda</p>
+          <p className="font-bold text-white mt-0.5">{usd(custoProfunda)}
+            <span className="text-slate-500 font-medium"> · {credProfunda} créd. · {usd(custoCredProfunda)}/créd.</span>
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg bg-slate-900/70 px-3 py-2.5">
+        {receita <= 0 ? (
+          <p className="text-[11px] text-slate-500">
+            Plano gratuito — o custo aqui é aquisição, não margem.
+            {cota > 0 && piorCaso !== null && <> Teto de {usd(piorCaso)} por usuário no período.</>}
+          </p>
+        ) : cota <= 0 ? (
+          <p className="text-[11px] text-amber-400 font-bold">
+            Cota ilimitada: não há pior caso calculável. Qualquer margem depende de o cliente
+            se conter — defina um teto para esta conta fechar.
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <span className="text-[11px] text-slate-400">
+              Receita <strong className="text-white">{usd(receita)}</strong>
+            </span>
+            <span className="text-[11px] text-slate-400">
+              Pior caso <strong className="text-white">{usd(piorCaso!)}</strong>
+              <span className="text-slate-600"> ({cota} créd. em profunda)</span>
+            </span>
+            <span className={`text-[11px] font-black ${corMargem}`}>
+              Margem {margem!.toFixed(0)}%
+            </span>
+            {cotaSugerida !== null && cotaSugerida !== cota && (
+              <span className="text-[11px] text-violet-400 font-bold">
+                → {cotaSugerida} créditos daria {alvoMargem}%
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -480,9 +664,23 @@ export default function AdminDashboard() {
   // Recorte ativo da aba de uso de IA. Um objeto só, porque os quatro filtros
   // são aplicados juntos no servidor — manter quatro estados soltos convidaria
   // a disparar quatro requisições e mostrar quatro respostas incoerentes.
+  // Texto do campo aberto de dias. Separado de `analyticsFiltros.dias` porque
+  // um é o que está DIGITADO e o outro é o que está APLICADO — enquanto o
+  // usuário digita "12" a caminho de "120", o filtro ativo continua sendo o
+  // anterior. Fundir os dois faria a tela recarregar a cada tecla.
+  // Concordância de número. Existe como helper e não como ternário repetido
+  // porque "1 análises" só aparece quando alguém esquece de um dos pontos —
+  // e com quatro lugares diferentes, esquecer é questão de tempo.
+  const plural = (n: number, singular: string, plural_: string) =>
+    `${n} ${n === 1 ? singular : plural_}`;
+
+  const [analyticsDiasTexto, setAnalyticsDiasTexto] = useState('');
+
   const [analyticsFiltros, setAnalyticsFiltros] = useState<{
     dias: number; tier: number | null; userId: string | null; modelo: string | null;
-  }>({ dias: 0, tier: null, userId: null, modelo: null });
+    soCompletas: boolean;
+    modo: string | null;
+  }>({ dias: 0, tier: null, userId: null, modelo: null, soCompletas: false, modo: null });
 
   const loadAnalytics = async (f: Partial<typeof analyticsFiltros> = {}) => {
     const alvo = { ...analyticsFiltros, ...f };
@@ -494,6 +692,8 @@ export default function AdminDashboard() {
       if (alvo.tier !== null && alvo.tier !== undefined) qs.set('tier', String(alvo.tier));
       if (alvo.userId) qs.set('user_id', alvo.userId);
       if (alvo.modelo) qs.set('modelo', alvo.modelo);
+      if (alvo.soCompletas) qs.set('so_completas', 'true');
+      if (alvo.modo) qs.set('modo', alvo.modo);
       const sufixo = qs.toString() ? `?${qs}` : '';
       const res = await apiFetch(`${API_URL}/api/admin/analytics/usage${sufixo}`);
       if (res.ok) setAnalyticsData(await res.json());
@@ -525,6 +725,42 @@ export default function AdminDashboard() {
     } catch {}
   };
 
+  const [precosModelo, setPrecosModelo] = useState<any[]>([]);
+  const [precoEdits, setPrecoEdits] = useState<Record<string, any>>({});
+  const [savingPreco, setSavingPreco] = useState<string | null>(null);
+
+  const loadPrecosModelo = async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/precos-modelo`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setPrecosModelo(data.modelos || []);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+    }
+  };
+
+  const savePrecoModelo = async (modelo: string) => {
+    const e = precoEdits[modelo] || {};
+    const atual = precosModelo.find(m => m.modelo === modelo) || {};
+    setSavingPreco(modelo);
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/precos-modelo/${encodeURIComponent(modelo)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entrada: Number(e.entrada ?? atual.entrada),
+          saida:   Number(e.saida   ?? atual.saida),
+        }),
+      });
+      if (res.ok) await loadPrecosModelo();
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+    } finally {
+      setSavingPreco(null);
+    }
+  };
+
   const loadTierConfigs = async () => {
     const baseUrl = API_URL;
     try {
@@ -544,9 +780,17 @@ export default function AdminDashboard() {
             investigator_model_rapido: t.investigator_model_rapido ?? t.investigator_model,
             writer_model_rapido:       t.writer_model_rapido ?? t.writer_model,
             agent_count:        t.agent_count ?? 1,
+            // `?? null` e não `?? 0`: null é "sem teto", 0 também é aceito pelo
+            // backend com o mesmo sentido, mas mostrar 0 num campo faria parecer
+            // um número configurado.
+            limit_profunda:     t.limit_profunda ?? null,
+            limit_rapida:       t.limit_rapida ?? null,
+            peso_profunda:      t.peso_profunda ?? 1,
+            caracteres_por_credito: t.caracteres_por_credito ?? 50000,
           };
         });
         setTierEdits(edits);
+        loadPrecosModelo();
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -581,6 +825,14 @@ export default function AdminDashboard() {
           investigator_model_rapido: body.investigator_model_rapido,
           writer_model_rapido:       body.writer_model_rapido,
           agent_count:               Number(body.agent_count),
+          // ⚠️ Este corpo é uma lista EXPLÍCITA. Campo que não estiver escrito
+          // aqui não sai do browser, por mais que exista na tela e o backend o
+          // aceite — foi exatamente assim que os selects de modelo ficaram sem
+          // efeito. `?? null` preserva o "sem teto".
+          limit_profunda:            body.limit_profunda ?? null,
+          limit_rapida:              body.limit_rapida ?? null,
+          peso_profunda:             Number(body.peso_profunda) || 1,
+          caracteres_por_credito:    Number(body.caracteres_por_credito) || 50000,
         }),
       });
       if (res.ok) {
@@ -2251,11 +2503,88 @@ export default function AdminDashboard() {
       {activeTab === 'tiers' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
 
+          {/* ── Preço por modelo ──────────────────────────────────────
+              A tabela vive no banco (`precos_modelo`), chaveada pelo modelo
+              REAL. A coluna "rótulos" mostra o que aponta para cada um HOJE —
+              é a ligação que antes só existia num comentário do backend, e que
+              fazia o painel mentir quando o `.env` mudava.
+
+              "padrão" marca quem nunca foi editado. O Sonnet 5 sai do preço
+              introdutório em 01/09/2026; sem esta marca, ninguém percebe. */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-black text-white">Preço por modelo</h3>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  US$ por 1M de tokens. Alimenta todo o cálculo de custo do painel.
+                </p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-widest text-slate-500">
+                    <th className="text-left pb-2">Modelo</th>
+                    <th className="text-left pb-2">Rótulos que apontam</th>
+                    <th className="text-right pb-2">Entrada</th>
+                    <th className="text-right pb-2">Saída</th>
+                    <th className="pb-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {precosModelo.map((m: any) => {
+                    const e = precoEdits[m.modelo] || {};
+                    const mudou = (e.entrada !== undefined && Number(e.entrada) !== m.entrada)
+                               || (e.saida !== undefined && Number(e.saida) !== m.saida);
+                    return (
+                      <tr key={m.modelo} className="border-t border-slate-800">
+                        <td className="py-2 pr-3">
+                          <span className="font-bold text-white">{m.modelo}</span>
+                          {m.e_padrao && (
+                            <span className="ml-2 text-[9px] font-black uppercase text-amber-500">padrão</span>
+                          )}
+                          {!m.em_uso && (
+                            <span className="ml-2 text-[9px] font-black uppercase text-slate-600">sem uso</span>
+                          )}
+                        </td>
+                        <td className="py-2 pr-3 text-[11px] text-slate-500">
+                          {m.rotulos?.length ? m.rotulos.join(', ') : '—'}
+                        </td>
+                        {(['entrada', 'saida'] as const).map(campo => (
+                          <td key={campo} className="py-2 pl-3 text-right">
+                            <input
+                              type="number" step="0.01" min={0}
+                              value={e[campo] ?? m[campo]}
+                              onChange={ev => setPrecoEdits(prev => ({
+                                ...prev,
+                                [m.modelo]: { ...prev[m.modelo], [campo]: ev.target.value },
+                              }))}
+                              className="w-24 bg-slate-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-right text-xs font-bold focus:outline-none focus:border-violet-500"
+                            />
+                          </td>
+                        ))}
+                        <td className="py-2 pl-3 text-right">
+                          <button
+                            onClick={() => savePrecoModelo(m.modelo)}
+                            disabled={!mudou || savingPreco === m.modelo}
+                            className="text-[10px] font-black uppercase px-3 py-1.5 rounded-lg bg-violet-600 text-white disabled:opacity-30 disabled:cursor-not-allowed hover:bg-violet-500 transition-colors"
+                          >
+                            {savingPreco === m.modelo ? '...' : 'Salvar'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-black text-white tracking-tight">Tiers &amp; Limites</h2>
               <p className="text-slate-500 text-sm mt-1">
-                Ajuste análises/mês, chars e MB por plano. Valores sobrepõem os padrões do <code className="text-violet-400">.env</code> imediatamente (cache de 60 s).
+                Ajuste créditos/mês, tetos por modo, chars e MB por plano. Valores sobrepõem os padrões do <code className="text-violet-400">.env</code> imediatamente (cache de 60 s).
               </p>
             </div>
             <button
@@ -2459,7 +2788,7 @@ export default function AdminDashboard() {
                       {/* Análises/mês */}
                       <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
-                          {tier.tier_id === -1 ? 'Análises / dia' : 'Análises / mês'}
+                          {tier.tier_id === -1 ? 'Créditos / dia' : 'Créditos / mês'}
                           <span className="ml-1 text-slate-600 normal-case font-normal">(0 = ilimitado)</span>
                         </label>
                         <input
@@ -2474,6 +2803,117 @@ export default function AdminDashboard() {
                         />
                         <p className="text-[10px] text-slate-600 mt-1">
                           Padrão: {tier.monthly_limit === 0 ? '∞' : tier.monthly_limit}
+                          {' · '}1 crédito = {(
+                            edit.caracteres_por_credito ?? tier.caracteres_por_credito ?? 50000
+                          ).toLocaleString('pt-BR')} car.
+                        </p>
+                      </div>
+
+                      {/* Tetos por MODO.
+
+                          O limite acima não distingue uma auditoria profunda de
+                          uma análise rápida — e no Elite ele é 0, ilimitado. Só
+                          que os dois modos rodam o MESMO número de agentes: a
+                          diferença de custo é inteiramente o par de modelos, e o
+                          par profundo do Elite é o mais caro da casa.
+
+                          Vazio = sem teto. Esgotado o da profunda, a rápida
+                          continua atendendo. */}
+                      {([
+                        // ⚠️ Estes dois contam ANÁLISES, não créditos: o backend usa
+                        // `count_documents`, não a soma ponderada. Renomeá-los para
+                        // crédito faria o operador configurar "20 auditorias" e obter
+                        // um teto 4× maior que o pretendido.
+                        ['limit_profunda', 'Auditorias profundas / período (análises)', 'o par caro de modelos'],
+                        ['limit_rapida',   'Análises rápidas / período (análises)',     'o par econômico'],
+                      ] as const).map(([campo, rotulo, nota]) => (
+                        <div key={campo}>
+                          <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                            {rotulo}
+                            <span className="ml-1 text-slate-600 normal-case font-normal">(vazio = sem teto)</span>
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            placeholder="sem teto"
+                            value={(edit[campo] ?? tier[campo]) ?? ''}
+                            onChange={e => setTierEdits(prev => ({
+                              ...prev,
+                              [tier.tier_id]: {
+                                ...prev[tier.tier_id],
+                                [campo]: e.target.value === '' ? null : Math.max(0, parseInt(e.target.value) || 0),
+                              },
+                            }))}
+                            className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                          />
+                          <p className="text-[10px] text-slate-600 mt-1">Debita {nota}</p>
+                        </div>
+                      ))}
+
+                      {/* Multiplicador do modo profundo.
+
+                          ⚠️ Ele carrega SÓ o efeito do modelo. O efeito do
+                          tamanho do edital já está na faixa de caracteres —
+                          usar aqui a razão observada por análise (que é o
+                          produto dos dois) cobraria o tamanho duas vezes.
+
+                          Calibragem atual: 6, o número que reproduz os 9,5×
+                          medidos no admin dentro do sistema de faixas. O piso
+                          robusto é 4 (só o efeito modelo, 3,4×). Recalibre
+                          quando houver amostra — hoje é uma auditoria. */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Multiplicador da profunda
+                          <span className="ml-1 text-slate-600 normal-case font-normal">(1 = igual à rápida)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={edit.peso_profunda ?? tier.peso_profunda ?? 1}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: {
+                              ...prev[tier.tier_id],
+                              peso_profunda: Math.min(50, Math.max(1, parseInt(e.target.value) || 1)),
+                            },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          Só o efeito do modelo — o tamanho já está na divisão
+                        </p>
+                      </div>
+
+                      {/* Tamanho de 1 crédito.
+
+                          ⚠️ Deve ser IGUAL em todos os planos. "1 crédito" com
+                          significados diferentes por plano quebra o conceito
+                          para o cliente. O campo é por tier só porque
+                          reaproveita o override que já existe; a leitura do
+                          admin devolve `unidade_divergente` quando algum sai
+                          da linha. */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Caracteres por crédito
+                          <span className="ml-1 text-slate-600 normal-case font-normal">(igual em todos)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={1000}
+                          step={5000}
+                          value={edit.caracteres_por_credito ?? tier.caracteres_por_credito ?? 50000}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: {
+                              ...prev[tier.tier_id],
+                              caracteres_por_credito: Math.max(1000, parseInt(e.target.value) || 50000),
+                            },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          Edital de {((edit.caracteres_por_credito ?? tier.caracteres_por_credito ?? 50000) * 4).toLocaleString('pt-BR')} car. = 4 créditos
                         </p>
                       </div>
 
@@ -2528,6 +2968,11 @@ export default function AdminDashboard() {
                         "claude-opus" nos selects acima. */}
 
                     {/* Feedback + Acções */}
+                    {/* A margem antes de salvar, não depois. Reage aos campos
+                        acima: trocar o modelo, os agentes, a unidade de crédito
+                        ou o multiplicador recalcula na hora. */}
+                    <CalculadoraMargem tier={tier} edit={edit} precos={precosModelo} />
+
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-h-[20px]">
                         {msg && (
@@ -2887,19 +3332,55 @@ export default function AdminDashboard() {
             const usuarioAtivo = f.userId
               ? (analyticsData.by_user || []).find((u: any) => u.user_id === f.userId)
               : null;
-            const temFiltro = !!(f.dias || f.tier !== null || f.userId || f.modelo);
+            const temFiltro = !!(f.dias || f.tier !== null || f.userId || f.modelo || f.soCompletas || f.modo);
             const sel = 'bg-slate-800 border-slate-700 text-white';
             const nao = 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200';
             return (
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-1 mr-1">
-                  {[{ d: 0, r: 'Tudo' }, { d: 7, r: '7 dias' }, { d: 30, r: '30 dias' }, { d: 90, r: '90 dias' }]
+                  {[{ d: 0, r: 'Tudo' }, { d: 1, r: 'Hoje' }, { d: 7, r: '7 dias' }, { d: 30, r: '30 dias' }, { d: 90, r: '90 dias' }]
                     .map(({ d, r }) => (
-                    <button key={d} onClick={() => loadAnalytics({ dias: d })}
+                    <button key={d}
+                      onClick={() => { setAnalyticsDiasTexto(d ? String(d) : ''); loadAnalytics({ dias: d }); }}
                       className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${f.dias === d ? sel : nao}`}>
                       {f.dias === d && <span className="mr-1">✓</span>}{r}
                     </button>
                   ))}
+
+                  {/* Campo aberto: mesmo filtro dos presets, outra forma de
+                      informar. Aplica no Enter e no blur — a cada tecla, digitar
+                      "120" dispararia três consultas ("1", "12", "120") e duas
+                      delas mostrariam recortes que ninguém pediu. */}
+                  {(() => {
+                    const n = parseInt(analyticsDiasTexto, 10);
+                    const preenchido = analyticsDiasTexto.trim() !== '';
+                    const invalido = preenchido && (!Number.isFinite(n) || n < 1 || n > 730);
+                    const aplicar = () => {
+                      if (!preenchido || invalido || n === f.dias) return;
+                      loadAnalytics({ dias: n });
+                    };
+                    const personalizado = f.dias > 0 && ![1, 7, 30, 90].includes(f.dias);
+                    return (
+                      <div className="flex items-center gap-1.5 ml-1">
+                        <input
+                          type="number" min={1} max={730} inputMode="numeric"
+                          value={analyticsDiasTexto}
+                          onChange={(e) => setAnalyticsDiasTexto(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); aplicar(); } }}
+                          onBlur={aplicar}
+                          placeholder="livre"
+                          title="Número de dias (1 a 730). Enter para aplicar."
+                          className={`w-[68px] px-2 py-1.5 rounded-lg border text-[11px] font-bold outline-none bg-slate-900 tabular-nums ${
+                            invalido ? 'border-red-500/60 text-red-300'
+                            : personalizado ? 'border-slate-700 text-white'
+                            : 'border-slate-800 text-slate-400'}`}
+                        />
+                        <span className={`text-[11px] font-bold ${invalido ? 'text-red-400' : 'text-slate-600'}`}>
+                          {invalido ? '1 a 730' : 'dias'}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <select value={f.tier ?? ''} onChange={e => loadAnalytics({ tier: e.target.value === '' ? null : Number(e.target.value) })}
@@ -2918,6 +3399,18 @@ export default function AdminDashboard() {
                   ))}
                 </select>
 
+                {/* Modalidade. Como o filtro escopa TODO o painel, escolher
+                    "Auditoria profunda" aqui responde de uma vez quem a usa,
+                    em que plano e quanto ela custa por etapa — sem precisar de
+                    tabelas próprias para cada cruzamento. */}
+                <select value={f.modo ?? ''} onChange={e => loadAnalytics({ modo: e.target.value || null })}
+                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold outline-none ${f.modo ? sel : nao}`}>
+                  <option value="">Todas as modalidades</option>
+                  {(disp.modos || []).map((m: any) => (
+                    <option key={m.modo} value={m.modo}>{m.nome}</option>
+                  ))}
+                </select>
+
                 {usuarioAtivo && (
                   <button onClick={() => loadAnalytics({ userId: null })}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 text-violet-200 text-[11px] font-bold">
@@ -2926,8 +3419,20 @@ export default function AdminDashboard() {
                   </button>
                 )}
 
+                {/* Separa as duas populações de contagem sem apagar nada: as
+                    análises anteriores à contabilidade por chamada registram só
+                    o investigador, e a média das duas juntas não descreve
+                    nenhuma. Fica irrelevante sozinho quando as antigas saírem
+                    da janela de datas. */}
+                <button
+                  onClick={() => loadAnalytics({ soCompletas: !f.soCompletas })}
+                  title="Mostra apenas análises com todas as chamadas de LLM contabilizadas"
+                  className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${f.soCompletas ? sel : nao}`}>
+                  {f.soCompletas && <span className="mr-1">✓</span>}Só contabilidade completa
+                </button>
+
                 {temFiltro && (
-                  <button onClick={() => loadAnalytics({ dias: 0, tier: null, userId: null, modelo: null })}
+                  <button onClick={() => { setAnalyticsDiasTexto(''); loadAnalytics({ dias: 0, tier: null, userId: null, modelo: null, soCompletas: false, modo: null }); }}
                     className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-300 transition-colors">
                     Limpar
                   </button>
@@ -2963,7 +3468,7 @@ export default function AdminDashboard() {
                   {[
                     { k: 'Custo por análise',
                       v: `$${(analyticsData.resumo.custo_por_analise ?? 0).toFixed(3)}`,
-                      n: `${analyticsData.resumo.analises ?? 0} análises · $${(analyticsData.resumo.custo_usd ?? 0).toFixed(2)} no total`,
+                      n: `${plural(analyticsData.resumo.analises ?? 0, 'análise', 'análises')} · $${(analyticsData.resumo.custo_usd ?? 0).toFixed(2)} no total`,
                       c: 'text-amber-400' },
                     { k: 'Confiança do dado',
                       v: `${(analyticsData.resumo.pct_medido ?? 0).toFixed(0)}%`,
@@ -2976,7 +3481,7 @@ export default function AdminDashboard() {
                       c: 'text-violet-400' },
                     { k: 'Custo de quem não paga',
                       v: `$${(analyticsData.resumo.custo_anonimo_usd ?? 0).toFixed(2)}`,
-                      n: `${analyticsData.resumo.analises_anonimas ?? 0} análises sem plano pago`,
+                      n: `${plural(analyticsData.resumo.analises_anonimas ?? 0, 'análise', 'análises')} sem plano pago`,
                       c: 'text-sky-400' },
                   ].map((kpi) => (
                     <div key={kpi.k} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
@@ -3019,17 +3524,17 @@ export default function AdminDashboard() {
                     <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-2">
                         <BarChart3 size={16} className="text-amber-400" />
-                        <span className="font-black text-white text-sm">Custo diário — últimos 30 dias</span>
+                        <span className="font-black text-white text-sm">Custo diário — {(analyticsData.serie_dias ?? 30) === 1 ? 'hoje' : `últimos ${analyticsData.serie_dias ?? 30} dias`}</span>
                       </div>
                       <span className="text-[11px] text-slate-500 tabular-nums">
-                        ${soma.toFixed(2)} no período · {nAn} análises · pico ${max.toFixed(3)}
+                        ${soma.toFixed(2)} no período · {plural(nAn, 'análise', 'análises')} · pico ${max.toFixed(3)}
                       </span>
                     </div>
                     <div className="px-6 py-5">
                       <div className="flex items-end gap-[3px] h-28">
                         {s.map((d) => (
                           <div key={d.dia}
-                               title={`${new Date(d.dia + 'T12:00:00').toLocaleDateString('pt-BR')} — $${d.cost_usd.toFixed(4)} · ${d.analises} análise(s)`}
+                               title={`${new Date(d.dia + 'T12:00:00').toLocaleDateString('pt-BR')} — $${d.cost_usd.toFixed(4)} · ${plural(d.analises, 'análise', 'análises')}`}
                                className="flex-1 min-w-[3px] bg-amber-400/70 hover:bg-amber-300 rounded-t transition-colors cursor-default"
                                style={{ height: `${Math.max(2, (d.cost_usd / max) * 100)}%` }} />
                         ))}
@@ -3059,6 +3564,210 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               )}
+
+              {/* ── Custo por modalidade ───────────────────────────
+                  A média geral de custo por análise é a média de duas coisas
+                  com preços diferentes, e por isso não descreve nenhuma delas.
+                  Aqui elas aparecem separadas, com o custo POR ANÁLISE em
+                  destaque: por total a rápida quase sempre ganha, porque é a
+                  que roda mais — o total mede o mix de uso, não o preço. */}
+              {Array.isArray(analyticsData.por_modo) && analyticsData.por_modo.length > 0 && (() => {
+                const pm = analyticsData.por_modo as any[];
+                const custoTodos = pm.reduce((a, m) => a + m.cost_usd, 0);
+                const volTodos   = pm.reduce((a, m) => a + m.total, 0) || 1;
+                const COR: Record<string, string> = {
+                  rapida: '#3987e5', profunda: '#d95926', desconhecido: '#898781',
+                };
+                const cor = (m: string) => COR[m] ?? '#898781';
+                const tok = (n: number) => n >= 1_000_000
+                  ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`;
+
+                // A frase que se leva embora da tela. Só aparece quando as duas
+                // modalidades têm custo medido — uma razão calculada contra zero
+                // seria um número inventado com cara de conclusão.
+                const rap = pm.find(m => m.modo === 'rapida');
+                const pro = pm.find(m => m.modo === 'profunda');
+                const razao = rap?.custo_por_analise > 0 && pro?.custo_por_analise > 0
+                  ? pro.custo_por_analise / rap.custo_por_analise : null;
+
+                return (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <Layers size={16} className="text-sky-400" />
+                        <span className="font-black text-white text-sm">Custo por modalidade</span>
+                      </div>
+                      {razao !== null && (
+                        <span className="text-[11px] text-slate-400 tabular-nums">
+                          A auditoria profunda custa{' '}
+                          <span className="text-amber-400 font-black">
+                            {razao.toFixed(1).replace('.', ',')}×
+                          </span>{' '}
+                          o preço de uma análise rápida
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="px-6 py-5">
+                      {custoTodos > 0 && (
+                        <div className="flex h-9 rounded-lg overflow-hidden gap-[2px] mb-4">
+                          {pm.map((m) => (
+                            <div key={m.modo}
+                                 title={`${m.nome}: $${m.cost_usd.toFixed(3)} (${((m.cost_usd / custoTodos) * 100).toFixed(0)}% do custo)`}
+                                 style={{ width: `${(m.cost_usd / custoTodos) * 100}%`, background: cor(m.modo) }}
+                                 className="min-w-[3px] transition-all" />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-3">
+                        {pm.map((m) => {
+                          const ativo = analyticsFiltros.modo === m.modo;
+                          return (
+                            <button
+                              key={m.modo}
+                              onClick={() => loadAnalytics({ modo: ativo ? null : m.modo })}
+                              title={ativo ? 'Clique para remover o filtro' : `Filtrar o painel inteiro por ${m.nome}`}
+                              className={`flex-1 min-w-[210px] text-left rounded-xl border p-4 transition-colors ${
+                                ativo ? 'border-slate-600 bg-slate-800/60' : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}>
+                              <div className="flex items-center gap-2 mb-3">
+                                <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: cor(m.modo) }} />
+                                <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">{m.nome}</span>
+                                {ativo && <span className="text-[10px] text-slate-500 ml-auto">filtrando ×</span>}
+                              </div>
+
+                              <p className="text-2xl font-black text-amber-400 tabular-nums leading-none">
+                                ${m.custo_por_analise.toFixed(4)}
+                              </p>
+                              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mt-1">
+                                por análise
+                              </p>
+
+                              <div className="mt-3 pt-3 border-t border-slate-800 space-y-1">
+                                <div className="flex justify-between text-[11px]">
+                                  <span className="text-slate-500">{plural(m.total, 'análise', 'análises')}</span>
+                                  <span className="text-slate-400 tabular-nums">{((m.total / volTodos) * 100).toFixed(0)}% do volume</span>
+                                </div>
+                                <div className="flex justify-between text-[11px]">
+                                  <span className="text-slate-500 tabular-nums">${m.cost_usd.toFixed(3)} no total</span>
+                                  <span className="text-slate-400 tabular-nums">
+                                    {custoTodos > 0 ? `${((m.cost_usd / custoTodos) * 100).toFixed(0)}% do custo` : '—'}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between text-[11px]">
+                                  <span className="text-slate-500">tokens</span>
+                                  <span className="text-slate-400 tabular-nums">{tok(m.tokens_in)} ent · {tok(m.tokens_out)} saí</span>
+                                </div>
+                              </div>
+
+                              <p className="text-[10px] text-slate-600 mt-2.5 leading-relaxed truncate"
+                                 title={(m.models || []).map((x: any) => `${x.model} (${x.count})`).join(', ')}>
+                                {(m.models || []).slice(0, 2).map((x: any) => x.model).join(', ') || '—'}
+                                {(m.models || []).length > 2 && ` +${m.models.length - 2}`}
+                              </p>
+
+                              {/* Deduzida do provedor, não registrada. Fica no
+                                  próprio cartão porque é ali que o número está
+                                  sendo lido — um aviso lá embaixo não alcança
+                                  quem olhou só para o valor em destaque. */}
+                              {m.inferidos > 0 && (
+                                <p className="text-[10px] text-amber-500/70 mt-2 leading-relaxed">
+                                  ⚠ {m.inferidos} de {m.total} com modo deduzido do provedor
+                                </p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Custo por etapa de uma análise ─────────────────
+                  Responde "quanto uma análise ACRESCENTA de custo, e onde".
+                  Antes só o investigador era contabilizado, então a tela
+                  mostrava cerca de metade do valor real — o parecer jurídico,
+                  que relê o edital inteiro, saía por outra função que não
+                  reportava token nenhum. */}
+              {Array.isArray(analyticsData.por_etapa) && analyticsData.por_etapa.length > 0 && (() => {
+                const et = analyticsData.por_etapa as any[];
+                const totalEtapas = et.reduce((a, e) => a + e.cost_usd, 0) || 1;
+                const porAnalise = et.reduce((a, e) => a + e.custo_por_analise, 0);
+                const COR: Record<string, string> = {
+                  investigador: '#2a78d6', redator: '#eb6834', auditoria: '#1baf7a',
+                };
+                const cor = (e: string) => COR[e] || '#898781';
+                const NOME: Record<string, string> = {
+                  investigador: 'Investigador', redator: 'Parecer jurídico',
+                  auditoria: 'Auditoria', termo_pncp: 'Extração de termo', basica: 'Redator',
+                };
+                return (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 size={16} className="text-emerald-400" />
+                        <span className="font-black text-white text-sm">Quanto uma análise acrescenta</span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 tabular-nums">
+                        ${porAnalise.toFixed(3)} por análise · {plural(analyticsData.analises_detalhadas, 'análise', 'análises')} com detalhe por chamada
+                      </span>
+                    </div>
+                    <div className="px-6 py-5">
+                      <div className="flex h-9 rounded-lg overflow-hidden gap-[2px] mb-4">
+                        {et.map((e) => (
+                          <div key={e.etapa}
+                               title={`${NOME[e.etapa] || e.etapa}: $${e.custo_por_analise.toFixed(4)} por análise · ${plural(e.chamadas, 'chamada', 'chamadas')}`}
+                               style={{ width: `${(e.cost_usd / totalEtapas) * 100}%`, background: cor(e.etapa) }}
+                               className="min-w-[3px] transition-all" />
+                        ))}
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-800">
+                            <th className="text-left py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Etapa</th>
+                            <th className="text-right py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Chamadas</th>
+                            <th className="text-right py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Tokens</th>
+                            <th className="text-right py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">$/análise</th>
+                            <th className="text-right py-2 text-[10px] font-black uppercase tracking-widest text-slate-500">Fatia</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {et.map((e) => (
+                            <tr key={e.etapa} className="border-b border-slate-800/50">
+                              <td className="py-2.5 text-slate-300">
+                                <span className="inline-block w-2.5 h-2.5 rounded-sm mr-2 align-middle" style={{ background: cor(e.etapa) }} />
+                                {NOME[e.etapa] || e.etapa}
+                                <span className="text-slate-600 text-[11px] ml-2">{e.modelos.join(', ')}</span>
+                              </td>
+                              <td className="py-2.5 text-right text-slate-400 tabular-nums">{e.chamadas}</td>
+                              <td className="py-2.5 text-right text-slate-400 tabular-nums">
+                                {((e.prompt + e.completion) / 1000).toFixed(0)}k
+                              </td>
+                              <td className="py-2.5 text-right text-amber-400 font-bold tabular-nums">${e.custo_por_analise.toFixed(4)}</td>
+                              <td className="py-2.5 text-right text-slate-400 tabular-nums">{((e.cost_usd / totalEtapas) * 100).toFixed(0)}%</td>
+                            </tr>
+                          ))}
+                          <tr>
+                            <td className="py-2.5 font-black text-white">Total por análise</td>
+                            <td className="py-2.5 text-right text-slate-400 tabular-nums">
+                              {(et.reduce((a, e) => a + e.chamadas, 0) / (analyticsData.analises_detalhadas || 1)).toFixed(1)} chamadas
+                            </td>
+                            <td></td>
+                            <td className="py-2.5 text-right text-amber-400 font-black tabular-nums">${porAnalise.toFixed(4)}</td>
+                            <td className="py-2.5 text-right text-slate-400 tabular-nums">100%</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <p className="text-[11px] text-slate-600 mt-3 leading-relaxed">
+                        Só análises gravadas depois da contabilidade por chamada entram aqui. As anteriores
+                        registravam apenas o investigador — cerca de metade do custo real, porque o parecer
+                        jurídico relê o edital inteiro e não era contado.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Por Tier */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">

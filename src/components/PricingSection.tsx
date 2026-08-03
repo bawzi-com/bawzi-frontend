@@ -21,74 +21,177 @@ interface PricingSectionProps {
 
 // Dados dos tiers: features são o DELTA de cada nível (o que é exclusivo deste tier).
 // O campo `inherits` indica qual tier anterior está incluso (para exibir "Tudo do Nível N +").
+//
+// ⚠️ OS NÚMEROS NÃO MORAM MAIS AQUI.
+// Os três grupos numéricos — quantidade de análises, limite de caracteres e
+// limite de MB — vêm de `/api/tiers/limites-publicos`, que lê o mesmo
+// `get_tier_config()` que a rota de análise usa para liberar ou bloquear. Os
+// campos `quantidade` e `limites` abaixo são o TEXTO DE RESERVA, usado só
+// enquanto a rota não responde.
+//
+// Estavam escritos à mão, e dois já divergiam: a tela de cota esgotada diz
+// "3 análises" (tier -1) e "30 por mês" (tier 1), enquanto esta tabela dizia
+// "1 análise por dia" e "5 análises/mês". Reescrever à mão consertaria hoje e
+// recriaria o defeito — o mesmo "5 análises/mês" já apareceu em três arquivos
+// diferentes neste projeto.
+//
+// As frases qualitativas continuam aqui de propósito: são descrição de
+// funcionalidade, não configuração, e não têm como divergir sozinhas.
 const tiers = [
   {
     name: 'Teste', badge: 'NÍVEL 0', price: 'Grátis', period: '',
     inherits: null,
+    quantidade: '1 crédito grátis por dia · sem cadastro',
     features: [
-      '1 análise por dia · sem cadastro',
       'Nova Análise — score Go/No-Go',
       'Resumo executivo do edital',
       'Semáforo de viabilidade',
-      'Editais até 10.000 caracteres',
-      'PDF até 3 MB',
     ],
+    limites: ['Editais até 10.000 caracteres', 'PDF até 3 MB'],
+    mbSufixo: '',
     buttonText: 'Testar agora', tierLevel: -1, popular: false, label: null,
   },
   {
     name: 'Gratuito', badge: 'NÍVEL 1', price: 'Grátis', period: '',
     inherits: null,
+    quantidade: '5 créditos grátis por mês',
     features: [
-      '5 análises/mês',
       'Análise completa com mapa de riscos jurídicos',
-      'Editais até 25.000 caracteres',
-      'PDF até 5 MB',
     ],
+    limites: ['Editais até 25.000 caracteres', 'PDF até 5 MB'],
+    mbSufixo: '',
     buttonText: 'Criar conta', tierLevel: 1, popular: false, label: null,
   },
   {
     name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',
     inherits: 1,
+    quantidade: '1.000 créditos por mês',
     features: [
-      '1.000 análises/mês',
       'Perfil da empresa (CNPJ/UF)',
       'Central de decisões e laudos salvos',
       'Priorização entre editais',
       'Radar 360 — busca PNCP',
-      'Editais até 80.000 caracteres',
-      'PDF até 15 MB',
     ],
+    limites: ['Editais até 80.000 caracteres', 'PDF até 15 MB'],
+    mbSufixo: '',
     buttonText: 'Assinar Essencial', tierLevel: 2, popular: false, label: null,
   },
   {
     name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',
     inherits: 2,
+    quantidade: '3.000 créditos por mês',
     features: [
-      '3.000 análises/mês',
       'Oportunidades com fit CNAE e perfil',
       'Monitor inteligente PNCP (e-mail + sino)',
       'Fôlego financeiro e capital de execução',
       '4 Agentes IA em paralelo',
-      'Editais até 180.000 caracteres',
-      'PDF até 30 MB',
     ],
+    limites: ['Editais até 180.000 caracteres', 'PDF até 30 MB'],
+    mbSufixo: '',
     buttonText: 'Assinar Profissional', tierLevel: 3, popular: true, label: 'Mais popular',
   },
   {
     name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',
     inherits: 3,
+    quantidade: 'Créditos ilimitados',
     features: [
-      'Análises ilimitadas',
       'Gestão do fluxo completo dos editais',
       'Pipeline de renovações e contratos vencendo',
       'War Room de concorrentes',
       'Simulador tático de preços',
-      'Editais até 400.000 caracteres',
-      'PDF até 100 MB · suporte prioritário',
     ],
+    limites: ['Editais até 400.000 caracteres', 'PDF até 100 MB · suporte prioritário'],
+    mbSufixo: ' · suporte prioritário',
     buttonText: 'Assinar Avançado', tierLevel: 4, popular: false, label: 'Elite',
   },
 ] as const;
+
+interface LimitePublico {
+  monthly_limit: number;
+  ilimitado: boolean;
+  max_chars: number | null;
+  max_mb: number | null;
+  /** `true` quando um crédito PODE diferir de uma análise neste plano — por
+   *  multiplicador de modo ou por edital maior que a unidade. O servidor decide,
+   *  porque a regra depende de dois campos que ele já tem. */
+  em_creditos?: boolean;
+  caracteres_por_credito?: number;
+  peso_profunda?: number;
+}
+
+const numeroBr = (n: number) => n.toLocaleString('pt-BR');
+
+/** Primeira linha do cartão: a quantidade de análises.
+ *
+ *  O tier -1 usa `monthly_limit` como cota DIÁRIA — o nome do campo no backend
+ *  é herdado dos tiers pagos, mas a reposição do convidado é por dia (a tela de
+ *  cota esgotada diz "volta amanhã"). Por isso o texto muda de "/mês" para
+ *  "por dia" só nesse nível. `monthly_limit === 0` é ilimitado, mesma regra do
+ *  `router_analyses.py`. */
+function linhaQuantidade(
+  tier: { tierLevel: number; quantidade: string; price: string },
+  lim: LimitePublico | undefined,
+): string {
+  if (!lim) return tier.quantidade;
+  if (lim.ilimitado) return 'Créditos ilimitados';
+  const n = lim.monthly_limit;
+
+  // CRÉDITO EM TODOS OS PLANOS, inclusive nos gratuitos.
+  //
+  // Eu tinha feito o substantivo depender de `em_creditos` — nos tiers -1 e 1
+  // uma análise custa sempre 1 crédito, e escrevi "análises" achando que ensinar
+  // o conceito não acrescentaria. O efeito colateral é que a página ficava com
+  // DUAS moedas: "100 análises/mês" no Gratuito contra "540 créditos/mês" no
+  // Avançado leem como sistemas diferentes, e o degrau entre eles fica
+  // incomparável — o oposto do que a escada de planos precisa comunicar.
+  //
+  // O portão daqueles tiers debita crédito como todos os outros, então dizer
+  // crédito é igualmente verdadeiro. E quem sobe de plano não aprende unidade
+  // nova: recebe mais da mesma.
+  const palavra = n === 1 ? 'crédito' : 'créditos';
+  // "grátis" faz trabalho que "/mês" não faz num plano cujo preço já é Grátis:
+  // diz que aqueles créditos são presente, não cota comprada.
+  const gratis = tier.price === 'Grátis' ? ' grátis' : '';
+
+  if (tier.tierLevel === -1) {
+    return `${numeroBr(n)} ${palavra}${gratis} por dia · sem cadastro`;
+  }
+  // A régua junto do número. "540 créditos" sozinho não significa nada para
+  // quem lê; com "edital comum usa 2 a 3" o leitor faz a conta sozinho — e a
+  // conta favorece o plano de cima, que é onde ela deveria ter sido feita
+  // desde o começo.
+  //
+  // Deliberadamente NÃO diz "≈ 180 análises": seria mais convincente e seria
+  // chute, porque a média que eu usaria vem de cinco análises medidas.
+  // `em_creditos` deixou de decidir o SUBSTANTIVO e passou a decidir só a
+  // régua: onde o crédito varia com o tamanho, o leitor precisa saber a faixa;
+  // onde é fixo, saber que é fixo vale mais que silêncio — diz que ali não há
+  // surpresa de tamanho.
+  const regua = lim.em_creditos ? ' · edital comum usa 2 a 3' : ' · 1 por análise';
+  return `${numeroBr(n)} ${palavra}${gratis} por mês${regua}`;
+}
+
+/** As duas últimas linhas: caracteres e MB. Se qualquer um dos dois vier nulo,
+ *  usa o par de reserva inteiro — meio número do servidor e meio escrito à mão
+ *  seria pior que os dois de reserva, porque ninguém saberia qual é qual. */
+function linhasLimites(
+  tier: { limites: readonly string[]; mbSufixo: string },
+  lim: LimitePublico | undefined,
+): readonly string[] {
+  if (!lim || typeof lim.max_chars !== 'number' || typeof lim.max_mb !== 'number') {
+    return tier.limites;
+  }
+  return [
+    ...(lim.em_creditos && lim.caracteres_por_credito
+      // A regra completa, uma vez só. A frase curta que acompanha o número da
+      // cota ("edital comum usa 2 a 3") é o resumo; esta é a definição.
+      ? [`1 crédito a cada ${numeroBr(lim.caracteres_por_credito)} caracteres`
+         + ((lim.peso_profunda ?? 1) > 1 ? ` · auditoria profunda ×${lim.peso_profunda}` : '')]
+      : []),
+    `Editais até ${numeroBr(lim.max_chars)} caracteres`,
+    `PDF até ${numeroBr(lim.max_mb)} MB${tier.mbSufixo}`,
+  ];
+}
 
 // Paleta visual por tier
 const tierStyle: Record<string, Record<string, string>> = {
@@ -184,6 +287,16 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
   const [selectedTier, setSelectedTier]           = useState<number>(1);
   const [stripeSecret, setStripeSecret]           = useState<string | null>(null);
   const [checkoutError, setCheckoutError]         = useState<string | null>(null);
+  // `null` = ainda não sei. Enquanto não souber, cada cartão exibe o texto de
+  // reserva — nunca um número pela metade.
+  const [limitesPublicos, setLimitesPublicos] = useState<Record<string, LimitePublico> | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/tiers/limites-publicos`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.tiers) setLimitesPublicos(d.tiers); })
+      .catch(() => { /* servidor fora: os textos de reserva seguem valendo */ });
+  }, []);
 
   const showCheckoutError = (msg: string) => {
     setCheckoutError(msg);
@@ -441,7 +554,21 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
                   </li>
                 )}
 
-                {tier.features.map((feature, i) => (
+                {/* ⚠️ ORDEM IMPORTA, e eu tinha errado.
+                    A quantidade era o PRIMEIRO item de todo cartão — ou seja, a
+                    página abria cada plano pelo número que cresce mais devagar
+                    que o preço (1,65 crédito por real no Essencial contra 1,09
+                    nos de cima). Lido primeiro, o degrau parece um downgrade.
+
+                    O que faz alguém pagar R$ 497 em vez de R$ 197 é War Room,
+                    pipeline e simulador — não cota. Capacidade em cima, cota e
+                    limites técnicos no fim, onde eles são referência e não
+                    argumento. */}
+                {[
+                  ...tier.features,
+                  ...linhasLimites(tier, limitesPublicos?.[String(tier.tierLevel)]),
+                  linhaQuantidade(tier, limitesPublicos?.[String(tier.tierLevel)]),
+                ].map((feature, i) => (
                   <li key={i} className={`flex items-start gap-2 text-[11px] font-medium leading-snug ${s.feature}`}>
                     <Check className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${s.check}`} />
                     {feature}

@@ -56,14 +56,32 @@ function formatValor(v: number | null): string {
   return `R$ ${v.toLocaleString('pt-BR')}`;
 }
 
-function feedTimestamp(id: string): string {
-  const h = hashStr(id || 'x');
-  const r = h % 100;
-  if (r < 8)  return 'agora';
-  if (r < 55) return `${3 + (h % 53)}min atrás`;
-  const hrs  = 1 + (h % 4);
-  const mins = (h >> 3) % 59;
-  return mins > 0 ? `${hrs}h${mins}min atrás` : `${hrs}h atrás`;
+/**
+ * Quando o edital foi publicado — do campo `data_publicacao`, que é dado real e
+ * vem na mesma resposta da API.
+ *
+ * ⚠️ ANTES: `feedTimestamp(id)` derivava de um hash do ID um "agora",
+ * "17min atrás", "2h34min atrás". Ficava embaixo de um selo "ao vivo", ao lado
+ * de um edital real — parecia atividade da plataforma e não era nada. Além de
+ * inventado, não dizia coisa alguma: nem quando o edital saiu, nem quando
+ * alguém o analisou.
+ *
+ * A data de publicação é melhor JUSTAMENTE por ser verdadeira: para quem caça
+ * edital, "publicado hoje" é informação de trabalho.
+ */
+function publicadoEm(s: string): string {
+  const d = parseDateBR(s);
+  if (!d) return '';
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const dia = new Date(d);
+  dia.setHours(0, 0, 0, 0);
+  const dias = Math.round((hoje.getTime() - dia.getTime()) / 86_400_000);
+  if (dias < 0)  return 'publicado hoje';
+  if (dias === 0) return 'publicado hoje';
+  if (dias === 1) return 'publicado ontem';
+  if (dias < 30)  return `publicado há ${dias} dias`;
+  return `publicado em ${d.toLocaleDateString('pt-BR')}`;
 }
 
 const AVATAR_COLORS = [
@@ -91,11 +109,6 @@ function modBadge(mod: string): string {
 
 // ── Card individual ─────────────────────────────────────────────────────────
 function HeroCard({ e, isNew }: { e: Edital; isNew: boolean }) {
-  const seed   = hashStr(e.id || 'x');
-  const count  = 2 + (seed % 5);
-  const avatars = Array.from({ length: Math.min(count, 3) }, (_, i) =>
-    AVATAR_COLORS[(seed + i) % AVATAR_COLORS.length]
-  );
   const { texto: enc, urgente } = encerraEm(e.data_encerramento);
   const isHighValue = e.valor && e.valor >= 500_000;
 
@@ -156,26 +169,17 @@ function HeroCard({ e, isNew }: { e: Edital; isNew: boolean }) {
           )}
         </div>
 
-        {/* Avatares de empresas */}
+        {/* ⚠️ Saíram daqui os avatares de "empresas olhando este edital" e a
+            contagem ao lado: eram `2 + (seed % 5)` sobre um hash do ID. Não
+            existe esse dado — e contagem de espectadores inventada é o padrão
+            que comprador B2B mais reconhece como truque, ainda mais numa página
+            que promete dado real. O link de cadastro fica, com rótulo honesto. */}
         <a
           href="/login?view=register"
-          className="flex items-center gap-1 shrink-0 group"
+          className="shrink-0 text-[9px] font-bold text-slate-400 transition-colors hover:text-emerald-600"
           onClick={e => e.stopPropagation()}
         >
-          <div className="flex -space-x-1.5">
-            {avatars.map((color, i) => (
-              <div
-                key={i}
-                className={`w-4 h-4 rounded-full ${color} border border-white blur-[1.5px]`}
-              />
-            ))}
-            <div className="w-4 h-4 rounded-full bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center">
-              <span className="text-[7px] font-black text-slate-400">+</span>
-            </div>
-          </div>
-          <span className="text-[9px] text-slate-400 group-hover:text-emerald-600 transition-colors">
-            {count}
-          </span>
+          Analisar →
         </a>
       </div>
     </div>
@@ -223,6 +227,11 @@ export default function HeroFeed() {
   const [cidadeInput, setCidadeInput]           = useState('');
   const [municipioResults, setMunicipioResults] = useState<Array<{ municipio_id: string; municipio_nome: string }>>([]);
   const [loadingMun, setLoadingMun]             = useState(false);
+  // Quatro estados, porque são quatro situações distintas que o usuário precisa
+  // distinguir. Antes existiam dois no render — "tem card" e "esqueleto" — e as
+  // outras três caíam no esqueleto.
+  const [estado, setEstado] =
+    useState<'carregando' | 'ok' | 'vazio' | 'recusado' | 'falha' | 'demorou'>('carregando');
   const cidadeInputRef                          = useRef<HTMLInputElement>(null);
 
   const buscarMunicipios = useCallback(async (q: string, ufQ: string) => {
@@ -294,16 +303,47 @@ export default function HeroFeed() {
   }, []);
 
   const fetchData = useCallback(async () => {
+    // ⚠️ Antes: `if (!res.ok) return;` e `catch {}`. Os dois silêncios somados
+    // ao render, que só conhece "tem card" ou "esqueleto", faziam falha de rede,
+    // HTTP de erro, recusa do portal e lista legitimamente vazia terminarem na
+    // MESMA tela — esqueleto pulsando para sempre. Um estado explícito custa
+    // quatro linhas e é a diferença entre a home informar e a home fingir.
+    setEstado('carregando');
+    // ⚠️ TETO DE TEMPO. Este `fetch` é cru — não passa pelo `apiFetch`, que tem
+    // os 20s embutidos. E o backend pode demorar de verdade: a busca percorre
+    // até 5 páginas do PNCP, cada uma com 30s de timeout e duas tentativas.
+    // Sem teto aqui, o esqueleto pulsa enquanto o navegador espera, por mais de
+    // um minuto, afirmando "carregando" sem nada dizer que está demorando.
+    // O teto não conserta a lentidão; conserta a tela mentir sobre ela.
+    const ctrl = new AbortController();
+    const corta = setTimeout(() => ctrl.abort(), 20_000);
     try {
       const params = new URLSearchParams({ scope, limit: '20' });
       if (scope !== 'nacional' && uf) params.set('uf', uf);
       if (scope === 'local' && municipioId) params.set('municipio_id', municipioId);
-      const res = await fetch(`${API_URL}/api/pncp/feed?${params}`);
-      if (!res.ok) return;
+      const res = await fetch(`${API_URL}/api/pncp/feed?${params}`, { signal: ctrl.signal });
+      if (!res.ok) {
+        console.warn('[HeroFeed] backend respondeu', res.status);
+        setEstado('falha');
+        return;
+      }
       const json = await res.json();
       const data: Edital[] = json.data || [];
       setPool(data);
-    } catch {}
+      if (data.length === 0) {
+        console.warn('[HeroFeed] feed vazio:', {
+          scope, uf, municipioId, count: json?.count,
+          pncp_recusou: json?.pncp_recusou ?? null, cache: json?.cache, erro: json?.error,
+        });
+      }
+      setEstado(data.length > 0 ? 'ok' : (json?.pncp_recusou ? 'recusado' : 'vazio'));
+    } catch (e) {
+      const porTempo = (e as Error)?.name === 'AbortError';
+      console.warn('[HeroFeed] falhou:', porTempo ? 'passou de 20s' : e);
+      setEstado(porTempo ? 'demorou' : 'falha');
+    } finally {
+      clearTimeout(corta);
+    }
   }, [scope, uf, municipioId]);
 
   // Refetch quando scope/localização mudar; reinicia animações
@@ -508,7 +548,29 @@ export default function HeroFeed() {
 
       {/* Lista de cards */}
       <div className="flex flex-col gap-2.5">
-        {visible.length === 0
+        {visible.length === 0 && estado !== 'carregando' ? (
+          /* Esqueleto SÓ enquanto carrega. Nos outros casos, dizer o que houve —
+             inclusive quando não houve nada de errado e simplesmente não há
+             edital aberto no recorte, que também é informação útil. */
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-6 text-center">
+            <p className="text-[11px] font-bold leading-relaxed text-slate-500">
+              {estado === 'recusado'
+                ? 'O Portal Nacional de Contratações Públicas está recusando consultas neste momento. Costuma durar poucos minutos.'
+                : estado === 'demorou'
+                  ? 'O PNCP está demorando mais que o normal para responder. O resto da página funciona normalmente.'
+                  : estado === 'falha'
+                    ? 'Não foi possível carregar os editais agora.'
+                    : 'Nenhum edital aberto neste recorte no momento.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => fetchData()}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-black text-slate-600 transition-colors hover:border-emerald-300 hover:text-emerald-700"
+            >
+              <RefreshCw size={10} /> Tentar de novo
+            </button>
+          </div>
+        ) : visible.length === 0
           ? Array.from({ length: VISIBLE_MAX }).map((_, i) => <Skeleton key={i} />)
           : visible.map((e, i) => {
               const isJustArrived = i === 0 && e.id === newestId;
@@ -537,7 +599,7 @@ export default function HeroFeed() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0 pb-1">
-                      <p className="text-[9px] text-slate-400 mb-1">{feedTimestamp(e.id)}</p>
+                      <p className="text-[9px] text-slate-400 mb-1">{publicadoEm(e.data_publicacao)}</p>
                       <HeroCard e={e} isNew={isJustArrived} />
                     </div>
                   </div>

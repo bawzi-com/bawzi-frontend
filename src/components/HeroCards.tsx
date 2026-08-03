@@ -58,45 +58,24 @@ function modColor(mod: string): { dot: string; text: string; accent: string } {
   return { dot: 'bg-slate-400', text: 'text-slate-300', accent: 'border-slate-500' };
 }
 
-// ── Análise simulada (determinística por ID) ──────────────────────────────
-type Level = { label: string; color: string; bar: number };
-
-function analise(id: string): { match: Level; risco: Level; competicao: Level; veredito: string } {
-  const h = hashStr(id || 'x');
-  const MATCH: Level[] = [
-    { label: 'Muito alto', color: 'emerald', bar: 92 },
-    { label: 'Alto',       color: 'emerald', bar: 74 },
-    { label: 'Médio',      color: 'amber',   bar: 52 },
-    { label: 'Baixo',      color: 'rose',    bar: 28 },
-  ];
-  const RISCO: Level[] = [
-    { label: 'Baixo',  color: 'emerald', bar: 18 },
-    { label: 'Médio',  color: 'amber',   bar: 52 },
-    { label: 'Alto',   color: 'rose',    bar: 80 },
-  ];
-  const COMP: Level[] = [
-    { label: 'Baixa',  color: 'emerald', bar: 22 },
-    { label: 'Média',  color: 'amber',   bar: 55 },
-    { label: 'Alta',   color: 'rose',    bar: 82 },
-  ];
-  const match     = MATCH[(h)     % 4];
-  const risco     = RISCO[(h >>2) % 3];
-  const competicao = COMP[(h >>4) % 3];
-  const veredito  = match.bar >= 70 && risco.bar <= 52 ? 'Recomendado disputar' : match.bar >= 50 ? 'Vale analisar' : 'Baixa prioridade';
-  return { match, risco, competicao, veredito };
-}
-
-function chipTone(color: string): string {
-  if (color === 'emerald') return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
-  if (color === 'amber')   return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
-  return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
-}
-
-function veredictTone(v: string): string {
-  if (v === 'Recomendado disputar') return 'bg-emerald-500/15 text-emerald-300';
-  if (v === 'Vale analisar')        return 'bg-amber-500/15 text-amber-300';
-  return 'bg-slate-500/15 text-slate-400';
-}
+// ⚠️ REMOVIDO: `analise(id)`, que derivava de um hash do ID do edital um match
+// de CNAE, um nível de risco jurídico, um nível de concorrência e um VEREDITO
+// ("Recomendado disputar" / "Vale analisar" / "Baixa prioridade").
+//
+// Esses chips apareciam colados num edital REAL, aberto, com nome e órgão. O
+// veredito é o produto que esta empresa vende, e ele estava sendo sorteado por
+// `MATCH[h % 4]` numa página cujo argumento central é "a diferença entre dados
+// reais e achismo". Quem percebesse desconta a página inteira — inclusive as
+// partes verdadeiras, que são a maioria. E o comprador daqui é profissional de
+// licitação: achar inconsistência em documento é o ofício dele.
+//
+// O que ficou no lugar são as DIMENSÕES que a análise cobre, sem afirmar
+// resultado nenhum sobre aquele edital. Se um dia estes cards forem exibir
+// veredito de verdade, ele tem de vir da API, não de um hash.
+//
+// O padrão honesto já existe nesta página: o `OutputCard` se rotula
+// "Simulação de análise". Simular é legítimo; disfarçar de laudo não é.
+const DIMENSOES_ANALISE = ['CNAE', 'Jurídico', 'Preço', 'Concorrência'];
 
 type Scope = 'nacional' | 'regional' | 'local';
 
@@ -126,6 +105,13 @@ export default function HeroCards() {
   const [loadingMun, setLoadingMun]             = useState(false);
   const cidadeInputRef                          = useRef<HTMLInputElement>(null);
 
+  // Este componente é o que aparece no DESKTOP (o HeroFeed é `lg:hidden`).
+  // Ele tinha o mesmo defeito que já corrigi no gêmeo: `catch {}`, sem checar
+  // `r.ok`, e um `animate-pulse` vazio como único estado de "sem dados" — que
+  // na tela vira uma caixa pulsando para sempre, afirmando "carregando" quando
+  // não há nada vindo.
+  const [estado, setEstado] =
+    useState<'carregando' | 'ok' | 'vazio' | 'recusado' | 'falha' | 'demorou'>('carregando');
   const [pool, setPool]             = useState<Edital[]>([]);
   const [idx, setIdx]               = useState(0);
   const [animating, setAnimating]   = useState(false);
@@ -187,12 +173,37 @@ export default function HeroCards() {
     const params = new URLSearchParams({ scope, limit: '20' });
     if (scope !== 'nacional' && uf) params.set('uf', uf);
     if (scope === 'local' && municipioId) params.set('municipio_id', municipioId);
+    setEstado('carregando');
+    // Teto de tempo: a busca no backend percorre até 5 páginas do PNCP, cada
+    // uma com 30s de timeout. Sem teto aqui, a caixa pulsa por mais de um
+    // minuto sem nada dizer que está demorando.
+    const ctrl = new AbortController();
+    const corta = setTimeout(() => ctrl.abort(), 20_000);
     try {
-      const r = await fetch(`${API_URL}/api/pncp/feed?${params}`);
+      const r = await fetch(`${API_URL}/api/pncp/feed?${params}`, { signal: ctrl.signal });
+      if (!r.ok) {
+        console.warn('[HeroCards] backend respondeu', r.status);
+        setEstado('falha');
+        return;
+      }
       const j = await r.json();
-      setPool(j.data || []);
+      const lista: Edital[] = j.data || [];
+      setPool(lista);
       setIdx(0); cursor.current = 1;
-    } catch {}
+      if (lista.length === 0) {
+        console.warn('[HeroCards] feed vazio:', {
+          scope, uf, municipioId, count: j?.count,
+          pncp_recusou: j?.pncp_recusou ?? null, cache: j?.cache, erro: j?.error,
+        });
+      }
+      setEstado(lista.length > 0 ? 'ok' : (j?.pncp_recusou ? 'recusado' : 'vazio'));
+    } catch (e) {
+      const porTempo = (e as Error)?.name === 'AbortError';
+      console.warn('[HeroCards] falhou:', porTempo ? 'passou de 20s' : e);
+      setEstado(porTempo ? 'demorou' : 'falha');
+    } finally {
+      clearTimeout(corta);
+    }
   }, [scope, uf, municipioId]);
 
   useEffect(() => { fetchPool(); }, [fetchPool]);
@@ -215,7 +226,6 @@ export default function HeroCards() {
   const further = pool[(idx + 2) % pool.length];
   const mod     = current ? modColor(current.modalidade) : null;
   const enc     = current ? encerraEm(current.data_encerramento) : { texto: '', urgente: false };
-  const anl     = current ? analise(current.id) : null;
 
   const handleTabClick = (key: Scope) => {
     if (key === 'nacional') { setScope('nacional'); return; }
@@ -323,11 +333,39 @@ export default function HeroCards() {
     </div>
   );
 
-  if (!current || !mod || !anl) {
+  if (!current || !mod) {
     return (
       <div className="w-full">
         {tabBar}
-        <div className="animate-pulse rounded-2xl border border-white/10 bg-white/[0.03]" style={{ minHeight: 220 }} />
+        {estado === 'carregando' ? (
+          <div className="animate-pulse rounded-2xl border border-white/[0.14] bg-white/[0.06]" style={{ minHeight: 220 }} />
+        ) : (
+          /* O pulso agora só existe enquanto está mesmo carregando. Antes ele
+             era o ÚNICO estado sem dados: falha de rede, HTTP de erro, recusa
+             do portal e lista vazia terminavam todos numa caixa pulsando sem
+             fim — a tela afirmando "carregando" quando não vinha nada. */
+          <div
+            className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/20 bg-white/[0.06] px-5 py-8 text-center"
+            style={{ minHeight: 220 }}
+          >
+            <p className="max-w-[300px] text-[12px] font-semibold leading-relaxed text-slate-400">
+              {estado === 'recusado'
+                ? 'O Portal Nacional de Contratações Públicas está recusando consultas neste momento. Costuma durar poucos minutos.'
+                : estado === 'demorou'
+                  ? 'O PNCP está demorando mais que o normal para responder.'
+                  : estado === 'falha'
+                    ? 'Não foi possível carregar os editais agora.'
+                    : 'Nenhum edital aberto neste recorte no momento.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => fetchPool()}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-1.5 text-[11px] font-black text-slate-300 transition-colors hover:border-emerald-400/40 hover:text-emerald-300"
+            >
+              <RefreshCw size={11} /> Tentar de novo
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -339,7 +377,11 @@ export default function HeroCards() {
       {tabBar}
       {editor}
 
-      <div className="w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
+      {/* Superfície com presença: `bg-white/[0.03]` e borda `white/10` sobre
+          quase-preto davam um contorno que o olho mal registra — o cartão lia
+          como um retângulo vazio, e pior ainda quando o PNCP recusa e não há
+          conteúdo dentro. */}
+      <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.14] bg-white/[0.06] shadow-[0_24px_60px_-30px_rgba(0,0,0,0.9)]">
         {/* Item em destaque */}
         <div
           className={`min-w-0 border-l-[3px] ${mod.accent} p-4 sm:p-5 transition-opacity duration-300 ${animating ? 'opacity-0' : 'opacity-100'}`}
@@ -361,18 +403,21 @@ export default function HeroCards() {
             {enc.texto && enc.texto !== 'Encerrado' ? ` · encerra em ${enc.texto}` : ''}
           </p>
 
-          <div className="flex flex-wrap gap-1.5">
-            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.match.color)}`}>
-              CNAE {anl.match.label.toLowerCase()}
-            </span>
-            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.risco.color)}`}>
-              Jurídico {anl.risco.label.toLowerCase()}
-            </span>
-            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${chipTone(anl.competicao.color)}`}>
-              Concorrência {anl.competicao.label.toLowerCase()}
-            </span>
-            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${veredictTone(anl.veredito)}`}>
-              {anl.veredito}
+          {/* Dimensões da análise — não resultado. Antes daqui saíam quatro
+              chips com match, risco, concorrência e veredito, todos sorteados
+              de um hash do ID deste edital real. Mesmo peso visual, mesma
+              promessa; a diferença é que agora nada aqui é afirmação. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {DIMENSOES_ANALISE.map((dim) => (
+              <span
+                key={dim}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-bold text-slate-400"
+              >
+                {dim}
+              </span>
+            ))}
+            <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-black text-emerald-300">
+              Veredito em minutos
             </span>
           </div>
         </div>

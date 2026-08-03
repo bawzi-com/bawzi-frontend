@@ -3,8 +3,31 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
+// Os únicos estados que existem. Precisa ser um valor em tempo de execução, e
+// não só um tipo, porque a validação acontece contra JSON — e JSON não tem tipo.
+const ESTADOS_PNCP = ['online', 'degraded', 'instable', 'offline', 'checking', 'error'] as const;
+type EstadoPncp = (typeof ESTADOS_PNCP)[number];
+
+/**
+ * Fronteira entre o JSON do backend e o estado tipado do componente.
+ *
+ * `res.json()` devolve `any`, então `setStatus(data.pncp_state)` aceitava
+ * qualquer string — o TypeScript não tinha o que checar. Quando o backend
+ * mandou "instavel" (em vez de "instable"), a chave não existia no mapa de
+ * estilos, `config` virou undefined e `config.bg` derrubou a página.
+ *
+ * O que o front não reconhece vira 'error', que é o estado criado justamente
+ * para dizer "não sei". Divergência de vocabulário passa a ser um badge cinza,
+ * não uma tela de erro.
+ */
+function normalizarEstado(valor: unknown): EstadoPncp {
+  return (ESTADOS_PNCP as readonly string[]).includes(String(valor))
+    ? (valor as EstadoPncp)
+    : 'error';
+}
+
 export default function PncpStatusBadge() {
-  const [status, setStatus] = useState<'online' | 'degraded' | 'instable' | 'offline' | 'checking' | 'error'>('checking');
+  const [status, setStatus] = useState<EstadoPncp>('checking');
   const [retrying, setRetrying] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPos, setTooltipPos] = useState<{ top: number; right: number } | null>(null);
@@ -17,8 +40,9 @@ export default function PncpStatusBadge() {
       const res = await apiFetch(`${API_URL}/api/pncp/status`);
       if (!res.ok) throw new Error("Falha na API");
       const data = await res.json();
-      setStatus(data.pncp_state || 'error');
-      return data.pncp_state || 'error';
+      const estado = normalizarEstado(data?.pncp_state);
+      setStatus(estado);
+      return estado;
     } catch (err) {
       if (err instanceof SessionExpiredError) return 'error';
       setStatus('error');
@@ -55,14 +79,7 @@ export default function PncpStatusBadge() {
     };
   }, []);
 
-  useEffect(() => {
-    checkStatus();
-    // Verifica a cada 2 minutos
-    const interval = setInterval(checkStatus, 120000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const config = {
+  const ESTADOS = {
     checking: {
       text: 'A Verificar...',
       color: 'text-slate-500',
@@ -105,7 +122,13 @@ export default function PncpStatusBadge() {
       dot: 'bg-slate-400',
       animate: ''
     }
-  }[status];
+  };
+
+  // O `??` é a rede embaixo do trapézio. `normalizarEstado` já deveria impedir
+  // que uma chave desconhecida chegue aqui, mas foi exatamente uma busca em
+  // objeto literal sem saída que trocou um badge cinza por uma página em branco.
+  // Um indicador de status não tem o direito de derrubar a aplicação.
+  const config = ESTADOS[status] ?? ESTADOS.error;
 
   return (
     <div className="relative" ref={wrapperRef}>

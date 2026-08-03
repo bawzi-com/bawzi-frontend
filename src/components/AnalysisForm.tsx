@@ -22,6 +22,19 @@ export interface QuotaInfo {
   restante: number | null;
   reseta_em: string;       // "YYYY-MM-DD"
   dias_para_reset: number;
+  /** Quanto uma auditoria profunda debita. 1 = os dois modos custam igual
+   *  neste plano (Explorador e Gratuito usam o mesmo par de modelos). */
+  peso_profunda?: number;
+  /** Caracteres que valem 1 crédito. A cobrança é contínua:
+   *  `teto(caracteres ÷ unidade) × multiplicador`. */
+  caracteres_por_credito?: number;
+  /** Maior edital que o plano aceita — define quantos créditos uma análise
+   *  pode chegar a custar naquele plano. */
+  max_chars?: number;
+  /** `creditos` quando o crédito pode diferir de 1 por análise — por peso de
+   *  modo OU por faixa de tamanho. Opcional porque a cota de convidado é
+   *  montada no cliente e não passa pelo endpoint. */
+  unidade?: 'creditos' | 'analises';
 }
 
 interface AnalysisFormProps {
@@ -58,6 +71,28 @@ function tempoEstimadoLabel(token: string | null, userTier: number): string {
     : 'normalmente menos de 1 minuto';
 }
 
+/** Créditos que ESTA análise vai debitar.
+ *
+ *  Espelha `custo_em_creditos` em `backend/app/core/modos.py`:
+ *      teto(caracteres ÷ unidade) × multiplicador,  mínimo 1
+ *
+ *  ⚠️ São duas implementações da mesma conta, e isso é uma dívida consciente:
+ *  o número precisa recalcular a cada tecla, e uma chamada por tecla ao
+ *  servidor seria pior. Se a fórmula do backend mudar, esta muda junto — é a
+ *  única função do front que precisa disso, e por isso ela está sozinha aqui
+ *  em vez de espalhada pelos dois botões.
+ *
+ *  Devolve `null` quando a quota ainda não chegou: melhor não dizer preço
+ *  nenhum do que dizer um preço errado numa cotação que é firme.
+ */
+function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
+                    quota?: QuotaInfo | null): number | null {
+  const unidade = quota?.caracteres_por_credito;
+  if (!unidade || unidade <= 0) return null;
+  const base = Math.max(1, Math.ceil(caracteres / unidade));
+  return modo === 'profunda' ? base * (quota?.peso_profunda ?? 1) : base;
+}
+
 // ─── Indicador de quota mensal ────────────────────────────────────────────────
 
 function QuotaBar({
@@ -84,8 +119,20 @@ function QuotaBar({
       ? 'bg-amber-50 border-amber-200'
       : 'bg-slate-50 border-slate-200';
 
-  const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada' : '⛔ Limite mensal atingido';
-  const labelAtivo     = isGuest ? 'Teste gratuito' : 'Análises este mês';
+  // A barra tem que falar a mesma língua do bloqueio. O portão debita
+  // créditos; se aqui dissesse "análises" contando cabeças, o cliente seria
+  // barrado num número que esta tela nunca mostrou.
+  // Espelha a regra do backend: crédito pode diferir de 1 por peso de modo
+  // OU por faixa de tamanho. Antes olhava só o peso — e passaria a mentir no
+  // dia em que um plano barato alcançasse a segunda faixa.
+  const emCreditos     = !isGuest && quota.unidade === 'creditos';
+  const unidadeNome    = emCreditos ? 'créditos' : 'análises';
+  const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada'
+                       : emCreditos ? '⛔ Créditos do período esgotados'
+                       : '⛔ Limite mensal atingido';
+  const labelAtivo     = isGuest ? 'Teste gratuito'
+                       : emCreditos ? 'Créditos este mês'
+                       : 'Análises este mês';
 
   return (
     <div className={`rounded-2xl border px-4 py-3 ${bgColor}`}>
@@ -94,7 +141,7 @@ function QuotaBar({
           {esgotado ? labelEsgotado : labelAtivo}
         </span>
         <span className={`text-[11px] font-bold ${textColor}`}>
-          {quota.usado} / {quota.limite}
+          {quota.usado} / {quota.limite}{emCreditos ? ' créditos' : ''}
           {isGuest
             ? <>{' '}·{' '}reseta amanhã</>
             : <>{' '}·{' '}reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}</>
@@ -105,6 +152,20 @@ function QuotaBar({
       <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
         <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
       </div>
+
+      {/* Só quando o peso muda alguma coisa. Nos planos em que os dois modos
+          usam o mesmo par de modelos o backend devolve `unidade: "analises"`,
+          e não há conceito novo para ensinar. */}
+      {emCreditos && (
+        <p className="text-[10px] font-medium leading-4 text-slate-500 mb-1">
+          {!!quota.caracteres_por_credito && (
+            <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres{' · '}</>
+          )}
+          {(quota.peso_profunda ?? 1) > 1
+            ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
+            : <>os dois modos custam igual neste plano</>}
+        </p>
+      )}
 
       {esgotado && (
         <div className="flex items-center justify-between mt-1">
@@ -134,6 +195,28 @@ function QuotaBar({
   );
 }
 
+/** O preço, ao lado do nome do modo.
+ *
+ *  `aproximado` liga quando há arquivo anexado: o texto do PDF só existe depois
+ *  da extração, no servidor, então o número só pode crescer. Prometer firme um
+ *  valor que vai subir seria pior que não prometer — vira "a partir de".
+ */
+function SeloCusto({ creditos, aproximado, tom }:
+  { creditos: number | null; aproximado: boolean; tom: 'emerald' | 'sky' }) {
+  if (creditos === null) return null;
+  const cores = tom === 'emerald'
+    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    : 'bg-sky-50 text-sky-800 border-sky-200';
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black whitespace-nowrap ${cores}`}
+          title={aproximado
+            ? 'O texto dos arquivos anexados só é medido no servidor — o valor pode subir.'
+            : 'Este é o valor que será debitado.'}>
+      {aproximado ? 'a partir de ' : ''}{creditos} {creditos === 1 ? 'crédito' : 'créditos'}
+    </span>
+  );
+}
+
 export default function AnalysisForm({
   text,
   onTextChange,
@@ -154,6 +237,16 @@ export default function AnalysisForm({
   quota,
   onUpgradeClick,
 }: AnalysisFormProps) {
+  // Sem texto E sem arquivo não há o que precificar. A fórmula tem piso de 1,
+  // então a caixa vazia anunciaria "1 crédito" — preço de uma análise que nem
+  // pode ser enviada (o mínimo é 80 caracteres) e que muda no instante em que o
+  // edital é colado. Numa cotação firme, o primeiro número tem que ser um que
+  // vale. Com arquivo anexado o selo fica: "a partir de" é verdade.
+  //
+  // Mora aqui, e não junto das props, porque comentário JSX (`{/* */}`) na
+  // posição de ATRIBUTO não é sintaxe válida — foi o que o tsc barrou.
+  const temOQuePrecificar = text.length > 0 || files.length > 0;
+
   return (
     <div id="area-submissao" className="bg-white rounded-[2rem] shadow-sm border border-slate-200 relative z-20 w-full overflow-hidden">
       <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/45 p-5 md:p-6">
@@ -289,6 +382,9 @@ export default function AnalysisForm({
               successMsg={successMsg}
               token={token}
               userTier={userTier}
+              creditosRapida={temOQuePrecificar ? creditosDe(text.length, 'rapida', quota) : null}
+              creditosProfunda={temOQuePrecificar ? creditosDe(text.length, 'profunda', quota) : null}
+              custoAproximado={files.length > 0}
             />
           ) : (
             <button
@@ -326,9 +422,16 @@ interface TierFourButtonsProps {
   // recebia, e usá-los aqui sem passar quebrava a página em runtime.
   token: string | null;
   userTier: number;
+  // Créditos JÁ CALCULADOS pelo componente de cima. Não recebem `text` e
+  // `quota` crus de propósito: a fórmula precisa existir em um lugar só, senão
+  // o botão mostra um número e a cota debita outro.
+  creditosRapida: number | null;
+  creditosProfunda: number | null;
+  custoAproximado: boolean;
 }
 
-function TierFourButtons({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier }: TierFourButtonsProps) {
+function TierFourButtons({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier,
+                          creditosRapida, creditosProfunda, custoAproximado }: TierFourButtonsProps) {
   return (
     <>
       {error && (
@@ -364,7 +467,11 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
                 <Zap size={20} />
               </div>
               <div>
-                <span className="block text-base font-black text-slate-900 tracking-tight">Análise rápida</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-base font-black text-slate-900 tracking-tight">Análise rápida</span>
+                  <SeloCusto creditos={creditosRapida}
+                             aproximado={custoAproximado} tom="emerald" />
+                </span>
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700">
                   <Clock3 size={11} /> {tempoEstimadoLabel(token, userTier)}
                 </span>
@@ -441,7 +548,11 @@ function TierFourButtons({ provider, onProviderChange, onAnalyze, error, success
                 <BrainCircuit size={20} />
               </div>
               <div>
-                <span className="block text-base font-black text-slate-900 tracking-tight">Auditoria profunda</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-base font-black text-slate-900 tracking-tight">Auditoria profunda</span>
+                  <SeloCusto creditos={creditosProfunda}
+                             aproximado={custoAproximado} tom="sky" />
+                </span>
                 {/* O tempo precisa estar no card, não só na barra de progresso.
                     A auditoria roda com raciocínio em profundidade máxima e leva
                     minutos; quem clica esperando "rápida" acha que travou. Dizer

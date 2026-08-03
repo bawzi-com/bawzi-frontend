@@ -304,6 +304,11 @@ export default function PncpSearch({
         throw new Error(dataEditais.message || 'O portal do Governo está instável. Tente novamente em instantes.');
       }
       
+      // Recusa do PNCP (503/429). Içada para o escopo da função porque a
+      // resposta regional vive dentro de um `if` e não alcançaria o ponto
+      // onde a mensagem de erro é escolhida.
+      let recusaPncp: number | null = (dataEditais as { pncp_recusou?: number | null })?.pncp_recusou ?? null;
+
       let encontrados: PncpItem[] = dataEditais.data || dataEditais.items || dataEditais.oportunidades || [];
 
       // ==========================================================
@@ -311,6 +316,7 @@ export default function PncpSearch({
       // ==========================================================
       if (resRegional && resRegional.ok) {
         const dataRegional = await resRegional.json();
+        recusaPncp = recusaPncp ?? ((dataRegional as { pncp_recusou?: number | null })?.pncp_recusou ?? null);
         const regionais: PncpItem[] = dataRegional.data || dataRegional.items || dataRegional.oportunidades || [];
         
         if (regionais.length > 0) {
@@ -403,8 +409,21 @@ export default function PncpSearch({
       setResults([...vivos]);
       setHydrationKey(k => k + 1); // inicia a hidratação lazy dos cards
       if (vivos.length === 0) {
+        // ⚠️ Recusa do portal NÃO é ausência de resultado.
+        // Antes, um 503 do PNCP produzia a mesma lista vazia de "não existe
+        // edital para este termo", e a tela mandava o cliente reformular a
+        // busca. Ele tentava outro termo, e outro — cada tentativa uma nova
+        // rajada contra o balanceador que já estava recusando. A mensagem
+        // errada alimentava a causa, além de culpar o usuário por um problema
+        // que não era dele.
+        // Os nomes reais das respostas neste escopo são `dataEditais` (busca
+        // nacional) e `dataRegional` (busca por UF, quando houve). Qualquer uma
+        // das duas ter sido recusada já explica a lista vazia.
+        const recusou = recusaPncp;
         setError(
-          encontrados.length > 0
+          recusou
+            ? 'O Portal Nacional de Contratações Públicas está recusando consultas neste momento — não é o seu termo de busca. Isso costuma durar poucos minutos. Aguarde e tente de novo; evite repetir a busca em sequência, porque isso prolonga o bloqueio.'
+          : encontrados.length > 0
             ? 'Nenhuma licitação ativa encontrada. Os editais encontrados já encerraram o prazo de propostas.'
             : termo
               ? 'Nenhuma licitação encontrada para este termo. Tente um termo mais amplo, ative a busca exata ou deixe o campo vazio para ver todos os editais vigentes da região.'

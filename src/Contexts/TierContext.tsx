@@ -39,14 +39,21 @@ export function TierProvider({ children }: { children: ReactNode }) {
 
         const data = await response.json();
         
-        if (data.tiers) {
+        // ⚠️ Isto testava `data.tiers` e lia `config.max_mb`. A rota devolve
+        // `data.config` com a chave `max_file_mb` — os DOIS nomes estavam
+        // errados, então este `if` nunca executou uma vez sequer. O site
+        // buscava a configuração a cada carregamento e jogava fora, e os
+        // limites usados eram sempre os `fallback*` deste arquivo. Nenhum
+        // valor do Admin jamais chegou ao front, incluindo o limite de
+        // caracteres que corta o texto colado na análise.
+        if (data.config) {
           const novosLimites: Record<number, number> = {};
           const novosLimitesArquivo: Record<number, number> = {};
 
-          Object.entries(data.tiers).forEach(([tierId, config]: [string, any]) => {
+          Object.entries(data.config).forEach(([tierId, config]: [string, any]) => {
             const idNum = parseInt(tierId);
-            novosLimites[idNum] = config.max_chars;
-            novosLimitesArquivo[idNum] = config.max_mb;
+            if (typeof config?.max_chars === 'number') novosLimites[idNum] = config.max_chars;
+            if (typeof config?.max_file_mb === 'number') novosLimitesArquivo[idNum] = config.max_file_mb;
           });
 
           setTierLimits(novosLimites);

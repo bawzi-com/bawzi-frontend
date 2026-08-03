@@ -150,16 +150,32 @@ export default function AnalysisApp() {
   const [userTier, setUserTier]         = useState<number>(1);
   const [userData, setUserData]         = useState<UserData | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(() => {
-    if (typeof window === 'undefined') return false;
+  // ⚠️ Começa SEMPRE em `false` — o mesmo valor que o servidor renderiza.
+  //
+  // Antes isto lia o localStorage dentro do inicializador do `useState`, com
+  // uma guarda `typeof window === 'undefined'` que PARECE a correção e é o
+  // defeito: o React compara o HTML do servidor com a PRIMEIRA renderização do
+  // cliente. No servidor a guarda devolvia `false`; no cliente `window` existe
+  // e o inicializador devolvia `true` para quem já tinha usado a análise. Os
+  // dois não batiam, e o React descartava a árvore inteira e re-renderizava
+  // ("Hydration failed because the server rendered text didn't match").
+  //
+  // Valor de localStorage só pode entrar depois da hidratação. Custo: um paint
+  // mostrando "Teste gratuito" antes de virar "⛔ usada", para quem volta. O
+  // caminho alternativo — segurar a barra até ler o storage — trocaria esse
+  // pisca por um salto de layout em toda visita, inclusive a de quem chega
+  // pela primeira vez e não tem nada gravado.
+  const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem('bawzi_guest_quota');
-      if (!raw) return false;
+      if (!raw) return;
       const { date, used } = JSON.parse(raw);
       const today = new Date().toISOString().split('T')[0];
-      return date === today && used > 0;
-    } catch { return false; }
-  });
+      if (date === today && used > 0) setHasUsedFreeTrial(true);
+    } catch { /* navegador sem storage: o servidor conta por IP e decide */ }
+  }, []);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);

@@ -88,6 +88,22 @@ const FLOW = [
 
 const PLANOS = [
   {
+    // ⚠️ Faltava. Os cards começavam em "Nível 2" — e o herói promete análises
+    // grátis, o taster entrega, e quem descia para ver preço não encontrava a
+    // opção que acabou de usar. O limite vem do mesmo endpoint público que a
+    // home já consulta: número em dois lugares diverge, e foi assim que o
+    // "5 análises por mês" da tela de cota virou mentira.
+    nome: 'Gratuito',
+    publico: 'Para experimentar sem cartão',
+    preco: 'R$ 0',
+    nivel: 'Nível 1',
+    cor: 'from-slate-400 to-slate-500',
+    destaque: false,
+    gratuito: true,
+    itens: ['Análise completa de edital', 'Veredito Go/No-Go com justificativa',
+            'Histórico de análises salvo', 'Sem cartão de crédito'],
+  },
+  {
     nome: 'Essencial',
     publico: 'Para começar com controle',
     preco: 'R$ 79',
@@ -121,7 +137,10 @@ export default function LandingPage() {
   const [checked, setChecked] = useState(false);
   // Mesmo limite exibido na seção de degustação lá embaixo — buscado aqui
   // também para o selo do hero mostrar o número real sem duplicar estado.
-  const [heroGuestLimit, setHeroGuestLimit] = useState(1);
+  // `null` até o servidor responder. O padrão de 1 fazia o herói anunciar
+  // "1 análise grátis por dia" enquanto o taster, na mesma página, dizia 10 —
+  // duas cópias do mesmo número, só uma corrigida.
+  const [heroGuestLimit, setHeroGuestLimit] = useState<number | null>(null);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -150,129 +169,163 @@ export default function LandingPage() {
 
   return (
     <div className="font-sans text-slate-900 overflow-x-hidden">
-      <section className="relative overflow-hidden bg-slate-950">
-        {/* Dark grid */}
-        <div className="absolute inset-0 pointer-events-none [background-image:linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px)] [background-size:42px_42px]" />
-        {/* Glow blobs */}
-        <div className="pointer-events-none absolute -right-56 -top-56 h-[750px] w-[750px] rounded-full bg-emerald-500/[0.07] blur-[140px]" />
-        <div className="pointer-events-none absolute bottom-0 left-1/4 h-[450px] w-[600px] rounded-full bg-indigo-500/[0.05] blur-[110px]" />
+      {/* ── Herói · direção D ────────────────────────────────────────────
+          Papel em vez de azul-marinho, tipografia editorial, e a caixa de
+          análise REAL na coluna direita — no lugar do painel de editais, que
+          ocupava metade da primeira tela e depende de um portal que recusa
+          consultas. Trocamos um elemento que falha sozinho por um que sempre
+          funciona e que é o próprio produto. */}
+      <section className="scroll-mt-24" id="degustacao" style={{ background: '#FBFAF7' }}>
+        <div className="mx-auto max-w-[1180px] px-6 pt-16 pb-14 md:pt-20 md:pb-16">
+          {/* 452px no lg, 512px no xl. Entre 1024 e 1279px a coluna esquerda
+                media 468px e "Robôs trabalham" precisa de 476px a 52px — a
+                manchete partia ao meio nessa faixa inteira. */}
+          <div className="grid items-start gap-10 lg:gap-12 lg:grid-cols-[1fr_452px] xl:gap-14 xl:grid-cols-[1fr_512px]">
 
-        <div className="relative mx-auto max-w-[1280px] px-6 pt-12 pb-14 md:pt-16 md:pb-16">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:gap-12 xl:gap-16">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>
+                Decisão Go / No-Go para licitações
+              </p>
 
-            {/* Left — headline + CTAs */}
-            <div className="shrink-0 lg:w-[440px] xl:w-[480px] lg:pt-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/[0.08] px-4 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                Decisão Go/No-Go para licitações
-              </div>
-
-              <h1 className="mt-5 text-4xl font-black leading-[1.04] tracking-tight text-white md:text-5xl lg:text-[52px]">
-                Saiba em minutos se vale disputar uma licitação.
+              <h1 className="mt-5 text-[34px] font-black leading-[1.02] tracking-[-0.03em] sm:text-[40px] md:text-[46px] xl:text-[52px] xl:leading-[1.0]" style={{ color: '#111827' }}>
+                Robôs trabalham<br />nos lances.<br />
+                <span style={{ color: '#047857' }}>Nós trabalhamos antes.</span>
               </h1>
 
-              <p className="mt-4 max-w-[420px] text-base font-medium leading-7 text-slate-400 md:text-lg">
-                A Bawzi cruza edital, CNAE, riscos jurídicos, margem provável e concorrência para entregar um veredito claro, com próximos passos para sua equipe agir.
+              <p className="mt-7 max-w-[440px] text-[16.5px] font-medium leading-[1.6]" style={{ color: '#4B5563' }}>
+                A Bawzi lê o edital inteiro — objeto, habilitação, prazos, penalidades —
+                e devolve um veredito antes de você gastar equipe, preço e risco na
+                disputa errada.
               </p>
 
-              <p className="mt-3 max-w-[420px] text-[13px] font-bold leading-6 text-slate-500">
-                Não fazemos a gestão do processo. Agimos na decisão — participar ou não — antes da execução.
-              </p>
-
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-[0_20px_50px_-16px_rgba(16,185,129,0.7)] transition-all hover:bg-emerald-400">
-                  Testar com um edital <ArrowRight size={17} />
-                </Link>
-                <Link href="/plans" className="inline-flex h-14 items-center justify-center rounded-2xl bg-white px-7 text-sm font-bold text-slate-900 shadow-sm transition-all hover:bg-slate-100">
+              {/* O caminho para preço voltou aqui — e como LINK, não como
+                  botão. Quando o herói virou direção D, os dois botões saíram
+                  junto e a página perdeu qualquer rota para preço acima da
+                  dobra. Um segundo botão devolveria o problema que a direção D
+                  resolveu: dois blocos disputando a mesma decisão ao lado de
+                  uma caixa que já é a ação. */}
+              {/* `#9CA3AF` a 13px sobre `#FBFAF7` dá 2,4:1 — e é aqui que
+                  está o único caminho para preço acima da dobra. `#756F63` dá 4,78:1. */}
+              <p className="mt-7 max-w-[520px] text-[13px] font-medium leading-[1.7]" style={{ color: '#756F63' }}>
+                Não fazemos a gestão do processo. Agimos na decisão — participar ou não — antes da execução.{' '}
+                <a
+                  href="#planos"
+                  className="font-bold underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600"
+                  style={{ color: '#047857' }}
+                >
                   Ver planos e preços
-                </Link>
-              </div>
+                </a>
+              </p>
 
-              <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
-                {['PNCP oficial', 'Sem cartão', 'Veredito em minutos'].map((label) => (
-                  <span key={label} className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-500">
-                    <Check size={12} className="text-emerald-500" />
-                    {label}
-                  </span>
-                ))}
-              </div>
+            </div>
 
-              {/* Mobile — live feed */}
-              <div className="mt-8 overflow-hidden rounded-2xl border border-white/[0.1] bg-white shadow-[0_20px_60px_-20px_rgba(0,0,0,0.5)] lg:hidden">
-                <div className="p-4">
-                  <HeroFeed />
+            <div className="lg:pt-2">
+              <TasterSection modo="heroi" />
+            </div>
+
+          </div>
+
+          {/* ── Pé do herói ──────────────────────────────────────────────
+              O VEREDITO, mostrado em vez de descrito.
+
+              O parágrafo da esquerda gastava uma linha e meia enumerando
+              "entrar, entrar com ressalvas, ou não entrar" em prosa, que é
+              onde ninguém retém enumeração. Aqui as três saídas aparecem como
+              são no produto, com as mesmas palavras que a faixa de prova usa
+              mais abaixo ("Participar", "Participar após validações", "Não
+              participar"). Nada foi inventado para a home: se o vocabulário
+              mudar, ou muda nos dois lugares ou a divergência fica visível.
+
+              Três colunas, não três linhas: os vereditos são PARALELOS —
+              saídas mutuamente exclusivas do mesmo processo. Empilhados, o de
+              cima herda uma primazia que não existe.
+
+              As cores seguem os HUES do laudo, escurecidos até passarem em
+              texto de 10px sobre papel — que é o pior caso de legibilidade da
+              página. Contra `#FBFAF7`, medido na página rodando: o `#eab308`
+              do semáforo dá 1,84:1 e o `#199e70`, 3,26:1; ambos reprovam.
+              Entram `#047857` (5,25:1 — o mesmo verde do sobretítulo e do link
+              acima, não havia motivo para um segundo), `#96601A` (5,05:1) e
+              `#C2410C` (4,96:1).
+
+              É o único ponto acima da dobra que mostra a SAÍDA do produto — e
+              prepara o resultado do taster ao lado: quando voltar "GO
+              condicionado", a pessoa já sabe o que isso é. */}
+          <div className="mt-12 md:mt-14">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: '#A8A49B' }}>
+              A resposta é sempre uma destas três
+            </p>
+            <div className="mt-5 grid gap-px sm:grid-cols-3" style={{ background: '#E5E2DC' }}>
+              {[
+                ['GO', '#047857', 'Participar', 'O edital cabe na sua empresa.'],
+                ['GO condicionado', '#96601A', 'Participar após validações', 'Cabe, resolvendo o que apontamos.'],
+                ['NO-GO', '#C2410C', 'Não participar', 'O custo de disputar supera o retorno.'],
+              ].map(([sigla, cor, acao, porque]) => (
+                <div key={sigla} className="pr-6 pt-5 pb-5 sm:pl-6 sm:first:pl-0" style={{ background: '#FBFAF7' }}>
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em]" style={{ color: cor }}>{sigla}</p>
+                  <p className="mt-2.5 text-[16px] font-black leading-tight" style={{ color: '#1F2937' }}>{acao}</p>
+                  <p className="mt-1.5 text-[13.5px] font-medium leading-[1.55]" style={{ color: '#787266' }}>{porque}</p>
                 </div>
-              </div>
-
-              <a
-                href="#degustacao"
-                className="mt-5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 hover:bg-emerald-500/[0.14] lg:hidden"
-              >
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-black uppercase tracking-widest text-emerald-300">
-                    {heroGuestLimit} análise{heroGuestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro
-                  </span>
-                  <span className="mt-0.5 block text-[12.5px] font-semibold leading-snug text-emerald-200/70">
-                    Cole um trecho do edital e veja o veredito Go/No-Go em segundos ↓
-                  </span>
-                </span>
-              </a>
+              ))}
             </div>
+          </div>
 
-            {/* Right — card stack com análise */}
-            <div className="hidden lg:flex flex-1 min-w-0 flex-col justify-center pt-6">
-              {/* Label ao vivo */}
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-                  Editais abertos agora — PNCP
-                </span>
-              </div>
-              <HeroCards />
+          {/* As credenciais viram UMA LINHA.
 
-              <a
-                href="#degustacao"
-                className="mt-5 flex items-center gap-3 rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.08] px-4 py-3 text-left transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 hover:bg-emerald-500/[0.14]"
-              >
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[11px] font-black uppercase tracking-widest text-emerald-300">
-                    {heroGuestLimit} análise{heroGuestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro
-                  </span>
-                  <span className="mt-0.5 block text-[12.5px] font-semibold leading-snug text-emerald-200/70">
-                    Cole um trecho do edital e veja o veredito Go/No-Go em segundos ↓
-                  </span>
-                </span>
-              </a>
-            </div>
+              Elas eram uma segunda grade de filete, de 4 colunas, logo abaixo
+              de outra de 3 — dois ritmos de divisória que não se alinham, o que
+              vira ruído estrutural. E a grade de 4 nunca resolveu o que a
+              largura inteira devia ter resolvido: no 1440 as células medem
+              282px e DUAS das quatro ainda quebram em duas linhas, deixando
+              alturas irregulares (medido: 2/1/2/1 linhas).
 
+              Credencial é a coisa mais quieta do herói e agora tem o peso
+              correspondente: 77px de caixas viram ~40px de texto, e não há mais
+              célula para quebrar torto. */}
+          <div className="mt-10 border-t pt-5" style={{ borderColor: '#E5E2DC' }}>
+            <p className="flex flex-wrap items-center gap-y-1 text-[12.5px] font-semibold" style={{ color: '#787266' }}>
+              {['PNCP oficial', 'O edital não sai do seu ambiente',
+                'Veredito em minutos', 'Sem cartão, cancele quando quiser'].map((t, i) => (
+                <span key={t} className="flex items-center">
+                  {/* A margem fica no PONTO, não nos vizinhos: com `gap` no
+                      contêiner o espaço saía só de um lado dele. */}
+                  {i > 0 && <span aria-hidden className="mx-2.5" style={{ color: '#D6D3CD' }}>·</span>}
+                  {t}
+                </span>
+              ))}
+            </p>
           </div>
         </div>
       </section>
 
-      <TrustBar />
+      {/* Segunda posição da página, e colado no herói de propósito: os dois são
+          escuros, então o topo inteiro é um bloco só. Antes a TrustBar branca
+          entrava no meio e a sequência virava escuro/branco/escuro/branco em
+          três rolagens — foi isso que deixou a página estranha quando subi o
+          taster. Credencial e prova vêm DEPOIS de a pessoa ver funcionar, que
+          é quando elas pesam. */}
+
+      {/* Depois de experimentar, evidência — não mais afirmações sobre nós
+          mesmos. A <TrustBar /> saiu daqui: as quatro marcas dela repetiam, com
+          outras palavras, as que agora estão no herói. O componente continua
+          definido logo abaixo; devolvê-lo à página é uma linha. */}
+      <ProvaReal />
 
       {/* Simulação — análise de exemplo */}
-      <section className="bg-white pb-16 pt-14 md:pb-20 md:pt-16">
-        <div className="mx-auto max-w-[1280px] px-6">
-          <div className="mb-10 text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Do edital ao veredito</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
-              Veja uma análise em ação.
-            </h2>
-            <p className="mt-3 mx-auto max-w-xl text-base font-medium leading-8 text-slate-500">
-              Em minutos, 4 agentes cruzam edital, CNAE, risco jurídico e concorrência — e entregam um veredito com próximos passos.
+      {/* ── Prova · direção D ────────────────────────────────────────────
+          Continua o papel do herói, com a mesma escala tipográfica. O título
+          deixa de descrever a peça ("veja uma análise em ação") e passa a dizer
+          o que a pessoa recebe — o laudo abaixo já mostra o resto, e legenda
+          que explica o que está logo ali embaixo é texto que ninguém lê. */}
+      <section style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
+        <div className="mx-auto max-w-[1280px] px-6 py-16 md:py-20">
+          <div className="mb-9 max-w-[620px]">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>
+              É isto que você recebe
             </p>
+            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>
+              Um veredito, com o motivo e o que fazer em seguida.
+            </h2>
           </div>
           <div className="mx-auto max-w-5xl">
             <OutputCard />
@@ -280,54 +333,50 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="problema" className="scroll-mt-24 bg-white py-16 md:py-20">
-        <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.78fr_1fr] lg:items-center">
-          <div className="max-w-xl">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">O problema que a Bawzi resolve</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
+      <section id="problema" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#FBFAF7', borderTop: '1px solid #EAE7E1' }}>
+        <div className="mx-auto max-w-[1180px] px-6">
+          <div className="max-w-[640px]">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>O problema que a Bawzi resolve</p>
+            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>
               A disputa errada custa mais que uma assinatura.
             </h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
               Licitação boa não é só edital aberto. Ela precisa fazer sentido para o CNAE, para a capacidade operacional, para a margem e para o risco que sua empresa aceita assumir.
             </p>
-            <div className="mt-6 grid grid-cols-3 gap-2">
-              {[
-                ['Risco', 'antes da leitura longa'],
-                ['Fit', 'antes da proposta'],
-                ['Preço', 'antes do lance'],
-              ].map(([value, label]) => (
-                <div key={value} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <p className="text-sm font-black text-slate-950">{value}</p>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</p>
-                </div>
-              ))}
-            </div>
           </div>
-          <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-3 shadow-sm sm:p-4">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Triagem operacional</p>
-                  <h3 className="mt-1 text-lg font-black text-slate-950">O que normalmente passa despercebido</h3>
-                </div>
-                <span className="rounded-full border border-amber-100 bg-amber-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-amber-700">
-                  antes do protocolo
-                </span>
-              </div>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+
+          {/* Linha do tempo, não etiquetas. "Risco antes da leitura longa",
+              "Fit antes da proposta", "Preço antes do lance" são TRÊS MOMENTOS
+              do ciclo — o único lugar da página que sustenta a manchete do
+              herói mostrando antes de quê, exatamente. Estavam em três caixinhas
+              cinza de 60px encostadas na esquerda; o material era bom, faltava
+              desenho. O eixo aqui é TEMPO, não capacidade: por isso não colide
+              com o laudo nem com "O que entra no veredito". */}
+          <div className="mt-12">
+            <div className="hidden h-px w-full md:block" style={{ background: '#E5E2DC' }} />
+            <div className="grid gap-8 md:mt-[-9px] md:grid-cols-3 md:gap-10">
               {[
-                ['Edital incompatível', 'Evita gastar equipe em objeto sem aderência ao negócio.', 'bg-sky-50 text-sky-700 border-sky-100'],
-                ['Documento faltando', 'Mostra impedimentos e condições antes do protocolo.', 'bg-amber-50 text-amber-700 border-amber-100'],
-                ['Margem pressionada', 'Ajuda a enxergar limite de preço e deságio provável.', 'bg-emerald-50 text-emerald-700 border-emerald-100'],
-                ['Concorrente recorrente', 'Revela contexto competitivo antes da decisão.', 'bg-indigo-50 text-indigo-700 border-indigo-100'],
-              ].map(([title, desc, tone]) => (
-                <div key={title} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl border ${tone}`}>
-                    <AlertTriangle size={17} />
+                ['Risco', 'Antes da leitura longa',
+                 'A cláusula eliminatória que só aparece na página 40.',
+                 'Custa as horas que sua equipe gastou lendo até chegar lá.'],
+                ['Fit', 'Antes da proposta',
+                 'O objeto que não conversa com o seu CNAE.',
+                 'Custa a proposta inteira — montada para uma disputa que não era sua.'],
+                ['Preço', 'Antes do lance',
+                 'A margem que não fecha depois do deságio provável.',
+                 'Custa ganhar a licitação errada, que é o pior dos desfechos.'],
+              ].map(([eixo, momento, achado, custo]) => (
+                <div key={eixo}>
+                  <div className="mb-5 hidden md:block">
+                    <span className="inline-block h-[17px] w-[17px] rounded-full border-[5px]"
+                          style={{ background: '#FBFAF7', borderColor: '#047857' }} />
                   </div>
-                  <h3 className="text-sm font-black text-slate-950">{title}</h3>
-                  <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{desc}</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em]" style={{ color: '#A8A49B' }}>
+                    {momento}
+                  </p>
+                  <p className="mt-2 text-[22px] font-black leading-none" style={{ color: '#047857' }}>{eixo}</p>
+                  <p className="mt-3 text-[15px] font-bold leading-[1.5]" style={{ color: '#1F2937' }}>{achado}</p>
+                  <p className="mt-2 text-[13.5px] font-medium leading-[1.6]" style={{ color: '#6B7280' }}>{custo}</p>
                 </div>
               ))}
             </div>
@@ -335,14 +384,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="como-funciona" className="scroll-mt-24 bg-white py-16 md:py-20">
+      <section id="como-funciona" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
         <div className="mx-auto max-w-[1180px] px-6">
           <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <div className="max-w-2xl">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Como a plataforma trabalha</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Encontre. Decida com precisão.</h2>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>Como a plataforma trabalha</p>
+            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>Encontre. Decida com precisão.</h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
-              O Radar é a entrada. A decisão é o produto — e ela vem pronta para agir, porque errar a escolha custa muito mais do que qualquer assinatura.
+              {/* Cortada a segunda metade: "errar a escolha custa muito mais que
+                  qualquer assinatura" é a manchete do bloco 'O problema', duas
+                  seções acima. Argumento bom aparece uma vez. */}
+              O Radar é a entrada. A decisão é o produto — e ela vem pronta para agir.
             </p>
             </div>
             <Link href="/login" className="inline-flex h-12 w-fit items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-black text-slate-900 transition-all hover:bg-slate-100">
@@ -368,12 +420,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="veredito" className="scroll-mt-24 bg-slate-50 py-16 md:py-20">
+      <section id="veredito" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#FBFAF7', borderTop: '1px solid #EAE7E1' }}>
         <div className="mx-auto max-w-[1180px] px-6">
           <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
             <div className="max-w-2xl">
-              <p className="text-xs font-black uppercase tracking-widest text-emerald-600">O que entra no veredito</p>
-              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Mais que análise de texto. Uma decisão operacional.</h2>
+              <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>O que entra no veredito</p>
+              <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>Mais que análise de texto. Uma decisão operacional.</h2>
               <p className="mt-4 text-base font-medium leading-8 text-slate-600">
                 Cada módulo alimenta uma pergunta simples: sua empresa deve entrar, condicionar a entrada ou abandonar agora?
               </p>
@@ -400,56 +452,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <TasterSection />
-
-      <section className="bg-white py-16 md:py-20">
-        <div className="mx-auto max-w-[1180px] px-6">
-          <div className="grid gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Antes do balcão</p>
-              <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
-                Você não perde no balcão por falta de agilidade.
-              </h2>
-              <p className="mt-1 text-3xl font-black tracking-tight text-slate-400 md:text-4xl">
-                Perde por ter entrado na licitação errada.
-              </p>
-              <p className="mt-6 text-base font-medium leading-8 text-slate-600">
-                Robôs trabalham nos lances. Nós trabalhamos antes: analisamos preços praticados, histórico de vencedores e nível de concorrência para que cada decisão sua seja baseada em dados reais — não em estimativa.
-              </p>
-              <Link href="/login" className="mt-7 inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 text-sm font-black text-white shadow-md transition-all hover:bg-emerald-500">
-                Analisar um edital agora <ArrowRight size={16} />
-              </Link>
-            </div>
-            <div className="flex flex-col gap-4">
-              <div className="rounded-2xl bg-slate-950 p-6 text-white">
-                <p className="text-2xl font-black leading-snug">🏆 A vitória começa antes do balcão.</p>
-                <p className="mt-3 text-base font-medium leading-7 text-slate-300">
-                  Preços reais. Concorrência real. Decisão certa.
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  ['Preços', 'praticados no mercado'],
-                  ['Vencedores', 'histórico real PNCP'],
-                  ['Concorrência', 'nível por segmento'],
-                ].map(([title, desc]) => (
-                  <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <p className="text-sm font-black text-slate-950">{title}</p>
-                    <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-slate-950 py-16 text-white md:py-20">
+      {/* Era a única escura do trecho: sozinha entre seções claras, refazia mais abaixo o mesmo pisca-pisca de fundo que tiramos do topo. */}
+      <section className="py-16 md:py-20" style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
         <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.88fr_1fr] lg:items-center">
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Quem usa a Bawzi</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Cada área recebe o que precisa para agir.</h2>
-            <p className="mt-4 text-base font-medium leading-8 text-slate-300">
+            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>Quem usa a Bawzi</p>
+            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>Cada área recebe o que precisa para agir.</h2>
+            <p className="mt-4 text-base font-medium leading-8 text-slate-600">
               A decisão é uma, mas o que cada papel precisa para agir é diferente. A Bawzi entrega tudo junto, sem precisar distribuir manualmente.
             </p>
             <div className="mt-7 grid gap-3 sm:grid-cols-3">
@@ -458,9 +467,9 @@ export default function LandingPage() {
                 ['Evidências', 'riscos, fit e preço'],
                 ['Ação recomendada', 'checklist e próximos passos'],
               ].map(([title, desc]) => (
-                <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3">
-                  <p className="text-sm font-black text-white">{title}</p>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{desc}</p>
+                <div key={title} className="rounded-2xl border border-[#EAE7E1] bg-white px-4 py-3">
+                  <p className="text-sm font-black text-slate-900">{title}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">{desc}</p>
                 </div>
               ))}
             </div>
@@ -472,12 +481,12 @@ export default function LandingPage() {
               ['Jurídico', 'Cláusulas sensíveis, penalidades elevadas, pontos de esclarecimento e riscos contratuais mapeados.'],
               ['Financeiro', 'Preço limite estimado, margem provável, deságio esperado e pressão competitiva do histórico PNCP.'],
             ].map(([title, desc], index) => (
-              <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 transition-colors hover:bg-white/[0.09]">
+              <div key={title} className="rounded-2xl border border-[#EAE7E1] bg-white p-5 transition-colors hover:bg-white/[0.09]">
                 <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-[10px] font-black text-emerald-200">
                   {index + 1}
                 </span>
-                <h3 className="text-sm font-black text-white">{title}</h3>
-                <p className="mt-2 text-sm font-medium leading-6 text-slate-400">{desc}</p>
+                <h3 className="text-sm font-black text-slate-900">{title}</h3>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-500">{desc}</p>
               </div>
             ))}
           </div>
@@ -486,103 +495,16 @@ export default function LandingPage() {
 
       <SavingsCalculator />
 
-      <section className="scroll-mt-24 bg-white py-16 md:py-20" id="vantagens">
-        <div className="mx-auto max-w-[1180px] px-6">
-          <div className="mb-12 text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Por que a Bawzi</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">
-              A diferença entre dados reais e achismo.
-            </h2>
-            <p className="mt-4 mx-auto max-w-2xl text-base font-medium leading-8 text-slate-500">
-              Qualquer planilha organiza editais. A Bawzi decide junto com você — com dados do PNCP oficial, histórico de vencedores e inteligência de preço baseada em contratos fechados.
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                numero: '01',
-                titulo: 'Preço vem de contrato, não de estimativa',
-                desc: 'O valor estimado pelo órgão raramente é o valor de mercado. A Bawzi usa preços de contratos fechados no PNCP para calcular deságio real e limite de lance.',
-                cor: 'text-emerald-600',
-                borda: 'border-emerald-100',
-                bg: 'bg-emerald-50',
-              },
-              {
-                numero: '02',
-                titulo: 'Go/No-Go em minutos, não em dias',
-                desc: '4 agentes de IA analisam CNAE, jurídico, preço e concorrência em paralelo. O veredito chega antes de você terminar de ler o edital.',
-                cor: 'text-sky-600',
-                borda: 'border-sky-100',
-                bg: 'bg-sky-50',
-              },
-              {
-                numero: '03',
-                titulo: 'Você sabe quem compete antes de entrar',
-                desc: 'Histórico de fornecedores recorrentes, perfil de vencedores e nível de concorrência por segmento — tudo antes de mobilizar equipe e proposta.',
-                cor: 'text-indigo-600',
-                borda: 'border-indigo-100',
-                bg: 'bg-indigo-50',
-              },
-              {
-                numero: '04',
-                titulo: 'Risco jurídico antes do protocolo',
-                desc: 'Cláusulas eliminatórias, documentos críticos e penalidades mapeadas antes de qualquer comprometimento. Sua equipe jurídica atua onde importa.',
-                cor: 'text-amber-600',
-                borda: 'border-amber-100',
-                bg: 'bg-amber-50',
-              },
-              {
-                numero: '05',
-                titulo: 'Decisão com rastreabilidade',
-                desc: 'Cada Go ou No-Go vem com justificativa documentada, score de confiança e próximos passos — para a diretoria aprovar sem precisar ler o edital.',
-                cor: 'text-teal-600',
-                borda: 'border-teal-100',
-                bg: 'bg-teal-50',
-              },
-              {
-                numero: '06',
-                titulo: 'Conectado ao PNCP em tempo real',
-                desc: 'Editais, contratos e resultados direto da API oficial do governo. Sem raspar HTML, sem dado defasado, sem intermediário.',
-                cor: 'text-rose-600',
-                borda: 'border-rose-100',
-                bg: 'bg-rose-50',
-              },
-            ].map(({ numero, titulo, desc, cor, borda, bg }) => (
-              <div key={numero} className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <div className={`mb-5 inline-flex h-10 w-10 items-center justify-center rounded-2xl border ${borda} ${bg}`}>
-                  <span className={`text-xs font-black ${cor}`}>{numero}</span>
-                </div>
-                <h3 className="text-base font-black leading-snug text-slate-950">{titulo}</h3>
-                <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-10 rounded-[1.5rem] border border-emerald-100 bg-emerald-50 p-6 md:p-8">
-            <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Resumindo</p>
-                <p className="mt-2 text-xl font-black leading-snug text-slate-950 md:text-2xl">
-                  Robôs trabalham nos lances. Nós trabalhamos antes — para que você entre apenas nas disputas que vale ganhar.
-                </p>
-              </div>
-              <Link href="/login" className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-6 text-sm font-black text-white shadow-md transition-all hover:bg-emerald-500">
-                Testar grátis <ArrowRight size={16} />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="scroll-mt-24 bg-white py-16 md:py-20" id="planos">
         <div className="mx-auto max-w-[1180px] px-6">
           <div className="mb-10 text-center">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Planos e preços</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Comece pequeno. Escale quando disputar em volume.</h2>
+            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>Planos e preços</p>
+            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>Comece pequeno. Escale quando disputar em volume.</h2>
             <p className="mt-4 text-slate-500 font-medium">Teste grátis, sem cartão. Depois escolha o plano pelo ritmo da sua operação.</p>
           </div>
-          <div className="mx-auto grid max-w-5xl gap-4 md:grid-cols-3">
+          {/* Quatro colunas agora: com o gratuito, a grade de três deixava
+              o Avançado sozinho numa segunda fila. */}
+          <div className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {PLANOS.map(({ nome, publico, preco, nivel, cor, destaque, itens }) => (
               <div key={nome} className={`relative flex flex-col overflow-hidden rounded-[1.5rem] border bg-white p-5 ${destaque ? 'border-emerald-300 shadow-xl shadow-emerald-100 ring-2 ring-emerald-300' : 'border-slate-200 shadow-sm'}`}>
                 <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${cor}`} />
@@ -620,10 +542,14 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <FAQ />
+      {/* Último bloco azul-marinho da página. Com ele, o partido fecha:
+          do herói ao fechamento é uma linguagem só. */}
+      <div style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
+        <FAQ />
+      </div>
 
       <section className="bg-white px-6 pb-16 md:pb-20">
-        <div className="mx-auto grid max-w-[1180px] gap-8 rounded-[2rem] bg-slate-950 p-6 text-white shadow-2xl shadow-slate-200 md:p-10 lg:grid-cols-[1fr_0.78fr] lg:items-center">
+        <div className="mx-auto grid max-w-[1180px] gap-8 rounded-[2rem] p-6 md:p-10 lg:grid-cols-[1fr_0.78fr] lg:items-center" style={{ background: '#FBFAF7', border: '1px solid #EAE7E1' }}>
           <div>
             <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Próximo edital</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Leve um edital real para a Bawzi decidir.</h2>
@@ -696,6 +622,66 @@ const SEMAFORO_COLOR: Record<SemaforoSinal | string, string> = {
   cinza:    'bg-slate-400',
 };
 
+/**
+ * Trecho de edital para quem chega sem um em mãos.
+ *
+ * Caixa vazia pede trabalho antes de dar valor: quem vem de anúncio não tem
+ * edital aberto em outra aba, e vai embora sem ver o produto funcionar.
+ *
+ * É um texto COMPOSTO e rotulado como exemplo. Não atribuí cláusula inventada a
+ * órgão real — mesma linha que traçamos ao tirar o veredito sorteado do herói.
+ *
+ * Foi escrito para exercitar o que a Bawzi faz de diferente: exigência de
+ * atestado em percentual restritivo, índices contábeis altos, prazo de entrega
+ * curto, garantia contratual — e uma contradição de prazo entre dois artigos
+ * ("corridos" x "úteis"), que é o tipo de coisa que passa despercebido numa
+ * leitura rápida e que o detector de contradições existe para pegar.
+ */
+const EDITAL_EXEMPLO = `[TRECHO DE EDITAL — EXEMPLO PARA DEMONSTRAÇÃO]
+
+PREGÃO ELETRÔNICO — REGISTRO DE PREÇOS
+OBJETO: Registro de preços para eventual aquisição de medicamentos de uso
+hospitalar (antibióticos, analgésicos e soluções parenterais), conforme
+quantitativos e especificações do Termo de Referência — Anexo I.
+
+VALOR TOTAL ESTIMADO: R$ 2.480.000,00 (dois milhões, quatrocentos e oitenta mil reais).
+
+DA HABILITAÇÃO TÉCNICA
+7.1. A licitante deverá apresentar atestado(s) de capacidade técnica, fornecido(s)
+por pessoa jurídica de direito público ou privado, comprovando o fornecimento
+anterior de medicamentos em quantidade não inferior a 50% (cinquenta por cento)
+do quantitativo total previsto neste certame.
+7.2. Autorização de Funcionamento de Empresa (AFE) emitida pela ANVISA, vigente.
+7.3. Licença sanitária estadual ou municipal da sede da licitante.
+
+DA QUALIFICAÇÃO ECONÔMICO-FINANCEIRA
+8.1. Balanço patrimonial do último exercício social, vedada a substituição por
+balancetes, demonstrando índices de Liquidez Geral, Liquidez Corrente e
+Solvência Geral iguais ou superiores a 1,5 (um vírgula cinco).
+8.2. Capital social integralizado equivalente a, no mínimo, 10% (dez por cento)
+do valor total estimado da contratação.
+8.3. Certidão negativa de falência e recuperação judicial.
+
+DA ENTREGA
+9.1. O prazo de entrega será de 5 (cinco) dias úteis, contados do recebimento da
+Nota de Empenho, na unidade indicada pela Administração, sem custo adicional de
+frete.
+9.2. Os itens entregues em desacordo com a especificação deverão ser substituídos
+no prazo de 30 (trinta) dias corridos, contados da notificação.
+
+DAS SANÇÕES E GARANTIAS
+10.1. Será exigida garantia contratual de 5% (cinco por cento) do valor
+adjudicado, em uma das modalidades do art. 96 da Lei 14.133/2021.
+10.2. O atraso na substituição de itens recusados, findo o prazo de
+30 (trinta) dias úteis previsto no item 9.2, sujeitará a contratada a multa
+diária de 0,5% sobre o valor do lote.
+10.3. A recusa injustificada em assinar a ata de registro de preços caracteriza
+descumprimento total da obrigação assumida.
+
+DA PARTICIPAÇÃO
+11.1. Os itens de valor unitário estimado até R$ 80.000,00 são de participação
+exclusiva de microempresas e empresas de pequeno porte, nos termos da LC 123/2006.`
+
 const LOADING_MSGS = [
   'Lendo o edital…',
   'Extraindo pontos críticos…',
@@ -704,7 +690,20 @@ const LOADING_MSGS = [
   'Preparando veredito…',
 ];
 
-function TasterSection() {
+function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
+  // Envelope: em `heroi` o componente devolve só o miolo, sem seção e sem fundo
+  // escuro, para caber na coluna direita do topo. Os três estados — formulário,
+  // resultado e cota esgotada — passam por aqui, então nenhum deles precisou ser
+  // duplicado para a nova posição.
+  const Envelope = ({ largura, children }: { largura: string; children: React.ReactNode }) =>
+    modo === 'heroi' ? (
+      <div className="w-full min-w-0">{children}</div>
+    ) : (
+      <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
+        <div className={`mx-auto ${largura} px-6`}>{children}</div>
+      </section>
+    );
+
   const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [text, setText]       = useState('');
@@ -712,24 +711,57 @@ function TasterSection() {
   const [loadMsg, setLoadMsg] = useState(LOADING_MSGS[0]);
   const [result, setResult]   = useState<TasterResult | null>(null);
   const [error, setError]     = useState<string | null>(null);
-  const [guestLimit, setGuestLimit] = useState(1);
+  // `null` = ainda não sei. Enquanto não souber, o selo não exibe número e
+  // nada é considerado esgotado — melhor não dizer do que dizer errado, que é
+  // exatamente o defeito que este trecho tinha.
+  const [guestLimit, setGuestLimit] = useState<number | null>(null);
+  const [freeMonthly, setFreeMonthly] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/tiers/guest-limit`)
       .then(r => r.json())
-      .then(data => { if (data?.daily_limit > 0) setGuestLimit(data.daily_limit); })
+      .then(data => {
+        if (data?.daily_limit > 0) setGuestLimit(data.daily_limit);
+        if (data?.free_monthly > 0) setFreeMonthly(data.free_monthly);
+      })
       .catch(() => {});
   }, [API_URL]);
 
-  const [exhausted, setExhausted] = useState(() => {
-    if (typeof window === 'undefined') return false;
+  // CONTAGEM, não booleano. Antes isto era um `exhausted` gravado à parte, e o
+  // gravador escrevia `used: 1` literal — nunca incrementava. Resultado: travava
+  // na primeira análise enquanto o selo logo acima anunciava dez. Dois estados
+  // para o mesmo fato é como eles divergem; agora há um só, e o resto é derivado.
+  //
+  // ⚠️ E a leitura fica no `useEffect`, não no inicializador do `useState`.
+  // Ler localStorage no inicializador com guarda `typeof window` quebra a
+  // hidratação: servidor devolve 0, cliente devolve o valor gravado, o HTML
+  // não bate e o React descarta a árvore. Aqui isso ainda não tinha estourado
+  // por SORTE — o selo só olha `usadas` depois que `guestLimit` chega do
+  // servidor, e no primeiro paint ele é `null`. Depender de outro estado ser
+  // nulo por acaso não é garantia: bastava mudar o texto do selo.
+  const [usadas, setUsadas] = useState<number>(0);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem('bawzi_guest_quota');
-      if (!raw) return false;
+      if (!raw) return;
       const { date, used } = JSON.parse(raw);
-      return date === new Date().toISOString().split('T')[0] && used > 0;
-    } catch { return false; }
-  });
+      if (date === new Date().toISOString().split('T')[0]) setUsadas(Number(used) || 0);
+    } catch { /* navegador sem storage: a contagem do servidor continua valendo */ }
+  }, []);
+
+  const registrarUso = (n: number) => {
+    setUsadas(n);
+    try {
+      localStorage.setItem('bawzi_guest_quota', JSON.stringify({
+        date: new Date().toISOString().split('T')[0], used: n,
+      }));
+    } catch { /* navegador sem storage: a contagem do servidor continua valendo */ }
+  };
+
+  // O servidor conta por IP e é a autoridade; o localStorage é conveniência de
+  // tela e pode estar limpo, ser outro navegador ou um IP compartilhado.
+  const exhausted = guestLimit !== null && usadas >= guestLimit;
 
   const handleAnalyze = async () => {
     const trimmed = text.trim();
@@ -757,19 +789,16 @@ function TasterSection() {
         const err = await res.json().catch(() => ({}));
         const detail = err?.detail || {};
         if (detail?.codigo === 'GUEST_DAILY_LIMIT') {
-          const today = new Date().toISOString().split('T')[0];
-          localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
-          setExhausted(true);
+          // O servidor tem a palavra final: ele conta por IP. Se ele disse que
+          // acabou, o contador local está atrasado — alinha nele, não o contrário.
+          registrarUso(detail?.limite ?? guestLimit ?? 1);
           return;
         }
         throw new Error(detail?.mensagem || `Erro ${res.status}`);
       }
       const data: TasterResult = await res.json();
       setResult(data);
-      // Marca uso no localStorage
-      const today = new Date().toISOString().split('T')[0];
-      localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
-      setExhausted(true);
+      registrarUso(usadas + 1);   // ⚠️ incremento — antes gravava `1` literal
     } catch (e: unknown) {
       setError((e as Error).message || 'Erro ao analisar. Tente novamente.');
     } finally {
@@ -795,20 +824,19 @@ function TasterSection() {
   // ── Estado: resultado ──
   if (result) {
     return (
-      <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
-        <div className="mx-auto max-w-[1180px] px-6">
+      <Envelope largura="max-w-[1180px]">
           <div className="text-center mb-10">
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-400 mb-4">Resultado da sua análise gratuita</p>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-700 mb-4">Resultado da sua análise gratuita</p>
             <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
               <span className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-base font-black text-white ${vBg}`}>
                 {vLabel}
               </span>
-              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white text-sm font-black" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-slate-900 text-sm font-black" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                 Score {score}/100
               </span>
             </div>
             {result.title && (
-              <p className="text-slate-300 font-semibold text-sm max-w-2xl mx-auto">{result.title}</p>
+              <p className="text-slate-600 font-semibold text-sm max-w-2xl mx-auto">{result.title}</p>
             )}
           </div>
 
@@ -817,9 +845,9 @@ function TasterSection() {
             {result.semaforo && (
               <div className="grid grid-cols-4 gap-2">
                 {(Object.entries(result.semaforo) as [string, SemaforoSinal][]).map(([key, val]) => (
-                  <div key={key} className="rounded-2xl px-3 py-3 text-center" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                  <div key={key} className="rounded-2xl px-3 py-3 text-center" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                     <div className={`w-3 h-3 rounded-full mx-auto mb-1.5 ${SEMAFORO_COLOR[val] || 'bg-slate-500'}`} />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                       {SEMAFORO_LABELS[key] || key}
                     </p>
                   </div>
@@ -831,17 +859,17 @@ function TasterSection() {
             {motivos.length > 0 && (
               <div className="space-y-2">
                 {motivos.slice(0, 2).map((m, i) => (
-                  <div key={i} className="rounded-xl px-4 py-3 text-sm text-slate-200 font-medium leading-relaxed" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                  <div key={i} className="rounded-xl px-4 py-3 text-sm text-slate-700 font-medium leading-relaxed" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                     {m}
                   </div>
                 ))}
                 {motivos.length > 2 && (
                   <div className="relative">
-                    <div className="rounded-xl px-4 py-3 text-sm text-slate-200 font-medium leading-relaxed blur-sm select-none pointer-events-none" style={{ background: '#1e293b', border: '1px solid #334155' }}>
+                    <div className="rounded-xl px-4 py-3 text-sm text-slate-700 font-medium leading-relaxed blur-sm select-none pointer-events-none" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                       {motivos[2]}
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-[11px] font-black text-slate-300 uppercase tracking-widest px-3 py-1 rounded-full" style={{ background: '#0f172a', border: '1px solid #475569' }}>
+                      <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest px-3 py-1 rounded-full" style={{ background: '#0f172a', border: '1px solid #475569' }}>
                         🔒 Mais na conta gratuita
                       </span>
                     </div>
@@ -860,60 +888,167 @@ function TasterSection() {
               </Link>
               <Link
                 href="/plans"
-                className="w-full sm:w-auto flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-sm transition-all text-slate-300 hover:text-white"
-                style={{ background: '#1e293b', border: '1px solid #475569' }}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 py-4 px-6 rounded-2xl font-bold text-sm transition-all text-slate-700 hover:text-slate-900 hover:bg-slate-50"
+                style={{ background: '#FFFFFF', border: '1px solid #D6D3CD' }}
               >
                 Ver planos
               </Link>
             </div>
-            <p className="text-center text-slate-500 text-xs">Crie uma conta gratuita — sem cartão · 5 análises/mês</p>
+            <p className="text-center text-slate-500 text-xs">Crie uma conta gratuita para ver a análise completa — sem cartão</p>
           </div>
-        </div>
-      </section>
+      </Envelope>
     );
   }
 
   // ── Estado: cota esgotada ──
   if (exhausted) {
     return (
-      <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
-        <div className="mx-auto max-w-xl px-6 text-center">
-          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-400 mb-5" style={{ background: '#052e16', border: '1px solid #166534' }}>
+      <Envelope largura="max-w-xl text-center">
+          {/* Selo no mesmo slot e no mesmo tom do estado de formulário. Antes
+              era a pílula verde-escura do modo seção (#052e16), que sobre papel
+              vira uma mancha — o mesmo defeito que já corrigi no selo do
+              formulário e nas superfícies do resultado. Este era o terceiro
+              estado, e o único que eu nunca tinha visto renderizado: ele só
+              aparece depois de a cota do dia acabar. */}
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest ${
+              modo === 'heroi' ? 'mb-3 text-emerald-800' : 'mb-5 text-emerald-400'}`}
+            style={modo === 'heroi'
+              ? { background: '#ECFDF5', border: '1px solid #A7F3D0' }
+              : { background: '#052e16', border: '1px solid #166534' }}
+          >
             Degustação gratuita
           </span>
-          <h2 className="text-3xl font-black text-white mb-3">Análise gratuita já usada hoje.</h2>
-          <p className="text-slate-400 font-medium mb-8 leading-relaxed">
-            Crie uma conta gratuita e ganhe <strong className="text-white">5 análises por mês</strong> — sem cartão, sem prazo de expiração.
-          </p>
-          <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-8 text-sm font-black text-white shadow-lg hover:bg-emerald-500 transition-all">
-            Criar conta gratuita <ArrowRight size={16} />
-          </Link>
-          <p className="mt-4 text-slate-500 text-xs">Sua análise gratuita volta amanhã.</p>
-        </div>
-      </section>
+
+          {/* Este estado desenhava direto sobre o envelope, sem cartão. No
+              fundo escuro funcionava; no herói a coluna direita esvaziava — o
+              cartão sumia e sobrava texto solto. Mesmo cartão dos outros dois
+              estados, para a troca de estado não mudar a geometria da coluna. */}
+          <div
+            className={`bg-white rounded-3xl ${modo === 'heroi'
+              ? 'w-full p-6 border border-[#EAE7E1]'
+              : 'max-w-2xl mx-auto p-8 shadow-2xl'}`}
+            style={modo === 'heroi'
+              ? { boxShadow: '0 1px 2px rgba(31,41,55,0.04), 0 14px 30px -16px rgba(31,41,55,0.18)' }
+              : undefined}
+          >
+            {/* Estava `text-white` sobre papel: 1,04:1. A manchete desta tela e
+                o número que ela vende — o `strong` logo abaixo — estavam os
+                dois invisíveis, justamente na tela que pede o cadastro. 28px e
+                não 30: a manchete do herói ao lado tem 52px, e este bloco não
+                disputa com ela. */}
+            <h2 className="mb-3 text-[26px] font-black leading-tight md:text-[28px]" style={{ color: '#111827' }}>
+              {guestLimit === 1
+                ? 'Seu crédito gratuito de hoje acabou.'
+                : `Seus ${guestLimit} créditos gratuitos de hoje acabaram.`}
+            </h2>
+            <p className="mb-7 text-[15px] font-medium leading-[1.6]" style={{ color: '#4B5563' }}>
+              {/* O número vem do servidor. Estava escrito "5 análises por mês" na
+                  mão, e a configuração já dizia outro valor há tempos. */}
+              Crie uma conta gratuita e ganhe{' '}
+              <strong className="font-black" style={{ color: '#111827' }}>
+                {freeMonthly ? `${freeMonthly} créditos grátis por mês` : 'mais créditos por mês'}
+              </strong>{' '}
+              — sem cartão, sem prazo de expiração.
+            </p>
+            <Link
+              href="/login"
+              className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-8 text-sm font-black text-white transition-all hover:bg-emerald-500"
+              style={{ background: '#059669', boxShadow: '0 4px 16px rgba(5,150,105,0.35)' }}
+            >
+              Criar conta gratuita <ArrowRight size={16} />
+            </Link>
+            <p className="mt-4 text-xs font-medium" style={{ color: '#787266' }}>Seus créditos gratuitos voltam amanhã.</p>
+
+            {/* A escada de modelos, dita sem vender o que a conta gratuita não
+                entrega.
+
+                Conferi `tier_config.py` antes de escrever: o tier -1
+                (convidado) e o tier 1 (conta gratuita) têm os QUATRO slots de
+                modelo idênticos e o mesmo `agent_count` de 1. De -1 para 1 muda
+                volume, não motor. Prometer "modelos melhores" ao criar a conta
+                seria mentira no ponto exato onde a pessoa decide — e a primeira
+                análise dela desmentiria a home.
+
+                A escada real começa no Essencial (redator no modelo avançado,
+                2 agentes) e vai até o Elite (investigador com raciocínio,
+                3 agentes). É isso que a frase diz.
+
+                "Análise completa" é literal: o par de modelos RÁPIDO é
+                `gpt-4o-mini` em todos os tiers, do 1 ao 4. Só o modo profundo
+                escala.
+
+                ⚠️ `get_tier_config()` lê o banco antes dos defaults do código.
+                Quem mexer em tier_configs precisa saber que esta linha depende
+                deles. */}
+            <div className="mt-6 border-t pt-5" style={{ borderColor: '#EAE7E1' }}>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: '#A8A49B' }}>
+                A profundidade acompanha o plano
+              </p>
+              <p className="mt-2.5 text-[13px] font-medium leading-[1.6]" style={{ color: '#6B6559' }}>
+                A conta gratuita usa o mesmo motor da degustação — o que muda é o
+                volume. A partir do Essencial, a análise completa passa a rodar
+                com modelos mais fortes e mais agentes lendo o edital.{' '}
+                <a
+                  href="#planos"
+                  className="font-bold underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600"
+                  style={{ color: '#047857' }}
+                >
+                  Ver a escada
+                </a>
+              </p>
+            </div>
+          </div>
+      </Envelope>
     );
   }
 
   // ── Estado: formulário ──
   const canSubmit = !loading && text.trim().length >= 80;
   return (
-    <section id="degustacao" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#0f172a' }}>
-      <div className="mx-auto max-w-[1180px] px-6">
+    <Envelope largura="max-w-[1180px]">
 
         {/* Header */}
-        <div className="text-center mb-10">
-          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-400 mb-5" style={{ background: '#052e16', border: '1px solid #166534' }}>
+        <div className={modo === 'heroi' ? 'mb-4' : 'text-center mb-10'}>
+          {/* No herói o fundo é papel: a pílula verde-escura do modo seção
+              ficaria uma mancha solta acima do cartão. Mesmo conteúdo, tom
+              adequado ao fundo de cada contexto. */}
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[11px] font-black uppercase tracking-widest ${modo === 'heroi' ? 'mb-3' : 'mb-5'} ${
+              modo === 'heroi' ? 'text-emerald-800' : 'text-emerald-400'}`}
+            style={modo === 'heroi'
+              ? { background: '#ECFDF5', border: '1px solid #A7F3D0' }
+              : { background: '#052e16', border: '1px solid #166534' }}
+          >
             <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            {guestLimit} análise{guestLimit !== 1 ? 's' : ''} gratuita{guestLimit !== 1 ? 's' : ''} por dia · sem cadastro
+            {guestLimit === null
+              ? 'Análise gratuita · sem cadastro'
+              : usadas > 0
+                ? `${guestLimit - usadas} de ${guestLimit} créditos restantes hoje · sem cadastro`
+                : `${guestLimit} crédito${guestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro`}
           </span>
-          <h2 className="text-3xl font-black text-white md:text-4xl mb-3">Experimente agora.</h2>
-          <p className="text-slate-400 font-medium max-w-lg mx-auto leading-relaxed">
-            Cole um trecho do edital e veja o veredito Go/No-Go em segundos — sem criar conta.
-          </p>
+          {modo === 'secao' && (
+            <>
+              <h2 className="text-3xl font-black text-white md:text-4xl mb-3">Experimente agora.</h2>
+              <p className="text-slate-400 font-medium max-w-lg mx-auto leading-relaxed">
+                Cole um trecho do edital e veja o veredito Go/No-Go em segundos — sem criar conta.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Card branco */}
-        <div className="max-w-2xl mx-auto bg-white rounded-3xl p-8 shadow-2xl">
+        <div
+            className={`bg-white rounded-3xl ${modo === 'heroi'
+              ? 'w-full p-6 border border-[#EAE7E1]'
+              : 'max-w-2xl mx-auto p-8 shadow-2xl'}`}
+            /* `shadow-2xl` é um borrão de 40px herdado do fundo azul-marinho.
+               Sobre papel ele lê como sujeira. Sombra curta, de objeto
+               apoiado, não de objeto flutuando. */
+            style={modo === 'heroi'
+              ? { boxShadow: '0 1px 2px rgba(31,41,55,0.04), 0 14px 30px -16px rgba(31,41,55,0.18)' }
+              : undefined}
+          >
 
           {/* Textarea */}
           <div className="relative mb-4">
@@ -923,16 +1058,46 @@ function TasterSection() {
               maxLength={10000}
               rows={7}
               className="w-full rounded-2xl border-2 p-4 text-slate-800 placeholder:text-slate-400 font-medium text-sm resize-none transition-all leading-relaxed focus:outline-none"
+              /* Era `#f8fafc` sobre borda `#e2e8f0`: família slate, cinza
+                 FRIO, herdada de quando o fundo da seção era azul-marinho.
+                 Sobre papel quente ela lê como peça de outro projeto — e é o
+                 elemento central do cartão. */
               style={{
-                background: '#f8fafc',
-                borderColor: text.length > 0 ? '#059669' : '#e2e8f0',
+                background: '#FAF9F5',
+                borderColor: text.length > 0 ? '#059669' : '#E5E2DC',
               }}
               placeholder="Cole aqui o texto do edital, objeto da contratação ou termo de referência..."
             />
-            <div className="absolute bottom-3 right-3 text-[10px] font-bold rounded-lg px-2 py-1" style={{ background: '#f1f5f9', color: '#94a3b8' }}>
-              {text.length.toLocaleString('pt-BR')}&nbsp;/&nbsp;10.000
-            </div>
+            {/* "0 / 10.000" dentro de uma caixa vazia é ruído — e caixa vazia
+                é o estado que 100% das visitas veem primeiro. */}
+            {text.length > 0 && (
+              <div className="absolute bottom-3 right-3 text-[10px] font-bold rounded-lg px-2 py-1" style={{ background: '#F1EFE9', color: '#A8A49B' }}>
+                {text.length.toLocaleString('pt-BR')}&nbsp;/&nbsp;10.000
+              </div>
+            )}
           </div>
+
+          {/* Só enquanto a caixa está vazia — depois de colado, vira ruído.
+              Este botão existe porque a caixa vazia é a maior barreira do
+              taster: quem chega de anúncio não tem edital em outra aba. */}
+          {text.length === 0 && (
+            /* Era uma caixa tracejada de largura inteira, texto centralizado,
+               colada em cima do botão verde: dois blocos de mesmo peso e mesma
+               largura disputando o mesmo papel. Agora é linha de ajuda —
+               alinhada à esquerda, sem borda, com o link sublinhado carregando
+               a ação. Continua sendo a saída para quem chega de anúncio e não
+               tem edital em outra aba, que é a maior barreira do taster. */
+            <p className="mb-4 text-[12.5px] font-medium leading-6 text-slate-500">
+              Sem um edital à mão?{' '}
+              <button
+                type="button"
+                onClick={() => { setText(EDITAL_EXEMPLO); setError(null); }}
+                className="font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600"
+              >
+                Use um trecho de exemplo
+              </button>
+            </p>
+          )}
 
           {/* Erro */}
           {error && (
@@ -946,9 +1111,16 @@ function TasterSection() {
             onClick={handleAnalyze}
             disabled={!canSubmit}
             className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl text-white font-black text-sm transition-all"
+            /* Desabilitado, este botão era `#d1fae5` com texto `#6ee7b7`:
+               contraste 1,34:1 — ilegível. E é o estado que TODA visita vê,
+               porque a caixa começa vazia: o elemento mais importante da tela
+               nascia como uma mancha. Agora é papel com texto a 5,03:1, e o
+               rótulo diz o que falta em vez de repetir uma promessa que o
+               botão ainda não pode cumprir. */
             style={{
-              background: canSubmit ? '#059669' : '#d1fae5',
-              color: canSubmit ? '#ffffff' : '#6ee7b7',
+              background: canSubmit ? '#059669' : modo === 'heroi' ? '#F1EFE9' : '#d1fae5',
+              color: canSubmit ? '#ffffff' : modo === 'heroi' ? '#6B6559' : '#6ee7b7',
+              border: canSubmit || modo !== 'heroi' ? '1px solid transparent' : '1px solid #E3DFD8',
               cursor: canSubmit ? 'pointer' : 'not-allowed',
               boxShadow: canSubmit ? '0 4px 16px rgba(5,150,105,0.35)' : 'none',
             }}
@@ -958,12 +1130,16 @@ function TasterSection() {
                 <div className="w-4 h-4 border-2 rounded-full animate-spin shrink-0" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
                 {loadMsg}
               </>
-            ) : (
+            ) : canSubmit ? (
               <>
                 <Zap size={16} />
                 Analisar gratuitamente
                 <ArrowRight size={14} className="ml-0.5" />
               </>
+            ) : text.trim().length === 0 ? (
+              'Cole o edital acima para analisar'
+            ) : (
+              `Faltam ${80 - text.trim().length} caracteres`
             )}
           </button>
 
@@ -979,8 +1155,77 @@ function TasterSection() {
           </div>
         </div>
 
+    </Envelope>
+  );
+}
+
+/**
+ * A única coisa desta página que um concorrente não copia: o que de fato
+ * aconteceu nas análises. O texto, os preços, os prints e a lista de
+ * funcionalidades são todos copiáveis; a distribuição de vereditos da base, não.
+ *
+ * Distribuição inteira em vez de um número escolhido. Três percentuais que
+ * somam 100 são visivelmente não-editados, e o comprador daqui — gente que lê
+ * edital atrás de inconsistência — reconhece a diferença entre um dado e uma
+ * peça de marketing.
+ *
+ * Se o servidor disser que ainda não há amostra suficiente, isto não renderiza
+ * nada. Sem buraco no layout e sem número fraco: ausência custa menos
+ * credibilidade que uma porcentagem sobre vinte análises.
+ */
+function ProvaReal() {
+  const [dados, setDados] = useState<{
+    disponivel: boolean;
+    total?: number;
+    distribuicao?: { NO_GO: number; GO_CONDICIONADO: number; GO: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+    fetch(`${API}/api/estatisticas-publicas`)
+      .then(r => r.json())
+      .then(setDados)
+      .catch(() => {});
+  }, []);
+
+  if (!dados?.disponivel || !dados.distribuicao || !dados.total) return null;
+  const d = dados.distribuicao;
+  const faixas = [
+    { rotulo: 'Não participar', valor: d.NO_GO, cor: '#d95926' },
+    { rotulo: 'Participar após validações', valor: d.GO_CONDICIONADO, cor: '#eab308' },
+    { rotulo: 'Participar', valor: d.GO, cor: '#199e70' },
+  ];
+  const naoEntrarComoEsta = Math.round(d.NO_GO + d.GO_CONDICIONADO);
+
+  return (
+    <div className="border-b border-slate-100 bg-white">
+      <div className="mx-auto max-w-[1180px] px-6 py-7">
+        <p className="text-center text-[13px] font-medium leading-6 text-slate-500">
+          Em <strong className="font-black text-slate-900">
+            {dados.total.toLocaleString('pt-BR')} análises
+          </strong>{' '}
+          já feitas na Bawzi,{' '}
+          <strong className="font-black text-slate-900">{naoEntrarComoEsta}%</strong>{' '}
+          terminaram com motivo para não entrar na disputa como ela estava.
+        </p>
+
+        <div className="mx-auto mt-4 flex h-2.5 max-w-2xl overflow-hidden rounded-full">
+          {faixas.map(f => (
+            <div key={f.rotulo} style={{ width: `${f.valor}%`, background: f.cor }}
+                 title={`${f.rotulo}: ${f.valor}%`} className="min-w-[2px]" />
+          ))}
+        </div>
+
+        <div className="mx-auto mt-3 flex max-w-2xl flex-wrap items-center justify-center gap-x-5 gap-y-1.5">
+          {faixas.map(f => (
+            <span key={f.rotulo} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+              <span className="h-2 w-2 rounded-sm" style={{ background: f.cor }} />
+              {f.rotulo} <span className="tabular-nums text-slate-900">{f.valor}%</span>
+            </span>
+          ))}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -1034,24 +1279,29 @@ function FAQ() {
   ];
 
   return (
-    <section className="bg-slate-50 py-16 md:py-20">
+    <section className="py-16 md:py-20" style={{ background: '#FBFAF7', borderTop: '1px solid #EAE7E1' }}>
       <div className="mx-auto max-w-[780px] px-6">
         <div className="mb-10 text-center">
-          <p className="text-xs font-black uppercase tracking-widest text-emerald-600">Dúvidas frequentes</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950 md:text-4xl">Perguntas antes de assinar.</h2>
+          <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>Dúvidas frequentes</p>
+          <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>Perguntas antes de assinar.</h2>
         </div>
         <div className="divide-y divide-slate-200 rounded-[1.5rem] border border-slate-200 bg-white overflow-hidden shadow-sm">
-          {items.map(({ q, a }) => (
-            <details key={q} className="group px-6 py-5">
+          {items.map(({ q, a }, i) => (
+            /* A primeira abre por padrão: seis perguntas fechadas ocupam meia
+               tela sem comunicar nada, e as respostas — que são a melhor quebra
+               de objeção da página — ficavam atrás de um clique que quase
+               ninguém dá numa landing. Com uma aberta, as outras cinco passam a
+               parecer clicáveis em vez de decorativas. */
+            <details key={q} open={i === 0} className="group px-6 py-5">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4">
-                <span className="text-sm font-black text-slate-900">{q}</span>
+                <span className="text-[15.5px] font-black leading-snug text-slate-900">{q}</span>
                 <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 p-1 text-slate-400 transition-transform group-open:rotate-45">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
                 </span>
               </summary>
-              <p className="mt-3 text-sm font-medium leading-7 text-slate-500">{a}</p>
+              <p className="mt-3 text-[14.5px] font-medium leading-[1.75] text-slate-600">{a}</p>
             </details>
           ))}
         </div>
@@ -1081,7 +1331,7 @@ function SavingsCalculator() {
   };
 
   return (
-    <section id="economia" className="scroll-mt-24 bg-slate-50 py-16 md:py-20">
+    <section id="economia" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
       <div className="mx-auto grid max-w-[1180px] gap-8 px-6 lg:grid-cols-[0.82fr_1fr] lg:items-center">
         <div>
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3.5 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-700 shadow-sm">
@@ -1105,7 +1355,7 @@ function SavingsCalculator() {
                 <div key={String(label)} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <StatIcon size={17} className="mb-3 text-emerald-600" />
                   <p className="text-xl font-black text-slate-950">{String(value)}</p>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">{String(label)}</p>
+                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">{String(label)}</p>
                 </div>
               );
             })}
@@ -1115,7 +1365,7 @@ function SavingsCalculator() {
         <div className="rounded-[1.7rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60 md:p-6">
           <div className="mb-6 flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Simulação rápida</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Simulação rápida</p>
               <h3 className="mt-1 text-xl font-black text-slate-950">Simule com a rotina do seu time</h3>
             </div>
             <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
@@ -1150,20 +1400,28 @@ function SavingsCalculator() {
             />
           </div>
 
-          <div className="mt-6 rounded-2xl bg-slate-950 p-5 text-white">
-            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Resultado estimado</p>
+          <div className="mt-6 rounded-2xl p-5" style={{ background: '#F3F2EE', border: '1px solid #EAE7E1' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Resultado estimado</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="text-3xl font-black">{formatCurrency(economiaMes)}</p>
-                <p className="mt-1 text-xs font-medium text-slate-400">de tempo operacional por mês</p>
+                <p className="text-3xl font-black text-slate-900">{formatCurrency(economiaMes)}</p>
+                <p className="mt-1 text-xs font-medium text-slate-500">de tempo operacional por mês</p>
               </div>
               <div>
-                <p className="text-3xl font-black">{horasMes}h</p>
-                <p className="mt-1 text-xs font-medium text-slate-400">liberadas para proposta, preço e follow-up</p>
+                <p className="text-3xl font-black text-slate-900">{horasMes}h</p>
+                <p className="mt-1 text-xs font-medium text-slate-500">liberadas para proposta, preço e follow-up</p>
               </div>
             </div>
-            <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-4 py-3 text-xs font-semibold leading-6 text-slate-300">
-              Com {editais} editais por mês, cada hora poupada vira folga para preço, documentação e follow-up. A estimativa ajuda a comparar assinatura com custo operacional.
+            {/* A conta fechada, na frente de quem acabou de configurá-la. A
+                página mostrava a economia aqui e o preço mil pixels abaixo,
+                deixando a multiplicação por conta do leitor. */}
+            <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"
+               style={{ background: '#FFFCF2', border: '1px solid #F0E9D8', color: '#57534E' }}>
+              Com {editais} editais por mês, essa estimativa é{' '}
+              <strong style={{ color: '#B45309' }}>
+                {Math.max(1, Math.round(economiaMes / 79))}× o valor do plano mais barato
+              </strong>{' '}
+              (R$ 79/mês). Cada hora poupada vira folga para preço, documentação e follow-up.
             </p>
           </div>
         </div>
