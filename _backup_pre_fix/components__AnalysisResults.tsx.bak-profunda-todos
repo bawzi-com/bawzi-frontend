@@ -63,9 +63,6 @@ interface AnalysisResultsProps {
    * aparece (ex.: dentro da Gestão, que já tem seu próprio controle). */
   sidebarHidden?: boolean;
   onToggleSidebar?: () => void;
-  /** Abre a compra de pacote avulso. O aviso de laudo degradado é o momento
-   *  de maior intenção que existe: o cliente acabou de VER o que perdeu. */
-  onComprarPacote?: () => void;
 }
 
 type LearningStats = {
@@ -102,7 +99,6 @@ export default function AnalysisResults({
   onExportPDF,
   modelSource,
   isCachedResult,
-  onComprarPacote,
   onUpgradeClick,
   onCockpitStatusChange,
   onGoToCapital,
@@ -496,11 +492,6 @@ export default function AnalysisResults({
                     </section>
                     <section className="space-y-4">
                       <ChapterDivider index={2} title="Riscos e conformidade" />
-                      {/* Primeiro da etapa de propósito: contradição no edital
-                          é acionável hoje (pedido de esclarecimento tem prazo)
-                          e some quando não existe, então nunca empurra o resto
-                          para baixo à toa. */}
-                      <ContradicoesSection result={liveResult} />
                       <RedFlagsSection result={liveResult} />
                       <RisksSection result={liveResult} />
                       <MatrizRiscoFormalSection result={liveResult} />
@@ -611,7 +602,6 @@ export default function AnalysisResults({
                     pricing={liveResult.pricing_intelligence}
                     fullResult={liveResult}
                     userTier={userTier}
-                    onUpgradeClick={onUpgradeClick}
                   />
                 </div>
               )}
@@ -644,34 +634,6 @@ export default function AnalysisResults({
           })()}
 
         </div>
-
-        {/* ── Aviso de laudo degradado ─────────────────────────────────────
-            Quando a cota estoura, a análise NÃO é bloqueada: ela roda no motor
-            do plano gratuito, sem auditoria profunda. Sem este aviso, o cliente
-            compararia dois laudos de profundidade diferente sem entender por
-            quê — e concluiria que a ferramenta piorou. */}
-        {Boolean((liveResult as unknown as Record<string, unknown>)?.motor_gratuito) && (
-          <div className="mt-8 rounded-2xl border border-violet-200 bg-violet-50 p-4 print:hidden">
-            <p className="text-[11px] font-black uppercase tracking-widest text-violet-700">
-              Laudo gerado no motor gratuito
-            </p>
-            <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-violet-900">
-              Os créditos do período acabaram, então esta análise rodou no motor do
-              plano gratuito e <strong>sem a auditoria profunda</strong> — a varredura que
-              lê o edital em blocos e valida cada achado contra o texto original. As
-              conclusões continuam válidas, mas com menos profundidade de verificação.
-            </p>
-            {onComprarPacote && (
-              <button
-                type="button"
-                onClick={onComprarPacote}
-                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-[12px] font-black text-white transition-colors hover:bg-violet-700"
-              >
-                Adicionar créditos e refazer com auditoria completa
-              </button>
-            )}
-          </div>
-        )}
 
         {/* LAYOUT DE IMPRESSÃO — renderiza tudo, visível apenas ao imprimir */}
         <PrintLayout result={liveResult} />
@@ -987,13 +949,9 @@ function DecisionSnapshot({
                 tone: 'slate',
                 icon: <span className="text-[10px] font-black">{index + 1}</span>,
                 eyebrow: evidence.categoria || 'Evidência',
-                // Evidência sem referência E sem fonte é afirmação sem lastro
-                // verificável. Antes o badge simplesmente sumia e ela ficava
-                // indistinguível das citadas — o analista precisa ver de longe
-                // o que pode conferir em 30s e o que é palavra da IA.
                 badge: (evidence.referencia || evidence.fonte)
                   ? { label: evidence.referencia || evidence.fonte, tone: 'slate' }
-                  : { label: 'sem citação verificada', tone: 'amber' },
+                  : undefined,
                 title: evidence.titulo,
                 description: (
                   <>
@@ -4055,77 +4013,6 @@ function OportunidadesSection({ result }: { result: AnalysisResult }) {
       <div className="mt-2">
         <Timeline items={oportunidades.map((op, i) => ({ key: i, tone: 'emerald' as TimelineTone, icon: <Sparkles size={10} />, title: op }))} />
       </div>
-    </div>
-  );
-}
-
-// ─── Contradições detectadas na auditoria ────────────────────────────────────
-//
-// A seção que justifica o multiplicador de créditos da auditoria profunda.
-//
-// `auditoria.detectar_contradicoes` no backend extrai os fatos de prazo e de
-// valor com a POSIÇÃO de cada um no documento e confronta os que falam do
-// mesmo assunto. Duas datas de sessão divergentes entre o corpo do edital e o
-// cadastro do PNCP é das divergências mais caras que existem: o licitante se
-// organiza pela data do portal e perde a sessão.
-//
-// Isto era computado e descartado duas vezes — o endpoint não copiava o campo
-// para o laudo e a tela não tinha onde mostrar. O cliente pagava 4 créditos e
-// recebia um relatório visualmente idêntico ao da análise rápida, o que torna
-// a percepção dele ("a profunda não entrega nada a mais") simplesmente
-// correta. Nenhum texto de marketing conserta isso; mostrar o achado conserta.
-//
-// Some inteira quando não há contradição, e isso é resultado, não falha: um
-// edital coerente é o caso normal. O que não pode acontecer é a seção existir
-// vazia sugerindo que a auditoria não rodou.
-function ContradicoesSection({ result }: { result: AnalysisResult }) {
-  const itens = result.auditoria?.contradicoes || [];
-  if (!itens.length) return null;
-
-  const tomDaGravidade = (g?: string): TimelineTone =>
-    (g || '').toLowerCase() === 'alta' ? 'red' : 'amber';
-
-  return (
-    <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
-      <SectionLabel
-        icon={<ShieldAlert size={18} className="text-amber-600" />}
-        label="Contradições no Edital"
-      />
-      <p className="text-sm font-medium text-slate-500 leading-relaxed mt-2 mb-6">
-        {itens.length === 1
-          ? 'A auditoria encontrou um ponto do edital que se contradiz. '
-          : `A auditoria encontrou ${itens.length} pontos do edital que se contradizem. `}
-        Cada item traz os dois trechos conferidos no documento — leve-os para
-        pedido de esclarecimento antes de montar a proposta.
-      </p>
-      <Timeline
-        items={itens.map((c, i) => ({
-          key: i,
-          tone: tomDaGravidade(c.gravidade),
-          eyebrow: c.assunto || undefined,
-          badge: c.tipo === 'contradicao_com_cadastro'
-            ? { label: 'Edital × cadastro PNCP', tone: tomDaGravidade(c.gravidade) }
-            : { label: 'Interna ao edital', tone: tomDaGravidade(c.gravidade) },
-          title: c.descricao || 'Divergência detectada',
-          description: (c.trecho_a || c.trecho_b) ? (
-            <span className="block space-y-2">
-              {c.trecho_a && (
-                <span className="block border-l-2 border-slate-200 pl-3 text-slate-500 italic">
-                  &ldquo;{c.trecho_a}&rdquo;
-                </span>
-              )}
-              {c.trecho_b && (
-                <span className="block border-l-2 border-slate-200 pl-3 text-slate-500 italic">
-                  &ldquo;{c.trecho_b}&rdquo;
-                  {c.fonte_b && (
-                    <span className="not-italic font-bold text-slate-400"> — {c.fonte_b}</span>
-                  )}
-                </span>
-              )}
-            </span>
-          ) : undefined,
-        }))}
-      />
     </div>
   );
 }

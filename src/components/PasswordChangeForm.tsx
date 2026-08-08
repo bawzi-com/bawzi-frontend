@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Lock, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 
 interface PasswordChangeFormProps {
   token: string;
@@ -53,7 +53,7 @@ export default function PasswordChangeForm({ token }: PasswordChangeFormProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.detail || 'Erro ao atualizar a senha.');
+        throw new Error(mensagemDeErro(data.detail, 'Erro ao atualizar a senha.'));
       }
 
       setMessage({ type: 'success', text: 'Senha atualizada com sucesso!' });

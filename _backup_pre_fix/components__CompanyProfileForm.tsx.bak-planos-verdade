@@ -5,7 +5,7 @@ import CguCompliancePanel from './CompliancePanel';
 import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 import { setActiveCompanyContext } from '@/lib/activeContext';
-import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 import CompanyLookup, { isSituacaoAtiva, type CompanyLookupResult } from './CompanyLookup';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
@@ -47,19 +47,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     historico_vitorias: '', observacoes_operacionais: '',
   });
 
-  // ⚠️ O Nível 1 tinha ZERO vagas, e isso travava por tabela duas
-  // funcionalidades que acabaram de ser abertas: Oportunidades casa o edital
-  // pelo CNAE da empresa e Renovações lista os contratos a vencer DELA. Sem
-  // vaga, as duas apareciam e não tinham o que mostrar — pior que continuarem
-  // fechadas, porque a promessa fica na tela e o resultado não vem.
-  //
-  // Cadastrar empresa não chama modelo nenhum (`router_company.py` não tem uma
-  // linha de IA; o CNPJ vem da BrasilAPI, pública), então a vaga cabe no mesmo
-  // critério de custo zero que decidiu as aberturas.
-  //
-  // A régua passa a ser QUANTAS, não SE: 1 / 1 / 2 / 3. Quem toca uma empresa
-  // não precisa de plano por causa disto; quem toca três, precisa.
-  const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier >= 1 ? 1 : 0;
+  const vagasTotais = userTier === 4 ? 3 : userTier === 3 ? 2 : userTier === 2 ? 1 : 0;
   // Conta apenas empresas ativas (não suspensas nem desabilitadas)
   const slotsOcupados = companiesList.filter((c: any) => !c.suspended && !c.disabled).length;
 
@@ -168,7 +156,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
     try {
       const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(mensagemDeErro(data.detail, 'Erro ao buscar CNPJ'));
+      if (!res.ok) throw new Error(data.detail || 'Erro ao buscar CNPJ');
       
       setFormData({
         ...formData,
@@ -275,7 +263,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       });
       
       const resData = await res.json();
-      if (!res.ok) throw new Error(mensagemDeErro(resData.detail, 'Erro ao processar dados'));
+      if (!res.ok) throw new Error(resData.detail || 'Erro ao processar dados');
 
       setMessage({ type: 'success', text: 'Monitorização atualizada!' });
       

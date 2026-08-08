@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock, ChevronRight } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 import { useTier } from '@/hooks/useTier';
-import { getAuthToken, mensagemDeErro } from '@/lib/apiClient';
+import { getAuthToken } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -181,25 +181,48 @@ function linhaQuantidade(
   // régua: onde o crédito varia com o tamanho, o leitor precisa saber a faixa;
   // onde é fixo, saber que é fixo vale mais que silêncio — diz que ali não há
   // surpresa de tamanho.
-  // ⚠️ SEM RÉGUA AQUI — e isso é deliberado, não esquecimento.
-  //
-  // Esta linha já teve duas versões erradas pelo mesmo motivo: tentar explicar
-  // o preço do crédito de novo, depois de `linhasLimites` já ter explicado.
-  // Primeiro foi o texto fixo "edital comum usa 2 a 3", falso em quase todo
-  // plano. Depois foi a faixa calculada "1 a 8 na rápida, 4 a 32 na profunda",
-  // correta e ilegível — os dois números saem de "1 crédito a cada 50.000
-  // caracteres · auditoria profunda ×4" cruzado com o teto do plano, ambos
-  // impressos duas linhas acima.
-  //
-  // O cartão lê regra → capacidade → cota. Quem quer a conta tem os fatores
-  // ali; quem não quer, lê três frases curtas em vez de uma longa.
-  //
-  // Traduzir para "20 auditorias profundas por mês" foi considerado e recusado:
-  // o número cai conforme o plano sobe (43 · 31 · 20), porque cada plano é
-  // medido pelo próprio edital máximo. Verdadeiro, e engana lado a lado.
-  return `${numeroBr(n)} ${palavra}${gratis} por mês`;
+  return `${numeroBr(n)} ${palavra}${gratis} por mês${reguaDoCredito(lim)}`;
 }
 
+/** A faixa de créditos que uma análise custa NESTE plano — calculada.
+ *
+ *  ⚠️ ISTO ERA O TEXTO FIXO "· edital comum usa 2 a 3", e ele era falso em
+ *  quase todo nível. Um crédito são `caracteres_por_credito`, e o `max_chars`
+ *  do plano limita o custo máximo de uma análise:
+ *
+ *      Nível 1   teto  25.000 → rápida custa sempre 1   ("2 a 3" impossível)
+ *      Nível 2   teto  80.000 → rápida custa 1 a 2      ("3" impossível)
+ *      Nível 3   teto 180.000 → rápida custa 1 a 4
+ *      Nível 4   teto 400.000 → rápida custa 1 a 8      (a frase subestimava)
+ *
+ *  E ignorava o modo: com peso 4, a profunda custa de 4 a 32 conforme o plano.
+ *  Quem fizesse a conta pela régua erraria a capacidade do próprio plano por
+ *  um fator de até quatro.
+ *
+ *  Agora sai dos três campos que a rota já manda. Acompanha sozinha qualquer
+ *  mudança de teto, unidade ou peso — inclusive as que vierem por override do
+ *  banco, que foi como o peso ficou parado em 1 nos dois primeiros níveis sem
+ *  nada na tela denunciar. */
+function reguaDoCredito(lim: LimitePublico): string {
+  const unidade = lim.caracteres_por_credito || 0;
+  const teto = lim.max_chars;
+  // Sem os dados para calcular, não inventa faixa nenhuma.
+  if (!lim.em_creditos || !unidade || typeof teto !== 'number' || teto <= 0) {
+    return ' · 1 por análise';
+  }
+
+  const maxRapida = Math.max(1, Math.ceil(teto / unidade));
+  const peso = Math.max(1, lim.peso_profunda ?? 1);
+  const rapida = maxRapida === 1 ? '1' : `1 a ${maxRapida}`;
+
+  // Sem multiplicador, os dois modos custam o mesmo — dizer "na rápida" e "na
+  // profunda" separadamente só inventaria uma distinção que não existe ali.
+  if (peso === 1) return ` · ${rapida} por análise`;
+
+  // O piso da profunda é o próprio peso: a base mínima é 1 crédito.
+  const profunda = maxRapida === 1 ? `${peso}` : `${peso} a ${maxRapida * peso}`;
+  return ` · ${rapida} na rápida, ${profunda} na profunda`;
+}
 
 /** As duas últimas linhas: caracteres e MB. Se qualquer um dos dois vier nulo,
  *  usa o par de reserva inteiro — meio número do servidor e meio escrito à mão
@@ -410,7 +433,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           showCheckoutError(data.detail || 'Erro inesperado ao processar o pagamento. Tente novamente.');
         }
       } else {
-        throw new Error(mensagemDeErro(data.detail, 'Erro no processamento'));
+        throw new Error(data.detail || 'Erro no processamento');
       }
     } catch {
       setIsCheckoutLoading(false);

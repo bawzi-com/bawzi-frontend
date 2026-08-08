@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Building2, CheckCircle2, Globe2, Loader2, Search } from 'lucide-react';
-import { API_URL } from '@/lib/apiClient';
+import { API_URL, mensagemDeErro } from '@/lib/apiClient';
 
 export type CompanyLookupResult = {
   cnpj?: string;
@@ -74,7 +74,7 @@ export default function CompanyLookup({
     try {
       const response = await fetch(`${API_URL}/api/company/discover?query=${encodeURIComponent(text)}`);
       const data = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(data?.detail || 'Não foi possível buscar empresas agora.');
+      if (!response.ok) throw new Error(mensagemDeErro(data?.detail, 'Não foi possível buscar empresas agora.'));
       setResults(Array.isArray(data?.results) ? data.results : []);
       if (!data?.results?.length) setError('Nenhuma empresa encontrada. Você ainda pode preencher manualmente.');
     } catch (err: any) {

@@ -101,6 +101,10 @@ export interface SavedAnalysis {
     contrato_inicio?: string;
     contrato_fim?: string;
     updated_at?: string;
+    /** "pncp_auto" quando preenchido pelo worker de homologação do PNCP. */
+    origem?: string;
+    auto_registrado_em?: string;
+    fonte_resultado?: string;
   };
   /** Campos extras da IA (riscos, semáforo, etc.) */
   [key: string]: unknown;

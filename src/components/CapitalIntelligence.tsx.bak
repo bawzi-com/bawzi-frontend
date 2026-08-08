@@ -293,23 +293,10 @@ function CardBanco({ inst, isRealApi = false, isLoading = false }: {
                 <StatusIcon size={10} />
                 {cfg.label}
               </span>
-              {isRealApi ? (
-                <span
-                  title="Resposta real da API da instituição para este CNPJ — não é simulação"
-                  className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700"
-                >
+              {isRealApi && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-violet-50 border border-violet-200 text-violet-700">
                   <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse inline-block" />
                   API AO VIVO
-                </span>
-              ) : (
-                /* Sem este rótulo, o cartão simulado era visualmente idêntico
-                   ao da consulta real — e "elegível" simulado lido como
-                   aprovação real queima a confiança quando o banco nega. */
-                <span
-                  title="Compatibilidade estimada pela Bawzi com dados públicos do CNPJ — esta instituição NÃO foi consultada"
-                  className="inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500"
-                >
-                  Estimativa
                 </span>
               )}
             </div>
@@ -537,10 +524,6 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
   const [resultado, setResultado]         = useState<RecomendacaoCapital | null>(null);
   const [analise, setAnalise]             = useState<AnaliseInstituicoesResponse | null>(null);
   const [erro, setErro]                   = useState('');
-  // Erro por campo, separado do `erro` geral (que é para falha de rede/API).
-  // Antes, "Informe o valor estimado" aparecia numa caixa acima do botão,
-  // longe do campo que o causou — o utilizador lia a queixa sem ver o culpado.
-  const [erroCampo, setErroCampo]         = useState<{ cnpj?: string; valor?: string }>({});
   // Celcoin: resultado da consulta real à API (independente dos 3 simulados)
   const [celcoinRealData, setCelcoinReal] = useState<InstituicaoPreQualificacao | null>(null);
   const [celcoinLoading, setCelcoinLoad] = useState(false);
@@ -573,11 +556,8 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
     const cnpjLimpo = cnpj.replace(/\D/g, '');
     const valor = parseBrl(valorEdital);
 
-    const problemas: { cnpj?: string; valor?: string } = {};
-    if (cnpjLimpo.length !== 14) problemas.cnpj = 'Informe um CNPJ válido com 14 dígitos.';
-    if (valor <= 0) problemas.valor = 'Informe o valor estimado do edital.';
-    setErroCampo(problemas);
-    if (problemas.cnpj || problemas.valor) return;
+    if (cnpjLimpo.length !== 14) { setErro('Informe um CNPJ válido com 14 dígitos.'); return; }
+    if (valor <= 0) { setErro('Informe o valor estimado do edital.'); return; }
 
     setErro('');
     setLoading(true);
@@ -656,17 +636,7 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
 
       {/* Formulário */}
       <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 space-y-4">
-        <div>
-          <p className="text-sm font-bold text-slate-700">Informe os dados para medir capacidade de execução</p>
-          {/* Sem isto o utilizador entrega um valor e espera por um botão que
-              promete crédito, sem saber se recebe um número, um parecer ou uma
-              lista de bancos. Os quatro itens são exatamente os blocos que a
-              secção de resultados desenha abaixo. */}
-          <p className="mt-1 text-[11px] font-medium text-slate-400">
-            Devolve capital de giro necessário, score de crédito, estratégia recomendada
-            e simulação de elegibilidade em instituições.
-          </p>
-        </div>
+        <p className="text-sm font-bold text-slate-700">Informe os dados para medir capacidade de execução</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -709,22 +679,12 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
                 <Building2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
-                  inputMode="numeric"
                   value={cnpj}
-                  onChange={e => { setCnpj(formatCnpj(e.target.value)); if (erroCampo.cnpj) setErroCampo(p => ({ ...p, cnpj: undefined })); }}
+                  onChange={e => setCnpj(formatCnpj(e.target.value))}
                   placeholder="00.000.000/0000-00"
-                  aria-invalid={!!erroCampo.cnpj}
-                  className={`w-full pl-9 pr-4 py-3 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 focus:border-transparent ${
-                    erroCampo.cnpj
-                      ? 'border-red-300 bg-red-50/40 focus:ring-red-300'
-                      : 'border-slate-200 focus:ring-emerald-400'
-                  }`}
+                  className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
                 />
               </div>
-            )}
-
-            {erroCampo.cnpj && (
-              <p className="mt-1.5 text-[11px] font-bold text-red-600">{erroCampo.cnpj}</p>
             )}
 
             {/* Aviso quando não há empresas cadastradas */}
@@ -741,21 +701,12 @@ export default function CapitalIntelligence({ token, defaultCnpj = '', defaultUf
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">R$</span>
               <input
                 type="text"
-                inputMode="decimal"
                 value={valorEdital}
-                onChange={e => { setValor(formatValor(e.target.value)); if (erroCampo.valor) setErroCampo(p => ({ ...p, valor: undefined })); }}
+                onChange={e => setValor(formatValor(e.target.value))}
                 placeholder="0,00"
-                aria-invalid={!!erroCampo.valor}
-                className={`w-full pl-9 pr-4 py-3 rounded-xl border text-sm font-mono focus:outline-none focus:ring-2 focus:border-transparent ${
-                  erroCampo.valor
-                    ? 'border-red-300 bg-red-50/40 focus:ring-red-300'
-                    : 'border-slate-200 focus:ring-emerald-400'
-                }`}
+                className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
               />
             </div>
-            {erroCampo.valor && (
-              <p className="mt-1.5 text-[11px] font-bold text-red-600">{erroCampo.valor}</p>
-            )}
           </div>
         </div>
 

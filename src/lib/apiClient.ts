@@ -287,3 +287,34 @@ export function sessionMinutesRemaining(): number | null {
   if (!payload?.exp) return null;
   return Math.max(0, Math.floor((payload.exp - Date.now() / 1000) / 60));
 }
+
+/**
+ * Mensagem legível a partir de QUALQUER formato de `detail` do FastAPI.
+ *
+ * BUG QUE ISTO CORRIGE: o backend usa duas formas de `detail` — string simples
+ * em uns lugares e objeto estruturado noutros (`{codigo, titulo, mensagem}`,
+ * usado em CHARS_LIMIT_EXCEEDED, MODE_LIMIT_REACHED, PACOTE_NAO_CONFIGURADO).
+ * O frontend fazia `new Error(data.detail)` e `${data.detail}` direto: com
+ * objeto, o JavaScript converte para a string "[object Object]" e o usuário
+ * via literalmente isso na tela, no lugar de "O conteúdo tem 80.412
+ * caracteres, mas o seu plano permite até 80.000".
+ *
+ * Também cobre o 422 do FastAPI, cujo `detail` é uma LISTA de erros de
+ * validação — outra forma que vira "[object Object]" se renderizada crua.
+ */
+export function mensagemDeErro(detail: unknown, padrao = 'Não foi possível concluir a operação.'): string {
+  if (!detail) return padrao;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const partes = detail
+      .map((d) => (typeof d === 'string' ? d : (d as { msg?: string })?.msg))
+      .filter(Boolean);
+    return partes.length ? partes.join(' · ') : padrao;
+  }
+  if (typeof detail === 'object') {
+    const d = detail as Record<string, unknown>;
+    const msg = d.mensagem ?? d.message ?? d.titulo ?? d.detail;
+    if (typeof msg === 'string' && msg.trim()) return msg;
+  }
+  return padrao;
+}

@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit,
-  Search, MapPin, SlidersHorizontal, Layers, X, Zap,
+  Search, MapPin, SlidersHorizontal, Layers, X, Zap, History, ArrowRight,
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
 import CnaeMismatchModal from './CnaeMismatchModal';
-import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import { checarAderenciaObjetoEmpresa } from '@/lib/cnaeMatch';
 import { resolveActiveCompany } from '@/lib/activeContext';
 import type { Empresa } from '@/lib/types';
@@ -34,6 +34,8 @@ interface PncpItem {
   [key: string]: any;
 }
 
+import ResumoCreditos, { type QuotaResumo } from './ResumoCreditos';
+
 interface PncpSearchProps {
   onAnalyzeOportunity: (
     textoCompleto: string,
@@ -41,6 +43,10 @@ interface PncpSearchProps {
     editalDados?: { cnpj: string; ano: number; sequencial: number; uf?: string }
   ) => void;
   charLimit?: number;
+  /** false quando o usuário já está no plano de maior capacidade — muda o
+   *  texto do aviso de truncamento (não faz sentido pedir upgrade a quem já
+   *  está no topo). */
+  podeUpgrade?: boolean;
   onUfChange?: (estadoSelecionado: string) => void;
   token?: string | null;
   userUf?: string;
@@ -53,11 +59,20 @@ interface PncpSearchProps {
   onActiveCnpjChange?: (cnpj: string, company: Empresa | null) => void;
   /** Abre a aba Capital com valor e objeto do edital pré-preenchidos */
   onMedirFolego?: (valor: number, objeto: string) => void;
+  /** Abre no histórico o laudo já existente deste edital. */
+  onAbrirAnalise?: (analysisId: string) => void;
+  /** Saldo do período. O Radar é onde a decisão de gastar crédito é tomada —
+   *  o cliente escolhe o edital aqui e só descobria o preço na tela seguinte.
+   *  Ver o saldo ANTES de escolher é o que evita a escolha ser desfeita. */
+  quota?: QuotaResumo | null;
+  /** Abre a compra de pacote avulso, sem sair do Radar. */
+  onComprarPacote?: () => void;
 }
 
 export default function PncpSearch({
   onAnalyzeOportunity,
   charLimit = 30000,
+  podeUpgrade = true,
   onUfChange,
   token,
   userUf,
@@ -67,6 +82,9 @@ export default function PncpSearch({
   activeCnpj,
   onActiveCnpjChange,
   onMedirFolego,
+  onAbrirAnalise,
+  quota,
+  onComprarPacote,
 }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
@@ -76,6 +94,41 @@ export default function PncpSearch({
   const [isSearching, setIsSearching] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [results, setResults] = useState<PncpItem[]>([]);
+
+  // ── Editais que este workspace já analisou ────────────────────────────
+  // Consulta EM LOTE: uma página do Radar tem dezenas de cards, e perguntar
+  // um a um seriam dezenas de round-trips para uma resposta que cabe em uma.
+  // Chave canônica cnpj-ano-sequencial, com o sequencial sem zeros à esquerda
+  // (o PNCP devolve `124` num lugar e `000124` noutro).
+  const [jaAnalisados, setJaAnalisados] = useState<Record<string, {
+    id: string; titulo: string; criada_em: string;
+    score?: number | null; veredito?: string; em_gestao?: boolean;
+  }>>({});
+
+  const chaveAnalise = (cnpj: string, ano: number | string, seq: number | string) =>
+    `${String(cnpj || '').replace(/\D/g, '')}-${String(ano ?? '').trim()}-${String(seq ?? '').trim().replace(/^0+/, '') || '0'}`;
+
+  useEffect(() => {
+    if (!token || results.length === 0) return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const refs = results
+          .filter(e => e.cnpj && e.ano && e.sequencial !== undefined)
+          .map(e => ({ cnpj: e.cnpj, ano: e.ano, sequencial: e.sequencial }));
+        if (!refs.length) return;
+        const res = await apiFetch(`${API_URL}/api/analyses/ja-analisados`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refs }),
+        });
+        if (!res.ok || cancelado) return;
+        const data = await res.json();
+        setJaAnalisados(data?.encontrados || {});
+      } catch { /* marcação é auxiliar: falhar aqui não pode quebrar a lista */ }
+    })();
+    return () => { cancelado = true; };
+  }, [results, token]);
   const [error, setError] = useState('');
   const [mounted, setMounted] = useState(false);
 
@@ -299,7 +352,7 @@ export default function PncpSearch({
       const [resEditais, resMarket, resRegional] = await Promise.all([reqNacional, reqMarket, reqRegional]);
 
       const dataEditais = await resEditais.json();
-      if (!resEditais.ok) throw new Error(dataEditais.detail || 'Falha na busca.');
+      if (!resEditais.ok) throw new Error(mensagemDeErro(dataEditais.detail, 'Falha na busca.'));
       if (dataEditais.status === 'error') {
         throw new Error(dataEditais.message || 'O portal do Governo está instável. Tente novamente em instantes.');
       }
@@ -561,7 +614,9 @@ export default function PncpSearch({
     setLoadingId(edital.id);
     try {
       const [resTexto, resMedia] = await Promise.all([
-        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`, { signal: controller.signal }),
+        // `limite` diz ao backend quanto orçamento de anexos ele tem: sem
+        // isso ele usa o conservador de 30k e volta a descartar documentos.
+        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}&limite=${charLimit}`, { signal: controller.signal }),
         fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`, { signal: controller.signal })
       ]);
 
@@ -617,7 +672,7 @@ export default function PncpSearch({
   ${detalhamentoTecnico.substring(0, espacoLivre)}
 
   [⚠️ ALERTA DO SISTEMA - DADOS TRUNCADOS]
-  O detalhamento técnico acima foi cortado pois excedeu o limite do plano atual do utilizador (${charLimit.toLocaleString()} caracteres). Baseie a sua análise nesta amostragem e, no seu Veredito Financeiro, informe ao utilizador que ele precisa fazer o upgrade (Plano Superior) para que a IA analise a totalidade dos itens e documentos desta licitação.
+  O detalhamento técnico acima foi cortado por exceder ${charLimit.toLocaleString('pt-BR')} caracteres${podeUpgrade ? ' (limite do plano atual do utilizador)' : ' (capacidade máxima da plataforma para um único edital)'}. Baseie a sua análise nesta amostragem e declare explicitamente, na cobertura e na confiança, que a leitura foi parcial.${podeUpgrade ? ' Informe ao utilizador, no Veredito Financeiro, que um plano superior permite analisar a totalidade dos itens e documentos desta licitação.' : ' NÃO sugira upgrade de plano: o utilizador já está na maior capacidade disponível.'}
   `;
         } else {
           conteudoDetalhamentoFinal = `
@@ -719,6 +774,16 @@ export default function PncpSearch({
       {/* 1. CABEÇALHO RADAR 360                     */}
       {/* ========================================== */}
       <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:p-6">
+        {/* ── Carteira, antes da escolha ──────────────────────────────────
+            Este é o ponto do app em que o cliente decide gastar crédito: ele
+            varre os editais aqui e clica em "analisar". O saldo só aparecia
+            na tela seguinte, quando a escolha já estava feita — e a cortesia
+            não aparecia em lugar nenhum, o que fazia o número parecer errado.
+            Mesmo componente da tela de Assinatura, para os dois não
+            divergirem. */}
+        {quota && (
+          <ResumoCreditos quota={quota} onComprarPacote={onComprarPacote} className="mb-4" />
+        )}
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700 shadow-sm">
@@ -1186,6 +1251,38 @@ export default function PncpSearch({
                   )}
                 </div>
                 
+                {/* ── Já analisado ─────────────────────────────────────────
+                    Aparece ANTES do órgão de propósito: a informação que muda
+                    a decisão de clicar é "eu já vi este edital", e ela precisa
+                    chegar antes de a pessoa começar a ler o objeto de novo. */}
+                {(() => {
+                  const ja = jaAnalisados[chaveAnalise(edital.cnpj, edital.ano, edital.sequencial)];
+                  if (!ja) return null;
+                  const quando = ja.criada_em
+                    ? new Date(ja.criada_em).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                    : '';
+                  const rotuloVeredito = ja.veredito === 'GO' ? 'Participar'
+                    : ja.veredito === 'NO_GO' ? 'Não participar'
+                    : ja.veredito === 'GO_CONDICIONADO' ? 'Com validações' : '';
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();   // não dispara a seleção do card
+                        onAbrirAnalise?.(ja.id);
+                      }}
+                      title={`Analisado em ${quando}. Clique para abrir o laudo no histórico.`}
+                      className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black text-violet-700 transition-colors hover:border-violet-300 hover:bg-violet-100"
+                    >
+                      <History size={11} />
+                      Já analisado {quando && `· ${quando}`}
+                      {rotuloVeredito && ` · ${rotuloVeredito}`}
+                      {ja.score !== null && ja.score !== undefined && ` · ${ja.score}`}
+                      <ArrowRight size={11} />
+                    </button>
+                  );
+                })()}
+
                 <h3 className="font-bold text-slate-800 text-sm mb-2 line-clamp-1 pr-4">{edital.orgao}</h3>
                 <p className={`text-slate-500 text-xs font-medium mb-1 ${isExpandido ? '' : 'line-clamp-2'}`}>
                   {edital.objeto}

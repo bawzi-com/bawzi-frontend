@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
+import { mensagemDeErro } from '@/lib/apiClient';
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -44,7 +45,7 @@ function ResetPasswordContent() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Erro ao redefinir a senha.');
+      if (!res.ok) throw new Error(mensagemDeErro(data.detail, 'Erro ao redefinir a senha.'));
 
       setSuccess(true);
     } catch (err: any) {

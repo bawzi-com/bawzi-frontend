@@ -23,11 +23,15 @@ import type { SavedAnalysis } from '@/lib/types';
 export default function HistoryTab({
   token,
   userTier = 1,
-  onRedoAnalysis
+  onRedoAnalysis,
+  abrirAnalysisId,
 }: {
   token: string;
   userTier?: number;
   onRedoAnalysis?: (analysis: SavedAnalysis) => void;
+  /** Id de uma análise para abrir automaticamente assim que a lista carregar.
+   *  Usado pelo badge "já analisado" do Radar, que leva direto ao laudo. */
+  abrirAnalysisId?: string | null;
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [isLoading, setIsLoading] = useState(true);

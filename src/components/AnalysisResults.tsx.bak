@@ -63,9 +63,6 @@ interface AnalysisResultsProps {
    * aparece (ex.: dentro da Gestão, que já tem seu próprio controle). */
   sidebarHidden?: boolean;
   onToggleSidebar?: () => void;
-  /** Abre a compra de pacote avulso. O aviso de laudo degradado é o momento
-   *  de maior intenção que existe: o cliente acabou de VER o que perdeu. */
-  onComprarPacote?: () => void;
 }
 
 type LearningStats = {
@@ -102,7 +99,6 @@ export default function AnalysisResults({
   onExportPDF,
   modelSource,
   isCachedResult,
-  onComprarPacote,
   onUpgradeClick,
   onCockpitStatusChange,
   onGoToCapital,
@@ -645,34 +641,6 @@ export default function AnalysisResults({
 
         </div>
 
-        {/* ── Aviso de laudo degradado ─────────────────────────────────────
-            Quando a cota estoura, a análise NÃO é bloqueada: ela roda no motor
-            do plano gratuito, sem auditoria profunda. Sem este aviso, o cliente
-            compararia dois laudos de profundidade diferente sem entender por
-            quê — e concluiria que a ferramenta piorou. */}
-        {Boolean((liveResult as unknown as Record<string, unknown>)?.motor_gratuito) && (
-          <div className="mt-8 rounded-2xl border border-violet-200 bg-violet-50 p-4 print:hidden">
-            <p className="text-[11px] font-black uppercase tracking-widest text-violet-700">
-              Laudo gerado no motor gratuito
-            </p>
-            <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-violet-900">
-              Os créditos do período acabaram, então esta análise rodou no motor do
-              plano gratuito e <strong>sem a auditoria profunda</strong> — a varredura que
-              lê o edital em blocos e valida cada achado contra o texto original. As
-              conclusões continuam válidas, mas com menos profundidade de verificação.
-            </p>
-            {onComprarPacote && (
-              <button
-                type="button"
-                onClick={onComprarPacote}
-                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-[12px] font-black text-white transition-colors hover:bg-violet-700"
-              >
-                Adicionar créditos e refazer com auditoria completa
-              </button>
-            )}
-          </div>
-        )}
-
         {/* LAYOUT DE IMPRESSÃO — renderiza tudo, visível apenas ao imprimir */}
         <PrintLayout result={liveResult} />
 
@@ -987,13 +955,9 @@ function DecisionSnapshot({
                 tone: 'slate',
                 icon: <span className="text-[10px] font-black">{index + 1}</span>,
                 eyebrow: evidence.categoria || 'Evidência',
-                // Evidência sem referência E sem fonte é afirmação sem lastro
-                // verificável. Antes o badge simplesmente sumia e ela ficava
-                // indistinguível das citadas — o analista precisa ver de longe
-                // o que pode conferir em 30s e o que é palavra da IA.
                 badge: (evidence.referencia || evidence.fonte)
                   ? { label: evidence.referencia || evidence.fonte, tone: 'slate' }
-                  : { label: 'sem citação verificada', tone: 'amber' },
+                  : undefined,
                 title: evidence.titulo,
                 description: (
                   <>

@@ -167,8 +167,7 @@ export default function AppSidebar({
         </button>
 
         {/* ── Histórico ──────────────────────────────────── */}
-        {/* Sem nível: roda sobre análises que o cliente já pagou. */}
-        {token && (
+        {token && currentTier >= 2 && (
           <button
             onClick={() => onSetActiveTab('history')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -218,9 +217,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Gestão de execução ─────────────────────────── */}
-        {/* Sem nível. Estava exigindo 4 aqui e 2 na aba — o usuário do
-            Essencial tinha a funcionalidade e não tinha como chegar nela. */}
-        {token && (
+        {token && currentTier >= 4 && (
           <button
             onClick={() => router.push('/gestao')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -245,8 +242,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Comparar editais ───────────────────────────── */}
-        {/* Sem nível: comparação entre laudos já pagos. */}
-        {token && (
+        {token && currentTier >= 2 && (
           <button
             onClick={() => onSetActiveTab('comparar')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -271,9 +267,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Oportunidades — Feed CNAE (autenticados) ────── */}
-        {/* Sem nível: PNCP é API pública e a rota tem cache. Continua
-            exigindo `userData` porque o fit depende do CNAE da empresa. */}
-        {token && userData && (
+        {token && userData && currentTier >= 3 && (
           <button
             onClick={() => onSetActiveTab('cnae')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -348,9 +342,7 @@ export default function AppSidebar({
         )}
 
         {/* ── Renovações (NÍV. 4) ─────────────────────────── */}
-        {/* Sem nível: `contratos_vencendo.py` não chama modelo nenhum. A
-            exigência real é ter empresa cadastrada, e ela continua abaixo. */}
-        {token && userData && (
+        {token && userData && currentTier >= 4 && (
           (userData.companies?.length || userData.company) ? (
             /* Desbloqueado + empresa configurada */
             <button
@@ -410,14 +402,15 @@ export default function AppSidebar({
             <ChevronDown size={13} className="shrink-0 transition-transform group-open:rotate-180" />
           </summary>
           <div className="flex flex-col gap-0.5 px-1 pb-1 pt-1">
-            {/* Sobraram só as que realmente travam. Cinco linhas saíram
-                daqui porque as funcionalidades foram abertas — deixar o selo
-                sem a trava seria a mesma incoerência ao contrário.
-
-                O Simulador entrou: ele é travado no Nível 4 desde sempre
-                (TacticalSimulator.tsx) e nunca tinha aparecido nesta lista,
-                então a única exclusividade real do plano de R$ 497 não
-                circulava nem como promessa. */}
+            {currentTier < 2 && (
+              <LockedNavRow label="Decisões" tier="NÍV. 2" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 2 && (
+              <LockedNavRow label="Priorizar" tier="NÍV. 2" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 3 && (
+              <LockedNavRow label="Oportunidades" tier="NÍV. 3" onClick={() => router.push('/plans')} />
+            )}
             {currentTier < 3 && (
               <LockedNavRow label="Monitor" tier="NÍV. 3" onClick={() => router.push('/plans')} />
             )}
@@ -425,7 +418,10 @@ export default function AppSidebar({
               <LockedNavRow label="Capital" tier="NÍV. 3" onClick={() => router.push('/plans')} />
             )}
             {currentTier < 4 && (
-              <LockedNavRow label="Simulador de preços" tier="NÍV. 4" onClick={() => router.push('/plans')} />
+              <LockedNavRow label="Gestão" tier="NÍV. 4" onClick={() => router.push('/plans')} />
+            )}
+            {currentTier < 4 && (
+              <LockedNavRow label="Renovações" tier="NÍV. 4" onClick={() => router.push('/plans')} />
             )}
           </div>
         </details>

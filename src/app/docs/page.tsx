@@ -190,7 +190,7 @@ function Tag({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PlanBadge({ plan }: { plan: 'Gratuito' | 'Essencial' | 'Pro' | 'Elite' }) {
+function PlanBadge({ plan }: { plan: 'Gratuito' | 'Essencial' | 'Profissional' | 'Avançado' }) {
   const colors: Record<string, string> = {
     Gratuito:  'bg-slate-100 text-slate-600 border-slate-200',
     Essencial: 'bg-sky-50 text-sky-700 border-sky-200',
@@ -573,8 +573,8 @@ function SectionConcorrentes() {
         notificação será gerada.
       </Step>
       <Callout type="info">
-        O monitoramento de concorrentes é um recurso disponível nos planos <PlanBadge plan="Pro" /> e
-        {' '}<PlanBadge plan="Elite" />.
+        O monitoramento de concorrentes é um recurso disponível nos planos <PlanBadge plan="Profissional" /> e
+        {' '}<PlanBadge plan="Avançado" />.
       </Callout>
 
       <H2 id="historico-lances">Histórico de lances</H2>
@@ -732,13 +732,13 @@ function SectionPlanos() {
       features: ['Análises ilimitadas', 'Radar de alertas', '2 membros', '1 empresa monitorada', 'Alertas por e-mail e push'],
     },
     {
-      name: 'Pro',
-      badge: <PlanBadge plan="Pro" />,
+      name: 'Profissional',
+      badge: <PlanBadge plan="Profissional" />,
       features: ['Análises ilimitadas', '5 membros', '2 empresas monitoradas', 'Monitoramento de concorrentes', 'Modelos IA avançados (Claude Sonnet)', 'Relatórios exportáveis'],
     },
     {
-      name: 'Elite',
-      badge: <PlanBadge plan="Elite" />,
+      name: 'Avançado',
+      badge: <PlanBadge plan="Avançado" />,
       features: ['Tudo do Pro', '10 membros', '3 empresas monitoradas', 'Modelos IA premium (o3-mini + Claude Opus)', 'API Enterprise', 'Suporte prioritário'],
     },
   ];

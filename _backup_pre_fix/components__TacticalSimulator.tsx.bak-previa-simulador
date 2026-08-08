@@ -7,16 +7,12 @@ interface TacticalSimulatorProps {
   pricing?: any;
   fullResult?: any;
   userTier?: number;
-  /** Abre os planos a partir da prévia. Opcional porque o componente é
-   *  renderizado em contexto de impressão/export, onde não há para onde ir. */
-  onUpgradeClick?: () => void;
 }
 
 export default function TacticalSimulator({
   pricing = {},
   fullResult = {},
-  userTier = 1,
-  onUpgradeClick
+  userTier = 1
 }: TacticalSimulatorProps) {
   
   const [modo, setModo] = useState<'CONSERVADOR' | 'SNIPER' | 'KAMIKAZE'>('SNIPER');
@@ -116,81 +112,9 @@ export default function TacticalSimulator({
   };
 
   if (isLocked) {
-    // O preço-alvo sai do `pricing_intelligence` da análise que o cliente já
-    // pagou — mostrar é devolver o que é dele. O que fica do outro lado é o
-    // veredito, que exige o custo real da empresa.
-    const alvoVencedor = valorGlobal * (1 - desagioEstimado / 100);
-
     return (
-      <div className="border border-slate-200 rounded-[2rem] bg-white overflow-hidden">
-        <div className="flex items-center gap-3 px-7 pt-6 pb-4">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white shrink-0">
-            <Crosshair size={16} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest">
-              Simulador tático de preços
-            </h3>
-            <p className="text-[10px] font-bold text-slate-400">
-              Precificação da sua proposta contra o comportamento do órgão
-            </p>
-          </div>
-          <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1
-                           text-[9px] font-black uppercase tracking-wider text-amber-700">
-            Nível 4
-          </span>
-        </div>
-
-        {!isSigiloso && (
-          <div className="mx-7 mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Preço-alvo provável do vencedor
-            </p>
-            <p className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-              {formatMoeda(alvoVencedor)}
-            </p>
-            <p className="mt-1 text-[11px] font-bold text-slate-500">
-              −{desagioEstimado.toFixed(1)}% sobre o teto de {formatMoeda(valorGlobal)}
-              <span className="font-medium text-slate-400"> · já calculado nesta análise</span>
-            </p>
-          </div>
-        )}
-
-        <div className="px-7 pb-6">
-          <p className="text-sm font-medium leading-relaxed text-slate-500">
-            Informando o custo real da sua empresa — compra, frete, equipe, impostos e margem
-            mínima — o simulador responde se {isSigiloso ? 'o preço' : 'esse preço'} é
-            <b className="text-slate-700"> financeiramente defensável</b>,
-            <b className="text-slate-700"> condicionado por margem</b> ou
-            <b className="text-slate-700"> No-Go</b>, em três posturas de disputa.
-          </p>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {[
-              { n: 'Conservador', m: 'margem 20%' },
-              { n: 'Sniper', m: 'margem 12%' },
-              { n: 'Kamikaze', m: 'margem 5%' },
-            ].map((p) => (
-              <span key={p.n} className="inline-flex items-center gap-1.5 rounded-lg border
-                                         border-slate-200 bg-slate-50 px-2.5 py-1.5
-                                         text-[10px] font-bold text-slate-400">
-                <Shield size={10} /> {p.n}
-                <span className="font-medium text-slate-300">· {p.m}</span>
-              </span>
-            ))}
-          </div>
-
-          {onUpgradeClick && (
-            <button
-              type="button"
-              onClick={onUpgradeClick}
-              className="mt-5 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold
-                         text-white transition-all hover:bg-slate-800 active:scale-[0.99]"
-            >
-              Liberar o simulador — ver planos
-            </button>
-          )}
-        </div>
+      <div className="border border-slate-200 rounded-[2rem] bg-slate-50 p-8 text-center">
+        <p className="text-xs font-bold text-slate-400 uppercase">Simulador de Estratégia Bloqueado</p>
       </div>
     );
   }

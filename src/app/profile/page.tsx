@@ -19,10 +19,13 @@ import {
   Users,
   Crown,
   Bell,
+  Coins,
+  Plus,
 } from 'lucide-react';
 import { subscribeToPush, unsubscribeFromPush } from '../../lib/pushNotifications';
 
 import CompanyProfileForm from '../../components/CompanyProfileForm';
+import { useTierConfig } from '../../Contexts/TierContext';
 import PersonalDataForm from '../../components/PersonalDataForm';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TwoFactorSettings from '../../components/TwoFactorSettings';
@@ -37,8 +40,10 @@ import {
   type ActiveContextEventDetail,
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { apiFetch, getAuthToken, initSession, clearSession, SessionExpiredError } from '@/lib/apiClient';
+import { apiFetch, getAuthToken, initSession, clearSession, SessionExpiredError, mensagemDeErro } from '@/lib/apiClient';
 import ChangePlanModal from '@/components/ChangePlanModal';
+import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
+import { detalhesDeCreditos } from '@/components/ResumoCreditos';
 
 type ProfileIcon = React.ComponentType<{ size?: number; className?: string }>;
 type SectionTone = 'emerald' | 'sky' | 'slate' | 'amber' | 'red';
@@ -93,7 +98,11 @@ function getFallbackSeats(tier: number) {
 // tinha migrado para Essencial/Profissional/Avançado, fazendo o mesmo
 // Nível 4 aparecer como "Enterprise" no topo da página e "Avançado" na
 // seção de troca de plano, alguns parágrafos abaixo.
-function getTierName(tier: number) {
+/** Fallback SÓ para quando a configuração ainda não chegou da API.
+ *  O nome oficial vem de `useTierConfig().tierNames`, que sai do
+ *  tier_config.py — escrever nome de plano à mão foi o que criou quatro
+ *  vocabulários para os mesmos cinco planos. */
+function getTierNameFallback(tier: number) {
   if (tier >= 4) return 'Avançado';
   if (tier === 3) return 'Profissional';
   if (tier === 2) return 'Essencial';
@@ -108,6 +117,11 @@ function ProfileContent() {
   const [authToken, setAuthToken] = useState<string>('');
   const [userData, setUserData] = useState<any>(null);
   const [userTier, setUserTier] = useState<number>(1);
+  // Cota mensal por plano, da MESMA fonte que o backend aplica (Admin →
+  // tier_configs → /api/tiers/config). Escrever os números à mão aqui os faria
+  // divergir do que a cota realmente é no dia em que você mexer no Admin.
+  const { tierCredits, tierNames } = useTierConfig();
+  const nomeDoPlano = (t: number) => tierNames[t] || getTierNameFallback(t);
   const [isLoading, setIsLoading] = useState(true);
   
   // Estado para controlar qual CNPJ o painel da CGU deve analisar em tempo real
@@ -141,6 +155,94 @@ function ProfileContent() {
   const [twoFAOn, setTwoFAOn] = useState<boolean | null>(null);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null); // null = verificando
   const [pushLoading, setPushLoading] = useState(false);
+
+  // ── Créditos: cota do plano + pacotes avulsos ────────────────────────
+  // A tela de assinatura mostrava plano, preço, cartão e vigência, mas não o
+  // saldo — e depois que o avulso passou a existir, ficou possível ter 500
+  // créditos comprados sem nenhum lugar que os exibisse. O número vem de
+  // /analyses/quota, a MESMA fonte que o portão de bloqueio consulta.
+  const [quota, setQuota] = useState<any>(null);
+  const [pacoteInfo, setPacoteInfo] = useState<PacoteInfo | null>(null);
+  const [pacoteAberto, setPacoteAberto] = useState(false);
+  const [pacoteEnviando, setPacoteEnviando] = useState(false);
+  const [avisoPacote, setAvisoPacote] = useState<string | null>(null);
+
+  const recarregarQuota = React.useCallback(() => {
+    apiFetch(`${API_URL}/api/analyses/quota`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d) setQuota(d); })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { if (authToken) recarregarQuota(); }, [authToken, recarregarQuota]);
+
+  const abrirCompraCreditos = async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/pacote-info`);
+      if (!res.ok) throw new Error();
+      setPacoteInfo(await res.json());
+      setPacoteAberto(true);
+    } catch {
+      setAvisoPacote('Não foi possível consultar o preço do crédito agora.');
+    }
+  };
+
+  const confirmarCompraCreditos = async (valorBRL: number) => {
+    setPacoteEnviando(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/comprar-pacote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Volta para ESTA tela, não para a de análise: quem comprou olhando o
+        // plano quer ver o saldo novo no mesmo lugar de onde saiu.
+        body: JSON.stringify({ valor_brl: valorBRL, retorno: 'profile' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAvisoPacote(mensagemDeErro(data?.detail, 'Não foi possível abrir o checkout agora.'));
+        return;
+      }
+      if (data?.url) window.location.href = data.url;
+    } catch {
+      setAvisoPacote('Não foi possível abrir o checkout agora. Tente novamente.');
+    } finally {
+      setPacoteEnviando(false);
+    }
+  };
+
+  // Volta do checkout — mesma rede de segurança da tela de análise: pergunta
+  // ao Stripe se foi pago em vez de depender só do webhook chegar.
+  useEffect(() => {
+    if (!authToken || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const status = url.searchParams.get('pacote');
+    if (!status) return;
+    const sessionId = url.searchParams.get('session_id') || '';
+    url.searchParams.delete('pacote');
+    url.searchParams.delete('session_id');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+
+    if (status === 'cancelado') { setAvisoPacote('Compra cancelada — nada foi cobrado.'); return; }
+    if (status !== 'ok' || !sessionId) return;
+
+    (async () => {
+      try {
+        const res = await apiFetch(
+          `${API_URL}/api/billing/confirmar-pacote?session_id=${encodeURIComponent(sessionId)}`,
+        );
+        const data = await res.json().catch(() => ({}));
+        setAvisoPacote(res.ok
+          ? (data?.mensagem || 'Compra confirmada.')
+          : mensagemDeErro(data?.detail, 'Não consegui confirmar a compra agora.'));
+      } catch {
+        setAvisoPacote('Não consegui confirmar a compra agora. Se o pagamento foi aprovado, o crédito entra em instantes.');
+      } finally {
+        recarregarQuota();
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authToken]);
 
   useEffect(() => {
     const handleContextUpdate = (event: Event) => {
@@ -422,7 +524,7 @@ function ProfileContent() {
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || 'Erro ao alterar plano.');
+      if (!res.ok) throw new Error(mensagemDeErro(data?.detail, 'Erro ao alterar plano.'));
       // Sincroniza com o Stripe e recarrega os dados sem sair da página
       await apiFetch(`${API_URL}/api/billing/sync?_t=${Date.now()}`).catch(() => {});
       await fetchData();
@@ -439,7 +541,7 @@ function ProfileContent() {
     try {
       const res = await apiFetch(`${API_URL}/api/billing/cancel-subscription`, { method: 'POST' });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || 'Erro ao cancelar assinatura.');
+      if (!res.ok) throw new Error(mensagemDeErro(data?.detail, 'Erro ao cancelar assinatura.'));
       await fetchData();
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao cancelar assinatura.');
@@ -453,7 +555,7 @@ function ProfileContent() {
     try {
       const res = await apiFetch(`${API_URL}/api/billing/reactivate-subscription`, { method: 'POST' });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || 'Erro ao reativar assinatura.');
+      if (!res.ok) throw new Error(mensagemDeErro(data?.detail, 'Erro ao reativar assinatura.'));
       await fetchData();
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Erro ao reativar assinatura.');
@@ -467,7 +569,7 @@ function ProfileContent() {
     try {
       const res = await apiFetch(`${API_URL}/api/billing/setup-intent`, { method: 'POST' });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.client_secret) throw new Error(data?.detail || 'Erro ao preparar atualização de cartão.');
+      if (!res.ok || !data?.client_secret) throw new Error(mensagemDeErro(data?.detail, 'Erro ao preparar atualização de cartão.'));
       setPaymentClientSecret(data.client_secret);
       setShowPaymentModal(true);
     } catch (error) {
@@ -538,7 +640,7 @@ function ProfileContent() {
   const memberCount = members.length || userData?.workspace_users_count || 1;
   const seatLimit = userData?.vagas_totais || getFallbackSeats(userTier);
   const seatPercent = Math.min(Math.round((memberCount / seatLimit) * 100), 100);
-  const planName = getTierName(userTier);
+  const planName = nomeDoPlano(userTier);
 
   const summaryCards = [
     { label: 'Plano', value: `Nível ${userTier}`, description: planName, icon: Crown, tone: 'emerald' as const },
@@ -933,6 +1035,26 @@ function ProfileContent() {
                           <div>
                             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">Seu plano atual</p>
                             <p className="mt-0.5 text-xl font-black text-white">{planName}</p>
+                            {/* A cota é a medida que o cliente consome de fato.
+                                O cartão mostrava plano, preço e vigência — e
+                                justamente ela ficava de fora. */}
+                            <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {!!tierCredits[userTier] && (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-black text-white/80">
+                                  {tierCredits[userTier].toLocaleString('pt-BR')} créditos/mês
+                                </span>
+                              )}
+                              {/* O saldo comprado fica COLADO na cota do plano
+                                  porque é assim que ele é gasto: um só bolso.
+                                  Separado noutro canto da tela, viraria um
+                                  número que ninguém soma na hora de decidir. */}
+                              {quota?.creditos_extras > 0 && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-black text-violet-700">
+                                  <Coins size={11} />
+                                  +{Number(quota.creditos_extras).toLocaleString('pt-BR')} adicionais
+                                </span>
+                              )}
+                            </span>
                             {subscriptionDetails?.amount && (
                               <p className="mt-0.5 text-sm font-semibold text-white/70">
                                 {subscriptionDetails.amount}
@@ -998,6 +1120,104 @@ function ProfileContent() {
                       </div>
                     </div>
 
+                    {/* ── Créditos: plano + adicionais ─────────────────────────
+                        O card mostrava plano, preço, cartão e vigência. Faltava
+                        justamente o que o cliente consome. E desde que o pacote
+                        avulso existe, era possível ter créditos comprados sem
+                        nenhuma tela que os mostrasse — só o alerta de cota, no
+                        workspace, sabia deles. */}
+                    {quota && !quota.ilimitado && (
+                      <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-6">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                                Do plano
+                              </p>
+                              <p className="mt-0.5 text-lg font-black text-slate-900">
+                                {Number(quota.limite || 0).toLocaleString('pt-BR')}
+                                <span className="ml-1 text-[11px] font-bold text-slate-400">/mês</span>
+                              </p>
+                            </div>
+
+                            <div className="h-8 w-px bg-slate-200" />
+
+                            {/* Adicionais aparecem SEMPRE, inclusive zerados: um
+                                campo que some quando vale zero faz a pessoa
+                                achar que a compra não existiu. */}
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                                Adicionais
+                              </p>
+                              <p className={`mt-0.5 text-lg font-black ${quota.creditos_extras > 0 ? 'text-violet-600' : 'text-slate-300'}`}>
+                                {quota.creditos_extras > 0 ? '+' : ''}
+                                {Number(quota.creditos_extras || 0).toLocaleString('pt-BR')}
+                              </p>
+                            </div>
+
+                            <div className="h-8 w-px bg-slate-200" />
+
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                                Disponível
+                              </p>
+                              <p className="mt-0.5 text-lg font-black text-emerald-600">
+                                {Math.max(0, Number(quota.saldo || 0) - Number(quota.usado || 0)).toLocaleString('pt-BR')}
+                                <span className="ml-1 text-[11px] font-bold text-slate-400">
+                                  de {Number(quota.saldo || 0).toLocaleString('pt-BR')}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={abrirCompraCreditos}
+                            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3.5 text-xs font-bold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100"
+                          >
+                            <Plus size={13} />
+                            Comprar créditos
+                          </button>
+                        </div>
+
+                        {/* Barra de consumo. Os avulsos entram como um segundo
+                            trecho, em roxo, para ficar visível que a folga não
+                            veio do plano — e que ela não volta no dia 1º. */}
+                        <div className="mt-3">
+                          <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className="h-full bg-emerald-500 transition-all"
+                              style={{ width: `${Math.min(100, (Number(quota.usado || 0) / Math.max(1, Number(quota.saldo || 1))) * 100)}%` }}
+                            />
+                          </div>
+                          {/* Mesma frase da barra de créditos e do Radar,
+                              gerada pelo mesmo helper. Escrita à mão nos três
+                              lugares, ela divergiria no primeiro ajuste — e
+                              telas discordando sobre saldo é pior do que
+                              discordarem sobre um rótulo. */}
+                          <p className="mt-1.5 text-[11px] text-slate-500">
+                            {detalhesDeCreditos(quota).map((parte, i) => (
+                              <React.Fragment key={parte}>
+                                {i > 0 && ' · '}
+                                <span className={
+                                  parte.includes('nossa conta') ? 'font-semibold text-emerald-600'
+                                  : parte.includes('adicionais') ? 'font-semibold text-violet-600' : ''
+                                }>{parte}</span>
+                              </React.Fragment>
+                            ))}
+                          </p>
+                          {quota.em_cortesia && (
+                            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                              Você passou do saldo e está na cortesia — as análises continuam,
+                              {quota.profunda_pausada
+                                ? ' mas a auditoria profunda está pausada até haver crédito.'
+                                : ' e a auditoria profunda segue disponível até o fim da cortesia.'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Vigência + progress bar */}
                     {subscriptionDetails?.current_period_start && subscriptionDetails?.current_period_end && (
                       <div className="px-5 py-3 sm:px-6">
@@ -1044,10 +1264,11 @@ function ProfileContent() {
                       <p className="mb-4 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Trocar plano</p>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                         {([
-                          { tier: 2, name: 'Essencial',    price: 'R$ 79/mês'  },
-                          { tier: 3, name: 'Profissional', price: 'R$ 197/mês' },
-                          { tier: 4, name: 'Avançado',     price: 'R$ 497/mês' },
-                        ] as const).map(({ tier, name, price }) => {
+                          { tier: 2, price: 'R$ 79/mês'  },
+                          { tier: 3, price: 'R$ 197/mês' },
+                          { tier: 4, price: 'R$ 497/mês' },
+                        ] as const).map(({ tier, price }) => {
+                          const name = nomeDoPlano(tier);
                           const isCurrent = tier === userTier;
                           const isUp = tier > userTier;
                           return (
@@ -1084,6 +1305,11 @@ function ProfileContent() {
                               </span>
                               <span className={`mt-0.5 text-sm font-black ${isCurrent ? 'text-emerald-900' : 'text-slate-800'}`}>{name}</span>
                               <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : isUp ? 'text-slate-500' : 'text-amber-700'}`}>{price}</span>
+                              {!!tierCredits[tier] && (
+                                <span className={`mt-0.5 text-[11px] font-bold ${isCurrent ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                  {tierCredits[tier].toLocaleString('pt-BR')} créditos/mês
+                                </span>
+                              )}
                               {!isCurrent && !isUp && (
                                 <span className="mt-1 text-[10px] text-amber-600">Você perderá recursos do plano atual</span>
                               )}
@@ -1437,6 +1663,34 @@ function ProfileContent() {
                       </button>
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Modal: Comprar créditos avulsos ── */}
+            <ComprarCreditosModal
+              info={pacoteInfo}
+              aberto={pacoteAberto}
+              enviando={pacoteEnviando}
+              onFechar={() => setPacoteAberto(false)}
+              onConfirmar={confirmarCompraCreditos}
+            />
+
+            {/* Resultado da volta do checkout. Sem isto a confirmação roda em
+                silêncio e a pessoa não sabe se o saldo mudou por causa dela. */}
+            {avisoPacote && (
+              <div className="fixed left-1/2 top-4 z-[70] w-[min(92vw,26rem)] -translate-x-1/2">
+                <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-lg">
+                  <Coins size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+                  <p className="flex-1 text-sm font-semibold text-slate-800">{avisoPacote}</p>
+                  <button
+                    type="button"
+                    onClick={() => setAvisoPacote(null)}
+                    className="shrink-0 rounded-md px-1 text-lg leading-none text-slate-400 transition hover:text-slate-700"
+                    aria-label="Fechar aviso"
+                  >
+                    ×
+                  </button>
                 </div>
               </div>
             )}

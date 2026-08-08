@@ -6,17 +6,30 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 interface TierContextProps {
   tierLimits: Record<number, number>;
   tierFileLimits: Record<number, number>;
+  /** Créditos por mês de cada plano. 0 = ilimitado. */
+  tierCredits: Record<number, number>;
+  /** Nome do plano como o cliente o vê. Fonte única: tier_config.py no
+   *  backend. Escrever à mão no frontend foi o que produziu quatro
+   *  vocabulários para os mesmos cinco planos. */
+  tierNames: Record<number, string>;
   isLoading: boolean;
 }
 
 // Valores de segurança (Fallbacks)
 const fallbackTierLimits = { [-1]: 10000, 1: 25000, 2: 80000, 3: 180000, 4: 400000 };
 const fallbackTierFileLimits = { [-1]: 3, 1: 5, 2: 15, 3: 30, 4: 100 };
+// Fallback só entra se a API não responder. Os valores reais vêm do Admin.
+const fallbackTierCredits = { [-1]: 1, 1: 5, 2: 60, 3: 30, 4: 35 };
+const fallbackTierNames: Record<number, string> = {
+  [-1]: 'Visitante', 1: 'Gratuito', 2: 'Essencial', 3: 'Profissional', 4: 'Avançado',
+};
 
 // Criar o Contexto
 const TierContext = createContext<TierContextProps>({
   tierLimits: fallbackTierLimits,
   tierFileLimits: fallbackTierFileLimits,
+  tierCredits: fallbackTierCredits,
+  tierNames: fallbackTierNames,
   isLoading: true,
 });
 
@@ -24,6 +37,8 @@ const TierContext = createContext<TierContextProps>({
 export function TierProvider({ children }: { children: ReactNode }) {
   const [tierLimits, setTierLimits] = useState<Record<number, number>>(fallbackTierLimits);
   const [tierFileLimits, setTierFileLimits] = useState<Record<number, number>>(fallbackTierFileLimits);
+  const [tierCredits, setTierCredits] = useState<Record<number, number>>(fallbackTierCredits);
+  const [tierNames, setTierNames] = useState<Record<number, string>>(fallbackTierNames);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -49,15 +64,21 @@ export function TierProvider({ children }: { children: ReactNode }) {
         if (data.config) {
           const novosLimites: Record<number, number> = {};
           const novosLimitesArquivo: Record<number, number> = {};
+          const novosCreditos: Record<number, number> = {};
+          const novosNomes: Record<number, string> = {};
 
           Object.entries(data.config).forEach(([tierId, config]: [string, any]) => {
             const idNum = parseInt(tierId);
             if (typeof config?.max_chars === 'number') novosLimites[idNum] = config.max_chars;
             if (typeof config?.max_file_mb === 'number') novosLimitesArquivo[idNum] = config.max_file_mb;
+            if (typeof config?.monthly_limit === 'number') novosCreditos[idNum] = config.monthly_limit;
+            if (typeof config?.name === 'string' && config.name.trim()) novosNomes[idNum] = config.name.trim();
           });
 
           setTierLimits(novosLimites);
           setTierFileLimits(novosLimitesArquivo);
+          if (Object.keys(novosCreditos).length) setTierCredits(novosCreditos);
+          if (Object.keys(novosNomes).length) setTierNames(novosNomes);
         }
       } catch {
         // Mantém os limites locais quando a API não está disponível.
@@ -70,7 +91,7 @@ export function TierProvider({ children }: { children: ReactNode }) {
   }, []); // Executa apenas 1x ao abrir o site
 
   return (
-    <TierContext.Provider value={{ tierLimits, tierFileLimits, isLoading }}>
+    <TierContext.Provider value={{ tierLimits, tierFileLimits, tierCredits, tierNames, isLoading }}>
       {children}
     </TierContext.Provider>
   );

@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Sparkles, Coins, X } from 'lucide-react';
+import { Lock, Sparkles } from 'lucide-react';
 import { initSession, clearSession, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent } from '@/lib/types';
@@ -44,7 +44,6 @@ import ParametrizacaoPanel from './ParametrizacaoPanel';
 import DecisionManagementTab from './DecisionManagementTab';
 import CompareTab from './CompareTab';
 import PricingSection from './PricingSection';
-import ComprarCreditosModal, { type PacoteInfo } from './ComprarCreditosModal';
 import PncpSearch from '../components/PncpSearch';
 import ContratosVencendo from '../components/ContratosVencendo';
 import CapitalIntelligence from '../components/CapitalIntelligence';
@@ -140,9 +139,6 @@ export default function AnalysisApp() {
   const [pncpData, setPncpData]         = useState<{ cnpj: string; ano: number; sequencial: number; uf?: string } | null>(null);
 
   // Parâmetros de busca pré-carregados via URL (link de email ou notificação)
-  // Análise a abrir no histórico quando o usuário clica em "já analisado"
-  // no Radar. Some depois de usada, para não reabrir ao voltar para a aba.
-  const [analiseParaAbrir, setAnaliseParaAbrir] = useState<string | null>(null);
   const [initialPncpQuery, setInitialPncpQuery] = useState('');
   const [initialPncpUf, setInitialPncpUf]       = useState('');
 
@@ -190,19 +186,6 @@ export default function AnalysisApp() {
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
-
-  // Abre uma aba direto por URL: /workspace?tab=history
-  // Sem isto, qualquer link vindo de fora — como o botão "Ir para Decisões" no
-  // estado vazio da Gestão — só consegue largar o utilizador na aba padrão e
-  // deixá-lo procurar o destino na barra lateral.
-  useEffect(() => {
-    const ABAS_VALIDAS = [
-      'workspace', 'analise', 'concorrentes', 'renovacoes', 'capital',
-      'alertas', 'cnae', 'parametrizacao', 'history', 'gestao', 'comparar',
-    ];
-    const alvo = new URLSearchParams(window.location.search).get('tab');
-    if (alvo && ABAS_VALIDAS.includes(alvo)) setActiveTab(alvo);
-  }, []);
   // Valor pré-preenchido para Capital (vindo de uma análise)
   const [capitalPrefilledValor, setCapitalPrefilledValor] = useState<number>(0);
   const [capitalPrefilledObjeto, setCapitalPrefilledObjeto] = useState<string>('');
@@ -284,12 +267,6 @@ export default function AnalysisApp() {
   const { tierLimits, tierFileLimits } = useTierConfig();
   const currentTier = resolveEffectiveTier(userTier, userData?.active_workspace?.tier);
   const currentCharLimit    = tierLimits[userTier] || 10000;
-  // Maior capacidade existente entre os planos — usada para não sugerir
-  // upgrade a quem já está no topo. Tolerante a config parcial vinda da API.
-  const maxCharLimitPlataforma = Math.max(
-    ...Object.values(tierLimits).map(Number).filter(Number.isFinite),
-    currentCharLimit,
-  );
   const currentFileLimitMB  = tierFileLimits[userTier] || 3;
   const currentFileLimitBytes = currentFileLimitMB * 1024 * 1024;
   const totalFileSize       = files.reduce((acc, f) => acc + f.size, 0);
@@ -323,64 +300,6 @@ export default function AnalysisApp() {
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
-
-  // ─── useEffect: volta do checkout de créditos ───────────────────────────────
-  // O webhook do Stripe é o caminho oficial de creditar, mas ele só funciona
-  // se o Stripe CONSEGUIR alcançar este servidor. Em desenvolvimento (localhost
-  // sem `stripe listen`), atrás de firewall, ou com o endpoint fora do ar por
-  // um minuto, a entrega falha calada e quem PAGOU volta para uma tela com o
-  // saldo velho — foi exatamente isso que aconteceu.
-  //
-  // Aqui a pergunta é feita na direção oposta: o redirect traz o `session_id`,
-  // nós perguntamos ao Stripe se foi pago e creditamos. Os dois caminhos usam
-  // a MESMA função no backend, com a trava dentro do filtro do update, então
-  // podem chegar juntos sem creditar em dobro.
-  const [avisoPacote, setAvisoPacote] = useState<string | null>(null);
-  useEffect(() => {
-    if (!token || typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    const status = url.searchParams.get('pacote');
-    if (!status) return;
-
-    // Lê ANTES de limpar. (Na primeira versão deste bloco eu apaguei os
-    // parâmetros e só então tentei ler o session_id — que já não existia.)
-    const sessionId = url.searchParams.get('session_id') || '';
-
-    // Limpa a query string logo em seguida, antes de qualquer await: sem isso
-    // um F5 na tela de retorno re-dispara a confirmação, e o histórico do
-    // navegador fica guardando um id de sessão de pagamento na URL.
-    url.searchParams.delete('pacote');
-    url.searchParams.delete('session_id');
-    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
-
-    if (status === 'cancelado') {
-      setAvisoPacote('Compra cancelada — nada foi cobrado.');
-      return;
-    }
-    if (status !== 'ok' || !sessionId) return;
-
-    (async () => {
-      try {
-        const res = await apiFetch(
-          `${API_URL}/api/billing/confirmar-pacote?session_id=${encodeURIComponent(sessionId)}`,
-        );
-        const data = await res.json().catch(() => ({}));
-        setAvisoPacote(res.ok
-          ? (data?.mensagem || 'Compra confirmada.')
-          : mensagemDeErro(data?.detail, 'Não consegui confirmar a compra agora.'));
-      } catch {
-        setAvisoPacote('Não consegui confirmar a compra agora. Se o pagamento foi aprovado, o crédito entra em instantes.');
-      } finally {
-        // Recarrega o saldo nos DOIS casos: se o webhook já tinha creditado, o
-        // número na tela continua o antigo até esta chamada.
-        apiFetch(`${API_URL}/api/analyses/quota`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => { if (d) setQuota(d); })
-          .catch(() => {});
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
 
   // ─── useEffect: soberania de tier (cache local) ─────────────────────────────
   useEffect(() => {
@@ -660,52 +579,6 @@ export default function AnalysisApp() {
     handleAnalyze(motor);
   };
 
-  /** Compra de pacote avulso de créditos — compra única, sem trocar de plano.
-   *
-   *  Existe porque "Fazer upgrade" não é resposta para quem já está no plano
-   *  de topo, nem para quem só quer resolver o mês corrente. O crédito é dado
-   *  pelo webhook do Stripe ao confirmar o pagamento, nunca aqui. */
-  // ── Compra de créditos avulsos ────────────────────────────────────────
-  // O `window.prompt` que existia aqui não mostrava quantos créditos o valor
-  // virava enquanto a pessoa digitava, não traduzia crédito em nada
-  // reconhecível e só validava a faixa no servidor. Virou modal.
-  const [pacoteInfo, setPacoteInfo] = useState<PacoteInfo | null>(null);
-  const [pacoteAberto, setPacoteAberto] = useState(false);
-  const [pacoteEnviando, setPacoteEnviando] = useState(false);
-
-  const handleComprarPacote = async () => {
-    if (!token) { setAuthMode('register'); setShowAuthModal(true); return; }
-    try {
-      const res = await apiFetch(`${API_URL}/api/billing/pacote-info`);
-      if (!res.ok) throw new Error();
-      setPacoteInfo(await res.json());
-      setPacoteAberto(true);
-    } catch {
-      window.alert('Não foi possível consultar o preço do crédito agora.');
-    }
-  };
-
-  const confirmarCompraPacote = async (valorBRL: number) => {
-    setPacoteEnviando(true);
-    try {
-      const res = await apiFetch(`${API_URL}/api/billing/comprar-pacote`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor_brl: valorBRL }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        window.alert(mensagemDeErro(data?.detail, 'Não foi possível abrir o checkout agora.'));
-        return;
-      }
-      if (data?.url) window.location.href = data.url;
-    } catch {
-      window.alert('Não foi possível abrir o checkout agora. Tente novamente.');
-    } finally {
-      setPacoteEnviando(false);
-    }
-  };
-
   const handleUpgrade = async (tier: number) => {
     if (!token) { setAuthMode('register'); setShowAuthModal(true); return; }
     // Assinantes pagos: a troca/gestão de plano tem UI completa na página de perfil
@@ -851,35 +724,6 @@ export default function AnalysisApp() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
-      {/* Compra de créditos avulsos — chamada de vários pontos (barra de
-          créditos, cards de modo e aviso de laudo degradado). Fica na raiz
-          para não ser desmontada quando a aba muda. */}
-      {/* Resultado da volta do checkout. Sem isto, a confirmação acontece em
-          silêncio e a pessoa não sabe se o crédito entrou por esta via ou se
-          o número mudou sozinho. */}
-      {avisoPacote && (
-        <div className="fixed left-1/2 top-4 z-[70] w-[min(92vw,26rem)] -translate-x-1/2">
-          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 shadow-lg">
-            <Coins size={16} className="mt-0.5 shrink-0 text-emerald-600" />
-            <p className="flex-1 text-sm font-semibold text-slate-800">{avisoPacote}</p>
-            <button
-              type="button"
-              onClick={() => setAvisoPacote(null)}
-              className="shrink-0 rounded-md p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-              aria-label="Fechar aviso"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-      <ComprarCreditosModal
-        info={pacoteInfo}
-        aberto={pacoteAberto}
-        enviando={pacoteEnviando}
-        onFechar={() => setPacoteAberto(false)}
-        onConfirmar={confirmarCompraPacote}
-      />
       {/* Keyframes globais (path-routing, scan-laser, float-agent, draw-arc) */}
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes route-data { 0% { stroke-dashoffset: 60; } 100% { stroke-dashoffset: 0; } }
@@ -924,19 +768,6 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch
                             token={token}
-                            /* BUG CORRIGIDO: sem esta prop o PncpSearch caía no
-                               default de 30.000 e truncava TODO edital em
-                               ~29.917 chars — inclusive para quem paga o plano
-                               de 400.000. A IA analisava 7,5% do documento e o
-                               laudo ainda mandava o usuário fazer upgrade de um
-                               plano que ele já tinha. */
-                            charLimit={currentCharLimit}
-                            podeUpgrade={currentCharLimit < maxCharLimitPlataforma}
-                            /* O saldo no Radar. É aqui que a decisão de gastar
-                               crédito acontece — o preço aparecia só na tela
-                               seguinte, com a escolha já feita. */
-                            quota={quota}
-                            onComprarPacote={handleComprarPacote}
                             userUf={activeCompany?.uf || userData?.company?.uf}
                             contextCompanies={contextCompanies}
                             activeCnpj={userData?.active_cnpj}
@@ -946,11 +777,6 @@ export default function AnalysisApp() {
                             }}
                             initialQuery={initialPncpQuery}
                             initialUf={initialPncpUf}
-                            onAbrirAnalise={(analysisId) => {
-                              setAnaliseParaAbrir(analysisId);
-                              setActiveTab('history');
-                              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 120);
-                            }}
                             onMedirFolego={(valor, objeto) => {
                               setCapitalPrefilledValor(valor || 0);
                               setCapitalPrefilledObjeto(objeto || '');
@@ -1006,7 +832,6 @@ export default function AnalysisApp() {
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
                         quota={token ? quota : guestQuota}
                         onUpgradeClick={() => handleUpgrade(currentTier + 1)}
-                        onComprarPacote={handleComprarPacote}
                       />
                       </div>
                     </>
@@ -1037,7 +862,6 @@ export default function AnalysisApp() {
                       onExportPDF={handleExportPDF}
                       modelSource={modelSource}
                       isCachedResult={isCachedResult}
-                      onComprarPacote={handleComprarPacote}
                       onUpgradeClick={() => handleUpgrade(selectedTier || 2)}
                       onGoToCapital={(valor) => {
                         setCapitalPrefilledValor(valor);
@@ -1186,7 +1010,6 @@ export default function AnalysisApp() {
                     <HistoryTab
                       token={token}
                       userTier={userTier}
-                      abrirAnalysisId={analiseParaAbrir}
                       onRedoAnalysis={(analiseAntiga) => {
                         setText(typeof analiseAntiga.raw_text === 'string' ? analiseAntiga.raw_text : '');
                         setActiveTab('workspace');

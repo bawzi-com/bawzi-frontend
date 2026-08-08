@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiFetch, SessionExpiredError, API_URL, initSession, mensagemDeErro } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, API_URL, initSession } from '@/lib/apiClient';
 import {
   Users,
   FileText,
@@ -37,7 +37,6 @@ import {
   Trash2,
   CreditCard,
   Layers,
-  ExternalLink,
 } from 'lucide-react';
 
 
@@ -234,7 +233,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'billing' | 'promo' | 'analytics' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'promo' | 'analytics' | 'logs'>('overview');
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
@@ -251,129 +250,6 @@ export default function AdminDashboard() {
   const [smtpName, setSmtpName] = useState('Bawzi');
   const [smtpFromEmail, setSmtpFromEmail] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
-
-  // ─── Parâmetros comerciais (billing_config no backend) ──────────────────
-  // Tudo que decide dinheiro e não deveria exigir deploy: price ID do pacote,
-  // tamanho do pacote, margem de cortesia, cache de prompt e a tabela de
-  // preços por modelo. A régua de créditos já foi calibrada duas vezes em cima
-  // de preço errado — com estes campos aqui, corrigir passa a ser um formulário.
-  const [billingCampos, setBillingCampos] = useState<Array<{
-    chave: string; valor: unknown; padrao: unknown; descricao: string;
-    env: string | null; origem: string;
-  }>>([]);
-  const [billingEdit, setBillingEdit] = useState<Record<string, string>>({});
-  const [billingLoading, setBillingLoading] = useState(false);
-  const [billingSaving, setBillingSaving] = useState(false);
-  const [billingMsg, setBillingMsg] = useState<string | null>(null);
-
-  const loadBillingConfig = async () => {
-    setBillingLoading(true);
-    try {
-      const res = await apiFetch(`${API_URL}/api/admin/billing-config`);
-      const data = await res.json();
-      const campos = data?.campos || [];
-      setBillingCampos(campos);
-      // O formulário edita STRING; a conversão para número/booleano/JSON
-      // acontece no envio. Assim um campo em branco não vira 0 sem querer.
-      const inicial: Record<string, string> = {};
-      for (const c of campos) {
-        inicial[c.chave] = typeof c.valor === 'object' && c.valor !== null
-          ? JSON.stringify(c.valor, null, 2)
-          : String(c.valor ?? '');
-      }
-      setBillingEdit(inicial);
-      // Simula já no carregamento, para a tela abrir mostrando o efeito
-      // da configuração que está valendo.
-      setTimeout(() => simularBillingConfig(), 0);
-    } catch {
-      setBillingMsg('Falha ao carregar a configuração.');
-    } finally {
-      setBillingLoading(false);
-    }
-  };
-
-  // Simulação: o que os valores ATUAIS DO FORMULÁRIO (ainda não salvos)
-  // produzem em cada plano. Sem isto o operador edita `credito_usd` e
-  // `saida_investigador` no escuro — e são os dois campos com maior poder de
-  // estrago: um divide toda a cobrança, o outro é a linha mais pesada e menos
-  // verificada da estimativa de custo.
-  const [billingSim, setBillingSim] = useState<{
-    credito_usd: number;
-    nota: string;
-    planos: Array<{
-      tier: number; nome: string; cota: number; receita_usd: number;
-      exposicao_usd: number; exposicao_pct_receita: number | null;
-      linhas: Array<{ chars: number; usd_rapida: number; creditos_rapida: number;
-                      usd_profunda: number; creditos_profunda: number }>;
-    }>;
-  } | null>(null);
-  const [simLoading, setSimLoading] = useState(false);
-
-  const simularBillingConfig = async () => {
-    setSimLoading(true);
-    try {
-      const payload: Record<string, unknown> = {};
-      for (const c of billingCampos) {
-        const bruto = billingEdit[c.chave] ?? '';
-        if (c.chave === 'precos_llm') {
-          try { payload[c.chave] = bruto.trim() ? JSON.parse(bruto) : {}; } catch { /* ignora no preview */ }
-        } else if (c.chave === 'llm_cache_edital') payload[c.chave] = bruto === 'true';
-        else if (bruto !== '' && !Number.isNaN(Number(bruto))) payload[c.chave] = Number(bruto);
-        else payload[c.chave] = bruto;
-      }
-      const res = await apiFetch(`${API_URL}/api/admin/billing-config/simular`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) setBillingSim(await res.json());
-    } catch { /* preview é auxiliar: falhar aqui não pode atrapalhar o salvar */ }
-    finally { setSimLoading(false); }
-  };
-
-  const saveBillingConfig = async () => {
-    setBillingSaving(true);
-    setBillingMsg(null);
-    try {
-      const payload: Record<string, unknown> = {};
-      for (const c of billingCampos) {
-        const bruto = billingEdit[c.chave] ?? '';
-        if (c.chave === 'cortesia_fator') payload[c.chave] = parseFloat(bruto);
-        else if (c.chave === 'pacote_creditos_qtd') payload[c.chave] = parseInt(bruto, 10);
-        else if (c.chave === 'llm_cache_edital') payload[c.chave] = bruto === 'true';
-        else if (c.chave === 'precos_llm') {
-          try { payload[c.chave] = bruto.trim() ? JSON.parse(bruto) : {}; }
-          catch { throw new Error('A tabela de preços não é um JSON válido.'); }
-        } else payload[c.chave] = bruto;
-      }
-      const res = await apiFetch(`${API_URL}/api/admin/billing-config`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // O 422 do backend explica QUAL regra foi violada (ex.: cortesia < 1
-        // degradaria o cliente antes de ele gastar a cota que pagou).
-        setBillingMsg(typeof data?.detail === 'string' ? data.detail : 'Não foi possível salvar.');
-        return;
-      }
-      // Avisos não bloqueiam o salvamento, mas precisam ser LIDOS — são
-      // consequências que passam na validação e mordem depois (ex.: crédito
-      // avulso mais barato que o da assinatura mata o upgrade).
-      const avisos: string[] = Array.isArray(data?.avisos) ? data.avisos : [];
-      if (avisos.length) {
-        setBillingMsg(`Salvo, mas atenção: ${avisos.join(' ')}`);
-      } else {
-        setBillingMsg('Configuração salva.');
-      }
-      await loadBillingConfig();
-    } catch (e) {
-      setBillingMsg(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    } finally {
-      setBillingSaving(false);
-    }
-  };
 
   // Estados do Modo de Pagamento (Stripe teste x oficial/live)
   const [stripeMode, setStripeMode] = useState<'test' | 'live'>('test');
@@ -543,7 +419,7 @@ export default function AdminDashboard() {
   // FUNÇÕES DE AÇÃO (API)
   // ==========================================
   const handleTierChange = async (userId: string, userEmail: string, currentTier: number) => {
-    const newTierStr = prompt(`Digite o novo Tier (0 a 4) para ${userEmail}:\nAtual: ${currentTier}\n\n0: Visitante | 1: Gratuito | 2: Essencial | 3: Profissional | 4: Avançado`);
+    const newTierStr = prompt(`Digite o novo Tier (0 a 4) para ${userEmail}:\nAtual: ${currentTier}\n\n0: Visitante | 1: Grátis | 2: Essencial | 3: Profissional | 4: Avançado`);
     if (newTierStr === null || newTierStr === "") return;
     
     const newTier = parseInt(newTierStr);
@@ -566,7 +442,7 @@ export default function AdminDashboard() {
         setUsers(users.map(u => u.id === userId ? { ...u, tier: newTier, workspace_tier: newTier } : u));
       } else {
         const errorData = await res.json();
-        alert(`Erro ao atualizar: ${mensagemDeErro(errorData.detail, 'Tente novamente.')}`);
+        alert(`Erro ao atualizar: ${errorData.detail || 'Tente novamente.'}`);
       }
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
@@ -644,7 +520,7 @@ export default function AdminDashboard() {
         setModerationModal(null);
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(`Erro: ${mensagemDeErro(err.detail, 'Tente novamente.')}`);
+        alert(`Erro: ${err.detail || 'Tente novamente.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1090,7 +966,7 @@ export default function AdminDashboard() {
         alert(`✅ ${data.message}`);
         setTimeout(loadPncpData, 1500);
       } else {
-        alert(`❌ ${mensagemDeErro(data.detail, 'Erro ao iniciar worker.')}`);
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1114,7 +990,7 @@ export default function AdminDashboard() {
         alert(`✅ ${data.message}`);
         setTimeout(loadPncpData, 1500);
       } else {
-        alert(`❌ ${mensagemDeErro(data.detail, 'Erro ao iniciar worker.')}`);
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1145,7 +1021,7 @@ export default function AdminDashboard() {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Erro: ${mensagemDeErro(err.detail, res.statusText)}`);
+        alert(`Erro: ${err.detail || res.statusText}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1179,7 +1055,7 @@ export default function AdminDashboard() {
         alert(`✅ ${data.message}`);
         setTimeout(loadPncpData, 1500);
       } else {
-        alert(`❌ ${mensagemDeErro(data.detail, 'Erro ao iniciar worker.')}`);
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1213,7 +1089,7 @@ export default function AdminDashboard() {
         alert(`✅ ${data.message}`);
         setTimeout(loadPncpData, 1500);
       } else {
-        alert(`❌ ${mensagemDeErro(data.detail, 'Erro ao iniciar worker.')}`);
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1243,7 +1119,7 @@ export default function AdminDashboard() {
       });
       if (!res.ok) {
         const err = await res.json();
-        alert(`Erro: ${mensagemDeErro(err.detail, res.statusText)}`);
+        alert(`Erro: ${err.detail || res.statusText}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1267,7 +1143,7 @@ export default function AdminDashboard() {
         alert(`✅ ${data.message}`);
         setTimeout(loadPncpData, 1500);
       } else {
-        alert(`❌ ${mensagemDeErro(data.detail, 'Erro ao iniciar worker.')}`);
+        alert(`❌ ${data.detail || 'Erro ao iniciar worker.'}`);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -1438,12 +1314,6 @@ export default function AdminDashboard() {
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'tiers' ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
           <Lock size={18} /> Tiers &amp; Limites
-        </button>
-        <button
-          onClick={() => { setActiveTab('billing'); loadBillingConfig(); }}
-          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'billing' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
-        >
-          <CreditCard size={18} /> Billing
         </button>
         <button
           onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); }}
@@ -2498,191 +2368,6 @@ export default function AdminDashboard() {
             </form>
           </div>
 
-
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* ABA: BILLING                               */}
-      {/* ========================================== */}
-      {activeTab === 'billing' && (
-        <div className="space-y-8">
-
-          {/* ── Parâmetros comerciais ─────────────────────────────────── */}
-          <div className="rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border bg-slate-900/40 border-slate-800/60">
-            <div className="flex items-center gap-4 mb-2">
-              <div className="p-3 rounded-2xl bg-amber-500/10">
-                <CreditCard size={24} className="text-amber-400" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-black tracking-tight">Parâmetros comerciais</h2>
-                <p className="text-sm text-slate-400 font-medium">
-                  Valem imediatamente, sem deploy nem reinício. O que estiver salvo aqui
-                  vence o <code className="text-slate-300">.env</code>.
-                </p>
-              </div>
-            </div>
-
-            {billingLoading && <p className="text-sm text-slate-400 mt-6">Carregando…</p>}
-
-            {!billingLoading && billingCampos.length > 0 && (
-              <div className="mt-8 space-y-6">
-                {billingCampos.map((c) => (
-                  <div key={c.chave} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
-                    <div className="flex items-start justify-between gap-4 mb-2">
-                      <label className="text-[11px] font-black uppercase tracking-widest text-slate-300">
-                        {c.chave}
-                      </label>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                        c.origem === 'admin'
-                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                          : 'bg-slate-700/40 text-slate-400 border border-slate-600/40'
-                      }`}>
-                        {c.origem === 'admin' ? 'definido aqui' : 'vem do .env / código'}
-                      </span>
-                    </div>
-                    <p className="text-[12px] leading-relaxed text-slate-400 mb-3">{c.descricao}</p>
-
-                    {c.chave === 'llm_cache_edital' ? (
-                      <select
-                        value={billingEdit[c.chave] ?? 'false'}
-                        onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-100 outline-none focus:border-amber-500"
-                      >
-                        <option value="false">Desligado</option>
-                        <option value="true">Ligado</option>
-                      </select>
-                    ) : c.chave === 'precos_llm' ? (
-                      <textarea
-                        value={billingEdit[c.chave] ?? ''}
-                        onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
-                        rows={8}
-                        spellCheck={false}
-                        placeholder={'{\n  "claude-sonnet-5": { "in": 2.0, "out": 10.0 }\n}'}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-2.5 font-mono text-[12px] text-slate-100 outline-none focus:border-amber-500"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={billingEdit[c.chave] ?? ''}
-                        onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
-                        className="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-100 outline-none focus:border-amber-500"
-                      />
-                    )}
-
-                    <p className="mt-2 text-[10px] font-medium text-slate-500">
-                      Padrão do código: <code className="text-slate-400">
-                        {typeof c.padrao === 'object' ? JSON.stringify(c.padrao) : String(c.padrao)}
-                      </code>
-                      {c.env && <> · variável de ambiente: <code className="text-slate-400">{c.env}</code></>}
-                    </p>
-                  </div>
-                ))}
-
-                {/* ── O que estes números produzem ──────────────────────
-                    Painel de simulação: usa os valores DO FORMULÁRIO, ainda
-                    não salvos. É o que transforma "credito_usd = 0.05" numa
-                    frase que se pode julgar: "uma auditoria de 150k custa 13
-                    créditos e US$ 0,625 no Elite". */}
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5">
-                  <div className="flex items-center justify-between gap-4 mb-3">
-                    <div>
-                      <p className="text-[11px] font-black uppercase tracking-widest text-amber-300">
-                        Efeito destes parâmetros
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Calculado com o que está nos campos acima — não com o que está salvo.
-                      </p>
-                    </div>
-                    <button
-                      onClick={simularBillingConfig}
-                      disabled={simLoading}
-                      className="shrink-0 rounded-lg border border-amber-500/40 px-3 py-1.5 text-[11px] font-black text-amber-300 hover:bg-amber-500/10 disabled:opacity-50"
-                    >
-                      {simLoading ? 'Calculando…' : 'Recalcular'}
-                    </button>
-                  </div>
-
-                  {!billingSim && <p className="text-[12px] text-slate-500">Sem simulação ainda.</p>}
-
-                  {billingSim && billingSim.planos.map((pl) => (
-                    <div key={pl.tier} className="mt-4 first:mt-0">
-                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1.5">
-                        <span className="text-[12px] font-black text-slate-200">{pl.nome}</span>
-                        <span className="text-[10px] text-slate-500">
-                          cota {pl.cota} cr · receita US$ {pl.receita_usd.toFixed(2)}/mês
-                        </span>
-                        {pl.exposicao_pct_receita !== null && (
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                            pl.exposicao_pct_receita > 100
-                              ? 'bg-red-500/15 text-red-300 border border-red-500/30'
-                              : pl.exposicao_pct_receita > 50
-                                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                                : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                          }`}>
-                            exposição US$ {pl.exposicao_usd.toFixed(2)} = {pl.exposicao_pct_receita}% da receita
-                          </span>
-                        )}
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-[11px]">
-                          <thead>
-                            <tr className="text-slate-500 text-left">
-                              <th className="font-bold py-1 pr-4">edital</th>
-                              <th className="font-bold py-1 pr-4">rápida</th>
-                              <th className="font-bold py-1 pr-4">auditoria profunda</th>
-                            </tr>
-                          </thead>
-                          <tbody className="text-slate-300 font-medium">
-                            {pl.linhas.map((l) => (
-                              <tr key={l.chars} className="border-t border-slate-800/60">
-                                <td className="py-1 pr-4 tabular-nums">{l.chars.toLocaleString('pt-BR')}</td>
-                                <td className="py-1 pr-4 tabular-nums">
-                                  {l.creditos_rapida} cr <span className="text-slate-500">· ${l.usd_rapida.toFixed(4)}</span>
-                                </td>
-                                <td className="py-1 pr-4 tabular-nums">
-                                  {l.creditos_profunda} cr <span className="text-slate-500">· ${l.usd_profunda.toFixed(4)}</span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))}
-
-                  {billingSim && (
-                    <p className="mt-4 text-[10px] leading-relaxed text-slate-500">
-                      {billingSim.nota} O valor em dólar é ESTIMADO pelo modelo de custo;
-                      o custo real de cada análise é gravado em <code>custo_usd</code> e
-                      comparado com a estimativa pelo <code>propor_regua.py</code>.
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={saveBillingConfig}
-                    disabled={billingSaving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 px-5 py-2.5 font-black text-slate-950 transition-colors"
-                  >
-                    <Save size={18} />
-                    {billingSaving ? 'A guardar...' : 'Salvar parâmetros'}
-                  </button>
-                  {billingMsg && (
-                    <span className={`text-sm font-bold ${
-                      billingMsg === 'Configuração salva.' ? 'text-emerald-400'
-                        : billingMsg.startsWith('Salvo, mas atenção') ? 'text-amber-400'
-                        : 'text-red-400'
-                    }`}>
-                      {billingMsg}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* 💳 MODO DE PAGAMENTO (STRIPE TESTE x OFICIAL/LIVE) */}
           <div className={`mt-8 rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border ${
             stripeMode === 'live' ? 'bg-red-950/30 border-red-500/40' : 'bg-slate-900/40 border-slate-800/60'
@@ -2761,54 +2446,6 @@ export default function AdminDashboard() {
 
             {/* Chaves live */}
             <div className="space-y-6">
-              {/* Onde as chaves live moram. O painel pedia a `sk_live_` sem
-                  dizer de onde tirar, e esta é a tela que decide se o produto
-                  passa a cobrar de verdade — o pior lugar para deixar alguém
-                  procurando no Google.
-
-                  São DOIS links porque são dois passos que falham por motivos
-                  diferentes: a página de chaves só exibe as live depois que a
-                  conta está ativada. Sem o segundo link, quem tem conta nova
-                  abre o primeiro, vê só chave de teste e conclui que o link
-                  está errado. */}
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">
-                  Onde pegar estas chaves
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <a
-                    href="https://dashboard.stripe.com/apikeys"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 transition-all hover:border-slate-600 hover:bg-slate-900"
-                  >
-                    <span>
-                      <span className="block text-sm font-black text-slate-200">Chaves da API no Stripe</span>
-                      <span className="block text-[11px] text-slate-500">dashboard.stripe.com/apikeys</span>
-                    </span>
-                    <ExternalLink size={15} className="shrink-0 text-slate-500" />
-                  </a>
-                  <a
-                    href="https://dashboard.stripe.com/account/onboarding"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 transition-all hover:border-slate-600 hover:bg-slate-900"
-                  >
-                    <span>
-                      <span className="block text-sm font-black text-slate-200">Ativar a conta Stripe</span>
-                      <span className="block text-[11px] text-slate-500">necessário antes das chaves live aparecerem</span>
-                    </span>
-                    <ExternalLink size={15} className="shrink-0 text-slate-500" />
-                  </a>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-                  No Stripe, desligue o <strong className="text-slate-400">modo de teste</strong> antes de copiar —
-                  com ele ligado a página mostra <code className="text-slate-400">pk_test_</code> e{' '}
-                  <code className="text-slate-400">sk_test_</code>. A chave secreta aparece uma única vez:
-                  copie direto de lá e não a reaproveite em outro ambiente.
-                </p>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">

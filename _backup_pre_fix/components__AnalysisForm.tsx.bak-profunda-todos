@@ -3,18 +3,16 @@
 /**
  * AnalysisForm.tsx
  * Card de submissão do edital: textarea, drag-and-drop de ficheiros,
- * seletor de modo (rápida | profunda) e botões de análise.
+ * seletor de provider (tier 4) e botões de análise.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   Zap, FolderOpen, FileText, ScanSearch, BrainCircuit,
   AlertTriangle, CheckCircle2, UploadCloud, Gauge, ShieldCheck, Clock3,
-  RefreshCw, Coins,
+  RefreshCw,
 } from 'lucide-react';
 import { formatMB } from './analysis-types';
-
-import { detalhesDeCreditos } from './ResumoCreditos';
 
 export interface QuotaInfo {
   tier: number;
@@ -37,34 +35,6 @@ export interface QuotaInfo {
    *  modo OU por faixa de tamanho. Opcional porque a cota de convidado é
    *  montada no cliente e não passa pelo endpoint. */
   unidade?: 'creditos' | 'analises';
-  /** Coeficientes de custo vindos do backend. A tela avalia uma soma; os
-   *  PREÇOS e os MODELOS ficam no servidor. Ausente = régua antiga. */
-  precificacao?: {
-    credito_usd: number;
-    chars_por_bloco: number;
-    sobreposicao_bloco: number;
-    rapida: { fixo_usd: number; por_char_usd: number; por_bloco_usd: number };
-    profunda: { fixo_usd: number; por_char_usd: number; por_bloco_usd: number };
-  } | null;
-  /** Cota do plano + pacotes avulsos comprados. É contra ISTO que o portão
-   *  decide, não contra `limite`. */
-  saldo?: number;
-  /** Créditos avulsos comprados no período. */
-  creditos_extras?: number;
-  /** Até onde a cortesia vai antes de qualquer degradação. */
-  teto_cortesia?: number | null;
-  /** Já passou do saldo, mas ainda dentro da cortesia — tudo funciona. */
-  em_cortesia?: boolean;
-  /** Créditos que a casa serviu ACIMA do saldo neste período. Não debitam
-   *  nada — nem agora, nem quando o cliente comprar um pacote. Existe para
-   *  medir o quanto da cortesia já foi usada (e para poder dizer isso na tela,
-   *  em vez de a folga sumir sem explicação). */
-  cortesia_usada?: number;
-  /** Tudo que rodou no período, cobrado ou não. `usado` + `cortesia_usada`. */
-  consumo_total?: number;
-  /** Passou da cortesia: a análise ainda RODA, mas no motor do plano
-   *  gratuito e sem auditoria. Nada é bloqueado em momento nenhum. */
-  profunda_pausada?: boolean;
 }
 
 interface AnalysisFormProps {
@@ -86,8 +56,6 @@ interface AnalysisFormProps {
   onShowAuthModal: (mode: 'login' | 'register') => void;
   quota?: QuotaInfo | null;
   onUpgradeClick?: () => void;
-  /** Abre a compra de pacote avulso de créditos. */
-  onComprarPacote?: () => void;
 }
 
 // ─── Tempo estimado honesto ───────────────────────────────────────────────────
@@ -119,29 +87,6 @@ function tempoEstimadoLabel(token: string | null, userTier: number): string {
  */
 function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
                     quota?: QuotaInfo | null): number | null {
-  // ── Caminho novo: o crédito mede CUSTO ────────────────────────────────
-  // O backend manda coeficientes; aqui só se avalia a soma. Nada de modelo
-  // nem de tabela de preços no frontend — se um preço mudar no Admin, este
-  // número muda junto no próximo carregamento, sem release.
-  const pr = quota?.precificacao;
-  if (pr && pr.credito_usd > 0) {
-    const c = modo === 'profunda' ? pr.profunda : pr.rapida;
-    let usd = c.fixo_usd + c.por_char_usd * Math.max(0, caracteres);
-    if (modo === 'profunda' && c.por_bloco_usd > 0) {
-      // Espelha `auditoria.segmentar`: blocos com sobreposição.
-      const passo = Math.max(1, pr.chars_por_bloco - pr.sobreposicao_bloco);
-      const blocos = caracteres > 0
-        ? Math.max(1, Math.ceil(Math.max(0, caracteres - pr.sobreposicao_bloco) / passo))
-        : 0;
-      usd += c.por_bloco_usd * blocos;
-    }
-    return Math.max(1, Math.ceil(usd / pr.credito_usd));
-  }
-
-  // ── Fallback: régua antiga por tamanho ───────────────────────────────
-  // Vale enquanto o backend não devolver `precificacao` (deploy em andamento,
-  // ou falha na estimativa). Mostrar o preço velho é melhor do que não
-  // mostrar preço nenhum numa cotação que é firme.
   const unidade = quota?.caracteres_por_credito;
   if (!unidade || unidade <= 0) return null;
   const base = Math.max(1, Math.ceil(caracteres / unidade));
@@ -153,40 +98,24 @@ function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
 function QuotaBar({
   quota,
   onUpgradeClick,
-  onComprarPacote,
   isGuest = false,
 }: {
   quota: QuotaInfo;
   onUpgradeClick?: () => void;
-  /** Abre a compra de pacote avulso. Substitui o "Fazer upgrade" no estouro:
-   *  quem já está no plano de topo não tem upgrade para fazer, e quem está no
-   *  meio prefere resolver o mês de hoje a mudar de assinatura. */
-  onComprarPacote?: () => void;
   isGuest?: boolean;
 }) {
   if (quota.ilimitado) return null;
 
-  // A barra mede contra o SALDO (plano + pacotes), que é o número que o
-  // portão usa. Medir contra `limite` mostraria 130% para quem comprou pacote.
-  const saldoEfetivo = quota.saldo ?? quota.limite;
-  const pct          = saldoEfetivo > 0 ? Math.min(100, Math.round((quota.usado / saldoEfetivo) * 100)) : 0;
-  const emCortesia   = !!quota.em_cortesia;
-  const motorGratis  = !!quota.profunda_pausada;
-  // ⚠️ `esgotado` deixou de significar "bloqueado". Desde que o portão passou
-  // a degradar em vez de barrar, ninguém fica sem produto: acima da cortesia
-  // a análise roda no motor gratuito. O vermelho de "limite atingido" saiu de
-  // cena — ele anunciava uma parede que não existe mais.
-  const esgotado     = quota.restante === 0 && !emCortesia && !motorGratis;
+  const pct          = quota.limite > 0 ? Math.min(100, Math.round((quota.usado / quota.limite) * 100)) : 0;
+  const esgotado     = quota.restante === 0;
   // Para guests (limite = 1), não mostrar estado "quase esgotado" — só verde ou vermelho
   const quaseEsgotado = !isGuest && !esgotado && quota.restante !== null && quota.restante <= 1;
 
-  const barColor = motorGratis ? 'bg-violet-500' : (esgotado || emCortesia) ? 'bg-amber-500'
-                 : quaseEsgotado ? 'bg-amber-500' : 'bg-emerald-500';
-  const textColor = motorGratis ? 'text-violet-700' : (esgotado || emCortesia) ? 'text-amber-700'
-                  : quaseEsgotado ? 'text-amber-700' : 'text-slate-600';
-  const bgColor   = motorGratis
-    ? 'bg-violet-50 border-violet-200'
-    : (esgotado || emCortesia || quaseEsgotado)
+  const barColor = esgotado ? 'bg-red-500' : quaseEsgotado ? 'bg-amber-500' : 'bg-emerald-500';
+  const textColor = esgotado ? 'text-red-700' : quaseEsgotado ? 'text-amber-700' : 'text-slate-600';
+  const bgColor   = esgotado
+    ? 'bg-red-50 border-red-200'
+    : quaseEsgotado
       ? 'bg-amber-50 border-amber-200'
       : 'bg-slate-50 border-slate-200';
 
@@ -201,9 +130,6 @@ function QuotaBar({
   const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada'
                        : emCreditos ? '⛔ Créditos do período esgotados'
                        : '⛔ Limite mensal atingido';
-  const labelEstado    = motorGratis ? '🆓 Rodando no motor gratuito'
-                       : emCortesia  ? '🎁 Usando crédito de cortesia'
-                       : null;
   const labelAtivo     = isGuest ? 'Teste gratuito'
                        : emCreditos ? 'Créditos este mês'
                        : 'Análises este mês';
@@ -212,10 +138,10 @@ function QuotaBar({
     <div className={`rounded-2xl border px-4 py-3 ${bgColor}`}>
       <div className="flex items-center justify-between mb-2">
         <span className={`text-[11px] font-black uppercase tracking-wider ${textColor}`}>
-          {labelEstado ?? (esgotado ? labelEsgotado : labelAtivo)}
+          {esgotado ? labelEsgotado : labelAtivo}
         </span>
         <span className={`text-[11px] font-bold ${textColor}`}>
-          {quota.usado} / {saldoEfetivo}{emCreditos ? ' créditos' : ''}
+          {quota.usado} / {quota.limite}{emCreditos ? ' créditos' : ''}
           {isGuest
             ? <>{' '}·{' '}reseta amanhã</>
             : <>{' '}·{' '}reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}</>
@@ -227,143 +153,40 @@ function QuotaBar({
         <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
       </div>
 
-      {/* ── De onde vem o número, e o que fazer a respeito ─────────────────
-          "9 / 60" sozinho não fecha a conta na cabeça de ninguém: quem rodou
-          19 análises vê 9 e conclui que o sistema errou. A parte que faltava é
-          a cortesia — o que a casa serviu acima do saldo e não cobra.
-
-          A frase e o botão dividem a MESMA linha, alinhados nas pontas. Em
-          linhas separadas, o botão ficava solto no meio do bloco, empurrando
-          a explicação para baixo e parecendo um item da lista acima. */}
-      {!isGuest && (
-        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          <p className="min-w-0 flex-1 text-[10px] leading-4 text-slate-500">
-            {detalhesDeCreditos(quota).map((parte, i) => (
-              <React.Fragment key={parte}>
-                {i > 0 && ' · '}
-                <span className={
-                  parte.includes('nossa conta') ? 'font-semibold text-emerald-600'
-                  : parte.includes('adicionais') ? 'font-semibold text-violet-600' : ''
-                }>{parte}</span>
-              </React.Fragment>
-            ))}
-          </p>
-
-          {/* Comprar créditos deixa de existir só no estouro. Quem quer
-              reforçar o saldo ANTES de acabar não tinha por onde — e é
-              exatamente quem paga sem precisar de aviso vermelho.
-              Discreto de propósito: nos estados de cortesia e motor gratuito
-              existem botões sólidos, e dois pesos iguais na mesma tela fariam
-              o aviso urgente perder a urgência. */}
-          {onComprarPacote && !emCortesia && !motorGratis && (
-            <button
-              type="button"
-              onClick={onComprarPacote}
-              className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-violet-700 shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:shadow active:translate-y-0"
-            >
-              <Coins size={11} className="transition-transform group-hover:scale-110" />
-              Comprar créditos
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Só quando o peso muda alguma coisa. Nos planos em que os dois modos
           usam o mesmo par de modelos o backend devolve `unidade: "analises"`,
           e não há conceito novo para ensinar. */}
       {emCreditos && (
         <p className="text-[10px] font-medium leading-4 text-slate-500 mb-1">
-          {quota.precificacao ? (
-            /* Régua NOVA: o crédito mede custo, não caracteres. A frase antiga
-               ("1 crédito a cada 50.000 caracteres · profunda multiplica por 4")
-               descrevia uma fórmula que não existe mais — e uma explicação
-               errada da cobrança é pior do que nenhuma. */
-            <>
-              O crédito acompanha o custo real da análise: edital maior e
-              auditoria profunda consomem mais. O preço exato aparece em cada
-              botão antes de você enviar.
-            </>
-          ) : (
-            <>
-              {!!quota.caracteres_por_credito && (
-                <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres{' · '}</>
-              )}
-              {(quota.peso_profunda ?? 1) > 1
-                ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
-                : <>os dois modos custam igual neste plano</>}
-            </>
+          {!!quota.caracteres_por_credito && (
+            <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres{' · '}</>
           )}
+          {(quota.peso_profunda ?? 1) > 1
+            ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
+            : <>os dois modos custam igual neste plano</>}
         </p>
       )}
 
-      {/* Cortesia: passou do saldo, mas nada mudou para o cliente. */}
-      {emCortesia && !motorGratis && (
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-[11px] font-medium text-amber-700">
-            Você passou dos {saldoEfetivo} créditos e está na margem de cortesia — tudo
-            segue funcionando normalmente até {quota.teto_cortesia ?? '—'}.
-          </p>
-          {onComprarPacote && (
-            <button
-              type="button"
-              onClick={onComprarPacote}
-              className="text-[11px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap"
-            >
-              Adicionar créditos
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Acima da cortesia: NADA bloqueia. Só o motor muda. A mensagem tem que
-          deixar isso claro, senão o cliente lê "gratuito" como "parou". */}
-      {motorGratis && (
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-[11px] font-medium text-violet-700">
-            As análises continuam funcionando, agora no motor gratuito e sem auditoria
-            profunda. Adicione créditos para voltar ao motor completo, ou aguarde
-            {' '}{quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''} até a renovação.
-          </p>
-          {onComprarPacote && (
-            <button
-              type="button"
-              onClick={onComprarPacote}
-              className="text-[11px] font-black text-white bg-violet-600 hover:bg-violet-700 px-3 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap"
-            >
-              Adicionar créditos
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Convidado continua com a parede: ele não é cliente pago. */}
-      {esgotado && isGuest && (
+      {esgotado && (
         <div className="flex items-center justify-between mt-1">
-          <p className="text-[11px] font-medium text-red-600">
-            Crie uma conta gratuita para continuar analisando.
+          <p className={`text-[11px] font-medium ${isGuest ? 'text-red-600' : 'text-red-600'}`}>
+            {isGuest
+              ? 'Crie uma conta gratuita para continuar analisando.'
+              : `Reseta em ${quota.reseta_em} · Faça upgrade para continuar agora.`}
           </p>
-          <a
-            href="/login"
-            className="text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2 whitespace-nowrap"
-          >
-            Criar conta →
-          </a>
-        </div>
-      )}
-
-      {esgotado && !isGuest && (
-        <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-[11px] font-medium text-amber-700">
-            Créditos do período no fim — a partir daqui entra a margem de cortesia,
-            sem interrupção. Reseta em {quota.reseta_em}.
-          </p>
-          {onComprarPacote && (
-            <button
-              type="button"
-              onClick={onComprarPacote}
-              className="text-[11px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap"
+          {isGuest ? (
+            <a
+              href="/login"
+              className="text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2 whitespace-nowrap"
             >
-              Adicionar créditos
+              Criar conta →
+            </a>
+          ) : onUpgradeClick && (
+            <button
+              onClick={onUpgradeClick}
+              className="text-[11px] font-black text-white bg-red-500 hover:bg-red-600 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2"
+            >
+              Fazer upgrade
             </button>
           )}
         </div>
@@ -378,71 +201,18 @@ function QuotaBar({
  *  da extração, no servidor, então o número só pode crescer. Prometer firme um
  *  valor que vai subir seria pior que não prometer — vira "a partir de".
  */
-/** O que acontece se este pedido passar do saldo.
- *
- *  Sem isto o cliente lê "6 créditos" ao lado de "9 / 10" e conclui sozinho
- *  que vai ser barrado — quando na verdade nada bloqueia. Deixar a pessoa
- *  hesitar diante de uma parede que não existe é desperdiçar justamente o
- *  trabalho de ter tirado a parede.
- */
-type EstadoDoPedido = { texto: string; tom: 'cortesia' | 'gratuito'; restante: number };
-
-function estadoDoPedido(creditos: number | null, quota?: QuotaInfo | null): EstadoDoPedido | null {
-  if (creditos === null || !quota || quota.ilimitado) return null;
-  const saldo = quota.saldo ?? quota.limite;
-  if (!saldo) return null;
-  const apos = quota.usado + creditos;
-  if (apos <= saldo) return null;                      // dentro do saldo: nada a dizer
-  // ⚠️ Contra o teto de cortesia entra TAMBÉM o que já foi servido de graça.
-  // `usado` conta só o que saiu do saldo, então ele para de crescer quando o
-  // saldo zera — comparar `usado + custo` com o teto diria "ainda é cortesia"
-  // para sempre, e a tela prometeria auditoria profunda que o backend não vai
-  // rodar. Mesma conta do portão, do outro lado do fio.
-  const teto = quota.teto_cortesia ?? saldo;
-  const aposTotal = quota.usado + (quota.cortesia_usada ?? 0) + creditos;
-  if (aposTotal <= teto) {
-    return { texto: 'passa do saldo e entra na cortesia — roda normalmente',
-             tom: 'cortesia', restante: saldo - quota.usado };
-  }
-  return { texto: 'roda no motor gratuito, sem auditoria profunda',
-           tom: 'gratuito', restante: saldo - quota.usado };
-}
-
-function SeloCusto({ creditos, aproximado, tom, estado, indisponivel }:
-  { creditos: number | null; aproximado: boolean; tom: 'emerald' | 'sky';
-    estado?: EstadoDoPedido | null; indisponivel?: boolean }) {
+function SeloCusto({ creditos, aproximado, tom }:
+  { creditos: number | null; aproximado: boolean; tom: 'emerald' | 'sky' }) {
   if (creditos === null) return null;
-
-  // ⚠️ NA AUDITORIA PROFUNDA, "motor gratuito" NÃO É UM MODO — É AUSÊNCIA.
-  // A rápida realmente roda no motor gratuito e o selo descreve o que vai
-  // acontecer. A profunda, não: acima da cortesia ela simplesmente não existe.
-  // Anunciar "7 créditos · motor gratuito" ali dizia duas inverdades ao mesmo
-  // tempo — que vai rodar, e que vai custar 7 créditos que nunca serão
-  // debitados. Quando indisponível, o selo diz só isso.
-  if (indisponivel) {
-    return (
-      <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-500"
-            title="Créditos do período esgotados — a auditoria profunda volta com créditos novos ou na renovação.">
-        indisponível
-      </span>
-    );
-  }
-  const cores = estado
-    ? (estado.tom === 'cortesia'
-        ? 'bg-amber-50 text-amber-800 border-amber-200'
-        : 'bg-violet-50 text-violet-800 border-violet-200')
-    : tom === 'emerald'
-      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-      : 'bg-sky-50 text-sky-800 border-sky-200';
+  const cores = tom === 'emerald'
+    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+    : 'bg-sky-50 text-sky-800 border-sky-200';
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black whitespace-nowrap ${cores}`}
-          title={estado
-            ? `Você tem ${estado.restante} crédito(s) — este pedido ${estado.texto}.`
-            : aproximado
-              ? 'O texto dos arquivos anexados só é medido no servidor — o valor pode subir.'
-              : 'Este é o valor que será debitado.'}>
+          title={aproximado
+            ? 'O texto dos arquivos anexados só é medido no servidor — o valor pode subir.'
+            : 'Este é o valor que será debitado.'}>
       {aproximado ? 'a partir de ' : ''}{creditos} {creditos === 1 ? 'crédito' : 'créditos'}
-      {estado && (estado.tom === 'cortesia' ? ' · cortesia' : ' · motor gratuito')}
     </span>
   );
 }
@@ -466,7 +236,6 @@ export default function AnalysisForm({
   onShowAuthModal,
   quota,
   onUpgradeClick,
-  onComprarPacote,
 }: AnalysisFormProps) {
   // Sem texto E sem arquivo não há o que precificar. A fórmula tem piso de 1,
   // então a caixa vazia anunciaria "1 crédito" — preço de uma análise que nem
@@ -477,39 +246,6 @@ export default function AnalysisForm({
   // Mora aqui, e não junto das props, porque comentário JSX (`{/* */}`) na
   // posição de ATRIBUTO não é sintaxe válida — foi o que o tsc barrou.
   const temOQuePrecificar = text.length > 0 || files.length > 0;
-
-  // ⚠️ SEM ISTO A ANÁLISE DISPARAVA COM A CAIXA VAZIA.
-  // O backend recusa abaixo de 80 caracteres, mas a recusa chegava depois de
-  // já ter aberto o fluxo de análise — o usuário via a tela entrar em
-  // processamento sem ter escolhido edital nenhum. A validação tem que estar
-  // aqui, antes do clique valer alguma coisa.
-  //
-  // Arquivo anexado conta: o texto dele só existe depois da extração no
-  // servidor, então exigir 80 caracteres colados barraria quem enviou só PDF.
-  const podeAnalisar = text.trim().length >= 80 || files.length > 0;
-  // ── Créditos esgotados: a profunda deixa de ser oferecida ──────────────
-  // Acima do teto de cortesia a auditoria profunda não roda de verdade — ela
-  // degrada para o motor gratuito, sem a varredura em blocos. Deixar o botão
-  // clicável seria vender o que não se entrega: o cliente pediria auditoria,
-  // esperaria vários minutos e receberia outra coisa. Melhor dizer antes.
-  const _crProfunda = temOQuePrecificar ? creditosDe(text.length, 'profunda', quota) : null;
-  const _crRapida = temOQuePrecificar ? creditosDe(text.length, 'rapida', quota) : null;
-  const _estProfunda = estadoDoPedido(_crProfunda, quota);
-  const _estRapida = estadoDoPedido(_crRapida, quota);
-  const profundaIndisponivel = _estProfunda?.tom === 'gratuito';
-  const rapidaNoModoGratuito = _estRapida?.tom === 'gratuito';
-
-  // Se a profunda estava selecionada e deixou de estar disponível, volta o
-  // seletor para a rápida — senão o card destacado é o que não funciona.
-  useEffect(() => {
-    if (profundaIndisponivel && provider === 'claude') onProviderChange('openai');
-  }, [profundaIndisponivel, provider, onProviderChange]);
-
-  const motivoBloqueio = files.length === 0 && text.trim().length === 0
-    ? 'Cole o texto do edital ou anexe um PDF para começar.'
-    : files.length === 0 && text.trim().length < 80
-      ? `Texto muito curto (${text.trim().length} de 80 caracteres mínimos).`
-      : '';
 
   return (
     <div id="area-submissao" className="bg-white rounded-[2rem] shadow-sm border border-slate-200 relative z-20 w-full overflow-hidden">
@@ -553,7 +289,6 @@ export default function AnalysisForm({
             </div>
           </div>
           <button
-            type="button"
             onClick={() => onShowAuthModal('login')}
             className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors shrink-0"
           >
@@ -562,10 +297,7 @@ export default function AnalysisForm({
         </div>
       )}
 
-      <form
-        onSubmit={(e) => { e.preventDefault(); if (podeAnalisar && !isAnalyzing) onAnalyze('openai'); }}
-        className="space-y-5 w-full p-5 md:p-6"
-      >
+      <form onSubmit={(e) => { e.preventDefault(); onAnalyze('openai'); }} className="space-y-5 w-full p-5 md:p-6">
         {/* Banners de erro/sucesso */}
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
@@ -638,27 +370,11 @@ export default function AnalysisForm({
         <div className="mt-6 w-full">
           {/* Indicador de quota — logado (tier 1-3) ou guest (tier -1) */}
           {quota && !quota.ilimitado && (
-            <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick}
-                      onComprarPacote={onComprarPacote} isGuest={!token} />
+            <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick} isGuest={!token} />
           )}
 
-          {/* ⚠️ >= 1, não === 4. O seletor era exclusivo do Nível 4 e todo o
-              resto recebia um botão único com 'openai' fixo no código — ou
-              seja, ninguém abaixo do Nível 4 conseguia pedir auditoria
-              profunda, mesmo a rota aceitando `provider=claude` de qualquer
-              tier. O convidado (-1) continua fora: ele não tem conta, e uma
-              profunda custa 4 créditos contra o 1 por dia que ele tem. */}
-          {/* ⚠️ `token &&` NÃO É REDUNDANTE com `userTier >= 1`.
-              Em analysis-app.tsx o estado nasce `useState<number>(1)` e volta a
-              1 quando a sessão expira — no frontend, visitante sem conta É tier
-              1, nunca -1. Mesma armadilha do `max(...)` do backend: o valor de
-              "sem usuário" nasce igual ao de "usuário gratuito".
-              Sem esta guarda o convidado via "Auditoria profunda · 4 créditos",
-              clicava, e levava bloqueio na primeira visita (o backend recusa
-              certo: 4 créditos contra o 1 por dia dele). O sinal confiável aqui
-              é a sessão — o QuotaBar logo acima já usa `isGuest={!token}`. */}
-          {token && userTier >= 1 ? (
-            <SeletorDeModo
+          {userTier === 4 ? (
+            <TierFourButtons
               provider={provider}
               onProviderChange={onProviderChange}
               onAnalyze={onAnalyze}
@@ -668,13 +384,6 @@ export default function AnalysisForm({
               userTier={userTier}
               creditosRapida={temOQuePrecificar ? creditosDe(text.length, 'rapida', quota) : null}
               creditosProfunda={temOQuePrecificar ? creditosDe(text.length, 'profunda', quota) : null}
-              estadoRapida={estadoDoPedido(temOQuePrecificar ? creditosDe(text.length, 'rapida', quota) : null, quota)}
-              estadoProfunda={estadoDoPedido(temOQuePrecificar ? creditosDe(text.length, 'profunda', quota) : null, quota)}
-              podeAnalisar={podeAnalisar}
-              motivoBloqueio={motivoBloqueio}
-              isAnalyzing={isAnalyzing}
-              profundaIndisponivel={profundaIndisponivel}
-              rapidaNoModoGratuito={rapidaNoModoGratuito}
               custoAproximado={files.length > 0}
             />
           ) : (
@@ -701,9 +410,9 @@ export default function AnalysisForm({
   );
 }
 
-// ─── Sub-componente: seletor de modo (Nível 1 para cima) ─────────────────────
+// ─── Sub-componente: seletor de motor para tier 4 ─────────────────────────────
 
-interface SeletorDeModoProps {
+interface TierFourButtonsProps {
   provider: string;
   onProviderChange: (p: string) => void;
   onAnalyze: (motor: 'openai' | 'claude') => void;
@@ -719,45 +428,12 @@ interface SeletorDeModoProps {
   creditosRapida: number | null;
   creditosProfunda: number | null;
   custoAproximado: boolean;
-  // Mesmo motivo dos créditos: o ESTADO vem derivado de cima, não a quota
-  // crua. Assim a decisão "isto entra na cortesia?" existe num lugar só.
-  estadoRapida: EstadoDoPedido | null;
-  estadoProfunda: EstadoDoPedido | null;
-  podeAnalisar: boolean;
-  motivoBloqueio: string;
-  isAnalyzing: boolean;
-  profundaIndisponivel: boolean;
-  rapidaNoModoGratuito: boolean;
 }
 
-function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier,
-                        creditosRapida, creditosProfunda, custoAproximado,
-                        estadoRapida, estadoProfunda,
-                        podeAnalisar, motivoBloqueio, isAnalyzing,
-                        profundaIndisponivel, rapidaNoModoGratuito }: SeletorDeModoProps) {
+function TierFourButtons({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier,
+                          creditosRapida, creditosProfunda, custoAproximado }: TierFourButtonsProps) {
   return (
     <>
-      {/* O `title` só aparece no hover — e em botão desabilitado boa parte dos
-          navegadores nem mostra. O motivo precisa estar escrito na tela. */}
-      {!podeAnalisar && motivoBloqueio && (
-        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-[12px] font-bold text-slate-500">
-          {motivoBloqueio}
-        </div>
-      )}
-
-      {profundaIndisponivel && (
-        <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
-          <p className="text-[11px] font-black uppercase tracking-widest text-violet-700">
-            Modo gratuito
-          </p>
-          <p className="mt-1 text-[12px] font-medium leading-relaxed text-violet-900">
-            Os créditos deste período acabaram. A <strong>análise rápida continua
-            disponível</strong>, sem limite, rodando no motor do plano gratuito.
-            A auditoria profunda volta quando você adicionar créditos ou na
-            renovação do período.
-          </p>
-        </div>
-      )}
       {error && (
         <div className="mb-2 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-xl shadow-sm flex items-center gap-3 transition-all duration-500 animate-in fade-in slide-in-from-top-4">
           <AlertTriangle size={20} className="shrink-0" />
@@ -793,14 +469,8 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
               <div>
                 <span className="flex items-baseline gap-2">
                   <span className="text-base font-black text-slate-900 tracking-tight">Análise rápida</span>
-                  <SeloCusto creditos={creditosRapida} estado={estadoRapida}
+                  <SeloCusto creditos={creditosRapida}
                              aproximado={custoAproximado} tom="emerald" />
-                  {rapidaNoModoGratuito && (
-                    <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black whitespace-nowrap text-violet-800"
-                          title="Créditos do período esgotados — esta análise roda no motor do plano gratuito.">
-                      motor gratuito
-                    </span>
-                  )}
                 </span>
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700">
                   <Clock3 size={11} /> {tempoEstimadoLabel(token, userTier)}
@@ -837,10 +507,8 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
           {/* Botão — sempre visível, muda de estilo conforme seleção */}
           <button
             type="button"
-            disabled={!podeAnalisar || isAnalyzing}
-            title={motivoBloqueio || undefined}
             onClick={(e) => { e.stopPropagation(); provider === 'openai' ? onAnalyze('openai') : onProviderChange('openai'); }}
-            className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+            className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all ${
               provider === 'openai'
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-200/70'
                 : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50'
@@ -883,8 +551,6 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                 <span className="flex items-baseline gap-2">
                   <span className="text-base font-black text-slate-900 tracking-tight">Auditoria profunda</span>
                   <SeloCusto creditos={creditosProfunda}
-                             estado={profundaIndisponivel ? null : estadoProfunda}
-                             indisponivel={profundaIndisponivel}
                              aproximado={custoAproximado} tom="sky" />
                 </span>
                 {/* O tempo precisa estar no card, não só na barra de progresso.
@@ -907,34 +573,24 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
             Melhor para cruzar exigências, riscos legais, concorrentes prováveis e próximos passos.
           </p>
 
-          {/* ⚠️ NÃO NOMEIE O PROVEDOR AQUI. Este card agora aparece do Nível 1
-              para cima, e o par profundo só usa Anthropic a partir do Nível 3:
-              nos Níveis 1 e 2 o redator é OpenAI. Dizer "Anthropic · parecer"
-              para um cliente do Essencial é uma afirmação falsa sobre o que
-              ele comprou — e o tipo de coisa que ele descobre sozinho.
-
-              Os selos descrevem o TRABALHO que só a profunda faz, e isso é
-              verdade em todos os níveis: ela roda a auditoria, que lê o edital
-              inteiro sem truncar e confere cada fato contra o texto. */}
+          {/* Badges de motor — por PAPEL. "CLAUDE 3.5" era o pior caso: o
+              settings aponta para claude-sonnet-5, duas gerações à frente, e é
+              um nome que um interlocutor técnico reconhece como antigo. */}
           <div className="flex flex-wrap items-center gap-2 relative z-10">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-sky-100 text-[10px] font-black text-sky-700 uppercase tracking-wider shadow-sm">
-              <ScanSearch size={10} /> Leitura integral · sem corte
+              <ScanSearch size={10} /> OpenAI · raciocínio
             </span>
             <span className="text-slate-300 font-bold">+</span>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-sky-100 text-[10px] font-black text-sky-700 uppercase tracking-wider shadow-sm">
-              <ShieldCheck size={10} /> Contradições e fatos conferidos
+              <BrainCircuit size={10} /> Anthropic · parecer
             </span>
           </div>
 
           {/* Botão — sempre visível */}
           <button
             type="button"
-            disabled={!podeAnalisar || isAnalyzing || profundaIndisponivel}
-            title={profundaIndisponivel
-              ? 'Créditos esgotados — a auditoria profunda volta com créditos novos.'
-              : motivoBloqueio || undefined}
             onClick={(e) => { e.stopPropagation(); provider === 'claude' ? onAnalyze('claude') : onProviderChange('claude'); }}
-            className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all relative z-10 disabled:opacity-40 disabled:cursor-not-allowed ${
+            className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all relative z-10 ${
               provider === 'claude'
                 ? 'bg-sky-600 hover:bg-sky-700 text-white shadow-md shadow-sky-200/70'
                 : 'bg-white border border-slate-200 text-slate-600 hover:border-sky-300 hover:text-sky-700 hover:bg-sky-50'

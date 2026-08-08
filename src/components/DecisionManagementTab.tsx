@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
@@ -136,15 +136,19 @@ export default function DecisionManagementTab({
   // toggle de menu (via onToggleSidebar) libera os 350px da coluna lateral
   // do app-shell para o laudo respirar mais. São dois controles independentes.
   const laudoRef = useRef<HTMLDivElement | null>(null);
+  // O quadro principal tem o seu próprio alvo: os dois nunca coexistem (a visão
+  // de laudo é return antecipado), mas cada um precisa de um elemento distinto
+  // para entregar ao requestFullscreen.
+  const quadroRef = useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
-  const toggleFullscreen = () => {
+  const toggleFullscreen = (alvo: RefObject<HTMLDivElement | null> = laudoRef) => {
     if (!document.fullscreenElement) {
-      laudoRef.current?.requestFullscreen?.().catch(() => {});
+      alvo.current?.requestFullscreen?.().catch(() => {});
     } else {
       document.exitFullscreen?.().catch(() => {});
     }
@@ -696,7 +700,7 @@ export default function DecisionManagementTab({
             )}
             <button
               type="button"
-              onClick={toggleFullscreen}
+              onClick={() => toggleFullscreen(laudoRef)}
               title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
             >
@@ -754,7 +758,10 @@ export default function DecisionManagementTab({
   }
 
   return (
-    <div className="animate-in fade-in duration-500 space-y-5">
+    <div
+      ref={quadroRef}
+      className="animate-in fade-in duration-500 space-y-5 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-slate-50 [&:fullscreen]:p-4 md:[&:fullscreen]:p-8"
+    >
       {renderNotice()}
       {activeSummaryCard && (
         <OperationalSummaryModal
@@ -798,19 +805,39 @@ export default function DecisionManagementTab({
       <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
         <div className="grid gap-6 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:grid-cols-[1fr_auto] md:p-7">
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
-              <ClipboardList size={13} />
-              Gestão de execução
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
+                <ClipboardList size={13} />
+                Gestão de execução
+              </div>
+              {/* Só tela cheia aqui. O botão de ocultar menu lateral existe na
+                  visão de laudo e no painel de resultados, onde o utilizador
+                  está mergulhado num documento e quer largura. O quadro é tela
+                  de NAVEGAÇÃO: esconder a navegação a partir dela é armadilha —
+                  some a coluna inteira e o caminho de volta é o mesmo ícone,
+                  sem rótulo. Se voltar a fazer sentido, ponha com texto. */}
+              <button
+                type="button"
+                onClick={() => toggleFullscreen(quadroRef)}
+                title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia — usar 100% da largura'}
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              </button>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Fluxo completo dos editais</h2>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
               Acompanhe cada edital desde o primeiro contato operacional até envio, resultado e execução/encerramento.
             </p>
-            <p className="mt-2 max-w-2xl text-[11px] font-bold text-slate-400">
-              Só aparecem aqui os editais que você adicionou de propósito, clicando em{' '}
-              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">+ Gestão</span>{' '}
-              na análise. As demais análises continuam em Decisões.
-            </p>
+            {/* Com a lista vazia este aviso repete, quase palavra por palavra, o
+                texto do estado vazio logo abaixo. Mostra-se só quando há itens. */}
+            {analyses.length > 0 && (
+              <p className="mt-2 max-w-2xl text-[11px] font-bold text-slate-400">
+                Só aparecem aqui os editais que você adicionou de propósito, clicando em{' '}
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">+ Gestão</span>{' '}
+                na análise. As demais análises continuam em Decisões.
+              </p>
+            )}
           </div>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 md:min-w-[720px]">
@@ -826,8 +853,13 @@ export default function DecisionManagementTab({
           </div>
         </div>
 
-        <LearningStatsBanner stats={learningStats} />
+        {/* Métrica que exige 5 resultados registados: com zero editais o
+            utilizador está a seis passos disto e o aviso só rouba atenção. */}
+        {analyses.length > 0 && <LearningStatsBanner stats={learningStats} />}
 
+        {/* Sete controlos para filtrar coisa nenhuma, mais o selo "0 de 0",
+            é o que o utilizador via ao chegar aqui pela primeira vez. */}
+        {analyses.length > 0 && (
         <div className="border-t border-slate-100 bg-white p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
@@ -971,6 +1003,7 @@ export default function DecisionManagementTab({
             </div>
           )}
         </div>
+        )}
       </div>
 
       {queueCards.length === 0 ? (
@@ -986,6 +1019,17 @@ export default function DecisionManagementTab({
                 <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-black text-emerald-700">+ Gestão</span>{' '}
                 para trazê-la para cá.
               </p>
+              {/* Sem isto a tela dá uma instrução e não oferece como cumpri-la:
+                  em /gestao não existe barra lateral, logo "Decisões" não está
+                  visível em lado nenhum. O ?tab= é lido pelo analysis-app. */}
+              <button
+                type="button"
+                onClick={() => router.push('/workspace?tab=history')}
+                className="mx-auto mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-slate-800"
+              >
+                Ir para Decisões
+                <ArrowRight size={14} />
+              </button>
             </>
           ) : (
             <>
@@ -1176,6 +1220,7 @@ function DecisionQueueCard({
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
   const learnedResult = getResultLabel(card.analysis);
   const vigenciaStatus = getVigenciaStatus(card.analysis);
+  const resultadoAutomatico = card.analysis.decision_learning?.origem === 'pncp_auto';
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1231,6 +1276,14 @@ function DecisionQueueCard({
 
         {learnedResult && (
           <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-[11px] font-black leading-snug text-emerald-800">
+            {resultadoAutomatico && (
+              <span
+                title="Resultado preenchido automaticamente a partir da homologação pública do PNCP. Use 'Registrar resultado' para ajustar — a edição manual substitui o automático."
+                className="mb-1.5 inline-flex cursor-help items-center gap-1 rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-violet-700"
+              >
+                Automático · PNCP
+              </span>
+            )}
             {learnedResult}
           </div>
         )}
@@ -1784,6 +1837,14 @@ function LearningModal({
             <X size={18} />
           </button>
         </div>
+
+        {learning.origem === 'pncp_auto' && (
+          <div className="shrink-0 border-b border-violet-100 bg-violet-50 px-4 py-2.5 text-[11px] font-bold leading-snug text-violet-800 sm:px-5">
+            Resultado preenchido automaticamente pela homologação pública do PNCP
+            {learning.auto_registrado_em ? ` em ${new Date(String(learning.auto_registrado_em)).toLocaleDateString('pt-BR')}` : ''}.
+            {' '}Ajuste os campos e salve — o registro manual substitui o automático.
+          </div>
+        )}
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
           <div className="grid gap-3 sm:grid-cols-3">

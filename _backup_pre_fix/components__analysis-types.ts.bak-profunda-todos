@@ -342,32 +342,6 @@ export interface AnalysisResult {
   vantagens?: string[];
   desvantagens?: string[];
   exigencias_criticas?: string[];
-  /** Auditoria de assertividade. Só existe em análise PROFUNDA e a partir do
-   *  Nível 1 — ver `_auditoria_habilitada` em `router_analyses.py`. Ausente
-   *  em toda análise rápida e em todo laudo anterior a esta mudança, por isso
-   *  cada campo é opcional e a seção some inteira quando não há dado. */
-  auditoria?: {
-    /** Divergências entre trechos que falam do mesmo assunto, ou entre o
-     *  edital e o cadastro do PNCP. É o achado que a rápida não produz. */
-    contradicoes?: {
-      tipo?: string;
-      assunto?: string;
-      gravidade?: string;
-      descricao?: string;
-      trecho_a?: string;
-      trecho_b?: string;
-      fonte_b?: string;
-      acao_sugerida?: string;
-    }[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    metricas?: Record<string, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    cobertura?: Record<string, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    qualidade_extracao?: Record<string, any>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    fatos?: any[];
-  };
   prazos?: string[];
   documentos_necessarios?: string[];
   criterios_de_julgamento?: string[];

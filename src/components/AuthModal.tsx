@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
-import { API_URL, setAccessToken, apiFetch } from '@/lib/apiClient';
+import { API_URL, setAccessToken, apiFetch, mensagemDeErro } from '@/lib/apiClient';
 import { subscribeToPush } from '@/lib/pushNotifications';
 import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
 
@@ -101,7 +101,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       });
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(errData.detail || 'Erro ao enviar e-mail de recuperação.');
+        throw new Error(mensagemDeErro(errData.detail, 'Erro ao enviar e-mail de recuperação.'));
       }
       setForgotSuccess(true);
     } catch (err: any) {
@@ -292,7 +292,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
         body: JSON.stringify({ pre_token: preToken2FA, code: code2FA }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Código inválido.');
+      if (!response.ok) throw new Error(mensagemDeErro(data.detail, 'Código inválido.'));
 
       const tokenToSave = data.access_token;
       if (!tokenToSave) throw new Error('Token não recebido do servidor.');

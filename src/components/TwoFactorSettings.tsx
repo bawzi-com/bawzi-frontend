@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { ShieldCheck, ShieldOff, Loader2, Copy, Check, QrCode, KeyRound, Smartphone } from 'lucide-react';
-import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 
 type Etapa = 'idle' | 'qr' | 'backup';
 
@@ -54,7 +54,7 @@ export default function TwoFactorSettings() {
     try {
       const r = await apiFetch(`${API_URL}/api/auth/2fa/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || 'Falha ao gerar o QR.');
+      if (!r.ok) throw new Error(mensagemDeErro(d.detail, 'Falha ao gerar o QR.'));
       setQrBase64(d.qr_png_base64); setSegredoManual(d.segredo_manual); setCodigo('');
       setEtapa('qr');
     } catch (e) {
@@ -71,7 +71,7 @@ export default function TwoFactorSettings() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: codigo }),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || 'Código inválido.');
+      if (!r.ok) throw new Error(mensagemDeErro(d.detail, 'Código inválido.'));
       setBackupCodes(d.backup_codes || []);
       setAtivo(true); setBackupRestantes((d.backup_codes || []).length);
       setEtapa('backup');
@@ -90,7 +90,7 @@ export default function TwoFactorSettings() {
         body: JSON.stringify({ password: senhaDisable, code: codigoDisable }),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || 'Falha ao desativar.');
+      if (!r.ok) throw new Error(mensagemDeErro(d.detail, 'Falha ao desativar.'));
       setAtivo(false); setMostrarDisable(false); setSenhaDisable(''); setCodigoDisable('');
       setEtapa('idle');
     } catch (e) {

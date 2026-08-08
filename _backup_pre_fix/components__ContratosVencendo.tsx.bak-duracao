@@ -137,27 +137,6 @@ function formatarData(iso?: string): string {
 }
 
 type Ordenacao = 'urgencia' | 'valor';
-type DuracaoMin = 0 | 6 | 12;
-
-/** Remove contratos mais curtos que `minimo` meses.
- *
- *  Serve para tirar compra emergencial e dispensa do pipeline: contrato de um
- *  ou dois meses não volta como licitação, então não é renovação para
- *  antecipar — e é justamente ele que sobe ao topo quando a ordem é por
- *  urgência, porque vence antes.
- *
- *  ⚠️ SEM DURAÇÃO CONHECIDA, PASSA. `duracao_meses` é null quando falta a data
- *  de início da vigência no cadastro do órgão. Descartar esses esconderia
- *  contrato bom por falha de metadado alheio; o filtro existe para remover o
- *  que sabidamente é curto, não o que não deu para medir. */
-function filtrarPorDuracao(lista: ContratoVencendo[], minimo: DuracaoMin): ContratoVencendo[] {
-  if (!minimo) return lista;
-  return lista.filter(c => {
-    const d = c.metadados?.contrato_detalhe?.duracao_meses;
-    return d == null || d >= minimo;
-  });
-}
-
 
 /** Ordena a lista SEM quebrar os três blocos (estado → região → outros).
  *
@@ -211,35 +190,6 @@ function urgencia(dias?: number | null): {
   return { border: 'border-sky-300', badge: 'bg-sky-500 text-white', badgeText: 'text-sky-600', dot: 'bg-sky-400', label: 'PIPELINE' };
 }
 
-// Explicação de cada janela do seletor de período.
-// Fica junto de urgencia() de propósito: as duas usam as mesmas faixas de dias
-// (15/30/60/90) e quem mexer numa precisa enxergar a outra. Atenção à distinção
-// que confunde: o BOTÃO escolhe quanto à frente olhar; a COR do cartão classifica
-// a urgência dentro da janela escolhida. Números iguais, significados diferentes.
-const DIAS_INFO: Record<number, string> = {
-  30: 'Vence em até 30 dias — faixas CRÍTICO (vermelho) e URGENTE (laranja). Se o órgão ainda não publicou a nova licitação, ela sai nas próximas semanas. Janela de reação, não de preparação.',
-  60: 'Até 60 dias — acrescenta a faixa ATENÇÃO (âmbar). É quando o órgão costuma montar o termo de referência: ainda dá tempo de influenciar especificação e reunir documentação.',
-  90: 'Até 90 dias — acrescenta a faixa RADAR (verde). Prazo confortável para cotar com fornecedor, revisar preço e chegar na disputa sem correria.',
-  180: 'Até 6 meses — entra a faixa PIPELINE (azul). Serve para mapear quem é o fornecedor atual e a que preço ele venceu, antes de o mercado olhar.',
-  365: 'Até 1 ano — visão de carteira: quanto do seu mercado renova no período e em que meses a renovação se concentra.',
-  730: 'Até 2 anos — horizonte máximo. Pega os contratos longos, que costumam ser os de maior valor e os que exigem preparação mais cedo.',
-};
-
-// O que cada cor do prazo restante significa.
-// Chaveado pelo `label` que urgencia() já devolve de propósito: assim as faixas
-// de dias continuam definidas num lugar só (lá em cima) e aqui fica só o texto.
-// Mexeu no label de lá? Mexa na chave daqui.
-const EXPLICACAO_URGENCIA: Record<string, string> = {
-  Indefinido: 'Sem data de fim de vigência publicada no PNCP. Não dá para calcular o prazo — vale abrir o contrato e conferir na fonte.',
-  VENCIDO:    'VENCIDO (cinza) — a vigência já terminou. Ou o órgão renovou sem publicar, ou o contrato caducou e a nova licitação deve estar próxima.',
-  HOJE:       'HOJE (vermelho) — vence hoje. Sem licitação publicada até agora, a contratação seguinte tende a sair como emergencial ou dispensa.',
-  'CRÍTICO':  'CRÍTICO (vermelho) — vence em até 15 dias. Curto demais para montar proposta do zero; serve para vigiar se sai dispensa ou emergencial.',
-  URGENTE:    'URGENTE (laranja) — vence em até 30 dias. Se a nova licitação vier, sai nas próximas semanas. Documentação e preço já precisam estar prontos.',
-  'ATENÇÃO':  'ATENÇÃO (âmbar) — vence em até 60 dias. Janela típica de montagem do termo de referência: ainda dá tempo de influenciar a especificação.',
-  RADAR:      'RADAR (verde) — vence em até 90 dias. Prazo confortável para cotar com fornecedor e revisar preço antes da disputa.',
-  PIPELINE:   'PIPELINE (azul) — vence em mais de 90 dias. Fase de planejamento: mapeie o fornecedor atual e a que preço ele venceu, antes de o mercado olhar.',
-};
-
 // ─────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────
@@ -266,7 +216,6 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
   // Padrão urgência: é a ordem que o servidor devolve e a que a tela sempre
   // teve. Trocar o padrão mudaria o que a tela recomenda sem ninguém pedir.
   const [ordenacao, setOrdenacao] = React.useState<Ordenacao>('urgencia');
-  const [duracaoMin, setDuracaoMin] = React.useState<DuracaoMin>(0);
   const [uf, setUf]                     = useState(''); // default: Brasil todo
   const [municipioId, setMunicipioId]   = useState('');
   const [municipioNome, setMunicipioNome] = useState('');
@@ -509,7 +458,6 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
               <button
                 key={d}
                 onClick={() => setDias(d)}
-                title={DIAS_INFO[d]}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   dias === d
                     ? 'bg-white text-slate-800 shadow-sm'
@@ -723,78 +671,19 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
 
         {/* Grid de contratos */}
         {contratos.length > 0 && (() => {
-          // Filtra ANTES de ordenar e paginar: as três etapas dependem uma da
-          // outra, e a contagem do cabeçalho depende do resultado das três.
-          const listaFiltrada = filtrarPorDuracao(contratos, duracaoMin);
-          const listaOrdenada = ordenarContratos(listaFiltrada, ordenacao);
+          const listaOrdenada = ordenarContratos(contratos, ordenacao);
           const totalPaginas = Math.ceil(listaOrdenada.length / PER_PAGE);
           const inicio = (pagina - 1) * PER_PAGE;
           const contratosPagina = listaOrdenada.slice(inicio, inicio + PER_PAGE);
           const paginaAntes = listaOrdenada.slice(0, inicio); // para calcular separadores
 
-          // O filtro pode zerar a lista, e nenhum dos estados vazios da tela
-          // serve aqui: eles falam de termo de busca e janela de dias, e o
-          // usuário concluiria que não há contrato quando há 101. A saída tem
-          // que estar na mesma frase que explica o sumiço.
-          if (listaOrdenada.length === 0) {
-            return (
-              <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
-                <span className="text-4xl">⏳</span>
-                <p className="text-sm font-bold text-slate-600">
-                  Nenhum contrato recorrente nesta janela
-                </p>
-                <p className="text-[11px] text-slate-400 font-medium max-w-sm">
-                  Os {contratos.length} contrato{contratos.length !== 1 ? 's' : ''} encontrado
-                  {contratos.length !== 1 ? 's' : ''} {contratos.length !== 1 ? 'são' : 'é'} de
-                  vigência mais curta — normalmente compra emergencial ou dispensa, que não
-                  volta como licitação.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => { setDuracaoMin(0); setPagina(1); }}
-                  className="mt-1 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-black transition-all"
-                >
-                  Mostrar também os emergenciais
-                </button>
-              </div>
-            );
-          }
-
           return (
           <>
             <div className="flex items-center justify-between mb-5">
               <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
-                {/* Conta a lista FILTRADA. Com `contratos.length` o cabeçalho
-                    anunciaria 101 exibindo 34, e o "de 101" ao lado é o que
-                    torna o recorte visível em vez de misterioso. */}
-                {listaOrdenada.length} contrato{listaOrdenada.length !== 1 ? 's' : ''}
-                {duracaoMin > 0 && listaOrdenada.length !== contratos.length && (
-                  <span className="text-slate-400"> de {contratos.length}</span>
-                )} · vencendo em até {dias === 730 ? '2 anos' : dias === 365 ? '1 ano' : dias === 180 ? '6 meses' : `${dias} dias`}
+                {contratos.length} contrato{contratos.length !== 1 ? 's' : ''} · vencendo em até {dias === 730 ? '2 anos' : dias === 365 ? '1 ano' : dias === 180 ? '6 meses' : `${dias} dias`}
               </p>
               <div className="flex items-center gap-3 text-[10px] font-bold text-slate-400">
-                {/* ⚠️ UM BOTÃO, E NÃO TRÊS CHIPS DE TEMPO.
-                    Isto era "TODAS · ≥6M · ≥12M" e colidia com o seletor de
-                    janela do topo (30D 60D 90D...): dois controles de período
-                    com a mesma cara, medindo eixos diferentes — um é QUANDO
-                    vence, o outro é QUANTO durou — e nada dizia qual era qual.
-
-                    Ninguém olha esta tela querendo "contratos de 6 meses ou
-                    mais". Quer saber se aquilo volta a ser disputado ou se foi
-                    compra de emergência. Seis meses é a implementação; estava
-                    no rótulo ocupando o lugar do conceito. */}
-                <button
-                  type="button"
-                  title="Esconde contratos com menos de 6 meses de vigência — normalmente compra emergencial ou dispensa, que não volta como licitação. Contratos sem duração informada continuam na lista."
-                  onClick={() => { setDuracaoMin(duracaoMin ? 0 : 6); setPagina(1); }}
-                  className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all ${
-                    duracaoMin
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                      : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300'
-                  }`}
-                >
-                  Só recorrentes
-                </button>
                 <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
                   {([
                     ['urgencia', 'Mais urgentes'],
@@ -814,17 +703,11 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                     </button>
                   ))}
                 </div>
-                {/* A legenda de cores (≤15d ≤30d ≤60d ≤90d ≤6m) saiu daqui.
-                    Ela era só legenda, mas tinha a mesma aparência dos dois
-                    seletores acima e os mesmos números do seletor de janela no
-                    topo da tela — período virava chip em dois lugares e um
-                    deles não clicava.
-
-                    O que ela ensinava, cada card já diz em texto: o badge de
-                    dias mostra "27d", "HOJE", "3d". A cor da borda esquerda
-                    continua ali e continua ajudando a varrer de relance; o que
-                    saiu foi a tabela de tradução de uma informação que está
-                    impressa em toda linha da lista. */}
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />≤15d</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />≤30d</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />≤60d</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />≤90d</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-400 inline-block" />≤6m</span>
               </div>
             </div>
 
@@ -905,10 +788,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                       {/* Linha superior: órgão + badge dias */}
                       <div className={`flex items-start justify-between gap-3 mb-2 ${isOp ? 'mt-1' : ''}`}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <span
-                            title={EXPLICACAO_URGENCIA[u.label] ?? u.label}
-                            className={`w-2 h-2 rounded-full shrink-0 cursor-help ${u.dot}`}
-                          />
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${u.dot}`} />
                           <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest truncate">
                             {orgao}
                             {ufContrato && <span className="ml-1.5 text-slate-400">· {ufContrato}</span>}
@@ -916,20 +796,14 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                           </span>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span
-                            title={EXPLICACAO_URGENCIA[u.label] ?? u.label}
-                            className={`text-[10px] font-black px-2.5 py-1 rounded-lg whitespace-nowrap cursor-help ${u.badge}`}
-                          >
+                          <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg whitespace-nowrap ${u.badge}`}>
                             {c.dias_restantes == null
-                              ? 'SEM DATA'
+                              ? '?'
                               : c.dias_restantes < 0
                                 ? 'VENCIDO'
                                 : c.dias_restantes === 0
                                   ? 'HOJE'
-                                  /* mostra o rótulo da faixa junto do prazo: sem isto
-                                     o cartão exibe só "45d" em âmbar e a cor não se
-                                     explica. O rótulo já era calculado e descartado. */
-                                  : `${c.dias_restantes}d · ${u.label}`}
+                                  : `${c.dias_restantes}d`}
                           </span>
                         </div>
                       </div>

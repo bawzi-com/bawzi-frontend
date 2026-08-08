@@ -11,7 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { apiFetch, ensureSessionFor } from '@/lib/apiClient';
+import { apiFetch, ensureSessionFor, mensagemDeErro } from '@/lib/apiClient';
 import type { AnalysisResult } from '@/components/analysis-types';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -348,8 +348,7 @@ export function useAnalysis({
           // continua disponível — o backend diz qual em `alternativa`.
           setError(detalhe.mensagem || 'Limite deste tipo de análise atingido neste período.');
         } else {
-          setError(detalhe?.mensagem || detalhe?.titulo ||
-                   (typeof detalhe === 'string' ? detalhe : 'Limite de uso atingido.'));
+          setError(mensagemDeErro(detalhe, 'Limite de uso atingido.'));
         }
         setIsAnalyzing(false);
         return;
@@ -363,7 +362,11 @@ export function useAnalysis({
       }
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.detail || 'Erro no servidor.');
+      // ⚠️ `data.detail` pode ser objeto (`{codigo, titulo, mensagem}`) ou lista
+      // (validação 422). `new Error(objeto)` produz a mensagem "[object Object]",
+      // que era exatamente o que o cliente lia na tela ao estourar o limite de
+      // caracteres — no lugar de "o seu plano permite até 80.000".
+      if (!response.ok) throw new Error(mensagemDeErro(data?.detail, 'Erro no servidor.'));
 
       const analysisData = data.analysis || data;
       if (!analysisData || Object.keys(analysisData).length === 0 || !analysisData.score) {

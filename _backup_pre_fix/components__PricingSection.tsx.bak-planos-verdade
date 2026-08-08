@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock, ChevronRight } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 import { useTier } from '@/hooks/useTier';
-import { getAuthToken, mensagemDeErro } from '@/lib/apiClient';
+import { getAuthToken } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -54,14 +54,9 @@ const tiers = [
   {
     name: 'Gratuito', badge: 'NÍVEL 1', price: 'Grátis', period: '',
     inherits: null,
-    quantidade: '5 créditos grátis por mês',   // reserva; o servidor manda
+    quantidade: '5 créditos grátis por mês',
     features: [
-      'Análise completa com matriz de riscos e exigências críticas',
-      'Auditoria profunda — contradições entre o edital e o cadastro do PNCP',
-      'Central de decisões, priorização e gestão do fluxo',
-      'Oportunidades com fit CNAE e renovações a vencer',
-      'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
-      '1 empresa cadastrada',
+      'Análise completa com mapa de riscos jurídicos',
     ],
     limites: ['Editais até 25.000 caracteres', 'PDF até 5 MB'],
     mbSufixo: '',
@@ -70,18 +65,12 @@ const tiers = [
   {
     name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',
     inherits: 1,
-    quantidade: '130 créditos por mês',
-    // ⚠️ NADA DE QUANTIDADE DERIVADA DE CONFIGURAÇÃO AQUI.
-    // "16 auditorias profundas por mês" saiu daqui: eu tinha calculado a
-    // partir do `.env` (130 créditos) e o servidor serve o override do banco
-    // (350), então o card mentia por um fator de quase três. Quantidade que
-    // depende de tier vem em `quantidade`/`limites`, montadas pelo servidor.
-    // O teto de dossiês pode ficar: está fixo em router_competitors.py,
-    // num dicionário literal — não é configurável por tier nem sobreposto
-    // pelo banco, então não corre o risco das quantidades derivadas.
+    quantidade: '1.000 créditos por mês',
     features: [
-      'Agentes de mercado no laudo — concorrentes e preços',
-      '30 dossiês de concorrente por dia',
+      'Perfil da empresa (CNPJ/UF)',
+      'Central de decisões e laudos salvos',
+      'Priorização entre editais',
+      'Radar 360 — busca PNCP',
     ],
     limites: ['Editais até 80.000 caracteres', 'PDF até 15 MB'],
     mbSufixo: '',
@@ -90,12 +79,12 @@ const tiers = [
   {
     name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',
     inherits: 2,
-    quantidade: '215 créditos por mês',
+    quantidade: '3.000 créditos por mês',
     features: [
-      'Parecer jurídico no laudo — terceiro agente',
+      'Oportunidades com fit CNAE e perfil',
       'Monitor inteligente PNCP (e-mail + sino)',
       'Fôlego financeiro e capital de execução',
-      '100 dossiês por dia · 2 empresas',
+      '4 Agentes IA em paralelo',
     ],
     limites: ['Editais até 180.000 caracteres', 'PDF até 30 MB'],
     mbSufixo: '',
@@ -104,18 +93,15 @@ const tiers = [
   {
     name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',
     inherits: 3,
-    quantidade: '540 créditos por mês',
-    // O tamanho do edital saiu daqui: a linha de limites, montada pelo
-    // servidor, já diz "Editais até 400.000 caracteres" — o card exibia duas
-    // vezes. O suporte prioritário também aparecia duas vezes, porque o
-    // `mbSufixo` o colava no fim da linha do PDF. Fica só como item.
+    quantidade: 'Créditos ilimitados',
     features: [
-      'Simulador tático de preços na proposta',
-      '500 dossiês por dia · 3 empresas',
-      'Suporte prioritário',
+      'Gestão do fluxo completo dos editais',
+      'Pipeline de renovações e contratos vencendo',
+      'War Room de concorrentes',
+      'Simulador tático de preços',
     ],
-    limites: ['Editais até 400.000 caracteres', 'PDF até 100 MB'],
-    mbSufixo: '',
+    limites: ['Editais até 400.000 caracteres', 'PDF até 100 MB · suporte prioritário'],
+    mbSufixo: ' · suporte prioritário',
     buttonText: 'Assinar Avançado', tierLevel: 4, popular: false, label: 'Elite',
   },
 ] as const;
@@ -181,25 +167,9 @@ function linhaQuantidade(
   // régua: onde o crédito varia com o tamanho, o leitor precisa saber a faixa;
   // onde é fixo, saber que é fixo vale mais que silêncio — diz que ali não há
   // surpresa de tamanho.
-  // ⚠️ SEM RÉGUA AQUI — e isso é deliberado, não esquecimento.
-  //
-  // Esta linha já teve duas versões erradas pelo mesmo motivo: tentar explicar
-  // o preço do crédito de novo, depois de `linhasLimites` já ter explicado.
-  // Primeiro foi o texto fixo "edital comum usa 2 a 3", falso em quase todo
-  // plano. Depois foi a faixa calculada "1 a 8 na rápida, 4 a 32 na profunda",
-  // correta e ilegível — os dois números saem de "1 crédito a cada 50.000
-  // caracteres · auditoria profunda ×4" cruzado com o teto do plano, ambos
-  // impressos duas linhas acima.
-  //
-  // O cartão lê regra → capacidade → cota. Quem quer a conta tem os fatores
-  // ali; quem não quer, lê três frases curtas em vez de uma longa.
-  //
-  // Traduzir para "20 auditorias profundas por mês" foi considerado e recusado:
-  // o número cai conforme o plano sobe (43 · 31 · 20), porque cada plano é
-  // medido pelo próprio edital máximo. Verdadeiro, e engana lado a lado.
-  return `${numeroBr(n)} ${palavra}${gratis} por mês`;
+  const regua = lim.em_creditos ? ' · edital comum usa 2 a 3' : ' · 1 por análise';
+  return `${numeroBr(n)} ${palavra}${gratis} por mês${regua}`;
 }
-
 
 /** As duas últimas linhas: caracteres e MB. Se qualquer um dos dois vier nulo,
  *  usa o par de reserva inteiro — meio número do servidor e meio escrito à mão
@@ -410,7 +380,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           showCheckoutError(data.detail || 'Erro inesperado ao processar o pagamento. Tente novamente.');
         }
       } else {
-        throw new Error(mensagemDeErro(data.detail, 'Erro no processamento'));
+        throw new Error(data.detail || 'Erro no processamento');
       }
     } catch {
       setIsCheckoutLoading(false);

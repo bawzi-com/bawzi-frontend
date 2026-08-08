@@ -4,7 +4,7 @@ import React, { useEffect, useState, useMemo, useRef, useLayoutEffect } from 're
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap, RefreshCw } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
-import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -976,7 +976,7 @@ export default function CompetitorWarRoom({
       });
 
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Falha na análise competitiva');
+      if (!response.ok) throw new Error(mensagemDeErro(data.detail, 'Falha na análise competitiva'));
       setOffensiveData(data);
     } catch (err: any) {
       if (err instanceof SessionExpiredError) { clearSession(); return; }
