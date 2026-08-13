@@ -191,11 +191,14 @@ function Tag({ children }: { children: React.ReactNode }) {
 }
 
 function PlanBadge({ plan }: { plan: 'Gratuito' | 'Essencial' | 'Profissional' | 'Avançado' }) {
+  // ⚠️ Chaves = nomes OFICIAIS dos planos (tier_config.py). As chaves antigas
+  // "Pro"/"Elite" nunca casavam com os badges "Profissional"/"Avançado" — que
+  // renderizavam sem cor nenhuma, justamente os dois planos pagos de cima.
   const colors: Record<string, string> = {
-    Gratuito:  'bg-slate-100 text-slate-600 border-slate-200',
-    Essencial: 'bg-sky-50 text-sky-700 border-sky-200',
-    Pro:       'bg-emerald-50 text-emerald-700 border-emerald-200',
-    Elite:     'bg-violet-50 text-violet-700 border-violet-200',
+    Gratuito:     'bg-slate-100 text-slate-600 border-slate-200',
+    Essencial:    'bg-sky-50 text-sky-700 border-sky-200',
+    Profissional: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    Avançado:     'bg-violet-50 text-violet-700 border-violet-200',
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${colors[plan]}`}>
@@ -256,15 +259,16 @@ function SectionInicio() {
         O CNPJ é usado para identificar o perfil da empresa no banco de dados oficial e alimentar o Match CNAE
         na análise de editais. Você pode informar o CNPJ durante o cadastro ou depois no perfil.
       </Step>
-      <Step n={3} title="Confirme o e-mail (se aplicável)">
-        Ao criar conta com e-mail e senha, você receberá um link de confirmação. Verifique a caixa de spam
-        se não encontrar na caixa de entrada.
+      <Step n={3} title="Entre direto — sem confirmação por e-mail">
+        Ao criar a conta, você já entra autenticado, sem etapa de link de confirmação. Guarde bem a
+        senha; se precisar, use &ldquo;Esqueci minha senha&rdquo; na tela de login.
       </Step>
       <Step n={4} title="Explore o painel">
         Após o login, você cai direto no painel principal com acesso à busca, radar e análises.
       </Step>
       <Callout type="info">
-        O plano gratuito dá acesso à busca básica e a uma análise de edital por mês. Para uso intensivo,
+        O plano gratuito dá acesso à busca e a uma cota mensal de créditos gratuitos — o número vigente
+        aparece na <strong>página de planos</strong> e no seu medidor de créditos. Para uso intensivo,
         veja os planos pagos em <strong>Perfil → Assinatura</strong>.
       </Callout>
 
@@ -400,7 +404,8 @@ function SectionAnalise() {
         inteiras, não só a etapa que está aberta na tela no momento.
       </Callout>
       <Callout type="info">
-        Os relatórios ficam salvos no histórico por 90 dias no plano Starter e por tempo ilimitado no Pro e Enterprise.
+        Os relatórios ficam salvos no histórico enquanto sua conta estiver ativa, em qualquer plano.
+        Após um cancelamento, você mantém acesso de leitura por 90 dias.
       </Callout>
 
       <H2 id="match-cnae">Match CNAE</H2>
@@ -639,8 +644,8 @@ function SectionEquipe() {
       <UL>
         <LI><strong>Gratuito</strong> — sem monitoramento de empresa</LI>
         <LI><strong>Essencial</strong> — 1 empresa</LI>
-        <LI><strong>Pro</strong> — até 2 empresas</LI>
-        <LI><strong>Elite</strong> — até 3 empresas</LI>
+        <LI><strong>Profissional</strong> — até 2 empresas</LI>
+        <LI><strong>Avançado</strong> — até 3 empresas</LI>
       </UL>
       <P>
         Gerencie as empresas monitoradas em <strong>Perfil → Área de trabalho → Empresas</strong>.
@@ -721,25 +726,30 @@ function SectionConta() {
 
 function SectionPlanos() {
   const plans = [
+    // ⚠️ SEM números de cota e SEM nome de modelo aqui.
+    // "5 análises/mês" e "Análises ilimitadas" divergiam da cota real (os
+    // planos são a créditos, servidos pela API na página de planos), e os
+    // nomes de modelo ficam velhos a cada troca de geração no backend.
+    // Documentação descreve CAPACIDADE; número vigente mora em /plans.
     {
       name: 'Gratuito',
       badge: <PlanBadge plan="Gratuito" />,
-      features: ['5 análises / mês', 'Busca básica no PNCP', '1 membro', 'Sem empresa monitorada'],
+      features: ['Créditos gratuitos todo mês (cota vigente em Planos)', 'Busca no PNCP', '1 membro', 'Sem empresa monitorada'],
     },
     {
       name: 'Essencial',
       badge: <PlanBadge plan="Essencial" />,
-      features: ['Análises ilimitadas', 'Radar de alertas', '2 membros', '1 empresa monitorada', 'Alertas por e-mail e push'],
+      features: ['Cota mensal de créditos maior (veja Planos)', 'Agentes de mercado no laudo', 'Radar de alertas', '2 membros', '1 empresa monitorada', 'Alertas por e-mail e push'],
     },
     {
       name: 'Profissional',
       badge: <PlanBadge plan="Profissional" />,
-      features: ['Análises ilimitadas', '5 membros', '2 empresas monitoradas', 'Monitoramento de concorrentes', 'Modelos IA avançados (Claude Sonnet)', 'Relatórios exportáveis'],
+      features: ['Cota mensal de créditos ampla (veja Planos)', '5 membros', '2 empresas monitoradas', 'Monitoramento de concorrentes', 'Parecer jurídico no laudo', 'Relatórios exportáveis'],
     },
     {
       name: 'Avançado',
       badge: <PlanBadge plan="Avançado" />,
-      features: ['Tudo do Pro', '10 membros', '3 empresas monitoradas', 'Modelos IA premium (o3-mini + Claude Opus)', 'API Enterprise', 'Suporte prioritário'],
+      features: ['Tudo do Profissional', 'A maior cota de créditos (veja Planos)', '10 membros', '3 empresas monitoradas', 'Motores de IA premium', 'API Enterprise', 'Suporte prioritário'],
     },
   ];
 

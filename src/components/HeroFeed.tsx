@@ -328,7 +328,19 @@ export default function HeroFeed() {
         return;
       }
       const json = await res.json();
-      const data: Edital[] = json.data || [];
+      const brutos: Edital[] = json.data || [];
+      // ⚠️ REGRA ESTRITA (12/08/2026): edital vencido NUNCA aparece — decisão
+      // de produto. O backend já corta na fonte (filtro estrito de vigência);
+      // esta é a segunda camada, para cache antigo ou formato inesperado.
+      // Sem data de encerramento REAL e futura → fora.
+      const agora = new Date();
+      const data = brutos.filter((e) => {
+        const m = String(e.data_encerramento || '').trim()
+          .match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
+        if (!m) return false;
+        const dt = new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4] || '23:59:59'}`);
+        return !isNaN(dt.getTime()) && dt >= agora;
+      });
       setPool(data);
       if (data.length === 0) {
         console.warn('[HeroFeed] feed vazio:', {

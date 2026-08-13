@@ -34,8 +34,6 @@ interface PncpItem {
   [key: string]: any;
 }
 
-import ResumoCreditos, { type QuotaResumo } from './ResumoCreditos';
-
 interface PncpSearchProps {
   onAnalyzeOportunity: (
     textoCompleto: string,
@@ -61,12 +59,6 @@ interface PncpSearchProps {
   onMedirFolego?: (valor: number, objeto: string) => void;
   /** Abre no histórico o laudo já existente deste edital. */
   onAbrirAnalise?: (analysisId: string) => void;
-  /** Saldo do período. O Radar é onde a decisão de gastar crédito é tomada —
-   *  o cliente escolhe o edital aqui e só descobria o preço na tela seguinte.
-   *  Ver o saldo ANTES de escolher é o que evita a escolha ser desfeita. */
-  quota?: QuotaResumo | null;
-  /** Abre a compra de pacote avulso, sem sair do Radar. */
-  onComprarPacote?: () => void;
 }
 
 export default function PncpSearch({
@@ -83,8 +75,6 @@ export default function PncpSearch({
   onActiveCnpjChange,
   onMedirFolego,
   onAbrirAnalise,
-  quota,
-  onComprarPacote,
 }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
@@ -427,8 +417,16 @@ export default function PncpSearch({
         return isNaN(tentativa.getTime()) ? null : tentativa;
       };
 
+      // ⚠️ REGRA ESTRITA (12/08/2026): edital vencido NUNCA aparece — decisão
+      // de produto explícita. Só passa quem PROVA vigência com data real:
+      // encerramento no futuro, ou (sem encerramento legível) abertura no
+      // futuro. Sem data nenhuma → FORA. As regras antigas de "na dúvida,
+      // mantém" (proxy de publicação, item sem data aceito) eram exatamente
+      // as frestas por onde vencidos escapavam. O backend aplica a MESMA
+      // regra na fonte (filtrar_editais_vivos estrito); esta é a segunda
+      // camada, para o caso de cache antigo ou resposta fora do padrão.
       const vivos = encontrados.filter(edital => {
-        // 1. Tentar data de encerramento/fim (mais fiável)
+        // 1. Data de encerramento/fim REAL e futura → vigente.
         const dataFim = parsearData(
           edital.data_fim ||
           edital.dataFimRecebimentoProposta ||
@@ -437,8 +435,7 @@ export default function PncpSearch({
         );
         if (dataFim !== null) return dataFim >= agora;
 
-        // 2. Sem data de fim fiável — tentar data de abertura como fallback
-        //    Se a abertura já passou, o edital está certamente vencido.
+        // 2. Sem encerramento legível — abertura FUTURA ainda prova vigência.
         const dataInicio = parsearData(
           edital.data_inicio ||
           edital.dataAberturaProposta ||
@@ -446,17 +443,9 @@ export default function PncpSearch({
         );
         if (dataInicio !== null) return dataInicio >= agora;
 
-        // 3. Sem data de encerramento nem de abertura → usar data de publicação como proxy.
-        //    Se o edital foi publicado há mais de 60 dias sem datas explícitas, é improvável
-        //    que ainda esteja ativo (o backend usa regra de 45 dias, mas pode escapar algum).
-        const dataDivulgacao = parsearData(edital.data_divulgacao);
-        if (dataDivulgacao !== null) {
-          const sessentaDias = new Date(agora.getTime() - 60 * 24 * 60 * 60 * 1000);
-          return dataDivulgacao >= sessentaDias;
-        }
-
-        // 4. Nenhuma data disponível — manter (backend validou com regra dos 45 dias).
-        return true;
+        // 3. Nenhuma data real → fora, sempre. Esconder um edital mal
+        //    cadastrado custa menos que exibir um vencido.
+        return false;
       });
 
       setResults([...vivos]);
@@ -774,16 +763,6 @@ export default function PncpSearch({
       {/* 1. CABEÇALHO RADAR 360                     */}
       {/* ========================================== */}
       <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:p-6">
-        {/* ── Carteira, antes da escolha ──────────────────────────────────
-            Este é o ponto do app em que o cliente decide gastar crédito: ele
-            varre os editais aqui e clica em "analisar". O saldo só aparecia
-            na tela seguinte, quando a escolha já estava feita — e a cortesia
-            não aparecia em lugar nenhum, o que fazia o número parecer errado.
-            Mesmo componente da tela de Assinatura, para os dois não
-            divergirem. */}
-        {quota && (
-          <ResumoCreditos quota={quota} onComprarPacote={onComprarPacote} className="mb-4" />
-        )}
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700 shadow-sm">
@@ -1013,7 +992,10 @@ export default function PncpSearch({
       {/* 3. RESULTADOS & INTELIGÊNCIA DE MERCADO    */}
       {/* ========================================== */}
       {results.length > 0 && marketData && (
-        <div className="mb-8 animate-in fade-in slide-in-from-bottom-4 relative z-10">
+        <div className="mb-8 px-5 md:px-6 animate-in fade-in slide-in-from-bottom-4 relative z-10">
+          {/* px-5 md:px-6 = o MESMO padding do cabeçalho e do formulário do
+              painel. Este bloco e a lista de editais tinham zero padding
+              lateral e encostavam na borda do cartão branco. */}
           {(uf || municipioNome) && (
             <div className="mb-5 bg-amber-50 border border-amber-200 p-3.5 rounded-xl flex items-start gap-3 shadow-sm">
               {/* MapPin no lugar do 🎯: o aviso é sobre FILTRO REGIONAL, e um
@@ -1031,7 +1013,10 @@ export default function PncpSearch({
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 px-2">
+          {/* `px-2` removido: ele indentava o título e o selo em 8px enquanto o
+              grid de cards logo abaixo ficava em 0 — dois alinhamentos
+              diferentes no mesmo bloco. O respiro agora vem do container. */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
             <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
               <BrainCircuit className="w-4 h-4 text-slate-500" strokeWidth={2.5} />
               Inteligência de Mercado
@@ -1130,7 +1115,11 @@ export default function PncpSearch({
       )}
 
       {results.length > 0 && (
-        <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pr-3 pb-8 custom-scrollbar relative z-10">
+        <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pl-5 pr-4 md:pl-6 md:pr-5 pb-8 custom-scrollbar relative z-10">
+          {/* `pr-3` sozinho era espaçamento SÓ à direita: os cards encostavam
+              na borda do painel de um lado e respiravam do outro. A direita
+              fica um pouco menor que a esquerda de propósito — a barra de
+              rolagem ocupa parte dela. */}
           {results.map((edital, index) => {
             // ── Janela de propostas REAL (substitui o antigo "Radar Preditivo" simulado) ──
             const parseDataBR = (s?: string): Date | null => {

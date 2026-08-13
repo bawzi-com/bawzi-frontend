@@ -19,7 +19,11 @@ interface TierContextProps {
 const fallbackTierLimits = { [-1]: 10000, 1: 25000, 2: 80000, 3: 180000, 4: 400000 };
 const fallbackTierFileLimits = { [-1]: 3, 1: 5, 2: 15, 3: 30, 4: 100 };
 // Fallback só entra se a API não responder. Os valores reais vêm do Admin.
-const fallbackTierCredits = { [-1]: 1, 1: 5, 2: 60, 3: 30, 4: 35 };
+// ⚠️ ESPELHO dos defaults de config.py (LIMIT_TIER_*) — mudou lá, muda aqui.
+// A escada anterior ({2:60, 3:30, 4:35}) era INVERTIDA: com a API fora, a
+// EscadaDePlanos convidava ao Avançado prometendo MENOS créditos que o
+// Essencial — um fallback que fazia anti-venda.
+const fallbackTierCredits = { [-1]: 1, 1: 5, 2: 90, 3: 250, 4: 650 };
 const fallbackTierNames: Record<number, string> = {
   [-1]: 'Visitante', 1: 'Gratuito', 2: 'Essencial', 3: 'Profissional', 4: 'Avançado',
 };
@@ -75,10 +79,17 @@ export function TierProvider({ children }: { children: ReactNode }) {
             if (typeof config?.name === 'string' && config.name.trim()) novosNomes[idNum] = config.name.trim();
           });
 
-          setTierLimits(novosLimites);
-          setTierFileLimits(novosLimitesArquivo);
-          if (Object.keys(novosCreditos).length) setTierCredits(novosCreditos);
-          if (Object.keys(novosNomes).length) setTierNames(novosNomes);
+          // MESCLA sobre os fallbacks em vez de substituir. Substituindo, um
+          // tier que a API deixe de listar — ou um campo que volte nulo —
+          // some do frontend inteiro e vira `undefined` na hora de medir um
+          // limite. O sintoma disso não é erro na tela: é limite errado
+          // aplicado em silêncio, que foi exatamente o defeito do visitante
+          // anônimo. O que a API manda continua vencendo; o fallback só
+          // preenche buraco.
+          setTierLimits(prev => ({ ...prev, ...novosLimites }));
+          setTierFileLimits(prev => ({ ...prev, ...novosLimitesArquivo }));
+          if (Object.keys(novosCreditos).length) setTierCredits(prev => ({ ...prev, ...novosCreditos }));
+          if (Object.keys(novosNomes).length) setTierNames(prev => ({ ...prev, ...novosNomes }));
         }
       } catch {
         // Mantém os limites locais quando a API não está disponível.

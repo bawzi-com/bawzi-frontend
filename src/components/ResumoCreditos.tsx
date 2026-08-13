@@ -30,6 +30,22 @@ export interface QuotaResumo {
   dias_para_reset?: number;
 }
 
+/** Métricas dos botões de ação da carteira, num lugar só.
+ *
+ *  Nasceram em telas diferentes e ficaram com altura, raio, fonte e caixa
+ *  distintos — lado a lado pareciam de produtos diferentes. Geometria idêntica;
+ *  o que separa a ação secundária da primária é PESO (contorno x preenchimento),
+ *  não tamanho. Exportado em vez de copiado, porque foi copiar que os fez
+ *  divergir da primeira vez.
+ */
+export const BOTAO_BASE =
+  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-[11px] ' +
+  'font-black shadow-sm transition-all hover:-translate-y-px hover:shadow active:translate-y-0';
+export const BOTAO_SECUNDARIO =
+  `${BOTAO_BASE} border border-violet-200 bg-white text-violet-700 hover:border-violet-300 hover:bg-violet-50`;
+export const BOTAO_PRIMARIO =
+  `${BOTAO_BASE} bg-emerald-600 text-white hover:bg-emerald-700`;
+
 const n = (v: number | null | undefined) => Number(v || 0).toLocaleString('pt-BR');
 
 /** Os pedaços da frase que explica o número, na ordem em que fazem sentido:
@@ -66,11 +82,20 @@ function Numero({ rotulo, valor, cor, sufixo }: {
 }
 
 export default function ResumoCreditos({
-  quota, onComprarPacote, className = '',
+  quota, onComprarPacote, className = '', semAviso = false, semBorda = false,
 }: {
   quota: QuotaResumo | null | undefined;
   onComprarPacote?: () => void;
   className?: string;
+  /** Esconde o aviso de cortesia. Dentro da barra de créditos da análise ele
+   *  seria o TERCEIRO aviso sobre o mesmo assunto — lá já existem os blocos de
+   *  cortesia e motor gratuito, com botão de ação. Repetir a mesma informação
+   *  em três alturas não reforça, dilui. */
+  semAviso?: boolean;
+  /** Remove a moldura própria quando o componente já está dentro de uma caixa
+   *  que muda de cor com o estado (âmbar na cortesia, violeta no motor
+   *  gratuito). Borda dentro de borda faz a caixa externa parecer erro. */
+  semBorda?: boolean;
 }) {
   // Plano ilimitado não tem saldo para explicar, e um painel de zeros só ocupa
   // espaço e faz duvidar. Convidado idem: ele não tem carteira.
@@ -85,7 +110,9 @@ export default function ResumoCreditos({
   const cortesia = quota.cortesia_usada ?? 0;
 
   return (
-    <div className={`rounded-xl border border-slate-200 bg-white px-4 py-3 ${className}`}>
+    <div className={semBorda
+      ? className
+      : `rounded-xl border border-slate-200 bg-white px-4 py-3 ${className}`}>
       <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <Numero rotulo="Do plano" valor={n(quota.limite)} cor="text-slate-900" sufixo="/mês" />
@@ -116,7 +143,7 @@ export default function ResumoCreditos({
           <button
             type="button"
             onClick={onComprarPacote}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-bold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100"
+            className={BOTAO_SECUNDARIO}
           >
             <Plus size={12} />
             Comprar créditos
@@ -140,7 +167,7 @@ export default function ResumoCreditos({
         ))}
       </p>
 
-      {quota.em_cortesia && (
+      {quota.em_cortesia && !semAviso && (
         <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-semibold leading-4 text-amber-800">
           <Coins size={12} className="mt-px shrink-0" />
           <span>

@@ -5,6 +5,7 @@ import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
 import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -1336,9 +1337,34 @@ export default function CompetitorWarRoom({
             )}
 
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 flex w-full md:max-w-sm">
-              <button onClick={() => setAbaConcorrentes('nacional')} className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${abaConcorrentes === 'nacional' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>Nacionais</button>
-              <button onClick={() => setAbaConcorrentes('regional')} className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${abaConcorrentes === 'regional' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>Regionais</button>
+            {/* A contagem fica NA aba, não dentro dela: saber que "Regionais"
+                tem 2 e "Nacionais" tem 137 é o que decide qual abrir primeiro.
+                Sem o número, descobrir isso custa um clique e uma volta.
+                O valor vai em cor mais fraca — é dado de apoio, não título.
+
+                O `@container` existe porque o rótulo cresceu: "NACIONAIS (137)"
+                em caixa alta com tracking-widest não cabe onde "NACIONAIS"
+                cabia. Medido: a versão cheia estoura a barra abaixo de ~320px
+                de container, e esta barra vive dentro do laudo, que também é
+                renderizado em coluna estreita no histórico. Breakpoint de
+                viewport não resolve — a janela pode ser larga e a coluna não.
+                Abaixo de 20rem o tipo encolhe um degrau e o tracking afrouxa;
+                validado sem estouro de 240px para cima. */}
+            <div className="@container w-full md:max-w-sm">
+              <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 flex w-full">
+                <button onClick={() => setAbaConcorrentes('nacional')} className={`flex-1 min-w-0 py-3 px-2 @min-[20rem]:px-3 text-[10px] @min-[20rem]:text-xs font-black uppercase tracking-wide @min-[20rem]:tracking-widest rounded-xl transition-all ${abaConcorrentes === 'nacional' ? 'bg-white text-indigo-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Nacionais
+                  <span className={`ml-1 @min-[20rem]:ml-1.5 tabular-nums ${abaConcorrentes === 'nacional' ? 'text-indigo-400' : 'text-slate-400'}`}>
+                    ({listaNacional.length})
+                  </span>
+                </button>
+                <button onClick={() => setAbaConcorrentes('regional')} className={`flex-1 min-w-0 py-3 px-2 @min-[20rem]:px-3 text-[10px] @min-[20rem]:text-xs font-black uppercase tracking-wide @min-[20rem]:tracking-widest rounded-xl transition-all ${abaConcorrentes === 'regional' ? 'bg-white text-emerald-700 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}>
+                  Regionais
+                  <span className={`ml-1 @min-[20rem]:ml-1.5 tabular-nums ${abaConcorrentes === 'regional' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    ({listaRegional.length})
+                  </span>
+                </button>
+              </div>
             </div>
 
               {/* Atualizar: discreto quando já há dados, porque aqui é sobre
@@ -1551,6 +1577,10 @@ export default function CompetitorWarRoom({
               </div>
             </div>
 
+            {/* Estratégia jurídica ofensiva (vulnerabilidades + minuta) —
+                atrás de flag no lançamento: depende de OSINT raro do
+                concorrente e gera peça ofensiva. Ver launchFlags.ts. */}
+            {LAUNCH_FLAGS.minutaJuridicaOfensiva && (
             <div className="bg-slate-50 rounded-[2rem] border border-slate-200 p-6 md:p-8 shadow-sm flex flex-col h-max">
               <div className="mb-6 flex flex-col gap-2">
                 <div className="flex items-center justify-between">
@@ -1610,6 +1640,7 @@ export default function CompetitorWarRoom({
                 </div>
               )}
             </div>
+            )}
           </div>
         </div>
       )}

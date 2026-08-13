@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation';
 import UserProfileCard from './UserProfileCard';
 import NotificationPanel from './NotificationPanel';
 import type { UserData } from '@/lib/types';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 interface AppSidebarProps {
   token: string | null;
@@ -246,7 +247,9 @@ export default function AppSidebar({
 
         {/* ── Comparar editais ───────────────────────────── */}
         {/* Sem nível: comparação entre laudos já pagos. */}
-        {token && (
+        {/* Fora da sidebar no lançamento (LAUNCH_FLAGS): a comparação vive
+            como botão dentro de Decisões/Histórico, onde os laudos já estão. */}
+        {LAUNCH_FLAGS.compararNaSidebar && token && (
           <button
             onClick={() => onSetActiveTab('comparar')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -323,7 +326,8 @@ export default function AppSidebar({
         )}
 
         {/* ── Capital / fôlego financeiro (NÍV. 3) ────────── */}
-        {token && currentTier >= 3 && (
+        {/* Atrás de flag no lançamento: integração bancária é aposta pós-PMF. */}
+        {LAUNCH_FLAGS.capital && token && currentTier >= 3 && (
             <button
               onClick={() => onSetActiveTab('capital')}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -421,7 +425,9 @@ export default function AppSidebar({
             {currentTier < 3 && (
               <LockedNavRow label="Monitor" tier="NÍV. 3" onClick={() => router.push('/plans')} />
             )}
-            {currentTier < 3 && (
+            {/* Capital fora do lançamento: não se promete cadeado de um módulo
+                que a flag esconde até para quem paga. */}
+            {LAUNCH_FLAGS.capital && currentTier < 3 && (
               <LockedNavRow label="Capital" tier="NÍV. 3" onClick={() => router.push('/plans')} />
             )}
             {currentTier < 4 && (

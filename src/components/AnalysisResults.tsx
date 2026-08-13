@@ -21,6 +21,7 @@ import {
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
   ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
   Maximize2, Minimize2, PanelRightClose, PanelRightOpen, ExternalLink,
+  ScanSearch,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -29,7 +30,12 @@ import type {
   DecisionEvidence,
   DecisionVerdict,
 } from './analysis-types';
-import { getScoreColor, getScoreBg } from './analysis-types';
+import { getScoreColor, getScoreBg, textoDoItem, citacaoDoItem } from './analysis-types';
+// Construtor ÚNICO do plano de execução, compartilhado com o painel Gestão.
+// Ver o comentário longo em `lib/decisionQueue` sobre por que isto não pode
+// voltar a ser duas funções.
+import { buildDecisionQueueTasks } from '@/lib/decisionQueue';
+import type { SavedAnalysis } from '@/lib/types';
 import TacticalSimulator from './TacticalSimulator';
 import PremiumLock from './PremiumLock';
 import CompetitorWarRoom from './CompetitorWarRoom';
@@ -51,9 +57,25 @@ interface AnalysisResultsProps {
   modelSource: string | null;
   isCachedResult: boolean;
   onUpgradeClick: () => void;
-  onCockpitStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
+  /* `onCockpitStatusChange` foi REMOVIDA. O laudo não grava mais
+   * `cockpit_status` — o plano é leitura aqui e edição na Gestão. Manter o
+   * callback declarado seria a assinatura prometendo um evento que nunca mais
+   * dispara, e o próximo a ler este arquivo assumiria que a tela ainda salva. */
   /** Abre a aba Capital com o valor do edital pré-preenchido */
   onGoToCapital?: (valor: number) => void;
+  /** "Aprofundar este laudo": reexecuta ESTE edital em auditoria profunda
+   *  cobrando só a diferença (o backend abate o que a rápida já debitou).
+   *  Só chega em laudo rápido persistido, com o texto ainda carregado. */
+  onAprofundar?: () => void;
+  /** Multiplicador da auditoria profunda no plano (`quota.peso_profunda`).
+   *  Com ele e o que ESTE laudo já custou (`result.creditos`), a conta sai
+   *  exata: profunda = pago × peso, diferença = pago × (peso − 1). Não
+   *  depende do texto na tela — que é justamente por onde a estimativa
+   *  antiga errava (o backend cobra sobre o texto + PDFs do PNCP). */
+  pesoProfunda?: number | null;
+  /** Créditos disponíveis no período — o banner mostra ao lado do preço para
+   *  a pessoa não precisar sair do laudo para saber se dá. */
+  saldoCreditos?: number | null;
   /** Avisa quem renderiza a lista (ex.: painel Gestão) quando o acompanhamento muda,
    * já que o toggle é local a este componente e o "+ Gestão"/"Remover" precisa
    * refletir imediatamente numa lista filtrada por tracked_in_gestao. */
@@ -104,8 +126,10 @@ export default function AnalysisResults({
   isCachedResult,
   onComprarPacote,
   onUpgradeClick,
-  onCockpitStatusChange,
   onGoToCapital,
+  onAprofundar,
+  pesoProfunda,
+  saldoCreditos,
   onTrackedChange,
   sidebarHidden = false,
   onToggleSidebar,
@@ -391,6 +415,35 @@ export default function AnalysisResults({
           <PersistentSummaryBar result={liveResult} />
         )}
 
+        {/* ── Aprofundar: visível em TODA aba de um laudo rápido ──────────
+            O convite acompanha a leitura: em qualquer etapa que a pessoa
+            esteja, a informação "isto foi uma leitura única e dá para
+            aprofundar pagando só a diferença" está a um olhar de distância.
+            Só em laudo rápido (rodape_leitura), nunca em laudo profundo, e
+            só quando o app passou o callback (sessão ativa + texto ainda
+            carregado para reanalisar). */}
+        {/* Faixa de UMA LINHA — mesma gramática da PersistentSummaryBar logo
+            acima: a informação acompanha o leitor em toda aba sem repetir um
+            cartão de venda inteiro antes do conteúdo, sete vezes. Some na
+            etapa "Análise", onde o banner completo (com a conta) mora logo
+            abaixo do "Como esta análise foi feita".
+            `creditos` do próprio laudo é a MESMA fonte que o backend abate —
+            estimar de novo arriscaria a tela prometer um desconto e o portão
+            dar outro. */}
+        {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta
+          && activeStep !== 'analise' && (
+          <AprofundarFaixa
+            onAprofundar={onAprofundar}
+            jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
+            pesoProfunda={pesoProfunda ?? null}
+            // O saldo viaja junto agora: a faixa expandida mostra a conta
+            // inteira e é dela que a cobrança parte. Sem esta prop, o único
+            // lugar do laudo onde se gasta crédito fora da aba Análise não
+            // diria se o saldo cobre — que é metade da decisão.
+            saldo={saldoCreditos ?? null}
+          />
+        )}
+
         {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
 
@@ -402,7 +455,7 @@ export default function AnalysisResults({
               {/* Início-meio-fim antes de qualquer detalhe — quem só quer o
                   quadro geral não precisa abrir as outras etapas para
                   entender a história inteira. */}
-              <JourneySummary result={liveResult} onStepClick={handleStepClick} />
+              <JourneySummary result={liveResult} userTier={userTier} onStepClick={handleStepClick} />
 
               {/* Semáforo (o "porquê" por eixo) e Resumo Executivo (o "o quê"
                   em prosa) viviam dentro de Veredito, mas são leitura panorâmica
@@ -422,7 +475,7 @@ export default function AnalysisResults({
               {/* "Log de trabalho" da IA: todas as frentes avaliadas, o que
                   sustenta cada uma e o que não precisa de atenção — em um só
                   lugar, sem precisar reabrir as 6 etapas pra confirmar. */}
-              <EscopoAnaliseSection result={liveResult} onStepClick={handleStepClick} />
+              <EscopoAnaliseSection result={liveResult} userTier={userTier} onStepClick={handleStepClick} />
             </div>
           )}
 
@@ -478,7 +531,7 @@ export default function AnalysisResults({
           {activeStep === 'analise' && (
             <div id="section-analise" className="scroll-mt-24">
               {(() => {
-                const item = buildJourneySummary(liveResult).find((i) => i.key === 'analise')!;
+                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'analise')!;
                 const tone: TimelineTone =
                   item.status === 'alerta' ? 'red'
                   : item.status === 'atencao' ? 'amber'
@@ -501,6 +554,29 @@ export default function AnalysisResults({
                           e some quando não existe, então nunca empurra o resto
                           para baixo à toa. */}
                       <ContradicoesSection result={liveResult} />
+                      {/* O delta vem ANTES do método: primeiro o ganho nomeado
+                          ("o que a profunda acrescentou"), depois o como. */}
+                      <AuditoriaDeltaDestaque result={liveResult} />
+                      {/* Método vem LOGO DEPOIS das contradições: quem acabou de
+                          ler um achado da auditoria entende na hora de onde ele
+                          veio — e quem está na rápida lê ali que a busca por
+                          contradição não foi feita, no lugar onde ela apareceria. */}
+                      <ComoFoiFeita result={liveResult} />
+                      {/* Banner COMPLETO (com a conta de créditos) aqui, e só
+                          aqui: é logo abaixo do texto que acabou de listar o
+                          que a leitura única NÃO fez — o ponto do laudo em que
+                          a pergunta "e se eu quiser isso?" de fato nasce. Nas
+                          demais abas o mesmo convite existe como faixa de uma
+                          linha no topo (ver AprofundarFaixa), que não empurra
+                          o conteúdo para baixo em toda tela. */}
+                      {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta && (
+                        <AprofundarBanner
+                          onAprofundar={onAprofundar}
+                          jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
+                          pesoProfunda={pesoProfunda ?? null}
+                          saldo={saldoCreditos ?? null}
+                        />
+                      )}
                       <RedFlagsSection result={liveResult} />
                       <RisksSection result={liveResult} />
                       <MatrizRiscoFormalSection result={liveResult} />
@@ -516,7 +592,7 @@ export default function AnalysisResults({
           {activeStep === 'juridico' && (
             <div id="section-juridico" className="scroll-mt-24">
               {(() => {
-                const item = buildJourneySummary(liveResult).find((i) => i.key === 'juridico')!;
+                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'juridico')!;
                 const tone: TimelineTone =
                   item.status === 'alerta' ? 'red'
                   : item.status === 'atencao' ? 'amber'
@@ -548,7 +624,7 @@ export default function AnalysisResults({
           {activeStep === 'concorrentes' && (
             <div className="animate-in fade-in zoom-in-95 duration-300">
               {(() => {
-                const item = buildJourneySummary(liveResult).find((i) => i.key === 'concorrentes')!;
+                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'concorrentes')!;
                 const tone: TimelineTone =
                   item.status === 'alerta' ? 'red'
                   : item.status === 'atencao' ? 'amber'
@@ -593,7 +669,6 @@ export default function AnalysisResults({
                 result={liveResult}
                 analysisId={analysisId}
                 token={token}
-                onStatusChange={onCockpitStatusChange}
                 tracked={tracked}
                 trackSaving={trackSaving}
                 onToggleTracking={toggleTracking}
@@ -724,6 +799,15 @@ function DecisionSnapshot({
   const businessFit = normalizeBusinessFit(result);
   const summaryText = getDecisionSummary(decision);
 
+  // Selo do modo que gerou ESTE laudo. Quem pagou 4× precisa reencontrar o
+  // que comprou — e quem está na rápida vê que existe um degrau acima.
+  // Detecção pelos artefatos (rodapés/delta), não pelo rótulo do provider:
+  // laudos antigos sem os campos ficam sem selo, o que é o honesto.
+  const modoDoLaudo: 'profunda' | 'rapida' | null =
+    (result.auditoria_rodape || result.auditoria_delta)
+      ? 'profunda'
+      : result.rodape_leitura ? 'rapida' : null;
+
   const { Icon } = verdict;
   const rawBlockers = decision.impeditivos.length > 0
     ? decision.impeditivos
@@ -799,10 +883,45 @@ function DecisionSnapshot({
                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
                   Decisão executiva
                 </span>
+                {modoDoLaudo && (
+                  <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${
+                    modoDoLaudo === 'profunda'
+                      ? 'border-sky-200 bg-sky-50 text-sky-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-500'
+                  }`}>
+                    {modoDoLaudo === 'profunda' ? 'Auditoria profunda' : 'Análise rápida'}
+                  </span>
+                )}
+                {/* Colado no selo do modo: quem pagou o modo caro pergunta
+                    "o que isso me deu?" exatamente aqui. O balanço abre no
+                    clique — fechado, custa um chip; aberto, responde com
+                    números do próprio laudo. */}
+                {modoDoLaudo === 'profunda' && <ChipGanhoProfunda result={result} />}
               </div>
               <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                 {decision.rotulo}
               </h3>
+              {/* Quem está comprando. Some quando o documento não identifica
+                  o órgão — nome de comprador é identidade, e inventar aqui
+                  contaminaria o filtro do histórico. O selo distingue o
+                  cadastro oficial do PNCP da leitura da IA. */}
+              {result.orgao_nome && (
+                <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-600">
+                  <Landmark size={14} className="shrink-0 text-slate-400" />
+                  {result.orgao_nome}
+                  {result.orgao_nome_fonte === 'pncp' && (
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
+                      cadastro PNCP
+                    </span>
+                  )}
+                  {result.orgao_nome_fonte === 'ia' && (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-500"
+                          title="Lido do texto do edital pela IA — confira contra o documento oficial.">
+                      lido do edital
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
 
@@ -865,6 +984,39 @@ function DecisionSnapshot({
             )}
           </div>
         </div>
+
+        {/* Definições das três métricas — acessíveis no TOQUE, não só no hover.
+            Os textos são os mesmos dos tooltips acima, mas `title=` não existe
+            em celular/tablet — e estas são exatamente as três medidas que o
+            leitor precisa distinguir (viabilidade ≠ confiança ≠ cobertura). */}
+        <details className="group mt-3">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600 [&::-webkit-details-marker]:hidden">
+            <CircleHelp size={11} className="shrink-0" />
+            O que significam Viabilidade, Confiança e Cobertura?
+            <span className="transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="mt-2 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-[11px] font-medium leading-relaxed text-slate-600 md:grid-cols-3">
+            <p>
+              <strong className="text-slate-800">Viabilidade ({result.score}/100)</strong> — o quanto vale a pena
+              participar, somando os critérios técnicos, financeiros, jurídicos e de documentação. A conta
+              completa está em &ldquo;Composição do Score&rdquo;.
+            </p>
+            <p>
+              <strong className="text-slate-800">Confiança ({decision.confianca}%)</strong> — o quanto a IA está
+              segura <em>desta decisão</em>, pela quantidade e qualidade das evidências encontradas. Cai quando há
+              lacunas no material — não é a mesma coisa que viabilidade.
+            </p>
+            <p>
+              <strong className="text-slate-800">
+                Cobertura{typeof result.qualidade_extracao?.cobertura_pct === 'number' ? ` (${result.qualidade_extracao.cobertura_pct}%)` : ''}
+              </strong> — percentual dos campos críticos do edital (objeto, valores, prazos, garantias…) que foram
+              localizados para basear a análise.
+              {result.qualidade_extracao?.campos_faltantes?.length
+                ? <> Não localizados: {result.qualidade_extracao.campos_faltantes.join(', ')}.</>
+                : null}
+            </p>
+          </div>
+        </details>
 
         {/* ── Calibração real (histórico do workspace) ──────────────────── */}
         {calibracao && (
@@ -1324,23 +1476,39 @@ function VersionMetric({
   );
 }
 
-type DecisionCockpitTask = {
-  id: string;
-  prazo: string;
-  acao: string;
-  responsavel: string;
-  resultado_esperado: string;
-  /** Impacto do item (vindo do roadmap — exibido no card) */
-  impacto?: string;
-  origem: string;
-  prioridade: 'Alta' | 'Média' | 'Normal';
-};
+/* O tipo local `DecisionCockpitTask` saiu junto com o construtor duplicado.
+ * O contrato agora é `DecisionQueueTask` (`lib/decisionQueue`), um só para as
+ * duas telas — dois tipos estruturalmente iguais para o mesmo dado é como as
+ * duas implementações conseguiram divergir sem o compilador reclamar. */
 
+/* ─── Cockpit: o laudo MOSTRA o plano, a Gestão EXECUTA ──────────────────────
+ *
+ * Decisão de produto do dono: a edição sai daqui.
+ *
+ * O que havia: duas superfícies de edição para o mesmo `cockpit_status` — esta
+ * e o painel Gestão. Duas telas gravando o mesmo campo, com dois construtores
+ * de tarefa diferentes (ver comentário em `lib/decisionQueue`), e a própria
+ * tela sem saber explicar onde o dado morava: o subtítulo dizia "registrados
+ * em Gestão" e a linha três centímetros abaixo dizia "salvos no histórico
+ * desta análise". A primeira era falsa para quem não é Nível 4.
+ *
+ * O que fica: o laudo mostra o plano INTEIRO, em leitura, ancorado na
+ * evidência que o gerou — que é a razão de o plano nascer aqui e não numa
+ * lista solta. Responsável, prazo, nota e conclusão passam a existir só na
+ * Gestão, que é quem tem o que o laudo nunca vai ter: visão entre editais,
+ * filtros e prazos comparáveis.
+ *
+ * Por que não esconder o plano de quem não tem Nível 4: o plano é entrega da
+ * análise, que a pessoa pagou. O que é Nível 4 é GERENCIAR o plano. Mostrar e
+ * bloquear a gestão é a linha honesta; esconder seria cobrar por um laudo
+ * incompleto. */
 function DecisionCockpit({
   result,
   analysisId,
+  // `token` continua aqui: o toggle "+ Gestão" é a única ação que sobrou nesta
+  // tela e precisa saber se há sessão. `onStatusChange` saiu — nada mais grava
+  // `cockpit_status` a partir do laudo.
   token,
-  onStatusChange,
   tracked,
   trackSaving,
   onToggleTracking,
@@ -1350,7 +1518,6 @@ function DecisionCockpit({
   result: AnalysisResult;
   analysisId: string | null;
   token: string | null;
-  onStatusChange?: (status: NonNullable<AnalysisResult['cockpit_status']>, updatedAnalysis?: AnalysisResult) => void;
   tracked: boolean;
   trackSaving: boolean;
   onToggleTracking: () => void;
@@ -1359,9 +1526,14 @@ function DecisionCockpit({
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
-  const tasks = useMemo(() => buildDecisionCockpitTasks(decision, result), [decision, result]);
+  // MESMO construtor que a Gestão usa. Era uma cópia local que divergia em três
+  // pontos — e como o `id` da tarefa é a chave do `cockpit_status`, divergir
+  // significava as duas telas contando progressos diferentes do mesmo edital.
+  const tasks = useMemo(
+    () => buildDecisionQueueTasks(result as unknown as SavedAnalysis),
+    [result],
+  );
   const [statusMap, setStatusMap] = useState<NonNullable<AnalysisResult['cockpit_status']>>(() => normalizeCockpitStatus(result.cockpit_status));
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpanded = (id: string) => setExpanded(prev => {
     const next = new Set(prev);
@@ -1378,79 +1550,14 @@ function DecisionCockpit({
   const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
   const progress = Math.round((completed / tasks.length) * 100);
 
-  const persistStatus = async (nextStatus: NonNullable<AnalysisResult['cockpit_status']>) => {
-    onStatusChange?.(nextStatus);
-    if (!analysisId || !token) return;
-
-    setSaveState('saving');
-    try {
-      const res = await apiFetch(`${API_URL}/api/analyses/${analysisId}/cockpit`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: nextStatus }),
-      });
-
-      if (!res.ok) throw new Error('Falha ao salvar cockpit');
-      const data = await res.json().catch(() => null);
-      if (data?.analysis) onStatusChange?.(nextStatus, data.analysis);
-      setSaveState('saved');
-      setTimeout(() => setSaveState('idle'), 1800);
-    } catch (err) {
-      if (err instanceof SessionExpiredError) return;
-      setSaveState('error');
-    }
-  };
-
-  const toggleTask = (taskId: string, checked: boolean) => {
-    const nextStatus = {
-      ...statusMap,
-      [taskId]: {
-        ...statusMap[taskId],
-        done: checked,
-        updated_at: new Date().toISOString(),
-      },
-    };
-    setStatusMap(nextStatus);
-    void persistStatus(nextStatus);
-  };
-
-  const updateTaskField = (
-    taskId: string,
-    field: 'responsavel' | 'prazo' | 'nota',
-    value: string,
-  ) => {
-    setStatusMap((current) => ({
-      ...current,
-      [taskId]: {
-        ...current[taskId],
-        [field]: value,
-      },
-    }));
-  };
-
-  const persistTaskField = (
-    taskId: string,
-    field: 'responsavel' | 'prazo' | 'nota',
-  ) => {
-    const current = statusMap[taskId] || {};
-    const value = String(current[field] || '').trim();
-    const nextStatus = {
-      ...statusMap,
-      [taskId]: {
-        ...current,
-        [field]: value || undefined,
-        updated_at: new Date().toISOString(),
-      },
-    };
-    setStatusMap(nextStatus);
-    void persistStatus(nextStatus);
-  };
-
   const isNoGo = decision.veredito === 'NO_GO';
-  const cockpitTitle = isNoGo ? 'Monitoramento pós-veredito' : 'Cockpit de execução';
+  const cockpitTitle = isNoGo ? 'Monitoramento pós-veredito' : 'Plano de execução';
+  // Sem promessa sobre onde o dado mora: o subtítulo descreve o que a lista É.
+  // Onde ela se acompanha está dito uma vez só, embaixo, e condicionado ao
+  // estado real (marcado / não marcado / plano sem Gestão).
   const cockpitSubtitle = isNoGo
     ? 'Condições a acompanhar para revisar esta decisão'
-    : 'Passos para protocolar a proposta — registrados em Gestão';
+    : 'Passos para protocolar a proposta';
 
   // Onde este edital está no ciclo de vida do negócio — antes vivia isolada
   // num card próprio (EsteiraCTA) logo abaixo deste, duplicando o mesmo botão
@@ -1482,8 +1589,8 @@ function DecisionCockpit({
             <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">{cockpitSubtitle}</h3>
             <p className="mt-1 text-xs font-semibold text-slate-400">
               {isNoGo
-                ? 'Marque quando as condições mudarem e reprocesse a análise.'
-                : 'Preencha responsável e prazo para cada passo — os dados ficam salvos no histórico desta análise.'}
+                ? 'Acompanhe estas condições — quando mudarem, vale reprocessar a análise.'
+                : 'Esta é a leitura do plano. Responsável, prazo e conclusão se preenchem no painel Gestão.'}
             </p>
 
             {/* Pipeline: onde este edital está no ciclo Análise → ... */}
@@ -1507,12 +1614,35 @@ function DecisionCockpit({
               ))}
             </div>
 
+            {/* Uma frase, e ela muda com o estado. Antes era fixa — mandava
+                "Ative + Gestão" mesmo depois de ativado, com o "✓ Em Gestão"
+                aceso ao lado, e prometia o painel a quem não tem Nível 4. */}
             <p className="mt-2.5 text-[11px] font-semibold text-slate-400">
-              Ative "+ Gestão" para acompanhar isto no{' '}
-              <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                painel Gestão, no menu lateral
-              </button>
-              {gestaoDisponivel ? '.' : ' (recurso Nível 4).'}
+              {!gestaoDisponivel ? (
+                <>
+                  Preencher e acompanhar estes passos é o{' '}
+                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                    painel Gestão (Nível 4)
+                  </button>
+                  . O plano acima é seu de qualquer forma.
+                </>
+              ) : tracked ? (
+                <>
+                  Em acompanhamento —{' '}
+                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                    abrir no painel Gestão
+                  </button>{' '}
+                  para preencher responsável, prazo e conclusão.
+                </>
+              ) : (
+                <>
+                  Ative <strong className="text-slate-600">+ Gestão</strong> para preencher responsável e prazo destes passos no{' '}
+                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                    painel Gestão
+                  </button>
+                  .
+                </>
+              )}
             </p>
           </div>
 
@@ -1563,22 +1693,12 @@ function DecisionCockpit({
           </div>
         </div>
 
-        {/* Banner save state */}
-        {saveState !== 'idle' && (
-          <div className={`mt-3 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest ${
-            saveState === 'error' ? 'bg-red-50 text-red-600'
-            : saveState === 'saving' ? 'bg-amber-50 text-amber-600'
-            : 'bg-emerald-50 text-emerald-600'
-          }`}>
-            {saveState === 'error' ? '✕ Erro ao salvar — tente novamente'
-              : saveState === 'saving' ? 'Salvando no histórico...'
-              : '✓ Salvo no histórico desta análise'}
-          </div>
-        )}
+        {/* O banner de "salvando / salvo no histórico" saiu junto com a
+            edição: não há mais nada a salvar nesta tela. */}
       </div>
 
       {/* Lista de tarefas — coluna única, numerada e conectada por uma linha
-          vertical atrás dos checkboxes, para reforçar a ordem de execução */}
+          vertical atrás dos marcadores, para reforçar a ordem de execução */}
       <div className="relative px-6">
         <div className="pointer-events-none absolute bottom-6 left-[34px] top-6 w-px bg-slate-200" aria-hidden="true" />
         {tasks.map((task, idx) => {
@@ -1589,17 +1709,21 @@ function DecisionCockpit({
             <div key={task.id} className={`relative border-b border-slate-100 py-4 last:border-b-0 transition-all ${isDone ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-4">
 
-                {/* Número + checkbox: nó da linha do tempo */}
+                {/* Número + marca de concluído. Era um checkbox clicável; agora
+                    é indicador. Um checkbox que não marca nada seria pior que
+                    nenhum — convida ao clique e não faz nada. */}
                 <div className="relative z-10 flex shrink-0 flex-col items-center gap-1.5 rounded-full bg-white pt-0.5">
                   <span className={`text-[10px] font-black tabular-nums ${isDone ? 'text-emerald-500' : 'text-slate-300'}`}>
                     {String(idx + 1).padStart(2, '0')}
                   </span>
-                  <input
-                    type="checkbox"
-                    checked={isDone}
-                    onChange={(e) => toggleTask(task.id, e.target.checked)}
-                    className="h-5 w-5 cursor-pointer rounded border-2 border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                  />
+                  <span
+                    title={isDone ? 'Concluída em Gestão' : 'Pendente'}
+                    className={`flex h-5 w-5 items-center justify-center rounded border-2 ${
+                      isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    {isDone && <Check size={12} strokeWidth={3.5} />}
+                  </span>
                 </div>
 
                 {/* Conteúdo */}
@@ -1637,51 +1761,49 @@ function DecisionCockpit({
                   )}
                 </div>
 
-                {/* Botão de detalhes */}
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(task.id)}
-                  className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
-                >
-                  {isOpen ? '↑ Fechar' : '↓ Detalhes'}
-                </button>
+                {/* O botão só existe quando há o que abrir. Antes era fixo e
+                    abria três campos vazios; agora abre o que a Gestão gravou —
+                    sem dado gravado, não há detalhe, e um botão que abre um
+                    painel vazio é só um clique perdido. */}
+                {hasCustomData && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(task.id)}
+                    className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                  >
+                    {isOpen ? '↑ Fechar' : '↓ Detalhes'}
+                  </button>
+                )}
               </div>
 
-              {/* Painel de detalhes — colapsável */}
-              {isOpen && (
+              {/* Painel de detalhes — LEITURA do que foi preenchido em Gestão */}
+              {isOpen && hasCustomData && (
                 <div className="ml-11 mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 pb-4 pt-3">
-                  <p className="mb-3 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                    Dados salvos nesta análise · visíveis em Gestão
+                  <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Preenchido no painel Gestão
+                    <button
+                      type="button"
+                      onClick={onGoToGestao}
+                      className="font-black text-slate-600 underline underline-offset-2 hover:text-slate-900"
+                    >
+                      editar lá →
+                    </button>
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block">
+                    <div>
                       <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
-                      <input
-                        value={statusMap[task.id]?.responsavel ?? task.responsavel}
-                        onChange={(e) => updateTaskField(task.id, 'responsavel', e.target.value)}
-                        onBlur={() => persistTaskField(task.id, 'responsavel')}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                      />
-                    </label>
-                    <label className="block">
+                      <p className="text-xs font-bold text-slate-700">{statusMap[task.id]?.responsavel || task.responsavel}</p>
+                    </div>
+                    <div>
                       <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
-                      <input
-                        value={statusMap[task.id]?.prazo ?? task.prazo}
-                        onChange={(e) => updateTaskField(task.id, 'prazo', e.target.value)}
-                        onBlur={() => persistTaskField(task.id, 'prazo')}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                      />
-                    </label>
-                    <label className="block sm:col-span-2">
-                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
-                      <input
-                        value={statusMap[task.id]?.nota ?? ''}
-                        onChange={(e) => updateTaskField(task.id, 'nota', e.target.value)}
-                        onBlur={() => persistTaskField(task.id, 'nota')}
-                        placeholder="Ex.: aguardando jurídico, pedido protocolado em 01/07..."
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition-all placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
-                      />
-                    </label>
+                      <p className="text-xs font-bold text-slate-700">{statusMap[task.id]?.prazo || task.prazo}</p>
+                    </div>
+                    {statusMap[task.id]?.nota && (
+                      <div className="sm:col-span-2">
+                        <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
+                        <p className="text-xs font-semibold leading-relaxed text-slate-600">{statusMap[task.id]?.nota}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1693,55 +1815,12 @@ function DecisionCockpit({
   );
 }
 
-function buildDecisionCockpitTasks(decision: DecisionUiData, result: AnalysisResult): DecisionCockpitTask[] {
-  const tasks: DecisionCockpitTask[] = [];
-  const isNoGo = decision.veredito === 'NO_GO';
-
-  decision.proximas_acoes.forEach((action, index) => {
-    const prazo = action.prazo || 'Hoje';
-    const priority: DecisionCockpitTask['prioridade'] =
-      isNoGo || /agora|hoje/i.test(prazo) ? 'Alta' : 'Média';
-    tasks.push({
-      id: `decision-${index}-${normalizeDecisionText(action.acao).slice(0, 40)}`,
-      prazo,
-      acao: action.acao,
-      responsavel: action.responsavel || 'Licitações',
-      resultado_esperado: action.resultado_esperado || 'Critério objetivo para seguir ou abandonar.',
-      origem: 'Decisão',
-      prioridade: priority,
-    });
-  });
-
-  // Itens de checklist (habilitação) só fazem sentido para GO/CONDICIONAL
-  if (!isNoGo) {
-    (result.checklist || []).slice(0, 6).forEach((item, index) => {
-      const record = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {};
-      const acao = shortenDecisionText(record.tarefa || record.descricao || record.label || record.item || item, 180);
-      if (!acao) return;
-      const impacto = String(record.impacto || '').toLowerCase();
-      tasks.push({
-        id: `checklist-${index}-${normalizeDecisionText(acao).slice(0, 40)}`,
-        prazo: shortenDecisionText(record.prazo || record.fase || 'Antes da proposta', 40),
-        acao,
-        responsavel: shortenDecisionText(record.responsavel || 'Licitações', 80),
-        resultado_esperado: shortenDecisionText(record.resultado_esperado || 'Item validado antes de protocolar a proposta.', 140),
-        impacto: shortenDecisionText(record.impacto || '', 120) || undefined,
-        origem: 'Checklist',
-        prioridade: impacto.includes('alto') || impacto.includes('crítico') || impacto.includes('critico') ? 'Alta' : 'Normal',
-      });
-    });
-  }
-
-  const seen = new Set<string>();
-  return tasks
-    .filter((task) => {
-      const key = normalizeDecisionText(`${task.origem}-${task.acao}`);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 8);
-}
+/* `buildDecisionCockpitTasks` foi REMOVIDA daqui. Era a cópia local do
+ * construtor de tarefas, e as duas versões produziam os `id`s que indexam o
+ * `cockpit_status` gravado — divergir significava as duas telas lendo
+ * progressos diferentes do mesmo edital. A versão canônica agora é
+ * `buildDecisionQueueTasks`, em `lib/decisionQueue`, com as divergências
+ * reconciliadas e o dedupe entre fontes. */
 
 function normalizeCockpitStatus(value: AnalysisResult['cockpit_status']): NonNullable<AnalysisResult['cockpit_status']> {
   if (!value || typeof value !== 'object') return {};
@@ -2089,7 +2168,7 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
       ? condicoes
       : toDecisionTextList([
           ...semaforoCondicoes,
-          ...(result.exigencias_criticas || []).slice(0, 3),
+          ...(result.exigencias_criticas || []).slice(0, 3).map(textoDoItem),
           veredito !== 'NO_GO' ? 'Validar margem líquida e capital de giro antes do lance final.' : '',
         ], 6),
     impeditivos: impeditivos.length ? impeditivos : riscosAltos,
@@ -2479,7 +2558,43 @@ type JourneySummaryItem = {
   headline: string;
 };
 
-function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
+/* ─── Parecer jurídico: por que ele está (ou não está) no laudo ──────────────
+ *
+ * Três situações que a tela tratava como uma só, e que pedem reações OPOSTAS
+ * do usuário:
+ *
+ *   presente      → o parecer existe. Mostra, e ponto.
+ *   fora_do_plano → o backend nem chamou o Agente Jurídico. Reação: upgrade.
+ *   nao_gerado    → o plano inclui, mas veio vazio. Reação: refazer/reclamar.
+ *
+ * Antes, as duas ausências diziam a MESMA frase — "Parecer jurídico não gerado
+ * nesta análise" — que soa como falha da rodada. Quem está no Essencial lia
+ * isso e concluía que o produto falhou, quando o parecer nunca esteve
+ * contratado; quem está no Profissional lia a mesma frase numa falha real e
+ * concluía que era normal. É o mesmo defeito já corrigido no
+ * `concorrentes_diagnostico`: "não rodou" e "rodou e deu vazio" não podem
+ * caber na mesma frase.
+ *
+ * ⚠️ A ORDEM IMPORTA: primeiro pergunta se o parecer EXISTE, só depois olha o
+ * plano. O corte real do backend é `agent_count >= 3`, e o agent_count é
+ * editável por tier no Admin (`config_atual.get("agent_count")`, elevado a 3
+ * quando tier >= 3). Ou seja, o Admin PODE ligar o parecer num tier abaixo —
+ * e a versão anterior, que decidia só por `userTier <= 2`, esconderia atrás
+ * do cadeado um parecer que já foi gerado e pago. Decidir pelo dado que
+ * chegou nunca fica dessincronizado de uma configuração de servidor. */
+type StatusParecer = 'presente' | 'fora_do_plano' | 'nao_gerado';
+
+/** Tier a partir do qual o backend roda o Agente Jurídico (agent_count >= 3).
+ *  Espelha `tier_config.py`: 1 Gratuito e 2 Essencial ficam de fora; 3
+ *  Profissional e 4 Avançado incluem. */
+const TIER_MINIMO_PARECER = 3;
+
+function statusDoParecer(result: AnalysisResult, userTier: number): StatusParecer {
+  if (result.parecer_especialista) return 'presente';
+  return userTier < TIER_MINIMO_PARECER ? 'fora_do_plano' : 'nao_gerado';
+}
+
+function buildJourneySummary(result: AnalysisResult, userTier: number): JourneySummaryItem[] {
   const decision = normalizeDecision(result);
 
   const veredito: JourneySummaryItem = {
@@ -2514,12 +2629,15 @@ function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
           : { key: 'analise', status: 'ok', headline: 'Nenhum risco relevante identificado.' };
 
   const abusivas = flags.filter(f => classifyRedFlag(f).kind === 'abusividade');
+  const statusParecer = statusDoParecer(result, userTier);
   const juridico: JourneySummaryItem =
     abusivas.length > 0
       ? { key: 'juridico', status: 'alerta', headline: `${abusivas.length} cláusula(s) potencialmente abusiva(s) identificada(s).` }
-      : result.parecer_especialista
+      : statusParecer === 'presente'
         ? { key: 'juridico', status: 'ok', headline: 'Parecer jurídico sem apontamentos críticos.' }
-        : { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não gerado nesta análise.' };
+        : statusParecer === 'fora_do_plano'
+          ? { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não está incluído no seu plano.' }
+          : { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não gerado nesta análise.' };
 
   const totalConcorrentes = (result.concorrentes_provaveis?.length || 0) + (result.concorrentes_regionais?.length || 0);
   const nivelAmeaca = result.pricing_intelligence?.nivelAmeaca;
@@ -2544,9 +2662,11 @@ function buildJourneySummary(result: AnalysisResult): JourneySummaryItem[] {
 
 function JourneySummary({
   result,
+  userTier,
   onStepClick,
 }: {
   result: AnalysisResult;
+  userTier: number;
   onStepClick: (step: JourneyStepType) => void;
 }) {
   const decision = normalizeDecision(result);
@@ -2604,7 +2724,7 @@ const SCOPE_STATUS_CFG: Record<ScopeStatus, { dot: string; text: string; label: 
   pendente: { dot: 'bg-slate-300', text: 'text-slate-400', label: 'Não avaliado' },
 };
 
-function buildEscopoAnalise(result: AnalysisResult): ScopeRow[] {
+function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[] {
   const rows: ScopeRow[] = [];
 
   // Semáforo de Viabilidade não entra mais aqui como linha de checklist: desde
@@ -2742,14 +2862,22 @@ function buildEscopoAnalise(result: AnalysisResult): ScopeRow[] {
   }
 
   // 10. Parecer técnico-jurídico
+  // Esta seção se chama "O Que Esta Análise Avaliou" — é justamente onde a
+  // diferença entre "não contratado" e "falhou" muda o que a pessoa faz a
+  // seguir. Uma linha "pendente" idêntica para os dois casos transformava a
+  // lista de escopo numa lista de defeitos.
+  const statusParecerEscopo = statusDoParecer(result, userTier);
   rows.push({
     key: 'parecer',
     Icon: Scale,
     label: 'Parecer Técnico-Jurídico',
-    status: result.parecer_especialista ? 'ok' : 'pendente',
-    headline: result.parecer_especialista
-      ? 'Parecer jurídico especializado gerado com base legal.'
-      : 'Parecer jurídico não gerado nesta análise.',
+    status: statusParecerEscopo === 'presente' ? 'ok' : 'pendente',
+    headline:
+      statusParecerEscopo === 'presente'
+        ? 'Parecer jurídico especializado gerado com base legal.'
+        : statusParecerEscopo === 'fora_do_plano'
+          ? 'Não incluído no seu plano — o Agente Jurídico roda a partir do Profissional.'
+          : 'Parecer jurídico não gerado nesta análise.',
     stepKey: 'juridico',
   });
 
@@ -2806,13 +2934,15 @@ function buildEscopoAnalise(result: AnalysisResult): ScopeRow[] {
 
 function EscopoAnaliseSection({
   result,
+  userTier,
   onStepClick,
 }: {
   result: AnalysisResult;
+  userTier: number;
   onStepClick: (step: JourneyStepType) => void;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const rows = useMemo(() => buildEscopoAnalise(result), [result]);
+  const rows = useMemo(() => buildEscopoAnalise(result, userTier), [result, userTier]);
   const okCount = rows.filter((r) => r.status === 'ok').length;
 
   // Agrupado pelas mesmas 5 etapas da jornada (Veredito, Critérios, SWOT &
@@ -4063,6 +4193,27 @@ function OportunidadesSection({ result }: { result: AnalysisResult }) {
 //
 // A seção que justifica o multiplicador de créditos da auditoria profunda.
 //
+/** Nome legível da categoria da contradição.
+ *
+ *  Espelha `_ASSUNTO_LABEL` em `app/services/auditoria.py`. Duplicado de
+ *  propósito: mandar o rótulo pronto do backend obrigaria a migrar as análises
+ *  já gravadas, que carregam só a chave. Aqui o mapa cobre o histórico também.
+ */
+const ROTULO_ASSUNTO: Record<string, string> = {
+  pagamento: 'prazo de pagamento',
+  impugnacao: 'prazo de impugnação',
+  entrega: 'prazo de entrega/execução',
+  sessao: 'data da sessão pública',
+  vigencia: 'vigência contratual',
+  garantia: 'garantia',
+};
+
+function rotuloDoAssunto(chave?: string): string | undefined {
+  const k = (chave || '').trim();
+  if (!k) return undefined;
+  return ROTULO_ASSUNTO[k] || k;
+}
+
 // `auditoria.detectar_contradicoes` no backend extrai os fatos de prazo e de
 // valor com a POSIÇÃO de cada um no documento e confronta os que falam do
 // mesmo assunto. Duas datas de sessão divergentes entre o corpo do edital e o
@@ -4078,6 +4229,545 @@ function OportunidadesSection({ result }: { result: AnalysisResult }) {
 // Some inteira quando não há contradição, e isso é resultado, não falha: um
 // edital coerente é o caso normal. O que não pode acontecer é a seção existir
 // vazia sugerindo que a auditoria não rodou.
+/** Como esta análise foi feita — e o que ela não fez.
+ *
+ *  Os dois modos entram AQUI, com o mesmo tratamento visual. Isso é
+ *  deliberado: se a profunda ganhasse moldura dourada e a rápida um aviso
+ *  cinza de rodapé, a seção viraria peça de venda. O que diferencia os dois
+ *  é o texto, que descreve método — e o método da rápida inclui, nomeadas, as
+ *  duas verificações que ela não faz.
+ *
+ *  O motivo é medido, não estético: no mesmo edital, a rápida encontrou 1
+ *  risco de gravidade alta e a profunda encontrou 4, e as duas devolveram o
+ *  mesmo veredito com score 55 e 56. A diferença é feita de ausências, e
+ *  ausência não aparece na tela sozinha.
+ */
+/** Convite para transformar um laudo RÁPIDO em auditoria profunda, pagando
+ *  só a diferença. Renderizado no NÍVEL do laudo (logo abaixo da navegação
+ *  de etapas), portanto visível em TODA aba — a pessoa pode estar no
+ *  Jurídico ou no Cockpit quando decide que quer a verificação completa,
+ *  e o caminho precisa estar ali, não escondido numa etapa específica.
+ *  A copy diz as três coisas que importam, nesta ordem: o que ESTE laudo é
+ *  (leitura única), o que a profunda faz a mais, e por que o preço é só a
+ *  diferença. */
+/** Preço do aprofundamento, numa conta só — usada pelo banner, pela faixa e
+ *  pelo botão do histórico, para os três nunca mostrarem números diferentes.
+ *
+ *  ⚠️ DERIVA DO QUE O LAUDO JÁ PAGOU, não do texto na tela. A régua fixa é
+ *  `max(1, teto(chars ÷ unidade)) × peso_do_modo`, e a rápida tem peso 1 —
+ *  logo `profunda = rápida × peso` e a diferença é `pago × (peso − 1)`,
+ *  qualquer que seja o tamanho do edital.
+ *
+ *  A versão anterior estimava pelo `text` do formulário e ERRAVA FEIO: o
+ *  backend cobra sobre o `text_to_analyze`, que inclui os PDFs baixados do
+ *  PNCP no servidor. Num caso real de 325 mil caracteres a tela prometeu
+ *  "+2 créditos" e o portão debitou 21 — a tela mentindo sobre preço, que é
+ *  o defeito mais caro que este produto pode ter. Pior ainda no histórico,
+ *  onde o formulário está vazio e a estimativa nem existia. */
+function precoAprofundar(jaPago: number | null | undefined, pesoProfunda: number | null | undefined) {
+  const pago = typeof jaPago === 'number' && jaPago > 0 ? jaPago : null;
+  const peso = Math.max(1, Number(pesoProfunda) || 0);
+  if (pago === null || peso <= 1) return { cheio: null, pago, diferenca: null };
+  return { cheio: pago * peso, pago, diferenca: pago * (peso - 1) };
+}
+
+const creditosLabel = (n: number) => `${n} ${n === 1 ? 'crédito' : 'créditos'}`;
+
+/* ─── Peças do convite, compartilhadas entre a faixa e o banner ──────────────
+ *
+ * A faixa expandida e o banner mostram A MESMA coisa. Se cada um montasse o
+ * próprio texto e a própria conta, bastava uma correção de preço num deles
+ * para o produto passar a dizer dois números para a mesma pergunta — que é
+ * exatamente o defeito do item 14f (a tela mentindo sobre preço). Componente
+ * exportado em vez de markup copiado, mesma decisão do ResumoCreditos. */
+
+/** O que este laudo é, e o que a profunda faz a mais. */
+function TextoAprofundar() {
+  return (
+    <>
+      <p className="text-sm font-semibold leading-relaxed text-slate-800">
+        Este laudo foi gerado por uma leitura única do edital.
+      </p>
+      <p className="mt-1 text-sm font-medium leading-relaxed text-slate-600">
+        A <strong className="text-slate-800">Auditoria profunda</strong> relê o documento inteiro
+        em blocos, confere cada afirmação contra o texto original e procura contradições que a
+        leitura única não enxerga.
+      </p>
+    </>
+  );
+}
+
+/** A CONTA inteira: cheio − já pago = o que você paga. Nunca um número solto. */
+function ContaAprofundar({ cheio, pago, diferenca }: {
+  cheio: number | null; pago: number | null; diferenca: number | null;
+}) {
+  if (diferenca === null) {
+    return (
+      <p className="text-[12px] font-medium text-slate-500">
+        O preço aparece assim que o edital estiver carregado.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-sky-100 bg-white px-4 py-3">
+      <div className="flex items-baseline justify-between gap-3 text-[12px] font-medium text-slate-500">
+        <span>Auditoria completa</span>
+        <span className="tabular-nums">{creditosLabel(cheio!)}</span>
+      </div>
+      {pago !== null && (
+        <div className="mt-1 flex items-baseline justify-between gap-3 text-[12px] font-medium text-emerald-700">
+          <span>Já pago nesta leitura</span>
+          <span className="tabular-nums">− {pago}</span>
+        </div>
+      )}
+      <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
+        <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Você paga</span>
+        <span className="text-lg font-black tabular-nums text-sky-700">{creditosLabel(diferenca)}</span>
+      </div>
+    </div>
+  );
+}
+
+function BotaoAprofundar({ onAprofundar }: { onAprofundar: () => void }) {
+  return (
+    <button
+      onClick={onAprofundar}
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3.5 text-sm font-black text-white shadow-md shadow-sky-200/70 transition-colors hover:bg-sky-700"
+    >
+      <ShieldCheck size={16} className="shrink-0" />
+      Fazer auditoria profunda
+    </button>
+  );
+}
+
+/** Saldo ao lado do preço: a pessoa decide sem sair do laudo. */
+function SaldoAprofundar({ saldo, diferenca }: { saldo: number | null; diferenca: number | null }) {
+  if (saldo === null) return null;
+  const cobre = diferenca === null || saldo >= diferenca;
+  return (
+    <p className={`mt-2 text-center text-[11px] font-bold ${cobre ? 'text-slate-400' : 'text-amber-700'}`}>
+      {cobre
+        ? `Seu saldo: ${creditosLabel(saldo)}`
+        : `Seu saldo é de ${creditosLabel(saldo)} — o restante entra na margem de cortesia.`}
+    </p>
+  );
+}
+
+/** Versão de UMA LINHA do convite, para as abas em que o banner completo
+ *  seria peso demais. Mesma gramática da PersistentSummaryBar: a informação
+ *  acompanha o leitor sem competir com o conteúdo da etapa. Leva o preço
+ *  junto — quem decide na aba do Jurídico não precisa ir procurar quanto é. */
+function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
+  onAprofundar: () => void;
+  jaPago: number | null;
+  pesoProfunda: number | null;
+  saldo: number | null;
+}) {
+  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda);
+
+  // ⚠️ A FAIXA AGORA ABRE, E ISSO MUDA ONDE O DINHEIRO É GASTO.
+  //
+  // Antes, o botão desta faixa chamava `onAprofundar` direto — e `onAprofundar`
+  // NÃO abre confirmação: dispara a análise e debita na hora. Ou seja, 24
+  // créditos saíam de um clique numa tira de uma linha que mostrava o valor
+  // final e mais nada: nem o preço cheio, nem o abatimento, nem o saldo. A
+  // conta inteira só existia no banner, que mora numa única aba.
+  //
+  // Agora a tira ABRE a conta e o botão de confirmar vive lá dentro. Custa um
+  // clique a mais para quem já decidiu, e em troca nenhuma cobrança acontece
+  // sem que o preço cheio, o abatimento e o saldo estejam na tela. Para uma
+  // ação irreversível que gasta crédito, esse é o lado certo do trade.
+  //
+  // O estado mora AQUI e não no componente-pai de propósito: a faixa é
+  // renderizada fora do `key={activeStep}`, então não remonta ao trocar de
+  // aba — quem abriu a conta continua com ela aberta enquanto navega.
+  const [aberto, setAberto] = useState(false);
+  // ⚠️ CONTAINER QUERIES, não breakpoints de viewport (`sm:`/`md:`).
+  // Esta faixa vive na coluna do laudo, que tem a barra lateral de 350px ao
+  // lado: num monitor largo a coluna já é estreita, e um `md:inline` mandava
+  // exibir a frase num espaço que não a comportava — texto e botão colavam.
+  // Com `@container`, cada peça reage à largura REAL disponível:
+  //   < 22rem → botão em bloco, largura total, embaixo do rótulo
+  //   ≥ 22rem → botão volta para a direita, na mesma linha
+  //   ≥ 44rem → cabe também a frase explicativa (truncada se faltar espaço)
+  // Medido com screenshots em 340/400/460/620/760/980px antes de escrever.
+  return (
+    <div className="@container mb-6 print:hidden">
+      <div className={`rounded-2xl border border-sky-200 transition-colors ${
+        aberto ? 'bg-gradient-to-r from-sky-50 to-white shadow-sm' : 'bg-sky-50/70'
+      }`}>
+        {/* GATILHO — a tira inteira é o botão de abrir. Um alvo grande e uma
+            intenção só; dois botões lado a lado (abrir / confirmar), com o
+            que gasta crédito sendo o de MENOS informação, seria armadilha. */}
+        <button
+          type="button"
+          onClick={() => setAberto((v) => !v)}
+          aria-expanded={aberto}
+          aria-controls="aprofundar-detalhe"
+          className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl px-4 py-2.5 text-left transition-colors hover:bg-sky-100/50"
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <ScanSearch size={14} className="shrink-0 text-sky-600" />
+            <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-sky-700">
+              Leitura única
+            </span>
+            <span className="hidden h-4 w-px shrink-0 bg-sky-200 @min-[44rem]:block" />
+            <span className="hidden min-w-0 flex-1 truncate text-xs font-medium text-slate-600 @min-[44rem]:block">
+              A auditoria profunda relê o edital inteiro e confere cada afirmação contra o texto.
+            </span>
+          </span>
+          {/* Rótulo do gatilho: o preço fica visível FECHADO — esconder o
+              número atrás do clique transformaria a tira num teaser. A seta
+              para baixo é o que diz que abre, em vez de executar. */}
+          <span className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-300 bg-white px-3.5 py-2 text-[11px] font-black text-sky-700 @min-[22rem]:ml-auto @min-[22rem]:w-auto">
+            {aberto
+              ? 'Ver menos'
+              : `Aprofundar${diferenca !== null ? ` por ${creditosLabel(diferenca)}` : ''}`}
+            <ChevronDown
+              size={13}
+              className={`shrink-0 transition-transform duration-200 ${aberto ? 'rotate-180' : ''}`}
+            />
+          </span>
+        </button>
+
+        {/* DETALHE — mesmas peças do banner completo, pelos mesmos
+            componentes. Abaixo de 38rem a conta empilha sob o texto: esta
+            faixa vive na coluna do laudo, estreita mesmo em monitor largo. */}
+        {aberto && (
+          <div
+            id="aprofundar-detalhe"
+            className="animate-in fade-in slide-in-from-top-1 duration-200 border-t border-sky-100 px-4 pb-4 pt-4"
+          >
+            <div className="flex flex-col gap-5 @min-[38rem]:flex-row @min-[38rem]:items-center @min-[38rem]:justify-between">
+              <div className="min-w-0 flex-1">
+                <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-sky-700">
+                  Análise rápida · leitura única
+                </p>
+                <TextoAprofundar />
+              </div>
+              <div className="w-full shrink-0 @min-[38rem]:w-[19rem]">
+                <div className="mb-3">
+                  <ContaAprofundar cheio={cheio} pago={pago} diferenca={diferenca} />
+                </div>
+                <BotaoAprofundar onAprofundar={onAprofundar} />
+                <SaldoAprofundar saldo={saldo} diferenca={diferenca} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AprofundarBanner({ onAprofundar, jaPago, pesoProfunda, saldo }: {
+  onAprofundar: () => void;
+  jaPago: number | null;
+  pesoProfunda: number | null;
+  saldo: number | null;
+}) {
+  // A CONTA, não um número solto. O botão dizia "+9 CR": "CR" é abreviação de
+  // programador (o resto do produto escreve "N créditos", ver SeloCusto), o
+  // "+" sugere acréscimo sobre algo que a pessoa não sabe qual é, e o valor
+  // vinha colado ao rótulo em caixa alta — virava ruído, não preço.
+  // Agora a conta aparece inteira: cheio − já pago = o que você paga.
+  //
+  // O miolo é o MESMO da faixa expandida, pelos mesmos componentes: este
+  // banner é a versão sempre-aberta (aba Análise, logo abaixo do texto que
+  // lista o que a leitura única não fez) e a faixa é a versão sob demanda.
+  // Duas cópias do markup acabariam com dois preços para a mesma pergunta.
+  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda);
+
+  // Container queries pelo mesmo motivo da faixa: a coluna do laudo é
+  // estreita mesmo em monitor largo (barra lateral de 350px). Com `md:`,
+  // o bloco da conta era espremido a ~19rem ao lado do texto num espaço
+  // que não comportava os dois. Abaixo de 38rem, empilha.
+  return (
+    // `id` + `scroll-mt`: o botão "Aprofundar" do histórico abre o laudo e rola
+    // até aqui, em vez de cobrar a partir da lista. Sem a âncora, ele abriria o
+    // laudo no topo e a conta ficaria a uma rolagem de distância de quem clicou
+    // justamente para vê-la.
+    <div
+      id="aprofundar-banner"
+      className="@container mb-8 scroll-mt-24 overflow-hidden rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white shadow-sm"
+    >
+      <div className="flex flex-col gap-5 p-5 @min-[38rem]:flex-row @min-[38rem]:items-center @min-[38rem]:justify-between">
+        {/* Lado esquerdo: o que este laudo é e o que falta nele */}
+        <div className="min-w-0 flex-1">
+          <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-sky-700">
+            Análise rápida · leitura única
+          </p>
+          <TextoAprofundar />
+        </div>
+
+        {/* Lado direito: a conta e a ação */}
+        <div className="w-full shrink-0 @min-[38rem]:w-[19rem]">
+          <div className="mb-3">
+            <ContaAprofundar cheio={cheio} pago={pago} diferenca={diferenca} />
+          </div>
+          <BotaoAprofundar onAprofundar={onAprofundar} />
+          <SaldoAprofundar saldo={saldo} diferenca={diferenca} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Ganho × investimento da auditoria profunda, numa estrutura só.
+ *
+ *  Usada pelo chip do cabeçalho e pelo cartão da etapa 03 — se cada um
+ *  montasse a própria lista, os dois acabariam contando coisas diferentes
+ *  sobre a mesma análise. */
+function resumoGanhoProfunda(result: AnalysisResult) {
+  const d = result.auditoria_delta;
+  if (!d) return null;
+  const exig = d.exigencias_acrescentadas ?? 0;
+  const contra = d.contradicoes_detectadas ?? 0;
+  const quarentena = d.achados_em_quarentena ?? 0;
+  const contestados = d.contestados_adversarial ?? 0;
+  const validados = d.achados_validados ?? 0;
+  const blocos = d.blocos ?? 0;
+  const chars = d.chars_edital ?? 0;
+
+  // Cada ganho com o VERBO do que aconteceu — "3 exigências" não diz nada;
+  // "3 exigências que a leitura única não relatou" diz o que mudou no laudo.
+  const ganhos: { n: number; texto: string }[] = [];
+  if (exig > 0) ganhos.push({ n: exig, texto: `exigência${exig > 1 ? 's' : ''} que a leitura única não relatou` });
+  if (contra > 0) ganhos.push({ n: contra, texto: `contradição${contra > 1 ? 'ões' : ''} entre trechos do edital` });
+  if (quarentena > 0) ganhos.push({ n: quarentena, texto: `afirmação${quarentena > 1 ? 'ões' : ''} descartada${quarentena > 1 ? 's' : ''} por falta de respaldo no texto` });
+  if (contestados > 0) ganhos.push({ n: contestados, texto: `achado${contestados > 1 ? 's' : ''} rebaixado${contestados > 1 ? 's' : ''} a "a confirmar" pelo revisor cético` });
+
+  // O que a profunda faz SEMPRE, mesmo quando não acha nada novo. É isto que
+  // sustenta o preço num edital limpo — e é verdade verificável, não promessa.
+  const garantias: string[] = [];
+  if (blocos > 0) {
+    garantias.push(
+      chars > 0
+        ? `Edital lido integralmente: ${blocos} bloco${blocos > 1 ? 's' : ''}, ${chars.toLocaleString('pt-BR')} caracteres, sem truncar`
+        : `Edital lido integralmente em ${blocos} bloco${blocos > 1 ? 's' : ''}, sem truncar`,
+    );
+  }
+  if (validados > 0) garantias.push(`${validados} fatos conferidos um a um contra o texto original`);
+
+  const pago = typeof result.creditos === 'number' ? result.creditos : null;
+  const abatido = typeof result.desconto_aprofundar === 'number' && result.desconto_aprofundar > 0
+    ? result.desconto_aprofundar : null;
+
+  return { ganhos, garantias, pago, abatido, houveGanho: ganhos.length > 0 };
+}
+
+/** Chip do cabeçalho: "o que ganhei?" — abre o balanço ganho × investimento.
+ *
+ *  Fica ao lado do selo "Auditoria profunda" porque é ali que a pergunta
+ *  aparece: a pessoa vê que pagou o modo caro e quer saber o que isso
+ *  comprou. O cartão da etapa 03 continua existindo para quem lê o laudo
+ *  inteiro; este é o atalho para quem só abriu o veredito. */
+function ChipGanhoProfunda({ result }: { result: AnalysisResult }) {
+  const [aberto, setAberto] = useState(false);
+  const resumo = resumoGanhoProfunda(result);
+  if (!resumo) return null;
+
+  const total = resumo.ganhos.reduce((s, g) => s + g.n, 0);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-expanded={aberto}
+        title="Ver o que a auditoria profunda acrescentou e quanto custou"
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest transition-colors ${
+          aberto
+            ? 'border-sky-300 bg-sky-600 text-white'
+            : 'border-sky-200 bg-white text-sky-700 hover:bg-sky-50'
+        }`}
+      >
+        <Sparkles size={11} className="shrink-0" />
+        {total > 0 ? `+${total} achados` : 'o que ganhei?'}
+        <ChevronDown size={10} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+
+      {aberto && (
+        <div className="mt-3 w-full rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-sky-700">
+            O que a auditoria profunda entregou
+          </p>
+
+          {resumo.houveGanho ? (
+            <ul className="space-y-1.5">
+              {resumo.ganhos.map((g) => (
+                <li key={g.texto} className="flex items-start gap-2 text-[13px] font-medium leading-relaxed text-slate-700">
+                  <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-black tabular-nums text-white">
+                    {g.n}
+                  </span>
+                  {g.texto}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[13px] font-medium leading-relaxed text-slate-700">
+              Nada além do que a leitura única já havia captado — neste edital a auditoria
+              funcionou como <strong className="text-slate-900">contraprova</strong> da primeira
+              leitura, que é um resultado, não uma ausência.
+            </p>
+          )}
+
+          {resumo.garantias.length > 0 && (
+            <ul className="mt-3 space-y-1 border-t border-sky-200/70 pt-3">
+              {resumo.garantias.map((g) => (
+                <li key={g} className="flex items-start gap-2 text-[12px] font-medium leading-relaxed text-slate-500">
+                  <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+                  {g}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {resumo.pago !== null && (
+            <p className="mt-3 border-t border-sky-200/70 pt-3 text-[12px] font-bold text-slate-600">
+              Investimento: {resumo.pago} {resumo.pago === 1 ? 'crédito' : 'créditos'}
+              {resumo.abatido !== null && (
+                <span className="font-medium text-emerald-700">
+                  {' '}· {resumo.abatido} já {resumo.abatido === 1 ? 'pago' : 'pagos'} na leitura rápida {resumo.abatido === 1 ? 'foi abatido' : 'foram abatidos'}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** O número que responde "o que eu ganhei pagando a profunda" — em destaque.
+ *
+ *  O backend calcula e grava `auditoria_delta` em TODA análise profunda desde
+ *  12/08, mas até aqui ele nunca era exibido: o cliente pagava 4×, a auditoria
+ *  acrescentava exigências e derrubava afirmações sem respaldo, e nada disso
+ *  aparecia como ganho nomeado. Este cartão também persiste o último delta em
+ *  localStorage para o CARD DE ESCOLHA do modo poder mostrar "na sua última
+ *  auditoria" — prova de valor no momento exato da decisão de pagar.
+ *
+ *  Zero novidades NÃO esconde o cartão: vira "a auditoria funcionou como
+ *  contraprova" — que é verdade e vale dinheiro num edital limpo. Esconder
+ *  repetiria o defeito que este cartão existe para corrigir. */
+function AuditoriaDeltaDestaque({ result }: { result: AnalysisResult }) {
+  const d = result.auditoria_delta;
+  const exig = d?.exigencias_acrescentadas ?? 0;
+  const contra = d?.contradicoes_detectadas ?? 0;
+  const quarentena = d?.achados_em_quarentena ?? 0;
+  const validados = d?.achados_validados ?? 0;
+
+  useEffect(() => {
+    if (!d) return;
+    try {
+      localStorage.setItem('bawzi_ultimo_delta_profunda', JSON.stringify({
+        exigencias: exig, contradicoes: contra, ts: Date.now(),
+      }));
+    } catch { /* sem storage: o card de escolha fica sem a prova, nada quebra */ }
+  }, [d, exig, contra]);
+
+  if (!d) return null;
+
+  // MESMA fonte do chip do cabeçalho: dois lugares contando a mesma análise
+  // com listas próprias acabariam divergindo na primeira mudança de regra.
+  const resumo = resumoGanhoProfunda(result);
+  if (!resumo) return null;
+
+  return (
+    <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50/70 p-5">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-sky-700">
+        O que a auditoria profunda acrescentou
+      </p>
+
+      {resumo.houveGanho ? (
+        <ul className="space-y-1.5">
+          {resumo.ganhos.map((g) => (
+            <li key={g.texto} className="flex items-start gap-2 text-[13px] font-medium leading-relaxed text-slate-700">
+              <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-black tabular-nums text-white">
+                {g.n}
+              </span>
+              {g.texto}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm font-medium leading-relaxed text-slate-600">
+          Nada além do que a leitura única já havia captado — neste edital a auditoria
+          funcionou como <strong className="text-slate-800">contraprova</strong> da primeira
+          leitura, que é um resultado, não uma ausência.
+        </p>
+      )}
+
+      {resumo.garantias.length > 0 && (
+        <ul className="mt-3 space-y-1 border-t border-sky-200/70 pt-3">
+          {resumo.garantias.map((g) => (
+            <li key={g} className="flex items-start gap-2 text-[12px] font-medium leading-relaxed text-slate-500">
+              <CheckCircle2 size={13} className="mt-0.5 shrink-0 text-emerald-600" />
+              {g}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {resumo.pago !== null && (
+        <p className="mt-3 border-t border-sky-200/70 pt-3 text-[12px] font-bold text-slate-600">
+          Investimento: {resumo.pago} {resumo.pago === 1 ? 'crédito' : 'créditos'}
+          {resumo.abatido !== null && (
+            <span className="font-medium text-emerald-700">
+              {' '}· {resumo.abatido} já {resumo.abatido === 1 ? 'pago' : 'pagos'} na leitura rápida {resumo.abatido === 1 ? 'foi abatido' : 'foram abatidos'}
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ComoFoiFeita({ result }: { result: AnalysisResult }) {
+  const profunda = String(result.auditoria_rodape || '').trim();
+  const rapida = String(result.rodape_leitura || '').trim();
+  const texto = profunda || rapida;
+  if (!texto) return null;
+
+  const ehProfunda = Boolean(profunda);
+  // Divide em frases para virar lista legível — o backend monta com ". ".
+  const linhas = texto.split('. ').map(t => t.trim()).filter(Boolean);
+
+  return (
+    <div className="relative border border-slate-200 rounded-2xl p-8 mb-12">
+      <SectionLabel
+        icon={<ShieldCheck size={18} className="text-slate-700" />}
+        label="Como esta análise foi feita"
+      />
+      <p className="mt-2 mb-5 text-sm font-medium leading-relaxed text-slate-500">
+        {ehProfunda
+          ? 'Auditoria profunda: cada afirmação abaixo é verificável por você no documento original.'
+          : 'Análise rápida: leitura única, com as citações conferidas contra o documento.'}
+      </p>
+      <ul className="space-y-2.5">
+        {linhas.map((linha, i) => {
+          const alerta = linha.startsWith('⚠️');
+          const ausencia = linha.includes('NÃO incluiu') || linha.includes('não foram procuradas');
+          return (
+            <li key={i} className="flex gap-2.5 text-[13px] leading-relaxed">
+              <span
+                className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                  alerta ? 'bg-amber-500' : ausencia ? 'bg-slate-400' : 'bg-emerald-500'
+                }`}
+              />
+              <span className={ausencia ? 'text-slate-600' : alerta ? 'text-amber-800' : 'text-slate-700'}>
+                {linha.replace(/^⚠️\s*/, '')}
+                {i < linhas.length - 1 ? '.' : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function ContradicoesSection({ result }: { result: AnalysisResult }) {
   const itens = result.auditoria?.contradicoes || [];
   if (!itens.length) return null;
@@ -4102,7 +4792,11 @@ function ContradicoesSection({ result }: { result: AnalysisResult }) {
         items={itens.map((c, i) => ({
           key: i,
           tone: tomDaGravidade(c.gravidade),
-          eyebrow: c.assunto || undefined,
+          // `c.assunto` é o identificador INTERNO da categoria ("sessao",
+          // "vigencia", "impugnacao") — minúsculo e sem acento porque casa
+          // contra texto normalizado. Exibido cru, o achado mais valioso da
+          // auditoria chegava ao cliente rotulado com um slug de código.
+          eyebrow: rotuloDoAssunto(c.assunto),
           badge: c.tipo === 'contradicao_com_cadastro'
             ? { label: 'Edital × cadastro PNCP', tone: tomDaGravidade(c.gravidade) }
             : { label: 'Interna ao edital', tone: tomDaGravidade(c.gravidade) },
@@ -4158,13 +4852,31 @@ function SwotSection({ result }: { result: AnalysisResult }) {
         {result.exigencias_criticas && result.exigencias_criticas.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><Pin size={11} /> Exigências Críticas</h4>
-            <Timeline dense items={result.exigencias_criticas.map((e, i) => ({ key: i, tone: 'slate' as TimelineTone, title: e }))} />
+            {/* `textoDoItem`: a auditoria acrescenta exigências como OBJETO
+                (com a citação conferida junto), o investigador as escreve como
+                string. Passar o item cru para `title` renderizava um objeto
+                onde React espera um nó — e quebrava justamente quando a
+                análise profunda entregava o que ela tem de melhor. */}
+            <Timeline dense items={result.exigencias_criticas.map((e, i) => ({
+              key: i,
+              tone: 'slate' as TimelineTone,
+              title: textoDoItem(e),
+              // A citação vem da auditoria e já foi conferida caractere a
+              // caractere. Exibi-la é o que separa "confie em nós" de "veja".
+              description: citacaoDoItem(e) ? (
+                <blockquote className="mt-1 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-1.5 text-[11px] italic text-slate-600">
+                  &ldquo;{citacaoDoItem(e)}&rdquo;
+                </blockquote>
+              ) : undefined,
+            }))} />
           </div>
         )}
         {result.documentos_necessarios && result.documentos_necessarios.length > 0 && (
           <div>
             <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><FolderOpen size={11} /> Documentação Necessária</h4>
-            <Timeline dense items={result.documentos_necessarios.map((doc, i) => ({ key: i, tone: 'blue' as TimelineTone, title: doc }))} />
+            <Timeline dense items={result.documentos_necessarios.map((doc, i) => ({
+              key: i, tone: 'blue' as TimelineTone, title: textoDoItem(doc),
+            }))} />
           </div>
         )}
       </div>
@@ -4277,6 +4989,14 @@ function MatrizRiscoFormalSection({ result }: { result: AnalysisResult }) {
 // ─── Parecer Técnico-Jurídico ─────────────────────────────────────────────────
 
 function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisResult; userTier: number; onUpgradeClick: () => void }) {
+  // ⚠️ O DADO DECIDE ANTES DO PLANO. A versão anterior perguntava
+  // `userTier <= 2 ? cadeado : parecer`, nesta ordem — então um parecer que
+  // JÁ tivesse sido gerado num tier baixo (o Admin pode elevar o agent_count
+  // por tier) ficava escondido atrás do cadeado. Conteúdo produzido, custo
+  // pago, invisível. Agora: se veio parecer, mostra; a ausência é que precisa
+  // ser explicada.
+  const status = statusDoParecer(result, userTier);
+
   return (
     <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
       <div className="bg-slate-900 p-4 border-b border-slate-800 flex items-center justify-between">
@@ -4288,7 +5008,15 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
         </span>
       </div>
 
-      {userTier <= 2 ? (
+      {status === 'presente' && (
+        <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-slate-900">
+          <div className="whitespace-pre-wrap font-sans leading-relaxed text-sm">
+            {result.parecer_especialista}
+          </div>
+        </div>
+      )}
+
+      {status === 'fora_do_plano' && (
         <div className="relative p-6">
           <div className="prose prose-slate max-w-none mb-3 opacity-60">
             <p className="text-slate-700 text-sm font-medium italic">
@@ -4301,8 +5029,20 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
                 <Lock size={24} />
               </div>
               <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
+              {/* "Nível N (Nome)" é a MESMA gramática do PremiumLock, que
+                  bloqueia o Radar e o PDF duas abas ao lado. Este cartão dizia
+                  "membros Profissionais e Avançados" — correto, mas num
+                  vocabulário só dele; dois nomes para o mesmo plano na mesma
+                  tela é como o app chegou a quatro nomes para cinco planos.
+                  Confere com tier_config: 3 Profissional e 4 Avançado têm
+                  agent_count 3; o 2 (Essencial) tem 2.
+                  A segunda frase mata a dúvida que este cadeado provocava — a
+                  de que trocar de modo resolveria. */}
               <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-                O Parecer Jurídico detalhado está disponível apenas para membros <strong className="text-white/80 uppercase">Profissionais</strong> e <strong className="text-amber-400 uppercase">Avançados</strong>.
+                O Parecer Jurídico detalhado está disponível a partir do <strong className="text-white/80">Nível 3 (Profissional)</strong> e no <strong className="text-amber-400">Nível 4 (Avançado)</strong>.
+                <span className="mt-1.5 block text-slate-500">
+                  Vale para os dois modos — a auditoria profunda não desbloqueia o parecer.
+                </span>
               </p>
               <button
                 onClick={onUpgradeClick}
@@ -4319,14 +5059,32 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
             <div className="h-16 w-full bg-slate-100 rounded-xl mt-4"></div>
           </div>
         </div>
-      ) : (
-        result.parecer_especialista && (
-          <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-slate-900">
-            <div className="whitespace-pre-wrap font-sans leading-relaxed text-sm">
-              {result.parecer_especialista}
-            </div>
+      )}
+
+      {/* Plano INCLUI e mesmo assim não veio: é falha, e a tela precisa dizer
+          isso. Antes, este caminho renderizava o cabeçalho preto e mais nada —
+          um cartão vazio com título, que parece bug de layout e não informa
+          nem que houve problema nem o que fazer. */}
+      {status === 'nao_gerado' && (
+        <div className="flex items-start gap-3 p-6">
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
+          <div>
+            <p className="text-sm font-bold text-slate-800">
+              O parecer não foi gerado nesta análise.
+            </p>
+            {/* "Refazer cobra de novo" precisa estar escrito. Repetir o mesmo
+                edital normalmente sai de graça — bate no cache e devolve o
+                laudo salvo, sem chamar a IA. Mas quando o parecer falta, o
+                cache é invalidado de propósito (ver router_analyses) para que
+                refazer REPROCESSE — e reprocessar debita. Recomendar a ação
+                sem dizer o preço é a mesma armadilha do "+2 créditos". */}
+            <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
+              Seu plano inclui o Agente Jurídico, então isto é uma falha desta rodada —
+              não um limite da assinatura. Refazer a análise reprocessa o edital do zero
+              (e debita como uma análise nova); se repetir, vale reportar ao suporte.
+            </p>
           </div>
-        )
+        </div>
       )}
     </div>
   );

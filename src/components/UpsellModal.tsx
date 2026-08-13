@@ -27,8 +27,14 @@ export default function UpsellModal({
   if (!isOpen) return null;
 
   // Benefícios padrão focados no Tier 3 (O Carro-Chefe da Bawzi)
+  //
+  // ⚠️ "Análises Ilimitadas" saiu daqui. Os planos são a CRÉDITOS — prometer
+  // ilimitado na tela exata em que a pessoa acabou de esbarrar num limite é
+  // vender o que o produto não entrega, no pior lugar possível. A cota real
+  // de cada plano mora no servidor e aparece na página de planos; aqui fica
+  // a forma honesta da mesma promessa: cota muito maior, prevista antes.
   const defaultFeatures = [
-    { title: "Análises Ilimitadas", desc: "Sem travas de quantidade por mês. Analise tudo." },
+    { title: "Cota mensal muito maior", desc: "Créditos para dezenas de auditorias profundas por mês — e o custo de cada análise aparece no botão antes de você enviar." },
     // Sem versão de modelo: o backend resolve o modelo real via settings, então
     // qualquer número aqui fica desatualizado na próxima troca de geração — e
     // esta é uma tela de conversão, onde um dado velho custa caro.

@@ -23,6 +23,12 @@ interface AnalysisLoadingOverlayProps {
   estimatedSeconds: number;
   /** true = etapas reportadas ao vivo pelo backend; false = estimativa local */
   isLive?: boolean;
+  /** Sub-progresso da AUDITORIA (só na profunda): o trabalho pelo qual ela
+   *  cobra 4× — releitura em blocos e revisão adversarial — deixando de ser
+   *  invisível durante os minutos de espera. Vem do mesmo polling. */
+  progressoAuditoria?: {
+    fase?: string; blocos_concluidos?: number; blocos_total?: number; achados?: number;
+  } | null;
   onCancel: () => void;
 }
 
@@ -33,6 +39,7 @@ export default function AnalysisLoadingOverlay({
   remainingSeconds,
   estimatedSeconds,
   isLive = false,
+  progressoAuditoria = null,
   onCancel,
 }: AnalysisLoadingOverlayProps) {
   const totalSteps = Math.max(loadingMessages.length, 1);
@@ -109,6 +116,17 @@ export default function AnalysisLoadingOverlay({
               <p className="mx-auto mt-3 max-w-lg text-sm font-medium leading-relaxed text-slate-600 md:text-base">
                 {currentMessage.desc}
               </p>
+
+              {/* A auditoria roda em PARALELO com as etapas acima — linha
+                  própria, não uma etapa, para os dois textos não brigarem. */}
+              {progressoAuditoria && (progressoAuditoria.blocos_total ?? 0) > 0 && (
+                <p className="mx-auto mt-3 inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-1.5 text-[11px] font-bold text-sky-700">
+                  <Loader2 size={12} className="animate-spin" />
+                  {progressoAuditoria.fase === 'refutacao'
+                    ? <>Auditoria: revisão adversarial de {progressoAuditoria.achados ?? 0} achados…</>
+                    : <>Auditoria em paralelo: {progressoAuditoria.blocos_concluidos ?? 0} de {progressoAuditoria.blocos_total} blocos lidos · {progressoAuditoria.achados ?? 0} achados</>}
+                </p>
+              )}
             </div>
           </div>
 

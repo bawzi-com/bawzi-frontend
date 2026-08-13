@@ -70,7 +70,7 @@ const tiers = [
   {
     name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',
     inherits: 1,
-    quantidade: '130 créditos por mês',
+    quantidade: '90 créditos por mês',   // reserva; espelha LIMIT_TIER_2 — o servidor manda
     // ⚠️ NADA DE QUANTIDADE DERIVADA DE CONFIGURAÇÃO AQUI.
     // "16 auditorias profundas por mês" saiu daqui: eu tinha calculado a
     // partir do `.env` (130 créditos) e o servidor serve o override do banco
@@ -90,7 +90,7 @@ const tiers = [
   {
     name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',
     inherits: 2,
-    quantidade: '215 créditos por mês',
+    quantidade: '250 créditos por mês',   // reserva; espelha LIMIT_TIER_3 — o servidor manda
     features: [
       'Parecer jurídico no laudo — terceiro agente',
       'Monitor inteligente PNCP (e-mail + sino)',
@@ -104,7 +104,7 @@ const tiers = [
   {
     name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',
     inherits: 3,
-    quantidade: '540 créditos por mês',
+    quantidade: '650 créditos por mês',   // reserva; espelha LIMIT_TIER_4 e a âncora do billing_config (R$ 497 ÷ 650)
     // O tamanho do edital saiu daqui: a linha de limites, montada pelo
     // servidor, já diz "Editais até 400.000 caracteres" — o card exibia duas
     // vezes. O suporte prioritário também aparecia duas vezes, porque o
@@ -215,7 +215,10 @@ function linhasLimites(
     ...(lim.em_creditos && lim.caracteres_por_credito
       // A regra completa, uma vez só. A frase curta que acompanha o número da
       // cota ("edital comum usa 2 a 3") é o resumo; esta é a definição.
-      ? [`1 crédito a cada ${numeroBr(lim.caracteres_por_credito)} caracteres`
+      // "analisados": mesma palavra da linha de créditos do formulário —
+      // texto + PDFs contam juntos. Dois lugares imprimindo a régua com
+      // vocabulários diferentes é como o app acabou com quatro nomes de plano.
+      ? [`1 crédito a cada ${numeroBr(lim.caracteres_por_credito)} caracteres analisados`
          + ((lim.peso_profunda ?? 1) > 1 ? ` · auditoria profunda ×${lim.peso_profunda}` : '')]
       : []),
     `Editais até ${numeroBr(lim.max_chars)} caracteres`,

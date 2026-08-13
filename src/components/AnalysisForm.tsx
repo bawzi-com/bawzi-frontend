@@ -6,15 +6,16 @@
  * seletor de modo (rápida | profunda) e botões de análise.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Zap, FolderOpen, FileText, ScanSearch, BrainCircuit,
   AlertTriangle, CheckCircle2, UploadCloud, Gauge, ShieldCheck, Clock3,
-  RefreshCw, Coins,
+  RefreshCw, Coins, ArrowRight,
 } from 'lucide-react';
 import { formatMB } from './analysis-types';
 
-import { detalhesDeCreditos } from './ResumoCreditos';
+import ResumoCreditos, { BOTAO_PRIMARIO } from './ResumoCreditos';
+import { useTierConfig } from '../Contexts/TierContext';
 
 export interface QuotaInfo {
   tier: number;
@@ -45,6 +46,16 @@ export interface QuotaInfo {
     sobreposicao_bloco: number;
     rapida: { fixo_usd: number; por_char_usd: number; por_bloco_usd: number };
     profunda: { fixo_usd: number; por_char_usd: number; por_bloco_usd: number };
+  } | null;
+  /** Sublimite de auditorias profundas do período (null = plano sem
+   *  sublimite, o caso comum). Vem da MESMA conta do portão que degrada a
+   *  profunda para o motor gratuito — existe para o card avisar ANTES do
+   *  clique, em vez de o cliente descobrir no banner minutos depois. */
+  sublimite_profunda?: {
+    limite: number;
+    usadas: number;
+    restantes: number;
+    atingido: boolean;
   } | null;
   /** Cota do plano + pacotes avulsos comprados. É contra ISTO que o portão
    *  decide, não contra `limite`. */
@@ -88,6 +99,26 @@ interface AnalysisFormProps {
   onUpgradeClick?: () => void;
   /** Abre a compra de pacote avulso de créditos. */
   onComprarPacote?: () => void;
+  /** ETA MEDIDO por modo (mediana das últimas análises do mesmo perfil, do
+   *  useAnalysis). Presente, substitui os rótulos genéricos ("vários
+   *  minutos") pelo número real — recalcula a cada tecla, porque o perfil
+   *  inclui o tamanho do texto. */
+  estimarSegundos?: (motor: 'openai' | 'claude') => number;
+  /** Há um edital do PNCP selecionado. O servidor vai BAIXAR os anexos
+   *  oficiais (edital + termo de referência + …) e cobrar sobre o texto
+   *  completo, que é bem maior que o colado na tela. Sem isto o selo
+   *  anunciava um preço fechado e o portão debitava outro — foi o que
+   *  aconteceu num edital de 325 mil caracteres: tela "2 créditos",
+   *  cobrança 21. Com a flag, o preço vira "a partir de N". */
+  origemPncp?: boolean;
+}
+
+/** 95 → "~2 min" · 40 → "~40 s". Arredonda para cima no minuto: prometer
+ *  menos e entregar antes é a direção certa da surpresa. */
+function fmtETA(segundos: number): string {
+  if (!Number.isFinite(segundos) || segundos <= 0) return '';
+  if (segundos < 100) return `~${Math.round(segundos)} s`;
+  return `~${Math.ceil(segundos / 60)} min`;
 }
 
 // ─── Tempo estimado honesto ───────────────────────────────────────────────────
@@ -150,6 +181,75 @@ function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
 
 // ─── Indicador de quota mensal ────────────────────────────────────────────────
 
+/** Convite para o próximo degrau — com os números do degrau, não com adjetivos.
+ *
+ *  "Faça upgrade e tenha mais benefícios" não move ninguém: não diz o que muda.
+ *  Aqui a promessa é aritmética e sai da MESMA configuração que o backend
+ *  aplica (`/api/tiers/config` → TierContext). Escrever "80.000 caracteres" à
+ *  mão aqui faria a promessa envelhecer sozinha no dia em que o Admin mexesse
+ *  no plano — e prometer um limite que o produto não entrega é pior do que
+ *  não prometer nada.
+ *
+ *  O visitante é a exceção do destino: mandá-lo direto ao plano de topo pula
+ *  o degrau que não custa nada e é o que ele consegue dar agora. Dos demais
+ *  para cima, o convite é para o topo.
+ */
+function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
+  isGuest: boolean;
+  tierAtual: number;
+  onUpgradeClick?: (tier?: number) => void;
+}) {
+  const { tierLimits, tierCredits, tierNames } = useTierConfig();
+
+  const niveis = Object.keys(tierLimits).map(Number).filter(t => t >= 1).sort((a, b) => a - b);
+  const topo = niveis.length ? niveis[niveis.length - 1] : 4;
+  const atual = isGuest ? -1 : tierAtual;
+  if (!onUpgradeClick || atual >= topo) return null;   // já está no topo: nada a oferecer
+
+  const destino = isGuest ? (niveis[0] ?? 1) : topo;
+  const num = (v: number | undefined) => Number(v || 0).toLocaleString('pt-BR');
+  const nome = tierNames[destino] || (isGuest ? 'Gratuito' : 'Avançado');
+
+  // Só entra na lista o que MELHORA de verdade em relação ao plano de agora.
+  const ganhos: string[] = [];
+  const creditosDestino = tierCredits[destino];
+  if (creditosDestino === 0) ganhos.push('créditos ilimitados');
+  else if (creditosDestino) {
+    // "créditos" também para o convidado: a plataforma inteira fala UMA moeda
+    // (o card do taster e a tela de cota já dizem "crédito") — misturar
+    // "análises" aqui reintroduzia a segunda moeda que a página de planos
+    // acabou de eliminar.
+    ganhos.push(isGuest
+      ? `${num(creditosDestino)} créditos grátis por mês (hoje é 1 por dia)`
+      : `${num(creditosDestino)} créditos por mês`);
+  }
+  if (tierLimits[destino] > (tierLimits[atual] ?? 0)) {
+    ganhos.push(`editais até ${num(tierLimits[destino])} caracteres`);
+  }
+  ganhos.push(isGuest ? 'histórico salvo e Matchmaker por CNAE' : 'auditoria profunda sem sublimite');
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-black text-emerald-900">
+          {isGuest ? 'Crie sua conta gratuita' : `Suba para o ${nome}`}
+        </p>
+        <p className="mt-0.5 text-[10px] leading-4 text-emerald-800/80">
+          {ganhos.join(' · ')}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onUpgradeClick(destino)}
+        className={BOTAO_PRIMARIO}
+      >
+        {isGuest ? 'Criar conta' : `Ir para o ${nome}`}
+        <ArrowRight size={12} />
+      </button>
+    </div>
+  );
+}
+
 function QuotaBar({
   quota,
   onUpgradeClick,
@@ -157,7 +257,9 @@ function QuotaBar({
   isGuest = false,
 }: {
   quota: QuotaInfo;
-  onUpgradeClick?: () => void;
+  /** Recebe o tier de destino. Sem o parâmetro, o chamador decide — era assim
+   *  antes, e por isso o convite não conseguia apontar para o topo. */
+  onUpgradeClick?: (tier?: number) => void;
   /** Abre a compra de pacote avulso. Substitui o "Fazer upgrade" no estouro:
    *  quem já está no plano de topo não tem upgrade para fazer, e quem está no
    *  meio prefere resolver o mês de hoje a mudar de assinatura. */
@@ -197,7 +299,6 @@ function QuotaBar({
   // OU por faixa de tamanho. Antes olhava só o peso — e passaria a mentir no
   // dia em que um plano barato alcançasse a segunda faixa.
   const emCreditos     = !isGuest && quota.unidade === 'creditos';
-  const unidadeNome    = emCreditos ? 'créditos' : 'análises';
   const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada'
                        : emCreditos ? '⛔ Créditos do período esgotados'
                        : '⛔ Limite mensal atingido';
@@ -210,62 +311,45 @@ function QuotaBar({
 
   return (
     <div className={`rounded-2xl border px-4 py-3 ${bgColor}`}>
+      {/* ── Cabeçalho de estado ────────────────────────────────────────────
+          Fica sempre, porque é ele que muda de cor e nomeia a situação
+          (cortesia, motor gratuito, esgotado). Os NÚMEROS saíram daqui. */}
       <div className="flex items-center justify-between mb-2">
         <span className={`text-[11px] font-black uppercase tracking-wider ${textColor}`}>
           {labelEstado ?? (esgotado ? labelEsgotado : labelAtivo)}
         </span>
-        <span className={`text-[11px] font-bold ${textColor}`}>
-          {quota.usado} / {saldoEfetivo}{emCreditos ? ' créditos' : ''}
-          {isGuest
-            ? <>{' '}·{' '}reseta amanhã</>
-            : <>{' '}·{' '}reseta em {quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''}</>
-          }
-        </span>
+        {isGuest && (
+          <span className={`text-[11px] font-bold ${textColor}`}>
+            {quota.usado} / {saldoEfetivo} · reseta amanhã
+          </span>
+        )}
       </div>
 
-      <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
-        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-      </div>
-
-      {/* ── De onde vem o número, e o que fazer a respeito ─────────────────
-          "9 / 60" sozinho não fecha a conta na cabeça de ninguém: quem rodou
-          19 análises vê 9 e conclui que o sistema errou. A parte que faltava é
-          a cortesia — o que a casa serviu acima do saldo e não cobra.
-
-          A frase e o botão dividem a MESMA linha, alinhados nas pontas. Em
-          linhas separadas, o botão ficava solto no meio do bloco, empurrando
-          a explicação para baixo e parecendo um item da lista acima. */}
-      {!isGuest && (
-        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          <p className="min-w-0 flex-1 text-[10px] leading-4 text-slate-500">
-            {detalhesDeCreditos(quota).map((parte, i) => (
-              <React.Fragment key={parte}>
-                {i > 0 && ' · '}
-                <span className={
-                  parte.includes('nossa conta') ? 'font-semibold text-emerald-600'
-                  : parte.includes('adicionais') ? 'font-semibold text-violet-600' : ''
-                }>{parte}</span>
-              </React.Fragment>
-            ))}
-          </p>
-
-          {/* Comprar créditos deixa de existir só no estouro. Quem quer
-              reforçar o saldo ANTES de acabar não tinha por onde — e é
-              exatamente quem paga sem precisar de aviso vermelho.
-              Discreto de propósito: nos estados de cortesia e motor gratuito
-              existem botões sólidos, e dois pesos iguais na mesma tela fariam
-              o aviso urgente perder a urgência. */}
-          {onComprarPacote && !emCortesia && !motorGratis && (
-            <button
-              type="button"
-              onClick={onComprarPacote}
-              className="group inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-violet-200 bg-white px-3 text-[10px] font-black uppercase tracking-wide text-violet-700 shadow-sm transition-all hover:-translate-y-px hover:border-violet-300 hover:bg-violet-50 hover:shadow active:translate-y-0"
-            >
-              <Coins size={11} className="transition-transform group-hover:scale-110" />
-              Comprar créditos
-            </button>
-          )}
+      {/* Convidado não tem carteira: mostrar "do plano / adicionais /
+          disponível" para quem tem 1 análise por dia seria um painel de
+          zeros. Ele fica com a barra simples. */}
+      {isGuest ? (
+        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
+          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
         </div>
+      ) : (
+        /* ── MESMO componente do topo do Radar ────────────────────────────
+           Os dois blocos conviviam na mesma página contando a mesma carteira
+           com layouts diferentes — um com quatro números, outro com um "9 / 60"
+           seco. Quem lê os dois em sequência checa se batem, e checagem é
+           trabalho que a interface deveria ter poupado.
+
+           `semBorda` porque esta caixa já muda de cor com o estado; moldura
+           dentro de moldura faz a caixa externa parecer erro. `semAviso`
+           porque os blocos de cortesia e motor gratuito, logo abaixo, já
+           dizem a mesma coisa com botão de ação junto. */
+        <ResumoCreditos
+          quota={quota}
+          onComprarPacote={!emCortesia && !motorGratis ? onComprarPacote : undefined}
+          semBorda
+          semAviso
+          className="mb-2"
+        />
       )}
 
       {/* Só quando o peso muda alguma coisa. Nos planos em que os dois modos
@@ -273,7 +357,11 @@ function QuotaBar({
           e não há conceito novo para ensinar. */}
       {emCreditos && (
         <p className="text-[10px] font-medium leading-4 text-slate-500 mb-1">
-          {quota.precificacao ? (
+          {/* `?.credito_usd` e não só truthiness: com a régua FIXA ativa o
+              backend manda `{}` em `precificacao`, que é truthy — e a frase
+              da régua dinâmica apareceria descrevendo uma cobrança que não
+              está valendo. A régua fixa é a do lançamento. */}
+          {quota.precificacao?.credito_usd ? (
             /* Régua NOVA: o crédito mede custo, não caracteres. A frase antiga
                ("1 crédito a cada 50.000 caracteres · profunda multiplica por 4")
                descrevia uma fórmula que não existe mais — e uma explicação
@@ -285,8 +373,15 @@ function QuotaBar({
             </>
           ) : (
             <>
+              {/* "analisados (texto + PDFs)" e não só "caracteres": a cobrança
+                  soma texto colado + PDFs anexados + arquivos do PNCP, mas o
+                  contador da caixa só mede o que foi digitado. Sem dizer a
+                  base de cálculo, quem cola 20 mil caracteres lê "1 crédito",
+                  anexa um PDF grande e é debitado em 4× — a régua certa com a
+                  frase incompleta produz a mesma surpresa que uma régua errada
+                  (foi exatamente o mecanismo do bug do "+2 créditos"). */}
               {!!quota.caracteres_por_credito && (
-                <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres{' · '}</>
+                <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres analisados (texto + PDFs contam juntos){' · '}</>
               )}
               {(quota.peso_profunda ?? 1) > 1
                 ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
@@ -334,6 +429,18 @@ function QuotaBar({
             </button>
           )}
         </div>
+      )}
+
+      {/* ── Degrau seguinte ───────────────────────────────────────────────
+          Some nos estados de cortesia e motor gratuito: lá já existe um botão
+          de comprar créditos, que resolve HOJE. Empilhar um convite de troca
+          de plano em cima disso divide a atenção no pior momento. */}
+      {!emCortesia && !motorGratis && (
+        <EscadaDePlanos
+          isGuest={isGuest}
+          tierAtual={quota.tier ?? 1}
+          onUpgradeClick={onUpgradeClick}
+        />
       )}
 
       {/* Convidado continua com a parede: ele não é cliente pago. */}
@@ -439,7 +546,7 @@ function SeloCusto({ creditos, aproximado, tom, estado, indisponivel }:
           title={estado
             ? `Você tem ${estado.restante} crédito(s) — este pedido ${estado.texto}.`
             : aproximado
-              ? 'O texto dos arquivos anexados só é medido no servidor — o valor pode subir.'
+              ? 'O edital completo (anexos enviados e documentos oficiais baixados do PNCP) só é medido no servidor — o valor final pode subir bastante em editais grandes.'
               : 'Este é o valor que será debitado.'}>
       {aproximado ? 'a partir de ' : ''}{creditos} {creditos === 1 ? 'crédito' : 'créditos'}
       {estado && (estado.tom === 'cortesia' ? ' · cortesia' : ' · motor gratuito')}
@@ -467,6 +574,8 @@ export default function AnalysisForm({
   quota,
   onUpgradeClick,
   onComprarPacote,
+  estimarSegundos,
+  origemPncp = false,
 }: AnalysisFormProps) {
   // Sem texto E sem arquivo não há o que precificar. A fórmula tem piso de 1,
   // então a caixa vazia anunciaria "1 crédito" — preço de uma análise que nem
@@ -496,7 +605,11 @@ export default function AnalysisForm({
   const _crRapida = temOQuePrecificar ? creditosDe(text.length, 'rapida', quota) : null;
   const _estProfunda = estadoDoPedido(_crProfunda, quota);
   const _estRapida = estadoDoPedido(_crRapida, quota);
-  const profundaIndisponivel = _estProfunda?.tom === 'gratuito';
+  // Sublimite de MODO estourado conta como indisponível pelo MESMO motivo da
+  // cortesia esgotada: o servidor degradaria para o motor gratuito em
+  // silêncio, e o card estaria vendendo uma auditoria que não vai rodar.
+  const sublimiteProfunda = quota?.sublimite_profunda ?? null;
+  const profundaIndisponivel = _estProfunda?.tom === 'gratuito' || !!sublimiteProfunda?.atingido;
   const rapidaNoModoGratuito = _estRapida?.tom === 'gratuito';
 
   // Se a profunda estava selecionada e deixou de estar disponível, volta o
@@ -570,7 +683,28 @@ export default function AnalysisForm({
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2">
             <AlertTriangle size={20} className="shrink-0 mt-0.5" />
-            <p className="text-sm font-medium leading-relaxed">{error}</p>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium leading-relaxed">{error}</p>
+              {/* O texto/PDF continua carregado — a mensagem antiga mandava
+                  "clicar em Iniciar Análise novamente" sem oferecer o botão.
+                  Repete o ÚLTIMO motor pedido (gravado pelo useAnalysis);
+                  sem registro, cai na rápida, que é a mais barata. */}
+              {podeAnalisar && !isAnalyzing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    let motor: 'openai' | 'claude' = 'openai';
+                    try {
+                      if (sessionStorage.getItem('bawzi_ultimo_motor') === 'claude') motor = 'claude';
+                    } catch { /* sem storage: rápida */ }
+                    onAnalyze(motor);
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-red-700"
+                >
+                  <RefreshCw size={12} /> Tentar novamente
+                </button>
+              )}
+            </div>
           </div>
         )}
         {successMsg && (
@@ -675,7 +809,11 @@ export default function AnalysisForm({
               isAnalyzing={isAnalyzing}
               profundaIndisponivel={profundaIndisponivel}
               rapidaNoModoGratuito={rapidaNoModoGratuito}
-              custoAproximado={files.length > 0}
+              // Arquivo anexado OU edital do PNCP: nos dois casos o texto
+              // final só é medido no servidor, e ele é MAIOR que o da tela.
+              custoAproximado={files.length > 0 || origemPncp}
+              sublimiteProfunda={sublimiteProfunda}
+              estimarSegundos={estimarSegundos}
             />
           ) : (
             <button
@@ -728,13 +866,35 @@ interface SeletorDeModoProps {
   isAnalyzing: boolean;
   profundaIndisponivel: boolean;
   rapidaNoModoGratuito: boolean;
+  /** Estado do sublimite de auditorias profundas do período (null = sem
+   *  sublimite). Serve para avisar ANTES do clique — o servidor degradaria
+   *  em silêncio e o cliente descobriria só no banner, minutos depois. */
+  sublimiteProfunda?: { limite: number; usadas: number; restantes: number; atingido: boolean } | null;
+  /** ETA medido por modo — ver AnalysisFormProps.estimarSegundos. */
+  estimarSegundos?: (motor: 'openai' | 'claude') => number;
 }
 
 function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMsg, token, userTier,
                         creditosRapida, creditosProfunda, custoAproximado,
                         estadoRapida, estadoProfunda,
                         podeAnalisar, motivoBloqueio, isAnalyzing,
-                        profundaIndisponivel, rapidaNoModoGratuito }: SeletorDeModoProps) {
+                        profundaIndisponivel, rapidaNoModoGratuito,
+                        sublimiteProfunda, estimarSegundos }: SeletorDeModoProps) {
+  // Prova de valor no momento da escolha: o que a ÚLTIMA auditoria profunda
+  // deste navegador acrescentou (gravado pelo laudo em AuditoriaDeltaDestaque).
+  // Só aparece quando houve ganho (>0) — anunciar "+0" venderia contra.
+  const [ultimoDelta, setUltimoDelta] = useState<{ exigencias: number; contradicoes: number } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('bawzi_ultimo_delta_profunda');
+      if (!raw) return;
+      const d = JSON.parse(raw) as { exigencias?: number; contradicoes?: number; ts?: number };
+      if (Date.now() - Number(d.ts || 0) > 90 * 24 * 3600 * 1000) return;
+      const exigencias = Number(d.exigencias || 0);
+      const contradicoes = Number(d.contradicoes || 0);
+      if (exigencias + contradicoes > 0) setUltimoDelta({ exigencias, contradicoes });
+    } catch { /* sem storage ou registro ilegível: card segue sem a prova */ }
+  }, []);
   return (
     <>
       {/* O `title` só aparece no hover — e em botão desabilitado boa parte dos
@@ -802,8 +962,13 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                     </span>
                   )}
                 </span>
+                {/* ETA MEDIDO quando há função: mediana das últimas análises
+                    deste perfil (tier + tamanho + PNCP), recalculada a cada
+                    tecla. O rótulo genérico fica de reserva. */}
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700">
-                  <Clock3 size={11} /> {tempoEstimadoLabel(token, userTier)}
+                  <Clock3 size={11} /> {estimarSegundos
+                    ? `normalmente ${fmtETA(estimarSegundos('openai'))}`
+                    : tempoEstimadoLabel(token, userTier)}
                 </span>
               </div>
             </div>
@@ -892,7 +1057,9 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                     minutos; quem clica esperando "rápida" acha que travou. Dizer
                     antes transforma espera em expectativa. */}
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-sky-700">
-                  <ShieldCheck size={11} /> jurídica e concorrencial · vários minutos
+                  <ShieldCheck size={11} /> jurídica e concorrencial · {estimarSegundos
+                    ? fmtETA(estimarSegundos('claude'))
+                    : 'vários minutos'}
                 </span>
               </div>
             </div>
@@ -906,6 +1073,25 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
           <p className="text-sm font-medium text-slate-500 leading-relaxed relative z-10">
             Melhor para cruzar exigências, riscos legais, concorrentes prováveis e próximos passos.
           </p>
+
+          {/* ── Sublimite de modo: a verdade ANTES do clique ────────────────
+              O portão degrada a profunda para o motor gratuito quando o
+              sublimite estoura — sem este aviso, o card vendia auditoria, o
+              usuário esperava minutos e recebia outra coisa. */}
+          {sublimiteProfunda?.atingido && (
+            <p className="relative z-10 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
+              Você usou as {sublimiteProfunda.limite} auditorias profundas deste período.
+              Uma nova rodaria no motor do plano gratuito, sem a varredura em blocos —
+              um pacote de créditos amplia o sublimite na mesma proporção.
+            </p>
+          )}
+          {!sublimiteProfunda?.atingido && (sublimiteProfunda?.restantes ?? Infinity) <= 2 && (
+            <p className="relative z-10 text-[10px] font-bold uppercase tracking-wider text-amber-600">
+              {sublimiteProfunda!.restantes === 1
+                ? 'Última auditoria profunda do período'
+                : `Restam ${sublimiteProfunda!.restantes} auditorias profundas no período`}
+            </p>
+          )}
 
           {/* ⚠️ NÃO NOMEIE O PROVEDOR AQUI. Este card agora aparece do Nível 1
               para cima, e o par profundo só usa Anthropic a partir do Nível 3:
@@ -926,12 +1112,24 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
             </span>
           </div>
 
+          {/* Prova medida, do próprio usuário — não promessa de marketing. */}
+          {ultimoDelta && (
+            <p className="relative z-10 text-[11px] font-bold leading-relaxed text-sky-700">
+              Na sua última auditoria: {[
+                ultimoDelta.exigencias > 0 && `+${ultimoDelta.exigencias} exigência${ultimoDelta.exigencias > 1 ? 's' : ''}`,
+                ultimoDelta.contradicoes > 0 && `${ultimoDelta.contradicoes} contradição${ultimoDelta.contradicoes > 1 ? 'ões' : ''}`,
+              ].filter(Boolean).join(' e ')} que a leitura única não viu.
+            </p>
+          )}
+
           {/* Botão — sempre visível */}
           <button
             type="button"
             disabled={!podeAnalisar || isAnalyzing || profundaIndisponivel}
             title={profundaIndisponivel
-              ? 'Créditos esgotados — a auditoria profunda volta com créditos novos.'
+              ? (sublimiteProfunda?.atingido
+                  ? 'Sublimite de auditorias profundas do período atingido — um pacote de créditos amplia o teto.'
+                  : 'Créditos esgotados — a auditoria profunda volta com créditos novos.')
               : motivoBloqueio || undefined}
             onClick={(e) => { e.stopPropagation(); provider === 'claude' ? onAnalyze('claude') : onProviderChange('claude'); }}
             className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all relative z-10 disabled:opacity-40 disabled:cursor-not-allowed ${

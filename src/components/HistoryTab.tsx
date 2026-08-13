@@ -9,6 +9,9 @@ import {
   CheckCircle2,
   Clock3,
   FileText,
+  GitCompare,
+  Landmark,
+  ScanSearch,
   Search,
   Star,
   Trash2,
@@ -25,6 +28,9 @@ export default function HistoryTab({
   userTier = 1,
   onRedoAnalysis,
   abrirAnalysisId,
+  onAbrirComparar,
+  onAprofundar,
+  pesoProfunda,
 }: {
   token: string;
   userTier?: number;
@@ -32,6 +38,18 @@ export default function HistoryTab({
   /** Id de uma análise para abrir automaticamente assim que a lista carregar.
    *  Usado pelo badge "já analisado" do Radar, que leva direto ao laudo. */
   abrirAnalysisId?: string | null;
+  /** Abre a comparação de laudos ("Priorizar"). No lançamento a comparação
+   *  saiu da sidebar e vive aqui, onde os laudos já estão. */
+  onAbrirComparar?: () => void;
+  /** Aprofunda um laudo RÁPIDO direto da lista, cobrando só a diferença.
+   *  Só é oferecido quando o laudo tem origem PNCP — é a tripla que permite
+   *  ao backend rebaixar o edital íntegro; sem ela o texto completo já não
+   *  existe (o `source_text` salvo é truncado em 50 mil caracteres). */
+  onAprofundar?: (analysis: SavedAnalysis) => void;
+  /** Multiplicador da profunda no plano (`quota.peso_profunda`). Com ele e o
+   *  que cada laudo já custou, o botão mostra o preço exato do
+   *  aprofundamento — mesma conta do banner do laudo. */
+  pesoProfunda?: number | null;
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,6 +74,8 @@ export default function HistoryTab({
   // ── Filtros avançados ────────────────────────────────────────────────────
   const [searchText, setSearchText] = useState('');
   const [periodoFiltro, setPeriodo] = useState<'all' | '7d' | '30d' | '90d'>('all');
+  /** Nome exato do órgão, ou 'all'. Filtra por comprador. */
+  const [orgaoFiltro, setOrgaoFiltro] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
 
 
@@ -168,7 +188,10 @@ export default function HistoryTab({
     setIsShareOpen(true);
   };
 
-  const openAnalysisDetail = async (analysis: SavedAnalysis) => {
+  /** Abre o laudo. `focarAprofundar` rola até o convite de auditoria profunda,
+   *  onde a conta inteira (cheio − já pago = você paga) e o saldo estão na
+   *  tela — em vez de cobrar direto a partir de uma linha de lista. */
+  const openAnalysisDetail = async (analysis: SavedAnalysis, focarAprofundar = false) => {
     if (!analysis.id || loadingDetailId) return;
     setLoadingDetailId(analysis.id);
     try {
@@ -186,6 +209,15 @@ export default function HistoryTab({
       setAnalyses((prev) => prev.map((item) => item.id === analysis.id ? { ...item, ...fullAnalysis } : item));
       setDetailTab('analise');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      // O banner completo do aprofundar mora na etapa "Análise", que é a que
+      // acabou de ser selecionada. O atraso espera a montagem do laudo — sem
+      // ele o alvo ainda não existe no DOM e o scroll não acha nada.
+      if (focarAprofundar) {
+        setTimeout(() => {
+          document.getElementById('aprofundar-banner')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 350);
+      }
     } catch (err) {
       if (err instanceof SessionExpiredError) { clearSession(); return; }
       setNotice({ type: 'error', message: 'Erro de conexão ao abrir a análise.' });
@@ -246,18 +278,36 @@ export default function HistoryTab({
         if (age > periodoMs[periodoFiltro]) return false;
       }
 
-      // Busca por texto (título, termo, classificação, UF)
+      // Filtro por ÓRGÃO comprador — responde "o que eu já analisei desta
+      // prefeitura?", que a lista por edital nunca respondia.
+      if (orgaoFiltro !== 'all' && (item.orgao_nome || '') !== orgaoFiltro) return false;
+
+      // Busca por texto (título, termo, classificação, UF, órgão)
       if (search) {
         const haystack = [
           item.title, item.termo_busca_pncp, item.classification,
-          item.uf, item.estado, item.estimated_value,
+          item.uf, item.estado, item.estimated_value, item.orgao_nome,
         ].filter(Boolean).join(' ').toLowerCase();
         if (!haystack.includes(search)) return false;
       }
 
       return true;
     });
-  }, [analyses, activeFilter, favorites, periodoFiltro, searchText]);
+  }, [analyses, activeFilter, favorites, periodoFiltro, searchText, orgaoFiltro]);
+
+  /** Órgãos presentes no histórico, com a contagem — a lista do filtro sai
+   *  dos dados, não de um cadastro: só aparece quem de fato foi analisado.
+   *  Ordenada por volume, que é a ordem em que a pergunta costuma nascer
+   *  ("meus compradores recorrentes primeiro"). */
+  const orgaosDisponiveis = useMemo(() => {
+    const contagem = new Map<string, number>();
+    analyses.forEach((a) => {
+      const nome = (a.orgao_nome || '').trim();
+      if (nome) contagem.set(nome, (contagem.get(nome) || 0) + 1);
+    });
+    return [...contagem.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'));
+  }, [analyses]);
 
   const totalPages = Math.ceil(filteredAnalyses.length / itemsPerPage);
   const paginatedAnalyses = useMemo(() => {
@@ -451,16 +501,21 @@ export default function HistoryTab({
           onExportPDF={() => window.print()}
           modelSource={selectedAnalysis.model_source || selectedAnalysis.modelSource || 'Motor Bawzi IA'}
           isCachedResult={false}
+          // ⚠️ O laudo aberto AQUI é o mesmo componente do workspace, mas com
+          // props próprias — sem estas, o convite de aprofundar e a conta de
+          // créditos simplesmente não existiam quando o laudo era aberto pelo
+          // histórico (a tela parecia "não ter atualizado"). O callback usa a
+          // MESMA rota do botão da lista: origem PNCP obrigatória, porque é
+          // ela que permite ao backend rebaixar o edital íntegro.
+          onAprofundar={
+            onAprofundar
+            && selectedAnalysis.pncp_cnpj && selectedAnalysis.pncp_ano && selectedAnalysis.pncp_sequencial
+            && !selectedAnalysis.auditoria_delta && !selectedAnalysis.auditoria_rodape
+              ? () => onAprofundar(selectedAnalysis)
+              : undefined
+          }
+          pesoProfunda={pesoProfunda ?? null}
           onUpgradeClick={() => setNotice({ type: 'info', message: 'Faça upgrade pelo painel de planos para desbloquear este recurso.' })}
-          onCockpitStatusChange={(status, updatedAnalysis) => {
-            const merged = {
-              ...selectedAnalysis,
-              ...(updatedAnalysis as unknown as SavedAnalysis | undefined),
-              cockpit_status: status,
-            };
-            setSelectedAnalysis(merged);
-            setAnalyses((prev) => prev.map((item) => item.id === selectedAnalysis.id ? { ...item, ...merged } : item));
-          }}
         />
       </div>
     );
@@ -581,6 +636,20 @@ export default function HistoryTab({
                 Filtros
               </button>
 
+              {/* Priorizar (comparação de laudos) — morava na sidebar; agora
+                  vive aqui, ao lado dos laudos que ela compara. */}
+              {onAbrirComparar && (
+                <button
+                  onClick={onAbrirComparar}
+                  disabled={analyses.length < 2}
+                  title={analyses.length < 2 ? 'Salve pelo menos 2 laudos para comparar' : 'Comparar 2 laudos e escolher o melhor'}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-black uppercase transition-all hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <GitCompare size={12} />
+                  Priorizar
+                </button>
+              )}
+
               {/* Exportar CSV */}
               <button
                 onClick={exportCSV}
@@ -617,6 +686,29 @@ export default function HistoryTab({
                   </button>
                 ))}
               </div>
+
+              {/* Órgão comprador — select, não chips: um licitante ativo
+                  acumula dezenas de compradores e a lista viraria um muro.
+                  Só aparece quando há órgão identificado no histórico. */}
+              {orgaosDisponiveis.length > 0 && (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">Órgão:</span>
+                  <select
+                    value={orgaoFiltro}
+                    onChange={(e) => { setOrgaoFiltro(e.target.value); setCurrentPage(1); }}
+                    className={`max-w-[16rem] truncate rounded-lg border px-2 py-1 text-[11px] font-bold transition-all ${
+                      orgaoFiltro !== 'all'
+                        ? 'border-slate-800 bg-slate-800 text-white'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    <option value="all">Todos ({orgaosDisponiveis.length})</option>
+                    {orgaosDisponiveis.map(([nome, n]) => (
+                      <option key={nome} value={nome}>{nome} ({n})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           )}
 
@@ -637,10 +729,25 @@ export default function HistoryTab({
                 </span>
               </button>
             ))}
-            {(searchText || periodoFiltro !== 'all') && (
+            {(searchText || periodoFiltro !== 'all' || orgaoFiltro !== 'all') && (
               <span className="inline-flex items-center px-2.5 py-1.5 rounded-2xl bg-violet-50 border border-violet-100 text-violet-700 text-[10px] font-black">
                 {filteredAnalyses.length} resultado{filteredAnalyses.length !== 1 ? 's' : ''}
               </span>
+            )}
+            {/* Filtro de órgão ativo vira pílula removível: sem isto, um
+                filtro escolhido dentro do painel recolhido esconde metade do
+                histórico sem dizer por quê. */}
+            {orgaoFiltro !== 'all' && (
+              <button
+                type="button"
+                onClick={() => { setOrgaoFiltro('all'); setCurrentPage(1); }}
+                title="Remover filtro de órgão"
+                className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-2xl border border-slate-800 bg-slate-800 px-2.5 py-1.5 text-[10px] font-black text-white transition-colors hover:bg-slate-700"
+              >
+                <Landmark size={11} className="shrink-0" />
+                <span className="truncate">{orgaoFiltro}</span>
+                <XCircle size={12} className="shrink-0 opacity-80" />
+              </button>
             )}
           </div>
         </div>
@@ -669,6 +776,20 @@ export default function HistoryTab({
             const createdDate = isMounted && item.created_at
               ? new Date(item.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
               : '...';
+            // Mesma detecção do selo de modo: artefatos primeiro (laudo antigo
+            // sem `modo_escolhido` não é chamado de rápido por engano).
+            const ehProfunda = Boolean(
+              item.auditoria_delta || item.auditoria_rodape
+              || (item.modo_escolhido && item.modo_escolhido !== 'openai'));
+            const ehRapida = !ehProfunda && item.modo_escolhido === 'openai';
+            const temOrigemPncp = Boolean(item.pncp_cnpj && item.pncp_ano && item.pncp_sequencial);
+            // Mesma conta do banner do laudo: profunda = pago × peso, então a
+            // diferença é pago × (peso − 1). Sai do que o laudo JÁ custou —
+            // não de estimativa sobre texto, que aqui nem existe.
+            const _pesoP = Math.max(1, Number(pesoProfunda) || 0);
+            const custoAprofundar = (_pesoP > 1 && typeof item.creditos === 'number' && item.creditos > 0)
+              ? item.creditos * (_pesoP - 1)
+              : null;
 
             return (
               <div
@@ -696,6 +817,19 @@ export default function HistoryTab({
                         <CalendarDays size={12} />
                         {createdDate}
                       </span>
+                      {/* Selo do MODO: quem pagou a auditoria profunda precisa
+                          reencontrá-la na lista — antes o histórico não dizia
+                          qual laudo era qual. Detecção pelos artefatos; laudos
+                          antigos sem os campos caem no rótulo do provider. */}
+                      {ehProfunda ? (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-sky-700">
+                          Profunda
+                        </span>
+                      ) : ehRapida ? (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                          Rápida
+                        </span>
+                      ) : null}
                       {item.model_source && (
                         <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-600">
                           {item.model_source}
@@ -711,6 +845,26 @@ export default function HistoryTab({
                     <h3 className="text-base font-black leading-snug text-slate-950 transition-colors group-hover:text-emerald-700">
                       {item.title || 'Análise de edital'}
                     </h3>
+                    {/* Comprador logo abaixo do objeto: é o segundo dado que
+                        identifica um edital na lista ("aquele da prefeitura
+                        de X"). Clicar filtra por ele — o caminho mais curto
+                        entre reconhecer e ver tudo daquele órgão. */}
+                    {item.orgao_nome && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOrgaoFiltro(item.orgao_nome as string);
+                          setShowFilters(true);
+                          setCurrentPage(1);
+                        }}
+                        title={`Ver só as análises de ${item.orgao_nome}`}
+                        className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-lg px-1.5 py-0.5 -ml-1.5 text-[11px] font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                      >
+                        <Landmark size={12} className="shrink-0 text-slate-400" />
+                        <span className="truncate">{item.orgao_nome}</span>
+                      </button>
+                    )}
                     <p className="mt-2 line-clamp-2 text-sm font-medium leading-relaxed text-slate-500">
                       {item.summary || item.recommendation || 'Abra esta análise para rever o veredito, riscos e próximos passos.'}
                     </p>
@@ -735,9 +889,50 @@ export default function HistoryTab({
                     >
                       <Star size={16} fill={isFav ? 'currentColor' : 'none'} />
                     </button>
+                    {/* Aprofundar a partir da lista — só em laudo RÁPIDO com
+                        origem PNCP. Sem a tripla, o texto íntegro já não
+                        existe (o salvo é truncado) e o botão prometeria uma
+                        auditoria que sairia pior que a leitura original.
+
+                        ⚠️ ELE NÃO COBRA MAIS DAQUI. Antes, um clique nesta
+                        linha disparava a auditoria e debitava na hora — a
+                        conta só existia num `title`, que ninguém lê no toque.
+                        Pior: abaixo de `sm` o rótulo sumia e sobrava um ícone
+                        mudo de 24 créditos, encostado no "Abrir". Agora ele
+                        ABRE o laudo no convite, onde cheio − já pago = você
+                        paga e o saldo estão na tela. Mesmo princípio já
+                        aplicado à faixa do laudo: nenhuma cobrança sem a conta
+                        visível — e aqui o contexto é ainda mais raso.
+
+                        "créditos" por extenso, não "cr": abreviação de
+                        programador foi banida do produto quando o banner dizia
+                        "+9 CR" (ver AprofundarBanner). A correção não tinha
+                        chegado até aqui. */}
+                    {onAprofundar && ehRapida && temOrigemPncp && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); void openAnalysisDetail(item, true); }}
+                        title={custoAprofundar !== null
+                          ? `Ver a auditoria profunda deste edital: ${custoAprofundar} créditos, já abatidos os ${item.creditos} pagos nesta leitura`
+                          : 'Ver o convite de auditoria profunda deste edital'}
+                        className="inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-2xl border border-sky-200 bg-white px-3.5 text-[11px] font-black text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-50"
+                      >
+                        <ScanSearch size={14} className="shrink-0" />
+                        Aprofundar
+                        {custoAprofundar !== null && (
+                          <span className="font-bold tabular-nums text-sky-400">
+                            {custoAprofundar} créditos
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    {/* "Abrir" continua sendo a ação primária da linha — é ela
+                        que fica preenchida. O aprofundar é contorno: mesma
+                        altura, peso menor, para não disputar o clique com a
+                        ação segura logo ao lado. */}
                     <button
                       type="button"
-                      className="inline-flex h-10 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
+                      className="inline-flex h-10 shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 text-[11px] font-black uppercase text-white transition-all hover:bg-emerald-700"
                     >
                       {loadingDetailId === item.id ? 'Abrindo...' : 'Abrir'}
                       <ArrowRight size={14} />

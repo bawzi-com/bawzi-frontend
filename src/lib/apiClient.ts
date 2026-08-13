@@ -212,6 +212,39 @@ export function clearSession({ notifyExpired = true }: { notifyExpired?: boolean
   }
 }
 
+/**
+ * Encerra a sessão DE VERDADE: mata o cookie de refresh no servidor e só então
+ * limpa a memória.
+ *
+ * ⚠️ `clearSession()` sozinho NÃO desloga. Ele apaga o access token da memória
+ * e algumas chaves do localStorage, mas o cookie HttpOnly `bawzi_refresh` (30
+ * dias) continua no navegador. O próximo `initSession()` — que roda no mount do
+ * workspace, do perfil, e a cada navegação full-page — chama `renewToken()`,
+ * o cookie é aceito, e o usuário volta logado sem clicar em nada.
+ *
+ * Era exatamente isso que fazia o logout por inatividade não funcionar: o
+ * temporizador disparava, a tela "Sessão expirada" chegava a aparecer, e a
+ * sessão se restaurava sozinha na primeira requisição seguinte. A rota
+ * `/api/auth/logout` já existia e apaga o cookie — só era chamada pelos dois
+ * botões manuais de sair, nunca pelo caminho automático.
+ *
+ * Falha de rede não bloqueia: limpa o que dá localmente e segue. Melhor
+ * deslogar só neste dispositivo do que não deslogar.
+ */
+export async function encerrarSessao(
+  { notifyExpired = true }: { notifyExpired?: boolean } = {},
+): Promise<void> {
+  try {
+    await fetchWithTimeout(`${API_URL}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',   // sem isto o cookie não viaja e nada é revogado
+    });
+  } catch {
+    // Offline ou servidor fora: a limpeza local abaixo ainda vale.
+  }
+  clearSession({ notifyExpired });
+}
+
 // ─── Inicialização de sessão (chamar no mount do app) ────────────────────────
 export async function initSession(): Promise<string | null> {
   // 1. Caminho seguro: hidrata a partir do cookie HttpOnly

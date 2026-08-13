@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import HeroFeed from '@/components/HeroFeed';
-import HeroCards from '@/components/HeroCards';
+// HeroFeed/HeroCards saíram: eram importados e nunca renderizados nesta
+// página (feature construída e órfã). Os componentes continuam no repo;
+// se voltarem à landing, o import volta junto — com um ponto de montagem.
 import {
   AlertTriangle,
   ArrowRight,
@@ -397,7 +398,7 @@ export default function LandingPage() {
               O Radar é a entrada. A decisão é o produto — e ela vem pronta para agir.
             </p>
             </div>
-            <Link href="/login" className="inline-flex h-12 w-fit items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-black text-slate-900 transition-all hover:bg-slate-100">
+            <Link href="/login?view=register" className="inline-flex h-12 w-fit items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-black text-slate-900 transition-all hover:bg-slate-100">
               Testar fluxo <ArrowRight size={16} />
             </Link>
           </div>
@@ -481,8 +482,8 @@ export default function LandingPage() {
               ['Jurídico', 'Cláusulas sensíveis, penalidades elevadas, pontos de esclarecimento e riscos contratuais mapeados.'],
               ['Financeiro', 'Preço limite estimado, margem provável, deságio esperado e pressão competitiva do histórico PNCP.'],
             ].map(([title, desc], index) => (
-              <div key={title} className="rounded-2xl border border-[#EAE7E1] bg-white p-5 transition-colors hover:bg-white/[0.09]">
-                <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-300/10 text-[10px] font-black text-emerald-200">
+              <div key={title} className="rounded-2xl border border-[#EAE7E1] bg-white p-5 transition-colors hover:bg-slate-50">
+                <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-[10px] font-black text-emerald-700">
                   {index + 1}
                 </span>
                 <h3 className="text-sm font-black text-slate-900">{title}</h3>
@@ -529,7 +530,19 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/login" className={`w-full rounded-xl py-3 text-center text-sm font-black transition-all ${destaque ? `bg-gradient-to-r ${cor} text-white shadow-md` : 'border border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'}`}>
+                {/* Intenção preservada: quem escolhe um plano pago cai no cadastro
+                    e, autenticado, o workspace abre direto o checkout daquele
+                    tier (?upgrade=N). Antes todos os quatro botões largavam a
+                    pessoa num /login seco e a escolha se perdia. */}
+                <Link
+                  href={(() => {
+                    const tierEscolhido = Number(nivel.replace(/\D/g, '')) || 1;
+                    return tierEscolhido > 1
+                      ? `/login?view=register&redirect=${encodeURIComponent(`/workspace?upgrade=${tierEscolhido}`)}`
+                      : '/login?view=register';
+                  })()}
+                  className={`w-full rounded-xl py-3 text-center text-sm font-black transition-all ${destaque ? `bg-gradient-to-r ${cor} text-white shadow-md` : 'border border-slate-200 bg-slate-50 text-slate-900 hover:bg-slate-100'}`}
+                >
                   Escolher {nome}
                 </Link>
               </div>
@@ -550,32 +563,36 @@ export default function LandingPage() {
 
       <section className="bg-white px-6 pb-16 md:pb-20">
         <div className="mx-auto grid max-w-[1180px] gap-8 rounded-[2rem] p-6 md:p-10 lg:grid-cols-[1fr_0.78fr] lg:items-center" style={{ background: '#FBFAF7', border: '1px solid #EAE7E1' }}>
+          {/* ⚠️ Este bloco ERA azul-marinho e virou claro (#FBFAF7), mas as
+              cores de texto ficaram do tema escuro: emerald-300 e slate-300
+              sobre papel são quase invisíveis — no último pedido de conversão
+              da página. Tudo abaixo foi trazido para o vocabulário claro. */}
           <div>
-            <p className="text-xs font-black uppercase tracking-widest text-emerald-300">Próximo edital</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight md:text-4xl">Leve um edital real para a Bawzi decidir.</h2>
-            <p className="mt-4 max-w-2xl text-base font-medium leading-8 text-slate-300">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-700">Próximo edital</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900 md:text-4xl">Leve um edital real para a Bawzi decidir.</h2>
+            <p className="mt-4 max-w-2xl text-base font-medium leading-8 text-slate-600">
               Em vez de ler tudo primeiro, descubra se a oportunidade merece sua equipe, seu preço e seu risco.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href="/login" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-7 text-sm font-black text-white shadow-lg shadow-emerald-950/25 transition-all hover:bg-emerald-400">
+              <Link href="/login?view=register" className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-7 text-sm font-black text-white shadow-lg shadow-emerald-950/25 transition-all hover:bg-emerald-500">
                 Criar conta gratuitamente <ArrowRight size={17} />
               </Link>
-              <Link href="/#como-funciona" className="inline-flex h-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 px-7 text-sm font-bold text-white transition-all hover:bg-white/15">
+              <Link href="/#como-funciona" className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-white px-7 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50">
                 Rever como funciona
               </Link>
             </div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Antes de mobilizar proposta</p>
+          <div className="rounded-2xl border border-[#EAE7E1] bg-white p-5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Antes de mobilizar proposta</p>
             <div className="mt-4 space-y-3">
               {[
                 'Confirme se o objeto conversa com seu CNAE.',
                 'Veja documentos eliminatórios e cláusulas sensíveis.',
                 'Defina margem mínima antes de entrar no pregão.',
               ].map((item) => (
-                <div key={item} className="flex gap-3 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-3">
-                  <Check size={16} className="mt-0.5 shrink-0 text-emerald-300" />
-                  <p className="text-sm font-semibold leading-6 text-slate-300">{item}</p>
+                <div key={item} className="flex gap-3 rounded-xl border border-[#EAE7E1] bg-[#F8F7F4] px-3 py-3">
+                  <Check size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+                  <p className="text-sm font-semibold leading-6 text-slate-700">{item}</p>
                 </div>
               ))}
             </div>
@@ -799,6 +816,15 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
       const data: TasterResult = await res.json();
       setResult(data);
       registrarUso(usadas + 1);   // ⚠️ incremento — antes gravava `1` literal
+      // Guarda o trecho analisado para o workspace retomar após o cadastro.
+      // Sem isto, o texto que a pessoa colou — o momento de maior intenção do
+      // funil — morria na tela de login e ela recomeçava do zero lá dentro.
+      try {
+        localStorage.setItem('bawzi_taster_handoff', JSON.stringify({
+          text: trimmed.slice(0, 10000),
+          ts: Date.now(),
+        }));
+      } catch { /* sem storage: o CTA continua levando ao cadastro, só sem retomada */ }
     } catch (e: unknown) {
       setError((e as Error).message || 'Erro ao analisar. Tente novamente.');
     } finally {
@@ -878,10 +904,11 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               </div>
             )}
 
-            {/* CTAs */}
+            {/* CTAs — cadastro direto (não login) e com retomada: o texto que a
+                pessoa acabou de analisar espera por ela no workspace. */}
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-4">
               <Link
-                href="/login"
+                href={`/login?view=register&redirect=${encodeURIComponent('/workspace?from=taster')}`}
                 className="w-full sm:flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-lg transition-all"
               >
                 Ver análise completa <ArrowRight size={15} />
@@ -952,7 +979,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               — sem cartão, sem prazo de expiração.
             </p>
             <Link
-              href="/login"
+              href="/login?view=register"
               className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-8 text-sm font-black text-white transition-all hover:bg-emerald-500"
               style={{ background: '#059669', boxShadow: '0 4px 16px rgba(5,150,105,0.35)' }}
             >
@@ -1147,7 +1174,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
           <div className="mt-4 flex items-center justify-between">
             <p className="text-xs text-slate-400">Análise com IA · sem salvar histórico</p>
             <Link
-              href="/login"
+              href="/login?view=register"
               className="flex items-center gap-1 text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap"
             >
               Criar conta grátis <ArrowRight size={13} />
@@ -1274,7 +1301,9 @@ function FAQ() {
     },
     {
       q: 'O que acontece com os meus editais e análises se eu cancelar?',
-      a: 'Você mantém acesso de leitura ao histórico de análises por 30 dias após o cancelamento, com opção de exportar em PDF.',
+      // 90 dias — mesma política da /docs. Eram 30 aqui e 90 lá; padronizado
+      // no mais generoso (decisão de 12/08/2026).
+      a: 'Você mantém acesso de leitura ao histórico de análises por 90 dias após o cancelamento, com opção de exportar em PDF.',
     },
   ];
 
@@ -1310,15 +1339,44 @@ function FAQ() {
   );
 }
 
+/* Tempo para ler o LAUDO em vez do edital. Não é slider de propósito: quatro
+ * controles já é o limite antes de a simulação virar formulário, e este é o
+ * único cujo valor o comprador não tem opinião formada. Meia hora é generoso
+ * contra nós — reduz a economia que estamos alegando. */
+const HORAS_PARA_LER_LAUDO = 0.5;
+/** Plano mais barato pago. Serve de referência do "já se paga?". */
+const PLANO_MAIS_BARATO = 79;
+
 function SavingsCalculator() {
   const [editais, setEditais] = useState(12);
   const [horas, setHoras] = useState(3);
   const [custoHora, setCustoHora] = useState(85);
+  // A premissa que o texto de abertura sempre anunciou ("boa parte vira
+  // No-Go") e que a simulação não tinha. 50% é conservador e é chute
+  // declarado — vira slider justamente para o comprador colocar o número
+  // DELE, que é o único que ele acredita.
+  const [noGo, setNoGo] = useState(50);
 
-  const horasMes = editais * horas;
-  const economiaMes = horasMes * custoHora;
+  // ⚠️ ANTES: `horasMes = editais * horas` — TODAS as horas contavam como
+  // poupadas, ou seja, a página alegava que a Bawzi elimina 100% da leitura.
+  // Isso contradizia o próprio parágrafo de abertura, que promete economia na
+  // leitura IMPRODUTIVA (os No-Go), não em toda leitura. Quem compra edital
+  // sabe que vai continuar lendo por inteiro aquilo em que decidir entrar —
+  // e calculadora que alega 100% é descontada mentalmente para zero, levando
+  // junto a economia real, que é grande.
+  //
+  // O modelo agora tem piso duplo:
+  //   · só os No-Go entram (nos Go, economia contada = ZERO, embora exista);
+  //   · e mesmo neles desconta-se o tempo de ler o laudo.
+  // Subestima de propósito. Número que sobrevive ao ceticismo do comprador
+  // vale mais do que número grande.
+  const horasPorNoGo = Math.max(0, horas - HORAS_PARA_LER_LAUDO);
+  const editaisNoGo = editais * (noGo / 100);
+  const horasMes = Math.round(editaisNoGo * horasPorNoGo);
+  const economiaMes = Math.round(horasMes * custoHora);
   const economiaAno = economiaMes * 12;
   const analysesPerDay = Math.max(1, Math.ceil(editais / 22));
+  const jaSePaga = economiaMes >= PLANO_MAIS_BARATO;
 
   const setClampedValue = (
     setter: (value: number) => void,
@@ -1343,6 +1401,14 @@ function SavingsCalculator() {
           </h2>
           <p className="mt-4 text-base font-medium leading-8 text-slate-600">
             A conta é simples: se cada edital consome horas de análise e boa parte vira No-Go, a Bawzi precisa se pagar evitando leitura improdutiva e acelerando a decisão.
+          </p>
+          {/* A premissa do cálculo, à vista. Estava implícita e a matemática a
+              ignorava; agora está escrita e a matemática a obedece. Dizer o que
+              NÃO foi contado é o que separa estimativa de propaganda. */}
+          <p className="mt-3 text-sm font-medium leading-7 text-slate-500">
+            Contamos só os editais que viram <strong className="text-slate-700">No-Go</strong> — e
+            mesmo neles descontamos o tempo de ler o laudo. O ganho de velocidade
+            naqueles em que você <em>decide entrar</em> fica de fora da conta, embora exista.
           </p>
           <div className="mt-7 grid gap-3 sm:grid-cols-3">
             {[
@@ -1398,6 +1464,15 @@ function SavingsCalculator() {
               suffix="R$/h"
               onChange={setClampedValue(setCustoHora, 30, 300)}
             />
+            {/* O slider que faltava — e é o que a tese inteira depende. */}
+            <CalculatorField
+              label="Quantos viram No-Go depois de lidos"
+              value={noGo}
+              min={10}
+              max={90}
+              suffix="%"
+              onChange={setClampedValue(setNoGo, 10, 90)}
+            />
           </div>
 
           <div className="mt-6 rounded-2xl p-5" style={{ background: '#F3F2EE', border: '1px solid #EAE7E1' }}>
@@ -1409,20 +1484,52 @@ function SavingsCalculator() {
               </div>
               <div>
                 <p className="text-3xl font-black text-slate-900">{horasMes}h</p>
-                <p className="mt-1 text-xs font-medium text-slate-500">liberadas para proposta, preço e follow-up</p>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  liberadas dos {Math.round(editaisNoGo)} editais que você descartaria depois de ler
+                </p>
               </div>
             </div>
             {/* A conta fechada, na frente de quem acabou de configurá-la. A
                 página mostrava a economia aqui e o preço mil pixels abaixo,
-                deixando a multiplicação por conta do leitor. */}
-            <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"
-               style={{ background: '#FFFCF2', border: '1px solid #F0E9D8', color: '#57534E' }}>
-              Com {editais} editais por mês, essa estimativa é{' '}
-              <strong style={{ color: '#B45309' }}>
-                {Math.max(1, Math.round(economiaMes / 79))}× o valor do plano mais barato
-              </strong>{' '}
-              (R$ 79/mês). Cada hora poupada vira folga para preço, documentação e follow-up.
-            </p>
+                deixando a multiplicação por conta do leitor.
+
+                ⚠️ DUAS CORREÇÕES AQUI, e as duas eram promessa que o produto
+                não honra:
+
+                1. O divisor era `79` cravado, qualquer que fosse o volume. O
+                   slider de editais vai até 80/mês — rotina que consome uns
+                   400 créditos e NÃO cabe nos 90 do plano de R$ 79. A página
+                   dizia "258× o plano mais barato" para uma rotina que aquele
+                   plano não atende. É o mesmo defeito do "+2 créditos" (a tela
+                   prometendo o que o portão não cumpre), só que no topo do
+                   funil, onde custa estorno e churn em vez de ticket.
+                   Não dá para dizer QUAL plano cabe sem saber o tamanho médio
+                   dos editais do cliente — e a medição da base mostrou que
+                   esse número ainda não existe (48% da amostra represada em
+                   teto). Então a frase para de fingir capacidade e aponta a
+                   régua, que é verificável.
+                2. `Math.max(1, ...)` garantia "1×" mesmo quando a economia era
+                   MENOR que o plano — a tela afirmando que se paga quando não
+                   se paga. Agora esse caso tem texto próprio. */}
+            {jaSePaga ? (
+              <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"
+                 style={{ background: '#FFFCF2', border: '1px solid #F0E9D8', color: '#57534E' }}>
+                Com {editais} editais por mês, essa estimativa cobre{' '}
+                <strong style={{ color: '#B45309' }}>
+                  {Math.floor(economiaMes / PLANO_MAIS_BARATO)}× o plano mais barato
+                </strong>{' '}
+                (R$ {PLANO_MAIS_BARATO}/mês). Qual plano atende o seu volume depende do
+                tamanho dos editais — a régua é 1 crédito a cada 50.000 caracteres analisados.
+              </p>
+            ) : (
+              <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"
+                 style={{ background: '#F6F5F2', border: '1px solid #E7E4DE', color: '#57534E' }}>
+                Nesse volume a economia estimada ({formatCurrency(economiaMes)}/mês) ainda fica
+                abaixo do plano mais barato (R$ {PLANO_MAIS_BARATO}/mês). Vale começar pelo{' '}
+                <strong style={{ color: '#166534' }}>plano gratuito</strong> e voltar aqui quando
+                o volume subir.
+              </p>
+            )}
           </div>
         </div>
       </div>

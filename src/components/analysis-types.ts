@@ -5,6 +5,46 @@
 
 // ─── Interfaces de dados ──────────────────────────────────────────────────────
 
+/** Item de exigência/documento: texto puro OU objeto com citação.
+ *
+ *  Era `string[]` — mas a auditoria profunda já empurrava OBJETOS aqui há
+ *  tempo (`_exigencias_nao_cobertas` devolve `{exigencia, trecho_edital, ...}`).
+ *  O laudo então renderizava um objeto onde React espera um nó, e o PDF
+ *  imprimia "[object Object]". Só acontecia quando a auditoria encontrava uma
+ *  exigência que a primeira leitura não relatou — ou seja, exatamente quando a
+ *  análise profunda entregava seu maior valor.
+ *
+ *  O formato de objeto fica, porque é ele que carrega a citação conferida. O
+ *  que muda é o tipo admitir os dois e todo render passar por `textoDoItem`.
+ */
+export type ItemExigencia =
+  | string
+  | {
+      /** A exigência em si. `exigencia` é o nome que o backend usa hoje. */
+      exigencia?: string;
+      texto?: string;
+      /** Citação literal já conferida contra o edital. */
+      trecho_edital?: string;
+      trecho?: string;
+      posicao_no_edital?: number | null;
+      categoria?: string;
+      origem?: string;
+      citacao_conferida?: boolean;
+    };
+
+/** Texto exibível de um item que pode ser string ou objeto. */
+export function textoDoItem(item: ItemExigencia | null | undefined): string {
+  if (typeof item === 'string') return item;
+  if (!item) return '';
+  return String(item.exigencia || item.texto || '').trim();
+}
+
+/** Citação do item, quando houver. Vazio para os itens em texto puro. */
+export function citacaoDoItem(item: ItemExigencia | null | undefined): string {
+  if (!item || typeof item === 'string') return '';
+  return String(item.trecho_edital || item.trecho || '').trim();
+}
+
 export interface EngenhariaReversa {
   setor_identificado: string;
   margem_media_setor_pct: number;
@@ -341,7 +381,7 @@ export interface AnalysisResult {
   probabilidade_de_sucesso?: string;
   vantagens?: string[];
   desvantagens?: string[];
-  exigencias_criticas?: string[];
+  exigencias_criticas?: ItemExigencia[];
   /** Auditoria de assertividade. Só existe em análise PROFUNDA e a partir do
    *  Nível 1 — ver `_auditoria_habilitada` em `router_analyses.py`. Ausente
    *  em toda análise rápida e em todo laudo anterior a esta mudança, por isso
@@ -369,7 +409,7 @@ export interface AnalysisResult {
     fatos?: any[];
   };
   prazos?: string[];
-  documentos_necessarios?: string[];
+  documentos_necessarios?: ItemExigencia[];
   criterios_de_julgamento?: string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   concorrentes_provaveis?: any[];
@@ -383,6 +423,37 @@ export interface AnalysisResult {
   ficha_tecnica?: FichaTecnicaItem[];
   habilitacao_checklist?: HabilitacaoItem[];
   red_flags?: RedFlagItem[];
+  /** Como a análise foi feita. Um dos dois vem preenchido, nunca os dois:
+   *  `auditoria_rodape` na profunda, `rodape_leitura` na rápida. São o mesmo
+   *  contrato de transparência — a rápida também declara o que NÃO fez. */
+  auditoria_rodape?: string;
+  rodape_leitura?: string;
+  /** O que a auditoria ACRESCENTOU sobre a leitura única — o único número que
+   *  responde "o que eu ganhei pagando a profunda". Gravado pelo backend em
+   *  toda análise profunda; só existe quando a auditoria rodou. */
+  auditoria_delta?: {
+    exigencias_acrescentadas?: number;
+    contradicoes_detectadas?: number;
+    achados_validados?: number;
+    achados_em_quarentena?: number;
+    blocos?: number;
+    chars_edital?: number;
+    contestados_adversarial?: number;
+  } | null;
+  /** Órgão comprador — cadastro oficial do PNCP quando a análise vem do
+   *  Radar (`orgao_nome_fonte: "pncp"`), extração da IA em texto colado
+   *  (`"ia"`). Vazio quando o documento não identifica o comprador. */
+  orgao_nome?: string;
+  orgao_nome_fonte?: string;
+  orgao_cnpj?: string;
+  /** Linhagem do "Aprofundar este laudo": id da rápida de origem e créditos
+   *  abatidos. Só existem quando o desconto foi aplicado. */
+  aprofundada_de?: string;
+  desconto_aprofundar?: number;
+  /** Créditos que ESTE laudo debitou. Mesma fonte que o backend usa para
+   *  abater no aprofundamento — por isso o banner do "Fazer auditoria
+   *  profunda" a lê daqui em vez de estimar de novo. */
+  creditos?: number;
   score_breakdown?: ScoreFactorItem[];
   oportunidades?: string[];
   qualidade_extracao?: QualidadeExtracao;

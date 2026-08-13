@@ -71,6 +71,30 @@ export interface SavedAnalysis {
   termo_busca_pncp?: string;
   model_source?: string;
   modelSource?: string;
+  /** Modo que gerou o laudo ("openai" = rápida; "claude"/"anthropic" =
+   *  profunda). O endpoint de histórico devolve o documento inteiro, então o
+   *  campo já chegava — só não estava declarado. */
+  modo_escolhido?: string;
+  /** Presentes apenas em laudos de auditoria profunda. */
+  auditoria_rodape?: string;
+  auditoria_delta?: {
+    exigencias_acrescentadas?: number;
+    contradicoes_detectadas?: number;
+  } | null;
+  /** Órgão comprador. Preenchido pelo cadastro OFICIAL do PNCP quando a
+   *  análise vem do Radar; pela extração da IA em texto colado. `""` quando
+   *  o documento não identifica o comprador. */
+  orgao_nome?: string;
+  orgao_nome_fonte?: string;
+  orgao_cnpj?: string;
+  /** Origem PNCP do laudo. É o que permite APROFUNDAR direto do histórico:
+   *  com a tripla, o backend rebaixa o edital íntegro da fonte — sem ela o
+   *  texto completo não existe mais (o `source_text` salvo é truncado). */
+  pncp_cnpj?: string | null;
+  pncp_ano?: string | number | null;
+  pncp_sequencial?: string | number | null;
+  /** Créditos que este laudo debitou — base do abatimento no aprofundamento. */
+  creditos?: number;
   created_at?: string;
   cockpit_status?: Record<string, { done?: boolean; updated_at?: string; responsavel?: string; prazo?: string; nota?: string }>;
   cockpit_updated_at?: string;

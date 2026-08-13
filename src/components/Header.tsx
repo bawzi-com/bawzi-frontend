@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { apiFetch, SessionExpiredError, clearSession, API_URL, getAuthToken, initSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 import type { BawziUpdateEvent } from '@/lib/types';
 
 export default function Header() {
@@ -145,10 +145,11 @@ export default function Header() {
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 
   const handleLogout = async () => {
-    try {
-      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch { /* silencioso — sessão local sempre é limpa */ }
-    clearSession({ notifyExpired: false });
+    // `encerrarSessao` faz as duas coisas na ordem certa: revoga o cookie no
+    // servidor e só então limpa a memória. Estava escrito à mão aqui, em outro
+    // lugar no perfil, e em nenhum dos caminhos automáticos — foi essa dispersão
+    // que deixou o logout por inatividade sem revogar nada.
+    await encerrarSessao({ notifyExpired: false });
     setToken(null);
     setIsGlobalAdmin(false);
     router.push('/');

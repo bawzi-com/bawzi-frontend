@@ -21,11 +21,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Sparkles, Coins, X } from 'lucide-react';
-import { initSession, clearSession, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
+import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
-import type { UserData, Empresa, Concorrente, BawziUpdateEvent } from '@/lib/types';
+import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
 import { useAnalysis, LOADING_MESSAGES } from '@/hooks/useAnalysis';
 import { exportPdf } from '@/lib/exportPdf';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 import { useRouter } from 'next/navigation';
 
 // Sub-componentes extraídos
@@ -71,12 +72,13 @@ import {
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-// Usa clearSession() do apiClient — remove apenas os dados de sessão,
-// sem apagar preferências do usuário (ex: bawzi_favorites, bawzi_tier).
-const logout = () => {
-  clearSession({ notifyExpired: false });
-  window.location.reload();
-};
+// REMOVIDO: um `logout` que ninguém chamava e que não deslogava.
+//
+// Ele fazia `clearSession()` e recarregava a página — e o reload dispara
+// `initSession()`, que troca o cookie `bawzi_refresh` por um token novo. O
+// usuário terminava a operação logado, com a tela recarregada para provar
+// que "funcionou". Ficou aqui como armadilha para quem precisasse de um
+// logout e encontrasse este pronto. Quem precisar, use `encerrarSessao()`.
 
 const avancadoFeatures = [
   { title: 'Raio-X de Concorrentes', desc: 'Veja capital social, sócios e volume de vitórias.' },
@@ -197,8 +199,11 @@ export default function AnalysisApp() {
   // deixá-lo procurar o destino na barra lateral.
   useEffect(() => {
     const ABAS_VALIDAS = [
-      'workspace', 'analise', 'concorrentes', 'renovacoes', 'capital',
+      'workspace', 'analise', 'concorrentes', 'renovacoes',
       'alertas', 'cnae', 'parametrizacao', 'history', 'gestao', 'comparar',
+      // 'capital' só entra com a flag — um link antigo ?tab=capital não pode
+      // abrir uma aba que a sidebar do lançamento esconde.
+      ...(LAUNCH_FLAGS.capital ? ['capital'] : []),
     ];
     const alvo = new URLSearchParams(window.location.search).get('tab');
     if (alvo && ABAS_VALIDAS.includes(alvo)) setActiveTab(alvo);
@@ -251,6 +256,8 @@ export default function AnalysisApp() {
     analysisId,
     impugnacaoText, setImpugnacaoText,
     loadingStep, loadingProgress, loadingRemainingSeconds, loadingEstimateSeconds, progressoAoVivo,
+    progressoAuditoria,
+    getEstimateSeconds,
     handleAnalyze,
     handleCancelAnalysis,
   } = useAnalysis({
@@ -269,10 +276,139 @@ export default function AnalysisApp() {
     onFreeTrialUsed: () => setHasUsedFreeTrial(true),
   });
 
+  // ─── Retomada do taster da landing ──────────────────────────────────────────
+  // O trecho que a pessoa analisou SEM conta fica em bawzi_taster_handoff.
+  // Aqui, já autenticada, ele entra direto no formulário — o funil não pede
+  // que ela recomece do zero no momento de maior intenção. Consome uma vez;
+  // válido por 48h; nunca sobrescreve texto que o usuário já tenha colado.
+  useEffect(() => {
+    if (!token) return;
+    try {
+      const raw = localStorage.getItem('bawzi_taster_handoff');
+      if (!raw) return;
+      // Consome ANTES de interpretar: um handoff corrompido também precisa
+      // sumir — deixá-lo lá era lixo permanente reprocessado a cada mount.
+      localStorage.removeItem('bawzi_taster_handoff');
+      const { text: handoffText, ts } = JSON.parse(raw) as { text?: string; ts?: number };
+      if (typeof handoffText !== 'string' || handoffText.trim().length < 80) return;
+      if (Date.now() - Number(ts || 0) > 48 * 60 * 60 * 1000) return;
+      setText(prev => prev || handoffText);
+      setActiveTab('workspace');
+      showSuccess('Retomamos o edital da sua análise de demonstração — ele já está no formulário. Rode a análise completa quando quiser.', 12000);
+      setTimeout(() => {
+        document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 600);
+    } catch { /* handoff corrompido: segue sem retomada */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ─── Intenção de plano vinda da landing (?upgrade=N) ────────────────────────
+  // "Escolher Profissional" na home leva ao cadastro e cai aqui com o tier na
+  // URL: abre o checkout daquele plano sem a pessoa ter de reencontrar a oferta.
+  // O parâmetro é removido da URL para o reload não reabrir o checkout.
+  useEffect(() => {
+    if (!token) return;
+    const params = new URLSearchParams(window.location.search);
+    const alvo = Number(params.get('upgrade'));
+    if (alvo >= 2 && alvo <= 4) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('upgrade');
+      window.history.replaceState({}, '', url.toString());
+      handleUpgrade(alvo);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ─── Retomada de análise em andamento (sobrevive a F5) ─────────────────────
+  // Uma auditoria profunda leva até 15 minutos e o resultado vivia só no
+  // estado React: recarregar a página no meio jogava tudo fora. O useAnalysis
+  // grava um marcador (bawzi_analise_em_curso) ao iniciar; aqui, no remount,
+  // ele é reencontrado e o progresso REAL segue pelo mesmo canal de polling
+  // que o overlay usa. Quando o backend conclui (`done` + `resultado_id`), o
+  // banner oferece abrir o laudo direto no histórico.
+  const [analiseRetomada, setAnaliseRetomada] = useState<
+    null | { estado: 'rodando' | 'concluida' | 'perdida'; etapa?: number; total?: number; label?: string; resultadoId?: string | null }
+  >(null);
+  const retomadaDispensadaRef = useRef(false);
+
+  useEffect(() => {
+    if (!token) return;
+    let raw: string | null = null;
+    try { raw = localStorage.getItem('bawzi_analise_em_curso'); } catch { return; }
+    if (!raw) return;
+    let marker: { progressToken?: string; startedAt?: number } = {};
+    try { marker = JSON.parse(raw); } catch {
+      try { localStorage.removeItem('bawzi_analise_em_curso'); } catch { /* sem storage */ }
+      return;
+    }
+    const idade = Date.now() - Number(marker.startedAt || 0);
+    // 20 min cobre a pior auditoria (15) + folga; mais velho que isso é lixo.
+    if (!marker.progressToken || !(idade >= 0) || idade > 20 * 60 * 1000) {
+      try { localStorage.removeItem('bawzi_analise_em_curso'); } catch { /* sem storage */ }
+      return;
+    }
+    let ativo = true;
+    let semSinal = 0;
+    let vistoRodando = false;   // já houve sinal de progresso NESTA retomada
+    const encerrar = () => {
+      // ⚠️ Só remove o marcador se ele ainda for DESTA análise. Sem a guarda,
+      // a conclusão da análise A apagaria o marcador que a análise B acabou
+      // de gravar — e um F5 durante B perderia a retomada dela.
+      try {
+        const atual = localStorage.getItem('bawzi_analise_em_curso');
+        if (atual && JSON.parse(atual)?.progressToken === marker.progressToken) {
+          localStorage.removeItem('bawzi_analise_em_curso');
+        }
+      } catch { /* sem storage ou marcador ilegível: nada a preservar */ }
+      clearInterval(intervalo);
+    };
+    const tick = async () => {
+      if (!ativo || retomadaDispensadaRef.current) return;
+      try {
+        const r = await fetch(`${API_URL}/api/analyze/progress/${marker.progressToken}`);
+        if (!r.ok) return;
+        const p = await r.json();
+        if (!ativo || retomadaDispensadaRef.current) return;
+        if (p.status === 'ok') {
+          semSinal = 0;
+          if (p.done) {
+            encerrar();
+            setAnaliseRetomada({ estado: 'concluida', resultadoId: p.resultado_id || null });
+          } else {
+            vistoRodando = true;
+            setAnaliseRetomada({ estado: 'rodando', etapa: p.etapa, total: p.total, label: p.label });
+          }
+        } else {
+          // "desconhecido" 3 vezes seguidas: ou o registro expirou (o laudo
+          // está no histórico) ou a análise morreu com o servidor. As duas
+          // verdades cabem na mesma mensagem honesta — confira em Decisões.
+          semSinal += 1;
+          if (semSinal >= 3) {
+            encerrar();
+            setAnaliseRetomada(vistoRodando || idade > 90_000 ? { estado: 'perdida' } : null);
+          }
+        }
+      } catch { /* melhor esforço — a rede volta e o próximo tick resolve */ }
+    };
+    const intervalo = setInterval(tick, 3000);
+    tick();
+    return () => { ativo = false; clearInterval(intervalo); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   // ─── Inactividade: timeout de sessão ────────────────────────────────────────
   const handleInactivityExpire = useCallback(() => {
-    clearSession();
+    // `encerrarSessao`, não `clearSession`. O segundo só apaga o token da
+    // memória — o cookie `bawzi_refresh` sobrevive, e o próximo initSession()
+    // ressuscita a sessão. O aviso aparecia, o usuário era "deslogado", e na
+    // primeira navegação estava logado de novo.
+    //
+    // A tela de expiração sobe ANTES da chamada de rede: ela não depende do
+    // servidor responder, e prender a interface esperando um POST para dizer
+    // "sua sessão terminou" é o pior momento para depender de conexão.
     setSessionExpired(true);
+    setToken(null);
+    void encerrarSessao();
   }, []);
 
   const { showWarning: showInactivityWarning, secondsRemaining: inactivitySecondsLeft } = useInactivityTimeout({
@@ -283,14 +419,28 @@ export default function AnalysisApp() {
   // ─── Configuração de limites por tier ──────────────────────────────────────
   const { tierLimits, tierFileLimits } = useTierConfig();
   const currentTier = resolveEffectiveTier(userTier, userData?.active_workspace?.tier);
-  const currentCharLimit    = tierLimits[userTier] || 10000;
+  // ── Quem não está logado é tier -1, não tier 1 ────────────────────────
+  // `userTier` nasce em 1 e só sobe quando a sessão carrega. Para o visitante
+  // anônimo ele NUNCA vira -1, então o app inteiro media os limites dele pela
+  // régua do plano Gratuito cadastrado: 25.000 caracteres em vez de 10.000.
+  //
+  // O efeito não era cosmético. O contador dizia "24.958 / 25.000" em verde, o
+  // botão de analisar ficava habilitado, o Radar truncava o edital em 25.000 —
+  // e só depois de colar o documento inteiro e clicar é que o backend, que
+  // sabe que o tier é -1, respondia "o seu plano permite até 10.000". Todo
+  // edital de verdade vindo do Radar estourava. Era o funil de conversão
+  // quebrado exatamente para quem ainda não é cliente.
+  const tierParaLimites     = token ? userTier : -1;
+  const currentCharLimit    = tierLimits[tierParaLimites] ?? tierLimits[-1] ?? 10000;
   // Maior capacidade existente entre os planos — usada para não sugerir
   // upgrade a quem já está no topo. Tolerante a config parcial vinda da API.
   const maxCharLimitPlataforma = Math.max(
     ...Object.values(tierLimits).map(Number).filter(Number.isFinite),
     currentCharLimit,
   );
-  const currentFileLimitMB  = tierFileLimits[userTier] || 3;
+  // Mesmo raciocínio do limite de caracteres: o anexo do visitante era medido
+  // pela régua do plano 1 ("até 5MB" na tela) e recusado pela do tier -1.
+  const currentFileLimitMB  = tierFileLimits[tierParaLimites] ?? tierFileLimits[-1] ?? 3;
   const currentFileLimitBytes = currentFileLimitMB * 1024 * 1024;
   const totalFileSize       = files.reduce((acc, f) => acc + f.size, 0);
   const isOverTextLimit     = text.length > currentCharLimit;
@@ -655,10 +805,48 @@ export default function AnalysisApp() {
 
   // handleAnalyze delegado ao hook useAnalysis (ver @/hooks/useAnalysis.ts)
   // Wrapper para guardar compatibilidade com requiresAuth
-  const handleAnalyzeWithAuth = (motor: 'openai' | 'claude') => {
+  const handleAnalyzeWithAuth = (motor: 'openai' | 'claude', opts?: { aprofundarDe?: string }) => {
     if (requiresAuth) { setAuthMode('register'); setShowAuthModal(true); return; }
-    handleAnalyze(motor);
+    handleAnalyze(motor, opts);
   };
+
+  // ─── Aprofundar direto do HISTÓRICO ────────────────────────────────────
+  // No laudo aberto o texto está no formulário; na lista do histórico não —
+  // e o `source_text` salvo é truncado em 50 mil caracteres. Por isso só é
+  // oferecido para laudos com origem PNCP: mandando a tripla, o backend
+  // rebaixa o edital ÍNTEGRO da fonte, e o desconto continua valendo porque
+  // o critério aceita "mesmo edital do PNCP" além de "mesmo texto".
+  //
+  // O disparo é adiado por estado: `handleAnalyze` é um useCallback que
+  // depende de `pncpData`, então chamá-lo no mesmo tick usaria o valor
+  // antigo (null) e a análise sairia sem edital nenhum.
+  const [aprofundarPendente, setAprofundarPendente] = useState<string | null>(null);
+
+  const handleAprofundarDoHistorico = (a: SavedAnalysis) => {
+    if (!a.pncp_cnpj || !a.pncp_ano || !a.pncp_sequencial) return;
+    setResult(null);
+    setError(null);
+    setText('');   // o texto vem da fonte, não do formulário
+    setFiles([]);
+    setPncpData({
+      cnpj: String(a.pncp_cnpj),
+      ano: Number(a.pncp_ano),
+      sequencial: Number(a.pncp_sequencial),
+      uf: a.uf || undefined,
+    });
+    setTermoAlvo(a.termo_busca_pncp || '');
+    setActiveTab('workspace');
+    setAprofundarPendente(a.id);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    if (!aprofundarPendente || !pncpData) return;
+    const alvo = aprofundarPendente;
+    setAprofundarPendente(null);
+    handleAnalyzeWithAuth('claude', { aprofundarDe: alvo });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aprofundarPendente, pncpData]);
 
   /** Compra de pacote avulso de créditos — compra única, sem trocar de plano.
    *
@@ -908,6 +1096,68 @@ export default function AnalysisApp() {
         {/* ── CONTEÚDO PRINCIPAL ── */}
         <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0">
           {token && contextCompanies.length === 0 && <ActiveCompanyBanner />}
+
+          {/* ── Retomada de análise (pós-reload) ── */}
+          {analiseRetomada && !isAnalyzing && (
+            <div className={`mb-6 flex flex-wrap items-center gap-3 rounded-2xl border px-5 py-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${
+              analiseRetomada.estado === 'concluida'
+                ? 'border-emerald-200 bg-emerald-50'
+                : analiseRetomada.estado === 'rodando'
+                  ? 'border-sky-200 bg-sky-50'
+                  : 'border-amber-200 bg-amber-50'
+            }`}>
+              {analiseRetomada.estado === 'rodando' && (
+                <>
+                  <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+                  <p className="flex-1 min-w-0 text-sm font-semibold text-sky-900">
+                    Sua análise continua rodando no servidor
+                    {typeof analiseRetomada.etapa === 'number' && typeof analiseRetomada.total === 'number' && (
+                      <> — etapa {Math.min(analiseRetomada.etapa + 1, analiseRetomada.total)} de {analiseRetomada.total}</>
+                    )}
+                    {analiseRetomada.label ? <span className="font-medium text-sky-700"> · {analiseRetomada.label}</span> : null}
+                  </p>
+                </>
+              )}
+              {analiseRetomada.estado === 'concluida' && (
+                <p className="flex-1 min-w-0 text-sm font-semibold text-emerald-900">
+                  ✅ A análise que estava em andamento terminou — o laudo está salvo.
+                </p>
+              )}
+              {analiseRetomada.estado === 'perdida' && (
+                <p className="flex-1 min-w-0 text-sm font-semibold text-amber-900">
+                  Não encontramos a análise que estava em andamento. Se ela chegou ao fim,
+                  o laudo está em <strong>Decisões</strong>; senão, rode novamente — créditos
+                  só são debitados quando a análise conclui.
+                </p>
+              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {analiseRetomada.estado !== 'rodando' && (
+                  <button
+                    onClick={() => {
+                      retomadaDispensadaRef.current = true;
+                      if (analiseRetomada.estado === 'concluida' && analiseRetomada.resultadoId) {
+                        setAnaliseParaAbrir(analiseRetomada.resultadoId);
+                      }
+                      setActiveTab('history');
+                      setAnaliseRetomada(null);
+                    }}
+                    className={`rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors ${
+                      analiseRetomada.estado === 'concluida' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                    }`}
+                  >
+                    {analiseRetomada.estado === 'concluida' ? 'Abrir laudo' : 'Ver Decisões'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { retomadaDispensadaRef.current = true; setAnaliseRetomada(null); }}
+                  aria-label="Dispensar aviso"
+                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-white/60 hover:text-slate-700"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
           <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_350px]'}`}>
 
             {/* ── COLUNA ESQUERDA ── */}
@@ -932,11 +1182,6 @@ export default function AnalysisApp() {
                                plano que ele já tinha. */
                             charLimit={currentCharLimit}
                             podeUpgrade={currentCharLimit < maxCharLimitPlataforma}
-                            /* O saldo no Radar. É aqui que a decisão de gastar
-                               crédito acontece — o preço aparecia só na tela
-                               seguinte, com a escolha já feita. */
-                            quota={quota}
-                            onComprarPacote={handleComprarPacote}
                             userUf={activeCompany?.uf || userData?.company?.uf}
                             contextCompanies={contextCompanies}
                             activeCnpj={userData?.active_cnpj}
@@ -951,14 +1196,17 @@ export default function AnalysisApp() {
                               setActiveTab('history');
                               setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 120);
                             }}
-                            onMedirFolego={(valor, objeto) => {
+                            // Sem a flag do Capital, o botão nem aparece no
+                            // Radar (prop undefined) — melhor que aparecer e
+                            // levar a uma aba em branco.
+                            onMedirFolego={LAUNCH_FLAGS.capital ? (valor, objeto) => {
                               setCapitalPrefilledValor(valor || 0);
                               setCapitalPrefilledObjeto(objeto || '');
                               setActiveTab('capital');
                               setTimeout(() => {
                                 document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                               }, 150);
-                            }}
+                            } : undefined}
                             onAnalyzeOportunity={(textoExtraido, termoPesquisado, editalDados) => {
                               setResult(null);
                               setError(null);
@@ -1005,8 +1253,10 @@ export default function AnalysisApp() {
                         onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
                         quota={token ? quota : guestQuota}
-                        onUpgradeClick={() => handleUpgrade(currentTier + 1)}
+                        onUpgradeClick={(t?: number) => handleUpgrade(t ?? currentTier + 1)}
                         onComprarPacote={handleComprarPacote}
+                        estimarSegundos={getEstimateSeconds}
+                        origemPncp={Boolean(pncpData)}
                       />
                       </div>
                     </>
@@ -1018,6 +1268,7 @@ export default function AnalysisApp() {
                       remainingSeconds={loadingRemainingSeconds}
                       estimatedSeconds={loadingEstimateSeconds}
                       isLive={progressoAoVivo}
+                      progressoAuditoria={progressoAuditoria}
                       onCancel={handleCancelAnalysis}
                     />
                   ) : result ? (
@@ -1039,13 +1290,29 @@ export default function AnalysisApp() {
                       isCachedResult={isCachedResult}
                       onComprarPacote={handleComprarPacote}
                       onUpgradeClick={() => handleUpgrade(selectedTier || 2)}
-                      onGoToCapital={(valor) => {
+                      // "Aprofundar este laudo": só em laudo persistido, com o
+                      // texto ainda carregado (o backend precisa reanalisá-lo)
+                      // e sessão ativa. Cobra a DIFERENÇA — o backend abate o
+                      // que a rápida já debitou (aprofundar_de).
+                      onAprofundar={token && analysisId && text.trim().length >= 80
+                        ? () => handleAnalyzeWithAuth('claude', { aprofundarDe: analysisId })
+                        : undefined}
+                      // Só o MULTIPLICADOR do plano: a conta sai de
+                      // `result.creditos × peso` dentro do banner. Estimar
+                      // pelo texto da tela subestimava o preço (o backend
+                      // cobra sobre o texto + os PDFs que ele baixa do PNCP)
+                      // e no histórico nem existia texto para estimar.
+                      pesoProfunda={quota?.peso_profunda ?? null}
+                      saldoCreditos={quota?.restante ?? null}
+                      // Sem a flag do Capital, o CTA do laudo some junto —
+                      // prop undefined em vez de aba em branco.
+                      onGoToCapital={LAUNCH_FLAGS.capital ? (valor) => {
                         setCapitalPrefilledValor(valor);
                         setActiveTab('capital');
                         setTimeout(() => {
                           document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }, 150);
-                      }}
+                      } : undefined}
                       sidebarHidden={sidebarHidden}
                       onToggleSidebar={() => setSidebarHidden((v) => !v)}
                     />
@@ -1104,7 +1371,7 @@ export default function AnalysisApp() {
               })()}
 
               {/* Aba Capital */}
-              {activeTab === 'capital' && (
+              {LAUNCH_FLAGS.capital && activeTab === 'capital' && (
                 <div id="capital-section" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {currentTier < 3 ? (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
@@ -1194,6 +1461,9 @@ export default function AnalysisApp() {
                           document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }, 100);
                       }}
+                      onAbrirComparar={() => setActiveTab('comparar')}
+                      onAprofundar={handleAprofundarDoHistorico}
+                      pesoProfunda={quota?.peso_profunda ?? null}
                     />
                   ) : (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">

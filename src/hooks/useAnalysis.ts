@@ -60,12 +60,18 @@ interface UseAnalysisReturn {
   loadingEstimateSeconds: number;
   /** true quando o backend está reportando a etapa real (polling conectado) */
   progressoAoVivo: boolean;
+  /** Sub-progresso da auditoria profunda (bloco N de M · K achados), ao vivo. */
+  progressoAuditoria: {
+    fase?: string; blocos_concluidos?: number; blocos_total?: number; achados?: number;
+  } | null;
+  /** ETA medido por modo (mediana do perfil) — para o card de escolha. */
+  getEstimateSeconds: (motor: Motor) => number;
   // Setters expostos
   setResult: (r: AnalysisResult | null) => void;
   setError: (e: string | null) => void;
   setImpugnacaoText: (t: string) => void;
   // Handlers
-  handleAnalyze: (motor: Motor) => Promise<void>;
+  handleAnalyze: (motor: Motor, opts?: { aprofundarDe?: string }) => Promise<void>;
   handleCancelAnalysis: () => void;
   showError: (msg: string, ms?: number) => void;
   showSuccess: (msg: string, ms?: number) => void;
@@ -151,6 +157,12 @@ export function useAnalysis({
   // 📡 Progresso REAL: etapa reportada pelo backend via polling
   const realStepRef = useRef<number | null>(null);
   const [progressoAoVivo, setProgressoAoVivo] = useState(false);
+  // Sub-progresso da AUDITORIA (só na profunda): bloco N de M · K achados.
+  // É o trabalho pelo qual a profunda cobra 4× — sem isto, os minutos de
+  // espera eram idênticos aos da rápida na tela.
+  const [progressoAuditoria, setProgressoAuditoria] = useState<{
+    fase?: string; blocos_concluidos?: number; blocos_total?: number; achados?: number;
+  } | null>(null);
 
   // ── Progresso temporal (suavização) + etapa real quando disponível ────────
   useEffect(() => {
@@ -254,7 +266,9 @@ export function useAnalysis({
   }, [loadingEstimateSeconds, showError]);
 
   // ── handleAnalyze ─────────────────────────────────────────────────────────
-  const handleAnalyze = useCallback(async (motor: Motor) => {
+  // `opts.aprofundarDe`: id do laudo RÁPIDO deste mesmo edital — o backend
+  // abate os créditos já pagos e cobra só a diferença ("Aprofundar este laudo").
+  const handleAnalyze = useCallback(async (motor: Motor, opts?: { aprofundarDe?: string }) => {
     if (!text.trim() && files.length === 0 && !pncpData) {
       showError('Por favor, cole um texto, adicione um documento ou selecione um edital no Radar PNCP antes de analisar.');
       return;
@@ -289,8 +303,28 @@ export function useAnalysis({
         : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     realStepRef.current = null;
     setProgressoAoVivo(false);
+    setProgressoAuditoria(null);
     const inicioAnalise = Date.now();
     const baseUrl = apiUrl.replace(/\/$/, '');
+
+    // 🔖 Marcador de análise em curso — sobrevive a F5. Uma auditoria profunda
+    // leva até 15 minutos e o resultado vivia só no estado React: recarregar a
+    // página perdia tudo. Com o marcador, o workspace remonta, encontra o
+    // progresso pelo token e reabre o laudo quando o backend concluir
+    // (`_progresso_concluir` grava o resultado_id). Só para autenticados:
+    // laudo de convidado não persiste, então não haveria o que reencontrar.
+    if (token) {
+      try {
+        localStorage.setItem('bawzi_analise_em_curso', JSON.stringify({
+          progressToken,
+          startedAt: Date.now(),
+          motor,
+        }));
+      } catch { /* sem storage: análise segue, só sem retomada pós-reload */ }
+    }
+    // O botão "Tentar novamente" do banner de erro repete o último motor
+    // pedido — sem isto ele teria de adivinhar entre rápida e profunda.
+    try { sessionStorage.setItem('bawzi_ultimo_motor', motor); } catch { /* sem storage */ }
 
     const pollInterval = setInterval(async () => {
       try {
@@ -301,6 +335,9 @@ export function useAnalysis({
           // Monotônico: nunca regride (etapas condicionais podem ser puladas)
           realStepRef.current = Math.max(realStepRef.current ?? 0, p.etapa);
           setProgressoAoVivo(true);
+          setProgressoAuditoria(
+            p.auditoria && typeof p.auditoria === 'object' ? p.auditoria : null,
+          );
         }
       } catch { /* polling é melhor-esforço */ }
     }, 1500);
@@ -313,6 +350,7 @@ export function useAnalysis({
       formData.set('force_exact', forceExact ? 'true' : 'false');
       formData.set('provider', motor);
       formData.set('progress_token', progressToken);
+      if (opts?.aprofundarDe) formData.set('aprofundar_de', opts.aprofundarDe);
       if (activeCnpj) formData.set('context_cnpj', activeCnpj);
       if (pncpData) {
         formData.set('pncp_cnpj', pncpData.cnpj);
@@ -422,6 +460,19 @@ export function useAnalysis({
       clearInterval(pollInterval);
       realStepRef.current = null;
       setIsAnalyzing(false);
+      // A corrida terminou NESTA sessão (sucesso, erro ou cancelamento):
+      // o marcador de retomada já não tem o que retomar. Ele só deve
+      // sobreviver quando a página morre no meio — que é exatamente o
+      // único caminho em que este finally não roda.
+      // ⚠️ Guarda pelo token: em outra aba (ou numa análise iniciada logo em
+      // seguida) o marcador pode já ser de OUTRA análise — apagar sem conferir
+      // mataria a retomada dela.
+      try {
+        const atual = localStorage.getItem('bawzi_analise_em_curso');
+        if (atual && JSON.parse(atual)?.progressToken === progressToken) {
+          localStorage.removeItem('bawzi_analise_em_curso');
+        }
+      } catch { /* sem storage */ }
     }
   }, [
     text, files, uf, forceExact, pncpData, activeCnpj, userTier, isOverLimit,
@@ -433,6 +484,10 @@ export function useAnalysis({
     result, isAnalyzing, error, successMsg, modelSource, isCachedResult,
     analysisId, impugnacaoText, loadingStep, loadingProgress,
     loadingRemainingSeconds, loadingEstimateSeconds, progressoAoVivo,
+    progressoAuditoria,
+    // Exposto para o card de escolha exibir o ETA MEDIDO (mediana das últimas
+    // análises do mesmo perfil) em vez de "vários minutos".
+    getEstimateSeconds,
     setResult, setError, setImpugnacaoText,
     handleAnalyze, handleCancelAnalysis, showError, showSuccess,
   };

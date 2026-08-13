@@ -57,10 +57,58 @@ import {
  *  própria rota — trocar o `.env` muda a resolução, que muda o preço, que muda
  *  a margem, sem ninguém transcrever número.
  */
-function CalculadoraMargem({ tier, edit, precos }: { tier: any; edit: any; precos: any[] }) {
+/* Cotação do dólar vinda de /api/admin/precos-modelo. Ela viaja junto dos
+   preços de modelo porque a margem depende dos dois: o preço dá o custo em
+   dólar, o câmbio traduz a receita, que é em real. */
+type CambioInfo = {
+  valor: number;
+  origem: 'admin' | 'bcb' | 'padrão' | string;
+  fonte: string;
+  data: string;
+  idade_horas: number | null;
+  automatico: number | null;
+  ultimo_erro?: string;
+};
+
+/* Um número de câmbio sem procedência não deixa distinguir "cotação de hoje"
+   de "a última que conseguimos buscar, há nove dias" — e as duas produzem
+   margens diferentes, sem nenhum erro na tela. */
+function procedenciaCambio(c: CambioInfo): string {
+  if (c.origem === 'admin') {
+    const oficial = c.automatico ? ` · BCB diz R$ ${c.automatico.toFixed(4)}` : '';
+    return `travado no Admin${oficial}`;
+  }
+  if (c.origem === 'bcb') {
+    const dia = c.data ? ` de ${c.data}` : '';
+    const idade = c.idade_horas === null ? ''
+      : c.idade_horas < 36 ? ' · atualizado hoje'
+      : ` · buscado há ${Math.floor(c.idade_horas / 24)} dia(s)`;
+    return `BCB${dia}${idade}`;
+  }
+  return 'sem cotação buscada ainda — usando o valor do código';
+}
+
+/* Amarelo quando o número merece desconfiança: trava manual ligada, cotação
+   velha, ou a última tentativa de buscar falhou. */
+function cambioAlerta(c: CambioInfo): boolean {
+  if (c.origem !== 'bcb') return true;
+  if (c.ultimo_erro) return true;
+  return c.idade_horas !== null && c.idade_horas > 72;
+}
+
+function CalculadoraMargem({ tier, edit, precos, cambioInfo }: {
+  tier: any; edit: any; precos: any[]; cambioInfo: CambioInfo | null;
+}) {
   const [caracteres, setCaracteres] = useState(112560);
   const [alvoMargem, setAlvoMargem] = useState(60);
-  const [cambio, setCambio] = useState(5.4);
+  // O câmbio NÃO tem valor escrito aqui. Vem do backend, que busca no Banco
+  // Central. `cambioManual` é só um "e se" desta sessão — enquanto for null a
+  // tela segue o oficial, inclusive quando ele chega depois (async), o que um
+  // useState com valor inicial não faria.
+  const [cambioManual, setCambioManual] = useState<number | null>(null);
+  // `||` e não `??`: Number(undefined) é NaN, e NaN ?? 0 continua NaN — que
+  // se propagaria por toda a calculadora sem nunca disparar as guardas de > 0.
+  const cambio = cambioManual ?? (Number(cambioInfo?.valor) || 0);
   const [razaoSaida, setRazaoSaida] = useState(0.05);
   const [cpt, setCpt] = useState(3.6);
   const [redIn, setRedIn] = useState(8000);
@@ -101,7 +149,9 @@ function CalculadoraMargem({ tier, edit, precos }: { tier: any; edit: any; preco
   const custoCredRapida   = credRapida   ? custoRapida   / credRapida   : 0;
   const custoCredProfunda = credProfunda ? custoProfunda / credProfunda : 0;
 
-  const receita = (Number(tier?.price_brl) || 0) / (cambio || 5.4);
+  // Sem cotação carregada, `receita` fica 0 e todas as saídas viram "—".
+  // É o certo: melhor a tela não responder do que responder com câmbio inventado.
+  const receita = cambio > 0 ? (Number(tier?.price_brl) || 0) / cambio : 0;
   const piorCaso = cota > 0 ? cota * custoCredProfunda : null;   // cota inteira em profunda
   const margem = receita > 0 && piorCaso !== null ? (1 - piorCaso / receita) * 100 : null;
   const cotaSugerida = receita > 0 && custoCredProfunda > 0
@@ -146,9 +196,25 @@ function CalculadoraMargem({ tier, edit, precos }: { tier: any; edit: any; preco
           <label className="block text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">
             Câmbio (R$/US$)
           </label>
-          <input type="number" min={1} step={0.1} value={cambio}
-                 onChange={e => setCambio(Math.max(1, parseFloat(e.target.value) || 5.4))}
+          <input type="number" min={1} step={0.01} value={cambio || ''}
+                 placeholder={cambioInfo ? '' : 'carregando…'}
+                 onChange={e => setCambioManual(Math.max(1, parseFloat(e.target.value) || 1))}
                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-violet-500" />
+          <p className="mt-1 text-[9px] leading-3 text-slate-500">
+            {cambioManual !== null ? (
+              <>
+                simulação desta tela ·{' '}
+                <button onClick={() => setCambioManual(null)}
+                        className="font-bold text-violet-400 hover:text-violet-300">
+                  voltar ao oficial
+                </button>
+              </>
+            ) : cambioInfo ? (
+              <span className={cambioAlerta(cambioInfo) ? 'text-amber-400' : ''}>
+                {procedenciaCambio(cambioInfo)}
+              </span>
+            ) : 'buscando a cotação…'}
+          </p>
         </div>
       </div>
 
@@ -273,6 +339,7 @@ export default function AdminDashboard() {
       const data = await res.json();
       const campos = data?.campos || [];
       setBillingCampos(campos);
+      if (data?.cambio) setCambioInfo(data.cambio);
       // O formulário edita STRING; a conversão para número/booleano/JSON
       // acontece no envio. Assim um campo em branco não vira 0 sem querer.
       const inicial: Record<string, string> = {};
@@ -340,7 +407,8 @@ export default function AdminDashboard() {
         const bruto = billingEdit[c.chave] ?? '';
         if (c.chave === 'cortesia_fator') payload[c.chave] = parseFloat(bruto);
         else if (c.chave === 'pacote_creditos_qtd') payload[c.chave] = parseInt(bruto, 10);
-        else if (c.chave === 'llm_cache_edital') payload[c.chave] = bruto === 'true';
+        else if (c.chave === 'llm_cache_edital' || c.chave === 'refutacao_ativa')
+          payload[c.chave] = bruto === 'true';
         else if (c.chave === 'precos_llm') {
           try { payload[c.chave] = bruto.trim() ? JSON.parse(bruto) : {}; }
           catch { throw new Error('A tabela de preços não é um JSON válido.'); }
@@ -850,6 +918,26 @@ export default function AdminDashboard() {
   };
 
   const [precosModelo, setPrecosModelo] = useState<any[]>([]);
+  const [cambioInfo, setCambioInfo] = useState<CambioInfo | null>(null);
+  const [cambioBuscando, setCambioBuscando] = useState(false);
+
+  // Força a busca no Banco Central sem esperar o job das 06:10. Serve para o
+  // dia em que o dólar se mexe muito e para o dia em que o job falhou — aí o
+  // erro aparece na tela em vez de ficar só no log.
+  const atualizarCambio = async () => {
+    setCambioBuscando(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/cambio/atualizar`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (data?.cotacao) setCambioInfo(data.cotacao);
+      if (!data?.ok) setBillingMsg(`Câmbio: ${data?.motivo || 'não foi possível buscar.'}`);
+      else setBillingMsg(`Câmbio atualizado: US$ 1 = R$ ${Number(data.valor).toFixed(4)}.`);
+    } catch {
+      setBillingMsg('Não foi possível falar com o servidor para buscar o câmbio.');
+    } finally {
+      setCambioBuscando(false);
+    }
+  };
   const [precoEdits, setPrecoEdits] = useState<Record<string, any>>({});
   const [savingPreco, setSavingPreco] = useState<string | null>(null);
 
@@ -859,6 +947,7 @@ export default function AdminDashboard() {
       if (!res.ok) return;
       const data = await res.json();
       setPrecosModelo(data.modelos || []);
+      if (data.cambio) setCambioInfo(data.cambio);
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
     }
@@ -2543,7 +2632,12 @@ export default function AdminDashboard() {
                     </div>
                     <p className="text-[12px] leading-relaxed text-slate-400 mb-3">{c.descricao}</p>
 
-                    {c.chave === 'llm_cache_edital' ? (
+                    {/* Campo booleano PRECISA de select. Como texto ele é enviado
+                        como a string "true", o backend exige bool e devolve 422 — e
+                        o formulário manda todos os campos juntos, então um campo
+                        assim derruba o salvar inteiro. Foi o que `refutacao_ativa`
+                        fez desde que foi criado. */}
+                    {(c.chave === 'llm_cache_edital' || c.chave === 'refutacao_ativa') ? (
                       <select
                         value={billingEdit[c.chave] ?? 'false'}
                         onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
@@ -2568,6 +2662,40 @@ export default function AdminDashboard() {
                         onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
                         className="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-2.5 text-sm font-bold text-slate-100 outline-none focus:border-amber-500"
                       />
+                    )}
+
+                    {c.chave === 'cambio_usd_brl' && cambioInfo && (
+                      <div className={`mt-3 rounded-xl border px-3 py-2.5 ${
+                        cambioAlerta(cambioInfo)
+                          ? 'border-amber-500/30 bg-amber-500/10'
+                          : 'border-emerald-500/30 bg-emerald-500/10'
+                      }`}>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className={`text-[13px] font-black ${
+                              cambioAlerta(cambioInfo) ? 'text-amber-200' : 'text-emerald-200'
+                            }`}>
+                              US$ 1 = R$ {Number(cambioInfo.valor).toFixed(4)}
+                            </p>
+                            <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                              {procedenciaCambio(cambioInfo)}
+                            </p>
+                          </div>
+                          <button
+                            onClick={atualizarCambio}
+                            disabled={cambioBuscando}
+                            className="shrink-0 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-200 hover:border-slate-500 hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            {cambioBuscando ? 'buscando…' : 'buscar agora'}
+                          </button>
+                        </div>
+                        {cambioInfo.ultimo_erro && (
+                          <p className="mt-2 text-[10px] font-medium leading-4 text-amber-300/90">
+                            Última tentativa falhou: {cambioInfo.ultimo_erro}. O valor acima
+                            continua valendo — o Banco Central cair não pode parar a cobrança.
+                          </p>
+                        )}
+                      </div>
                     )}
 
                     <p className="mt-2 text-[10px] font-medium text-slate-500">
@@ -3334,7 +3462,7 @@ export default function AdminDashboard() {
                     {/* A margem antes de salvar, não depois. Reage aos campos
                         acima: trocar o modelo, os agentes, a unidade de crédito
                         ou o multiplicador recalcula na hora. */}
-                    <CalculadoraMargem tier={tier} edit={edit} precos={precosModelo} />
+                    <CalculadoraMargem tier={tier} edit={edit} precos={precosModelo} cambioInfo={cambioInfo} />
 
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-h-[20px]">

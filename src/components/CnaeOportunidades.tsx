@@ -123,7 +123,29 @@ export default function CnaeOportunidades({
       }
       const data = await res.json();
       setStatus(data.status);
-      const lista: EditalCnae[] = data.data || [];
+      const brutos: EditalCnae[] = data.data || [];
+      // ⚠️ REGRA ESTRITA (12/08/2026): edital vencido NUNCA aparece no feed —
+      // decisão de produto. O backend já corta na fonte; esta segunda camada
+      // cobre cache antigo e formatos fora do padrão. Sem data de
+      // encerramento REAL e futura → fora.
+      const agoraFeed = new Date();
+      const parseDataFeed = (v?: unknown): Date | null => {
+        if (!v) return null;
+        const s = String(v).trim();
+        const br = s.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}(?::\d{2})?))?/);
+        if (br) {
+          const d = new Date(`${br[3]}-${br[2]}-${br[1]}T${br[4] || '23:59:59'}`);
+          return isNaN(d.getTime()) ? null : d;
+        }
+        const iso = new Date(s);
+        return isNaN(iso.getTime()) ? null : iso;
+      };
+      const lista = brutos.filter((e) => {
+        const fim = parseDataFeed(e.dataEncerramentoProposta)
+          || parseDataFeed((e as Record<string, unknown>).dataFimRecebimentoProposta)
+          || parseDataFeed((e as Record<string, unknown>).data_fim_vigencia);
+        return fim !== null && fim >= agoraFeed;
+      });
       setEditais(lista);
       setMensagemServidor(data.message || '');
       setEmpresaFiltro(null); // reset filtro ao recarregar

@@ -436,21 +436,38 @@ export default function DecisionManagementTab({
     }
   };
 
-  const completeNextTask = async (
+  /* ⚠️ GANHOU `patch` PORQUE A EDIÇÃO MUDOU DE CASA.
+   *
+   * O plano de execução deixou de ser editável dentro do laudo (decisão do
+   * dono: a análise MOSTRA, a Gestão EXECUTA). Só que a Gestão, até aqui,
+   * sabia fazer uma coisa só com uma tarefa: marcar `done: true` na PRÓXIMA.
+   * Responsável, prazo e nota nunca tiveram editor aqui — quem os preenchia
+   * era o cockpit do laudo, que a Gestão abre por dentro.
+   *
+   * Sem isto, tornar o laudo somente-leitura teria REMOVIDO o preenchimento do
+   * produto inteiro em vez de mudá-lo de lugar. `patch` generaliza o que já
+   * existia (rollback otimista, PATCH, aviso) para qualquer campo. */
+  const salvarTarefa = async (
     analysis: SavedAnalysis,
     task: DecisionQueueTask,
+    patch: { done?: boolean; responsavel?: string; prazo?: string; nota?: string } = { done: true },
   ) => {
     if (!analysis.id || savingTaskId) return;
 
     const statusBefore = normalizeDecisionCockpitStatus(analysis.cockpit_status);
     const nowIso = new Date().toISOString();
+    const anterior = statusBefore[task.id] || {};
     const nextStatus = {
       ...statusBefore,
       [task.id]: {
-        ...statusBefore[task.id],
-        done: true,
-        responsavel: statusBefore[task.id]?.responsavel || task.responsavel,
-        prazo: statusBefore[task.id]?.prazo || task.prazo,
+        ...anterior,
+        // O default da tarefa entra só na PRIMEIRA gravação; depois vence o que
+        // o usuário digitou. Sem o `??`, salvar uma nota sobrescreveria o
+        // responsável escolhido pelo texto que a IA sugeriu.
+        responsavel: patch.responsavel ?? anterior.responsavel ?? task.responsavel,
+        prazo: patch.prazo ?? anterior.prazo ?? task.prazo,
+        nota: patch.nota ?? anterior.nota,
+        done: patch.done ?? anterior.done ?? false,
         updated_at: nowIso,
       },
     };
@@ -485,7 +502,15 @@ export default function DecisionManagementTab({
           item.id === analysis.id ? { ...item, ...(data.analysis as SavedAnalysis) } : item
         )));
       }
-      setNotice({ type: 'success', message: 'Ação concluída e salva no histórico.' });
+      // O aviso descreve o que ACONTECEU: a mesma função agora conclui e também
+      // grava responsável/prazo/nota. Dizer "concluída" ao salvar uma nota
+      // seria a tela relatando uma ação que não houve.
+      setNotice({
+        type: 'success',
+        message: patch.done === true
+          ? 'Ação concluída e salva no histórico.'
+          : 'Alteração salva no histórico.',
+      });
     } catch (err) {
       setAnalyses((prev) => prev.map((item) => (
         item.id === analysis.id ? { ...item, cockpit_status: statusBefore } : item
@@ -730,15 +755,6 @@ export default function DecisionManagementTab({
           modelSource={selectedAnalysis.model_source || selectedAnalysis.modelSource || 'Motor Bawzi IA'}
           isCachedResult={false}
           onUpgradeClick={() => setNotice({ type: 'info', message: 'Faça upgrade pelo painel de planos para desbloquear este recurso.' })}
-          onCockpitStatusChange={(status, updatedAnalysis) => {
-            const merged = {
-              ...selectedAnalysis,
-              ...(updatedAnalysis as unknown as SavedAnalysis | undefined),
-              cockpit_status: status,
-            };
-            setSelectedAnalysis(merged);
-            setAnalyses((prev) => prev.map((item) => item.id === selectedAnalysis.id ? { ...item, ...merged } : item));
-          }}
           onTrackedChange={(tracked) => {
             // Gestão só lista o que está marcado como tracked_in_gestao — se o
             // usuário remove o acompanhamento aqui de dentro, o item precisa
@@ -773,7 +789,8 @@ export default function DecisionManagementTab({
             setSummaryModal(null);
             void openAnalysisDetail(analysis);
           }}
-          onComplete={completeNextTask}
+          onComplete={(a, t) => salvarTarefa(a, t, { done: true })}
+          onSalvarTarefa={salvarTarefa}
           onStageChange={updateWorkflowStage}
           onReviewRequest={(card) => {
             setSummaryModal(null);
@@ -1153,7 +1170,7 @@ export default function DecisionManagementTab({
                         savingStageId={savingStageId}
                         onOpen={openAnalysisDetail}
                         onOpenSummary={setSummaryModal}
-                        onComplete={completeNextTask}
+                        onComplete={(a, t) => salvarTarefa(a, t, { done: true })}
                         onStageChange={updateWorkflowStage}
                         scoreColors={scoreColors}
                       />
@@ -1365,6 +1382,139 @@ function DecisionQueueCard({
   );
 }
 
+/** O plano de execução completo, editável — a casa nova da edição.
+ *
+ *  Cada passo tem responsável, prazo e nota. Grava no blur (não a cada tecla):
+ *  a rota é um PATCH do mapa inteiro de tarefas, e disparar por tecla faria
+ *  uma escrita por caractere, com corridas entre elas.
+ *
+ *  O estado local existe para o campo não "pular" enquanto se digita: o valor
+ *  vem do rascunho local se houver, senão do que está salvo, senão do default
+ *  da tarefa. */
+function PlanoEditavel({ card, savingTaskId, onSalvar }: {
+  card: DecisionQueueCardModel;
+  savingTaskId: string | null;
+  onSalvar: (
+    analysis: SavedAnalysis,
+    task: DecisionQueueTask,
+    patch: { done?: boolean; responsavel?: string; prazo?: string; nota?: string },
+  ) => void;
+}) {
+  const [rascunho, setRascunho] = useState<Record<string, { responsavel?: string; prazo?: string; nota?: string }>>({});
+  const [aberta, setAberta] = useState<string | null>(null);
+
+  if (!card.tasks.length) return null;
+
+  const valor = (taskId: string, campo: 'responsavel' | 'prazo' | 'nota', padrao: string) =>
+    rascunho[taskId]?.[campo] ?? card.statusMap[taskId]?.[campo] ?? padrao;
+
+  const editar = (taskId: string, campo: 'responsavel' | 'prazo' | 'nota', v: string) =>
+    setRascunho((r) => ({ ...r, [taskId]: { ...r[taskId], [campo]: v } }));
+
+  const gravar = (task: DecisionQueueTask, campo: 'responsavel' | 'prazo' | 'nota') => {
+    const atual = rascunho[task.id]?.[campo];
+    if (atual === undefined) return;                       // nada foi digitado
+    const salvo = card.statusMap[task.id]?.[campo] ?? '';
+    if (atual.trim() === String(salvo).trim()) return;     // digitou e desfez
+    onSalvar(card.analysis, task, { [campo]: atual.trim() });
+  };
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Plano de execução</p>
+          <p className="mt-1 text-sm font-bold text-slate-700">
+            Responsável, prazo e conclusão de cada passo
+          </p>
+        </div>
+        <span className="text-[11px] font-black tabular-nums text-slate-400">
+          {card.done}/{card.total} concluídas
+        </span>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {card.tasks.map((task, idx) => {
+          const feito = !!card.statusMap[task.id]?.done;
+          const salvando = savingTaskId === `${card.analysis.id}-${task.id}`;
+          const abertaAqui = aberta === task.id;
+          return (
+            <div key={task.id} className="py-3">
+              <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  title={feito ? 'Marcar como pendente' : 'Marcar como concluída'}
+                  onClick={() => onSalvar(card.analysis, task, { done: !feito })}
+                  disabled={salvando}
+                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all disabled:opacity-50 ${
+                    feito
+                      ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600'
+                      : 'border-slate-300 bg-white hover:border-emerald-400'
+                  }`}
+                >
+                  {salvando ? <Loader2 size={11} className="animate-spin" /> : feito ? <CheckCircle2 size={12} /> : null}
+                </button>
+
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-black leading-snug ${feito ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+                    <span className="mr-1.5 tabular-nums text-slate-300">{String(idx + 1).padStart(2, '0')}</span>
+                    {task.acao}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    {valor(task.id, 'responsavel', task.responsavel)} · {valor(task.id, 'prazo', task.prazo)}
+                    {card.statusMap[task.id]?.nota ? ' · com nota' : ''}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAberta(abertaAqui ? null : task.id)}
+                  className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                >
+                  {abertaAqui ? 'Fechar' : 'Editar'}
+                </button>
+              </div>
+
+              {abertaAqui && (
+                <div className="mt-3 grid gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
+                    <input
+                      value={valor(task.id, 'responsavel', task.responsavel)}
+                      onChange={(e) => editar(task.id, 'responsavel', e.target.value)}
+                      onBlur={() => gravar(task, 'responsavel')}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
+                    <input
+                      value={valor(task.id, 'prazo', task.prazo)}
+                      onChange={(e) => editar(task.id, 'prazo', e.target.value)}
+                      onBlur={() => gravar(task, 'prazo')}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
+                    <input
+                      value={valor(task.id, 'nota', '')}
+                      onChange={(e) => editar(task.id, 'nota', e.target.value)}
+                      onBlur={() => gravar(task, 'nota')}
+                      placeholder="Ex.: aguardando jurídico, protocolado em 01/07..."
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 outline-none placeholder:text-slate-300 focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function OperationalSummaryModal({
   card,
   savingTaskId,
@@ -1372,6 +1522,7 @@ function OperationalSummaryModal({
   onClose,
   onOpenLaudo,
   onComplete,
+  onSalvarTarefa,
   onStageChange,
   onReviewRequest,
   onLearningRequest,
@@ -1382,6 +1533,11 @@ function OperationalSummaryModal({
   onClose: () => void;
   onOpenLaudo: (analysis: SavedAnalysis) => void;
   onComplete: (analysis: SavedAnalysis, task: DecisionQueueTask) => void;
+  onSalvarTarefa: (
+    analysis: SavedAnalysis,
+    task: DecisionQueueTask,
+    patch: { done?: boolean; responsavel?: string; prazo?: string; nota?: string },
+  ) => void;
   onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
   onReviewRequest: (card: DecisionQueueCardModel) => void;
   onLearningRequest: (card: DecisionQueueCardModel) => void;
@@ -1538,6 +1694,16 @@ function OperationalSummaryModal({
               </button>
             </div>
           </div>
+
+          {/* PLANO COMPLETO, EDITÁVEL — o que o laudo deixou de fazer.
+              Não é a "próxima ação" só: é a lista inteira, com responsável,
+              prazo e nota por passo. Sem isto, a edição não teria mudado de
+              casa; teria sumido. */}
+          <PlanoEditavel
+            card={card}
+            savingTaskId={savingTaskId}
+            onSalvar={onSalvarTarefa}
+          />
         </div>
 
         <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:justify-end sm:p-4">

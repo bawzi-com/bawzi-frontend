@@ -40,7 +40,7 @@ import {
   type ActiveContextEventDetail,
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { apiFetch, getAuthToken, initSession, clearSession, SessionExpiredError, mensagemDeErro } from '@/lib/apiClient';
+import { apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro } from '@/lib/apiClient';
 import ChangePlanModal from '@/components/ChangePlanModal';
 import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
 import { detalhesDeCreditos } from '@/components/ResumoCreditos';
@@ -590,10 +590,7 @@ function ProfileContent() {
   };
 
   const handleLogout = async () => {
-    try {
-      await fetch(`${API_URL}/api/auth/logout`, { method: 'POST', credentials: 'include' });
-    } catch { /* sessão local sempre é limpa */ }
-    clearSession({ notifyExpired: false });
+    await encerrarSessao({ notifyExpired: false });
     setAuthToken('');
     router.push('/');
   };

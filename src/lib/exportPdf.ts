@@ -1,4 +1,5 @@
 import type { AnalysisResult } from '@/components/analysis-types';
+import { textoDoItem } from '@/components/analysis-types';
 
 export function exportPdf(result: AnalysisResult, onError: (msg: string) => void): void {
   const printWindow = window.open('', '_blank');
@@ -361,8 +362,10 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
   ${section('17', 'Fundamentação Legal e Parecer Especialista',
     `<p>${esc(result.parecer_especialista || result.rationale || 'Sem parecer detalhado disponível para esta análise.')}</p>`
   )}
-  ${result.exigencias_criticas?.length ? section('18', 'Exigências Críticas', listHtml(result.exigencias_criticas)) : ''}
-  ${result.documentos_necessarios?.length ? section('19', 'Documentos Necessários', listHtml(result.documentos_necessarios)) : ''}
+  ${/* .map(textoDoItem): itens acrescentados pela auditoria são objetos, e
+        `esc()` os transformava em "[object Object]" no PDF entregue ao cliente. */''}
+  ${result.exigencias_criticas?.length ? section('18', 'Exigências Críticas', listHtml(result.exigencias_criticas.map(textoDoItem))) : ''}
+  ${result.documentos_necessarios?.length ? section('19', 'Documentos Necessários', listHtml(result.documentos_necessarios.map(textoDoItem))) : ''}
   ${checklistHtml ? section('20', 'Checklist de Participação', checklistHtml) : ''}
   ${scoreBreakdownHtml ? section('21', 'Composição do Score', scoreBreakdownHtml) : ''}
   ${pricingHtml ? section('22', 'Inteligência de Preços', pricingHtml) : ''}
