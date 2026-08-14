@@ -135,6 +135,364 @@ interface LimitePublico {
 
 const numeroBr = (n: number) => n.toLocaleString('pt-BR');
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * SIMULADOR DE PLANO
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * POR QUE ELE PODE EXISTIR AGORA, DEPOIS DE TRÊS RECUSAS
+ * ──────────────────────────────────────────────────────
+ * Esta página já tentou traduzir cota em análises três vezes e recusou as três
+ * (ver `quantidadeTexto` e `linhasLimites`). O motivo era sempre o mesmo: para
+ * dizer "cabem N análises" é preciso saber o TAMANHO de um edital, e o número
+ * que existia vinha de cinco medições. A recusa estava certa.
+ *
+ * O que muda aqui não é a confiança na média — é de quem é a premissa. O
+ * tamanho deixa de ser um número que NÓS inventamos e escondemos numa
+ * multiplicação, e passa a ser uma ESCOLHA DO LEITOR, com a faixa em
+ * caracteres impressa ao lado de cada opção. Ele valida a premissa antes de
+ * ver o resultado. Uma medição da base (2026-08-13) confirmou que estimar por
+ * nós seria chute: 48% das análises estavam represadas nos tetos de plano, o
+ * que descreve os nossos limites e não o mercado.
+ *
+ * E o resultado é FAIXA, nunca ponto: cada categoria de tamanho tem mínimo e
+ * máximo, e a recomendação cobre o MÁXIMO. Recomendar um plano que atende a
+ * mediana é garantir um mês ruim no primeiro edital grande.
+ *
+ * ⚠️ TODOS os números vêm de `/api/tiers/limites-publicos` — cota,
+ * `max_chars`, `caracteres_por_credito` e `peso_profunda`. Nada de constante
+ * de preço nesta tela: a régua da simulação é a MESMA que o portão aplica, e
+ * se ela mudar no Admin a simulação muda junto, sem release. Foi uma segunda
+ * fórmula no frontend que produziu o "+2 créditos" enquanto o portão debitava
+ * 21 — este componente não repete isso.
+ *
+ * ⚠️ E o TAMANHO é uma barreira dura, não só preço: um plano com `max_chars`
+ * de 25.000 não analisa um edital de 200.000 — ele corta. Isso desqualifica um
+ * plano por motivo diferente de quantidade, e é a informação que o comprador
+ * mais precisa e que nenhuma tabela de preços dá. */
+
+type FaixaTamanho = {
+  chave: string;
+  rotulo: string;
+  descricao: string;
+  min: number;
+  max: number;
+};
+
+/** As categorias que o leitor escolhe. A faixa em caracteres aparece na tela
+ *  justamente para ele poder discordar — é premissa dele, não nossa. */
+const FAIXAS_TAMANHO: readonly FaixaTamanho[] = [
+  { chave: 'enxuto', rotulo: 'Enxuto', descricao: 'só o edital, poucos anexos', min: 20_000, max: 60_000 },
+  { chave: 'comum', rotulo: 'Comum', descricao: 'edital + anexos usuais', min: 60_000, max: 180_000 },
+  { chave: 'grande', rotulo: 'Grande', descricao: 'muitos anexos e planilhas', min: 180_000, max: 400_000 },
+];
+
+/** A régua fixa, com os coeficientes que o SERVIDOR mandou.
+ *  `teto(caracteres ÷ unidade) × peso`, mínimo 1 — igual a `modos.custo_em_creditos`. */
+function creditosDoEdital(chars: number, unidade: number, peso: number, profunda: boolean): number {
+  const base = Math.max(1, Math.ceil(chars / Math.max(1, unidade)));
+  return base * (profunda ? Math.max(1, peso) : 1);
+}
+
+/** Teto do slider de volume. 60 era baixo demais: uma assessoria de licitações
+ *  passa disso com folga, e slider que satura faz o comprador concluir que o
+ *  produto não é para ele — quando é justamente o cliente que mais paga.
+ *  Acima deste número a resposta honesta deixa de ser "assine o Avançado" e
+ *  passa a ser "fale com a gente", que é o que a simulação diz. */
+const MAX_EDITAIS = 200;
+
+/** Slider + campo numérico. Só slider perde precisão num intervalo de 200;
+ *  só campo perde a noção de escala. Mesmo par usado na calculadora de
+ *  economia da landing. */
+function CampoVolume({ label, valor, min, max, ajuda, cor, onChange }: {
+  label: string; valor: number; min: number; max: number;
+  ajuda?: string; cor: string; onChange: (v: number) => void;
+}) {
+  // Clamp SEMPRE, inclusive no digitado: o campo aceita colar "9999" e sem
+  // isto a simulação renderizaria uma rotina que nenhum plano do mundo atende,
+  // com números que não querem dizer nada.
+  const aplicar = (bruto: string) => {
+    const n = Number(bruto);
+    if (!Number.isFinite(n)) return;
+    onChange(Math.max(min, Math.min(max, Math.round(n))));
+  };
+  return (
+    <label className="block">
+      <div className="mb-2 flex items-end justify-between gap-3">
+        <span className="text-sm font-black text-slate-800">{label}</span>
+        <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-black tabular-nums text-slate-700">
+          {valor}
+        </span>
+      </div>
+      <div className="grid gap-2 @min-[20rem]:grid-cols-[1fr_74px] @min-[20rem]:items-center">
+        <input
+          type="range" min={min} max={max} value={valor}
+          onChange={(e) => aplicar(e.target.value)}
+          className={`h-2 w-full cursor-pointer ${cor}`}
+        />
+        <input
+          type="number" min={min} max={max} value={valor}
+          onChange={(e) => aplicar(e.target.value)}
+          onBlur={(e) => aplicar(e.target.value || String(min))}
+          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-black tabular-nums text-slate-700 outline-none focus:border-emerald-300 focus:ring-4 focus:ring-emerald-500/10"
+        />
+      </div>
+      {ajuda && <p className="mt-1.5 text-[11px] font-medium text-slate-400">{ajuda}</p>}
+    </label>
+  );
+}
+
+type Veredito = 'folga' | 'limite' | 'corta' | 'estoura' | 'tamanho';
+
+function SimuladorDePlano({
+  limites,
+  onEscolher,
+  activeTier,
+}: {
+  limites: Record<string, LimitePublico> | null;
+  onEscolher: (tierLevel: number) => void;
+  activeTier: number;
+}) {
+  const [editais, setEditais] = useState(10);
+  const [profundas, setProfundas] = useState(2);
+  const [faixaChave, setFaixaChave] = useState('comum');
+  const faixa = FAIXAS_TAMANHO.find((f) => f.chave === faixaChave) ?? FAIXAS_TAMANHO[1];
+
+  // Sem os limites do servidor não há simulação honesta possível — e inventar
+  // um fallback aqui seria exatamente a fórmula paralela que este componente
+  // existe para evitar. Some da tela até o dado chegar.
+  if (!limites) return null;
+
+  const profundasReais = Math.min(profundas, editais);
+  const rapidas = Math.max(0, editais - profundasReais);
+
+  const planos = [2, 3, 4].map((nivel) => {
+    const lim = limites[String(nivel)];
+    const meta = tiers.find((t) => t.tierLevel === nivel);
+    const unidade = lim?.caracteres_por_credito || 50_000;
+    const peso = lim?.peso_profunda || 1;
+    const cota = Number(lim?.monthly_limit || 0);
+    const maxChars = Number(lim?.max_chars || 0);
+
+    const custo = (chars: number) =>
+      rapidas * creditosDoEdital(chars, unidade, peso, false)
+      + profundasReais * creditosDoEdital(chars, unidade, peso, true);
+
+    // O teto do plano também limita o custo: o que passa dele é cortado, não
+    // cobrado. Simular 400 mil num plano de 80 mil e cobrar por 400 mil
+    // mentiria para os dois lados — no preço e na capacidade.
+    const cMin = custo(Math.min(faixa.min, maxChars || faixa.min));
+    const cMax = custo(Math.min(faixa.max, maxChars || faixa.max));
+
+    const semCota = Boolean(lim?.ilimitado) || cota === 0;
+    const cortaEdital = maxChars > 0 && maxChars < faixa.max;
+
+    // ⚠️ TRUNCAR DESQUALIFICA — não é "atende com folga".
+    //
+    // A primeira versão desta lógica olhava só o volume, e por isso recomendava
+    // o Essencial (teto de 80.000) para quem marcou "edital comum" (60 a 180
+    // mil): sobra crédito, mas MAIS DA METADE dos editais chegaria cortado.
+    // E o corte tira o fim do documento, que é onde ficam termo de referência,
+    // sanções e matriz de risco (item 19). Vender folga de crédito sobre laudo
+    // cego é pior do que dizer que o plano não serve.
+    let veredito: Veredito;
+    if (maxChars > 0 && maxChars < faixa.min) veredito = 'tamanho';
+    else if (!semCota && cMin > cota) veredito = 'estoura';
+    else if (cortaEdital) veredito = 'corta';
+    else if (!semCota && cMax > cota) veredito = 'limite';
+    else veredito = 'folga';
+
+    return { nivel, meta, lim, cota, maxChars, cMin, cMax, veredito, unidade, cortaEdital };
+  });
+
+  // O recomendado é o MAIS BARATO que atende com folga — o que agora exige
+  // também não recortar. Se nenhum atende, não empurra o topo como se
+  // coubesse: diz a verdade e manda falar com a gente.
+  const recomendado = planos.find((p) => p.veredito === 'folga') ?? null;
+
+  const CORES: Record<Veredito, { chip: string; texto: string }> = {
+    folga:   { chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', texto: 'Atende com folga' },
+    limite:  { chip: 'bg-amber-50 text-amber-700 border-amber-200',       texto: 'No limite' },
+    corta:   { chip: 'bg-amber-50 text-amber-700 border-amber-200',       texto: 'Recorta os maiores' },
+    estoura: { chip: 'bg-red-50 text-red-700 border-red-200',             texto: 'Não atende o volume' },
+    tamanho: { chip: 'bg-red-50 text-red-700 border-red-200',             texto: 'Não comporta o tamanho' },
+  };
+
+  return (
+    <div className="@container mb-10 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 md:px-6">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+          Qual plano é o seu
+        </p>
+        <h3 className="mt-1 text-lg font-black tracking-tight text-slate-950">
+          Descreva sua rotina e veja o que cabe
+        </h3>
+        <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
+          A conta usa a régua real de cobrança do servidor, não uma média nossa.
+          O tamanho do edital é escolha sua — a faixa em caracteres está ao lado
+          de cada opção.
+        </p>
+      </div>
+
+      <div className="grid gap-6 p-5 md:p-6 @min-[52rem]:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        {/* ── Entradas ─────────────────────────────────────────────── */}
+        <div className="space-y-5">
+          <CampoVolume
+            label="Editais por mês"
+            valor={editais}
+            min={1}
+            max={MAX_EDITAIS}
+            cor="accent-emerald-600"
+            ajuda={editais >= MAX_EDITAIS
+              ? 'No teto da simulação — nesse volume a conversa é de condição própria.'
+              : undefined}
+            onChange={(v) => {
+              setEditais(v);
+              // O número de profundas nunca pode ultrapassar o total. Sem esta
+              // linha, baixar o volume deixava um resíduo maior que o todo e a
+              // conta passava a cobrar profundas que não existem.
+              if (profundas > v) setProfundas(v);
+            }}
+          />
+
+          <CampoVolume
+            label="Destes, em auditoria profunda"
+            valor={profundasReais}
+            min={0}
+            max={editais}
+            cor="accent-sky-600"
+            ajuda="A auditoria profunda relê o edital inteiro em blocos e custa mais por isso."
+            onChange={setProfundas}
+          />
+
+          <div>
+            <span className="mb-2 block text-sm font-black text-slate-800">Tamanho típico do edital</span>
+            <div className="grid gap-2">
+              {FAIXAS_TAMANHO.map((f) => (
+                <button
+                  key={f.chave}
+                  type="button"
+                  onClick={() => setFaixaChave(f.chave)}
+                  className={`flex items-baseline justify-between gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all ${
+                    f.chave === faixaChave
+                      ? 'border-emerald-300 bg-emerald-50 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className={`block text-xs font-black ${f.chave === faixaChave ? 'text-emerald-800' : 'text-slate-700'}`}>
+                      {f.rotulo}
+                    </span>
+                    <span className="block text-[11px] font-medium text-slate-500">{f.descricao}</span>
+                  </span>
+                  {/* A premissa, à vista. É o que separa isto de uma média inventada. */}
+                  <span className="shrink-0 text-[10px] font-bold tabular-nums text-slate-400">
+                    {numeroBr(f.min / 1000)}–{numeroBr(f.max / 1000)} mil car.
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Resultado ────────────────────────────────────────────── */}
+        <div>
+          <div className="space-y-2.5">
+            {planos.map((p) => {
+              const c = CORES[p.veredito];
+              const ehRecomendado = recomendado?.nivel === p.nivel;
+              return (
+                <div
+                  key={p.nivel}
+                  className={`rounded-2xl border p-3.5 transition-all ${
+                    ehRecomendado ? 'border-emerald-300 bg-emerald-50/40 shadow-sm' : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <div className="min-w-0">
+                      <p className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-900">
+                        {p.meta?.name}
+                        <span className="text-xs font-bold text-slate-400">{p.meta?.price}{p.meta?.period}</span>
+                        {ehRecomendado && (
+                          <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white">
+                            Recomendado
+                          </span>
+                        )}
+                        {activeTier === p.nivel && (
+                          <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
+                            Seu plano
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-1 text-[11px] font-semibold text-slate-500 tabular-nums">
+                        {p.veredito === 'tamanho'
+                          ? `Analisa até ${numeroBr(p.maxChars)} caracteres — menos que o seu edital típico`
+                          : `Usaria ${p.cMin === p.cMax ? p.cMin : `${p.cMin} a ${p.cMax}`} de ${numeroBr(p.cota)} créditos`}
+                      </p>
+                      {/* Corte silencioso jamais: se o plano atende o volume mas
+                          corta os editais maiores, isso é dito aqui. Um plano que
+                          "cabe" entregando laudo sobre documento truncado não cabe. */}
+                      {p.veredito !== 'tamanho' && p.cortaEdital && (
+                        <p className="mt-1 text-[11px] font-bold text-amber-700">
+                          ⚠ Editais acima de {numeroBr(p.maxChars)} caracteres seriam recortados
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${c.chip}`}>
+                        {c.texto}
+                      </span>
+                      {activeTier !== p.nivel && (
+                        <button
+                          type="button"
+                          onClick={() => onEscolher(p.nivel)}
+                          className={`rounded-xl px-3 py-1.5 text-[11px] font-black transition-all ${
+                            ehRecomendado
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : 'border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          Assinar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ⚠️ O QUE ACONTECE AO EXCEDER, dito por inteiro.
+              A versão anterior dizia só "passar da cota não bloqueia — entra na
+              margem de cortesia". É meia verdade: a cortesia TEM teto
+              (`_teto_de_cortesia`), e depois dele a análise não para, ela
+              DEGRADA — cai no motor gratuito e a auditoria profunda é
+              suspensa. Vender "não bloqueia" e entregar laudo mais fraco é a
+              mesma família do 14f. E existe uma terceira saída que a frase
+              omitia: pacote de créditos avulso, que não expira no reset. */}
+          <div className="mt-3.5 space-y-2">
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[11px] font-medium leading-5 text-slate-500">
+              {recomendado
+                ? <>Estimativa, não promessa: o consumo real depende do tamanho de cada edital.
+                    A régua é <strong className="text-slate-700">1 crédito a cada {numeroBr(recomendado.unidade)} caracteres
+                    analisados</strong> (texto + PDFs), e a auditoria profunda multiplica.</>
+                : <>Nenhum plano cobre essa rotina inteira. Assinar o maior sabendo que vai
+                    faltar não resolve o seu problema — <strong className="text-slate-700">fale
+                    com a gente</strong>: volume assim costuma pedir condição própria.</>}
+            </p>
+            <p className="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-2.5 text-[11px] font-medium leading-5 text-amber-900">
+              <strong>Se a cota acabar antes do fim do mês:</strong> as análises não param
+              imediatamente — há uma margem de cortesia por nossa conta. Passada ela, elas
+              continuam saindo num motor mais simples e <strong>sem auditoria profunda</strong>,
+              até a renovação. Para não chegar lá, dá para comprar um pacote avulso a qualquer
+              momento — créditos de pacote não expiram no reset.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Primeira linha do cartão: a quantidade de análises.
  *
  *  O tier -1 usa `monthly_limit` como cota DIÁRIA — o nome do campo no backend
@@ -529,6 +887,18 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
             Ver todos os planos <ChevronRight size={14} />
           </Link>
         </div>
+      )}
+
+      {/* Simulador ANTES dos cartões, e não depois: a pergunta que trava a
+          decisão é "qual deles é o meu", e cinco colunas de recurso não
+          respondem isso. Fica fora do modo `compact` (o resumo dentro do app,
+          onde a pessoa já assinou e a pergunta é outra). */}
+      {!compact && (
+        <SimuladorDePlano
+          limites={limitesPublicos}
+          activeTier={activeTier}
+          onEscolher={handleCardButton}
+        />
       )}
 
       {/* Grid de cards */}
