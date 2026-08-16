@@ -132,8 +132,13 @@ export default function RadarAlertas({ token }: Props) {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-amber-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-amber-700 shadow-sm mb-2">
             <Bell className="h-3.5 w-3.5" />
-            Monitor inteligente
+            Alertas
           </div>
+          {/* ⚠️ O SELO DIZIA "Monitor inteligente" E A BARRA LATERAL DIZIA
+              "Monitor" — agora ela diz "Alertas", que é o que o recurso faz e
+              o nome que a aba já tinha no código (`activeTab === 'alertas'`).
+              Selo e menu precisam falar a mesma palavra: é por ele que a
+              pessoa confere que chegou onde clicou. */}
           <h2 className="text-lg font-black text-slate-900">Sinais críticos do PNCP</h2>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Configure termos para receber oportunidades novas antes que elas virem urgência operacional.

@@ -132,7 +132,7 @@ export default function PromoBanner() {
 
   return (
     <div className={`relative w-full ${c.bar} print:hidden`} role="banner" aria-label="Oferta promocional">
-      <div className="max-w-[1400px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-center">
+      <div className="max-w-[1400px] mx-auto pl-4 pr-11 py-2.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-center">
 
         {/* Etiqueta de desconto */}
         {banner.discount_label && (
@@ -186,7 +186,7 @@ export default function PromoBanner() {
         <button
           onClick={handleDismiss}
           aria-label="Fechar banner"
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-lg opacity-70 hover:opacity-100 transition-opacity text-white"
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-lg opacity-70 hover:opacity-100 transition-opacity text-white"
         >
           <X size={15} />
         </button>

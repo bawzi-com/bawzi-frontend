@@ -68,16 +68,34 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
       const lista = Array.isArray(companyData) ? companyData : (companyData.cnpj ? [companyData] : []);
       setCompaniesList(lista);
 
-      // Auto-enriquecer empresas sem CNAE ou sem CNAEs secundários — silencioso
-      lista.forEach(async (emp: any) => {
-        const precisaEnriquecer = emp.cnpj && (!emp.cnae_principal || !emp.cnaes_secundarios?.length);
-        if (precisaEnriquecer) {
+      // ── Auto-enriquecer empresas sem CNAE — silencioso e EM FILA ─────────
+      // ⚠️ ISTO ERA UM `forEach(async …)`, QUE DISPARA TUDO DE UMA VEZ.
+      // Com três empresas sem CNAE, saíam três consultas simultâneas à
+      // /api/company/search — e a BrasilAPI, que é a fonte por trás dela,
+      // limita requisições no plano gratuito. Estourado o limite, ela devolve
+      // 429 e a busca de CNPJ para de funcionar para a pessoa inteira, não só
+      // para o enriquecimento de fundo. Um trabalho invisível derrubando um
+      // botão que o usuário está usando na frente.
+      //
+      // Em fila, com respiro entre uma e outra, o pano de fundo deixa de
+      // competir com o que a pessoa está fazendo. E o `cancelado` evita que
+      // uma resposta atrasada escreva na lista de um componente já desmontado.
+      let cancelado = false;
+      (async () => {
+        const pendentes = lista.filter(
+          (emp: any) => emp.cnpj && (!emp.cnae_principal || !emp.cnaes_secundarios?.length),
+        );
+        for (const emp of pendentes) {
+          if (cancelado) return;
           try {
             const cnpjLimpo = emp.cnpj.replace(/\D/g, '');
             const res = await apiFetch(`${API_URL}/api/company/search/${cnpjLimpo}`);
-            if (!res.ok) return;
+            // 429 = limite de consultas. Insistir com os próximos da fila só
+            // renova o bloqueio; melhor parar e deixar para a próxima abertura.
+            if (res.status === 429) return;
+            if (!res.ok) continue;
             const data = await res.json();
-            if (!data.cnae_principal) return;
+            if (!data.cnae_principal) continue;
 
             const enriched = {
               ...emp,
@@ -88,22 +106,21 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
               municipio: data.municipio || emp.municipio || '',
             };
 
-            // Salva o enriquecimento no backend
             await apiFetch(`${API_URL}/api/workspace/company`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(enriched),
             });
 
-            // Atualiza a lista local imediatamente
-            setCompaniesList(prev =>
-              prev.map(e => e.cnpj === emp.cnpj ? enriched : e)
-            );
+            if (cancelado) return;
+            setCompaniesList(prev => prev.map(e => (e.cnpj === emp.cnpj ? enriched : e)));
           } catch {
             // silencioso — não interrompe a UI
           }
+          if (pendentes.length > 1) await new Promise(r => setTimeout(r, 400));
         }
-      });
+      })();
+      return () => { cancelado = true; };
     }
   }, [companyData, token, API_URL]);
 

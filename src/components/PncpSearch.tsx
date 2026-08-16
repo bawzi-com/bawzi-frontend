@@ -3,15 +3,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit,
-  Search, MapPin, SlidersHorizontal, Layers, X, Zap, History, ArrowRight,
+  Search, MapPin, SlidersHorizontal, Layers, X, Zap, History, ArrowRight, Landmark,
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
+import OrgaoAutocomplete from './OrgaoAutocomplete';
+import Tooltip from './Tooltip';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
 import CnaeMismatchModal from './CnaeMismatchModal';
 import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import { checarAderenciaObjetoEmpresa } from '@/lib/cnaeMatch';
-import { resolveActiveCompany } from '@/lib/activeContext';
+import { resolveActiveCompany, getCompanyDisplayName } from '@/lib/activeContext';
 import type { Empresa } from '@/lib/types';
 
 interface PncpItem {
@@ -80,6 +82,11 @@ export default function PncpSearch({
   const [uf, setUf] = useState('');
   const [municipioId, setMunicipioId]   = useState('');
   const [municipioNome, setMunicipioNome] = useState('');
+  // Filtro por órgão comprador — nome OU CNPJ. Ver o cabeçalho de
+  // OrgaoAutocomplete.tsx para por que ele não mora no campo de busca.
+  const [orgaoFiltro, setOrgaoFiltro] = useState('');
+  const [orgaoDescartados, setOrgaoDescartados] = useState(0);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [forceExact, setForceExact] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
@@ -97,6 +104,17 @@ export default function PncpSearch({
 
   const chaveAnalise = (cnpj: string, ano: number | string, seq: number | string) =>
     `${String(cnpj || '').replace(/\D/g, '')}-${String(ano ?? '').trim()}-${String(seq ?? '').trim().replace(/^0+/, '') || '0'}`;
+
+  // ⚠️ FILTRO ATIVO NUNCA FICA ATRÁS DE PAINEL FECHADO.
+  // O painel "Mais filtros" começa fechado, e tudo bem — mas se por qualquer
+  // caminho existir um órgão aplicado (restauração de estado, link externo,
+  // uma futura persistência de filtros), a lista chega recortada e o motivo
+  // precisa estar em tela. Abrir é irreversível de propósito: só o usuário
+  // fecha de novo, e limpar o órgão é o que remove o filtro — não fechar o
+  // painel.
+  useEffect(() => {
+    if (orgaoFiltro) setFiltrosAbertos(true);
+  }, [orgaoFiltro]);
 
   useEffect(() => {
     if (!token || results.length === 0) return;
@@ -123,6 +141,7 @@ export default function PncpSearch({
   const [mounted, setMounted] = useState(false);
 
   const [detectedUf, setDetectedUf] = useState('');
+  const [editandoUf, setEditandoUf] = useState(false);
   const [marketData, setMarketData] = useState<any>(null);
 
   // ── Cancelamento da extração/análise em andamento ───────────────────────
@@ -157,7 +176,41 @@ export default function PncpSearch({
   /** Garante que a auto-busca por initialQuery só dispara uma vez. */
   const autoSearchFired = useRef(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  /** As 27 unidades federativas, num lugar só.
+ *  ⚠️ Estavam escritas à mão como 27 `<option>` no formulário de busca, e o
+ *  editor de UF detectada abaixo precisava das mesmas. Duas listas de 27
+ *  itens divergem no dia em que alguém corrige um acento em uma delas. */
+const UFS: readonly { sigla: string; nome: string }[] = [
+  { sigla: 'AC', nome: 'Acre' },
+  { sigla: 'AL', nome: 'Alagoas' },
+  { sigla: 'AP', nome: 'Amapá' },
+  { sigla: 'AM', nome: 'Amazonas' },
+  { sigla: 'BA', nome: 'Bahia' },
+  { sigla: 'CE', nome: 'Ceará' },
+  { sigla: 'DF', nome: 'Distrito Federal' },
+  { sigla: 'ES', nome: 'Espírito Santo' },
+  { sigla: 'GO', nome: 'Goiás' },
+  { sigla: 'MA', nome: 'Maranhão' },
+  { sigla: 'MT', nome: 'Mato Grosso' },
+  { sigla: 'MS', nome: 'Mato Grosso do Sul' },
+  { sigla: 'MG', nome: 'Minas Gerais' },
+  { sigla: 'PA', nome: 'Pará' },
+  { sigla: 'PB', nome: 'Paraíba' },
+  { sigla: 'PR', nome: 'Paraná' },
+  { sigla: 'PE', nome: 'Pernambuco' },
+  { sigla: 'PI', nome: 'Piauí' },
+  { sigla: 'RJ', nome: 'Rio de Janeiro' },
+  { sigla: 'RN', nome: 'Rio Grande do Norte' },
+  { sigla: 'RS', nome: 'Rio Grande do Sul' },
+  { sigla: 'RO', nome: 'Rondônia' },
+  { sigla: 'RR', nome: 'Roraima' },
+  { sigla: 'SC', nome: 'Santa Catarina' },
+  { sigla: 'SP', nome: 'São Paulo' },
+  { sigla: 'SE', nome: 'Sergipe' },
+  { sigla: 'TO', nome: 'Tocantins' },
+];
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
     setMounted(true);
@@ -304,6 +357,7 @@ export default function PncpSearch({
     ufVal: string,
     munId: string = municipioId,
     munNome: string = municipioNome,
+    orgaoVal: string = orgaoFiltro,
   ) => {
     const termo = term.trim();
     // Termo vazio é válido: lista todos os editais vigentes do escopo (Brasil/UF/cidade)
@@ -322,12 +376,20 @@ export default function PncpSearch({
       const munParam = munId
         ? `&municipio_id=${encodeURIComponent(munId)}${munNome ? `&municipio_nome=${encodeURIComponent(munNome)}` : ''}`
         : '';
+      const orgaoLimpo = (orgaoVal || '').trim();
+      const orgaoParam = orgaoLimpo ? `&orgao=${encodeURIComponent(orgaoLimpo)}` : '';
 
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
 
       // 1. Busca principal (UF e cidade viram filtros REAIS na API do PNCP)
-      const reqNacional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${exactParam}`);
-      // Inteligência de mercado só faz sentido com termo definido
+      const reqNacional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${orgaoParam}${exactParam}`);
+      // Inteligência de mercado só faz sentido com termo definido.
+      //
+      // ⚠️ O `market-score` NÃO recebe o filtro de órgão, e é intencional: ele
+      // mede o mercado daquele objeto (mediana, deságio, concorrência), e um
+      // mercado medido dentro de um único comprador não é mercado — é o
+      // histórico daquele órgão, com amostra pequena demais para a estatística
+      // que o cartão apresenta. O filtro estreita a LISTA, não a referência.
       const reqMarket = termo
         ? fetch(`${API_URL}/api/pncp/market-score?q=${encodeURIComponent(termo)}${ufParam}`).catch(() => null)
         : Promise.resolve(null);
@@ -335,7 +397,7 @@ export default function PncpSearch({
       // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
       let reqRegional = null;
       if ((!ufVal || ufVal === '') && ufAtivo && !munId && !munNome) {
-        reqRegional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${exactParam}`).catch(() => null);
+        reqRegional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${orgaoParam}${exactParam}`).catch(() => null);
       }
 
       // Dispara tudo
@@ -351,6 +413,14 @@ export default function PncpSearch({
       // resposta regional vive dentro de um `if` e não alcançaria o ponto
       // onde a mensagem de erro é escolhida.
       let recusaPncp: number | null = (dataEditais as { pncp_recusou?: number | null })?.pncp_recusou ?? null;
+
+      // Quantos editais o PNCP devolveu que NÃO eram do órgão pedido. Sem este
+      // número, "zero resultados" por filtro de órgão e "zero resultados"
+      // porque o portal não tem nada são a mesma tela — e o conselho certo em
+      // cada caso é oposto (conferir o nome do órgão × tentar outro termo).
+      setOrgaoDescartados(
+        (dataEditais as { orgao_descartados?: number })?.orgao_descartados ?? 0,
+      );
 
       let encontrados: PncpItem[] = dataEditais.data || dataEditais.items || dataEditais.oportunidades || [];
 
@@ -462,9 +532,22 @@ export default function PncpSearch({
         // nacional) e `dataRegional` (busca por UF, quando houve). Qualquer uma
         // das duas ter sido recusada já explica a lista vazia.
         const recusou = recusaPncp;
+        // ⚠️ O FILTRO DE ÓRGÃO PRECISA DE MENSAGEM PRÓPRIA, antes das outras.
+        // Sem ela, quem filtrou por "Prefeitura de Goiânia" e recebeu zero leria
+        // "tente um termo mais amplo" — conselho que não resolve nada, porque o
+        // problema não estava no termo. E se o PNCP trouxe 87 editais de OUTROS
+        // compradores, dizer isso é a diferença entre "a Bawzi não achou nada" e
+        // "achei bastante, nenhum deste órgão" — que sugerem ações opostas.
+        const orgaoAtivo = (orgaoVal || '').trim();
+        const descartadosOrgao =
+          (dataEditais as { orgao_descartados?: number })?.orgao_descartados ?? 0;
         setError(
           recusou
             ? 'O Portal Nacional de Contratações Públicas está recusando consultas neste momento — não é o seu termo de busca. Isso costuma durar poucos minutos. Aguarde e tente de novo; evite repetir a busca em sequência, porque isso prolonga o bloqueio.'
+          : orgaoAtivo && descartadosOrgao > 0
+            ? `Nenhum edital aberto de "${orgaoAtivo}"${termo ? ` para "${termo}"` : ''} neste momento. O PNCP devolveu ${descartadosOrgao} edital${descartadosOrgao > 1 ? 'is' : ''} de outros compradores, que foram descartados. Confira a grafia do órgão — ou use o CNPJ, que não tem homônimo.`
+          : orgaoAtivo
+            ? `Nenhum edital aberto de "${orgaoAtivo}" no momento. Se o nome estiver certo, é porque esse órgão não tem licitação com proposta em aberto agora.`
           : encontrados.length > 0
             ? 'Nenhuma licitação ativa encontrada. Os editais encontrados já encerraram o prazo de propostas.'
             : termo
@@ -507,10 +590,15 @@ export default function PncpSearch({
    * em vez de apenas recortar os dados já listados. Termo vazio é válido
    * (lista todos os editais vigentes do escopo).
    */
-  const autoSearchOnFilter = (ufVal: string, munId: string, munNome: string) => {
+  const autoSearchOnFilter = (
+    ufVal: string,
+    munId: string,
+    munNome: string,
+    orgaoVal: string = orgaoFiltro,
+  ) => {
     const t = searchTerm.trim();
     if (t.length === 0 || t.length >= 3) {
-      runSearch(searchTerm, ufVal, munId, munNome);
+      runSearch(searchTerm, ufVal, munId, munNome, orgaoVal);
     }
   };
 
@@ -769,57 +857,108 @@ export default function PncpSearch({
               <Radar className="h-3.5 w-3.5" />
               Radar PNCP · Decidir com a Bawzi
             </div>
+            {/* ⚠️ O TÍTULO ERA UMA FRASE, E A FRASE REPETIA O SELO.
+                O selo já diz "Radar PNCP · Decidir com a Bawzi" e o `<h2>` dizia
+                "Busque oportunidades abertas e decida se vale participar" — a
+                mesma promessa, duas vezes, uma embaixo da outra.
+                E o subtítulo era o manual do formulário logo abaixo ("pesquise
+                por segmento, estreite por UF, cidade e órgão"), que tem campos
+                rotulados dizendo exatamente isso. Fui eu que escrevi essa linha
+                ao acrescentar o filtro de órgão; fazia sentido como correção
+                naquele dia e virou instrução relida todo dia depois. */}
             <h2 className="text-xl font-black tracking-tight text-slate-950 md:text-2xl">
-              Busque oportunidades abertas e decida se vale participar.
+              Editais abertos no PNCP
             </h2>
-            <p className="mt-1.5 max-w-2xl text-[13px] font-medium leading-relaxed text-slate-500">
-              Pesquise por segmento, órgão, cidade ou palavra-chave — ou deixe vazio para varrer todos os editais.
-            </p>
-          </div>
 
-          <div className="flex shrink-0 flex-wrap items-stretch gap-2 md:max-w-[360px] md:justify-end">
-            {contextCompanies.length > 0 && (
-              <ActiveContextSwitcher
-                companies={contextCompanies}
-                activeCnpj={activeCnpj}
-                label="Empresa analisada"
-                compact
-                onChange={onActiveCnpjChange}
-                className="min-w-[240px] border-emerald-100 bg-white/90 shadow-sm"
-              />
-            )}
-            <PncpStatusBadge />
-            {detectedUf && !uf && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-3 py-1.5 text-[10px] font-black uppercase text-sky-700">
+            {/* ⚠️ O CONTEXTO ERA UMA PILHA DE TRÊS SELOS SOLTOS: "Empresa
+                analisada", o estado do PNCP e "UF detectada". Dois deles
+                respondem à mesma pergunta — para quem e onde é esta busca — e o
+                terceiro é saúde de sistema, coisa completamente diferente.
+                Agora os dois primeiros formam UMA frase de estado, e o estado
+                do PNCP fica sozinho do outro lado, que é o lugar de infra.
+
+                ⚠️ E O SELETOR DE EMPRESA SÓ APARECE QUANDO HÁ O QUE TROCAR.
+                Com uma empresa só — o caso da maioria — o `ActiveContextSwitcher`
+                renderiza um `<p>` estático dentro de um cartão com borda, rótulo
+                em caixa alta e 240px de largura mínima. Um controle inteiro de
+                moldura para exibir um nome que cabe em duas palavras. */}
+            <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] font-medium text-slate-500">
+              <span>Buscando para</span>
+              {contextCompanies.length > 1 ? (
+                <ActiveContextSwitcher
+                  companies={contextCompanies}
+                  activeCnpj={activeCnpj}
+                  label="Empresa analisada"
+                  compact
+                  onChange={onActiveCnpjChange}
+                  className="min-w-[220px] border-emerald-100 bg-white/90 shadow-sm"
+                />
+              ) : (
+                <strong className="font-black text-slate-800">
+                  {getCompanyDisplayName(empresaAtiva) || 'sua empresa'}
+                </strong>
+              )}
+              {detectedUf && !uf && editandoUf && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-black uppercase text-sky-700">
+                  <MapPin size={12} className="shrink-0" />
+                  <select
+                    autoFocus
+                    value={detectedUf}
+                    aria-label="Corrigir a UF detectada"
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setEditandoUf(false);
+                      if (v === 'AUTO') {
+                        localStorage.removeItem('bawzi_uf_override');
+                        window.location.reload();
+                        return;
+                      }
+                      setDetectedUf(v);
+                      localStorage.setItem('bawzi_uf_override', v);
+                    }}
+                    onBlur={() => setEditandoUf(false)}
+                    className="cursor-pointer rounded-md border-none bg-transparent py-0.5 pr-1 text-[10px] font-black uppercase text-sky-700 outline-none"
+                  >
+                    {UFS.map((u) => (
+                      <option key={u.sigla} value={u.sigla}>{u.sigla} — {u.nome}</option>
+                    ))}
+                    <option value="AUTO">Voltar ao automático</option>
+                  </select>
+                </span>
+              )}
+              {detectedUf && !uf && !editandoUf && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-sky-100 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase text-sky-700">
                 <MapPin size={12} />
-                UF detectada: {detectedUf}
+                {detectedUf}
+                {/* ⚠️ AQUI HAVIA UM `prompt()` NATIVO. Ele pedia a sigla por
+                    digitação, e três coisas davam errado: o diálogo TRAVA a
+                    página inteira enquanto está aberto, alguns navegadores o
+                    bloqueiam sem aviso nenhum (o clique simplesmente não faz
+                    nada), e digitar algo que não tivesse exatamente 2 letras
+                    era descartado em silêncio — sem erro, sem nada, a UF
+                    continuava a mesma e a pessoa não sabia por quê.
+                    Um seletor com as 27 siglas não tem como receber entrada
+                    inválida, e "Automático" vira uma opção da lista em vez de
+                    uma palavra secreta que só o `prompt` ensinava. */}
                 <button
                   type="button"
-                  title="Clique para corrigir a UF detectada (a correção fica salva)"
-                  onClick={() => {
-                    const nova = prompt(
-                      `UF detectada como "${detectedUf}".\n` +
-                      `Digite a sigla correta (ex: GO, SP, RJ) — a correção fica salva.\n` +
-                      `Digite AUTO para voltar à detecção automática.`
-                    );
-                    if (!nova) return;
-                    const sig = nova.trim().toUpperCase();
-                    if (sig === 'AUTO') {
-                      localStorage.removeItem('bawzi_uf_override');
-                      window.location.reload();
-                      return;
-                    }
-                    if (sig.length === 2) {
-                      setDetectedUf(sig);
-                      localStorage.setItem('bawzi_uf_override', sig);
-                    }
-                  }}
-                  className="ml-1 text-sky-400 hover:text-sky-700 transition-colors"
+                  title="Corrigir a UF detectada"
+                  aria-label="Corrigir a UF detectada"
+                  onClick={() => setEditandoUf(true)}
+                  className="ml-1 text-sky-400 transition-colors hover:text-sky-700"
                 >
                   ✎
                 </button>
               </span>
-            )}
+              )}
+            </p>
+          </div>
+
+          {/* Saúde do sistema, sozinha do outro lado. É a única coisa aqui que
+              não fala sobre a busca — misturá-la com empresa e UF fazia as três
+              parecerem do mesmo tipo. */}
+          <div className="shrink-0">
+            <PncpStatusBadge />
           </div>
         </div>
       </div>
@@ -843,7 +982,7 @@ export default function PncpSearch({
               type="text" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Busque por termos, materiais ou serviços — ou deixe vazio para ver todos os editais vigentes"
+              placeholder="O que você fornece: material, serviço ou segmento"
               className="block w-full h-full pl-11 pr-4 bg-transparent border-none text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-0 sm:text-sm"
             />
           </div>
@@ -864,33 +1003,9 @@ export default function PncpSearch({
               className="appearance-none block w-full h-full pl-4 pr-10 bg-transparent border-none text-slate-700 font-medium focus:outline-none focus:ring-0 sm:text-sm cursor-pointer"
             >
               <option value="">Brasil (Todos)</option>
-              <option value="AC">Acre</option>
-              <option value="AL">Alagoas</option>
-              <option value="AP">Amapá</option>
-              <option value="AM">Amazonas</option>
-              <option value="BA">Bahia</option>
-              <option value="CE">Ceará</option>
-              <option value="DF">Distrito Federal</option>
-              <option value="ES">Espírito Santo</option>
-              <option value="GO">Goiás</option>
-              <option value="MA">Maranhão</option>
-              <option value="MT">Mato Grosso</option>
-              <option value="MS">Mato Grosso do Sul</option>
-              <option value="MG">Minas Gerais</option>
-              <option value="PA">Pará</option>
-              <option value="PB">Paraíba</option>
-              <option value="PR">Paraná</option>
-              <option value="PE">Pernambuco</option>
-              <option value="PI">Piauí</option>
-              <option value="RJ">Rio de Janeiro</option>
-              <option value="RN">Rio Grande do Norte</option>
-              <option value="RS">Rio Grande do Sul</option>
-              <option value="RO">Rondônia</option>
-              <option value="RR">Roraima</option>
-              <option value="SC">Santa Catarina</option>
-              <option value="SP">São Paulo</option>
-              <option value="SE">Sergipe</option>
-              <option value="TO">Tocantins</option>
+              {UFS.map((u) => (
+                <option key={u.sigla} value={u.sigla}>{u.nome}</option>
+              ))}
             </select>
             <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
               <span className="text-slate-400 text-xs">▼</span>
@@ -926,6 +1041,7 @@ export default function PncpSearch({
             )}
           </div>
 
+
           <button 
             onClick={handleSearch}
             disabled={isSearching}
@@ -950,21 +1066,116 @@ export default function PncpSearch({
           </button>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="flex items-center gap-2.5 cursor-pointer group min-w-0">
-            <div className="relative flex items-center justify-center">
-              <input
-                type="checkbox"
-                checked={forceExact}
-                onChange={(e) => setForceExact(e.target.checked)}
-                className="peer sr-only"
-              />
-              <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
-            </div>
-            <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors">
-              Busca exata <span className="opacity-60">— só o termo digitado, sem variações</span>
+        {/* ── Filtro avançado: órgão comprador ──────────────────────────────
+            Escondido por padrão porque a busca comum é por segmento, e um
+            quarto campo permanente pesava na linha principal sem ser usado na
+            maioria das vezes.
+
+            ⚠️ ESCONDER FILTRO ATIVO É COMO SE PERDE A CONFIANÇA NO RESULTADO.
+            Duas travas para isso não acontecer: o painel abre sozinho quando
+            há órgão aplicado (`abrirSeAtivo`, abaixo), e o selo verde logo
+            após o formulário continua visível mesmo com o painel fechado. Se
+            um dia um dos dois sair, o usuário passa a ver uma lista recortada
+            sem nada em tela dizendo por quê. */}
+        {filtrosAbertos && (
+          <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 sm:flex-row sm:items-center animate-in fade-in slide-in-from-top-1">
+            <span className="shrink-0 text-[11px] font-black uppercase tracking-wider text-slate-400">
+              Órgão comprador
             </span>
-          </label>
+            <div className="h-12 flex-1 rounded-xl border border-slate-200 bg-white transition-all focus-within:border-emerald-300 focus-within:ring-4 focus-within:ring-emerald-500/10 sm:max-w-sm">
+              <OrgaoAutocomplete
+                value={orgaoFiltro}
+                uf={uf}
+                apiUrl={API_URL}
+                onCommit={(valor) => {
+                  setOrgaoFiltro(valor);
+                  autoSearchOnFilter(uf, municipioId, municipioNome, valor);
+                }}
+                onClear={() => {
+                  const tinhaOrgao = !!orgaoFiltro;
+                  setOrgaoFiltro('');
+                  setOrgaoDescartados(0);
+                  if (tinhaOrgao) autoSearchOnFilter(uf, municipioId, municipioNome, '');
+                }}
+                placeholder="Nome do órgão ou CNPJ..."
+                className="h-full"
+              />
+            </div>
+            <span className="text-[11px] font-medium leading-snug text-slate-400">
+              Traz só editais deste comprador. O CNPJ não tem homônimo.
+            </span>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* O gatilho do tooltip é IRMÃO do <label>, não filho: dentro dele,
+              clicar na interrogação alternaria o próprio checkbox que ela
+              explica. */}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <label className="flex items-center gap-2.5 cursor-pointer group min-w-0">
+              <div className="relative flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={forceExact}
+                  onChange={(e) => setForceExact(e.target.checked)}
+                  className="peer sr-only"
+                />
+                <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
+              </div>
+              <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors">
+                Busca exata <span className="opacity-60">— só o termo digitado, sem variações</span>
+              </span>
+            </label>
+
+            {/* ⚠️ CADA AFIRMAÇÃO AQUI SAI DO CÓDIGO, não da intenção do rótulo:
+                · o corte em 3 palavras e a lista de prefixos estão em
+                  `otimizar_termo_pncp` (editais.py:776-801);
+                · o retorno antecipado `if len(...split()) <= 2` é o que faz o
+                  botão não mudar NADA em termo curto — sem dizer isso, quem
+                  liga numa busca de uma palavra vê resultado idêntico e conclui
+                  que a função está quebrada;
+                · a repescagem com o termo original só roda `if not
+                  force_exact` (router_pncp.py), então ligar custa essa rede. */}
+            <Tooltip rotulo="Busca exata">
+              <strong className="mb-1.5 block text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                Desligada (padrão)
+              </strong>
+              A Bawzi limpa o que você digitou antes de consultar o PNCP: descarta
+              começos burocráticos como “aquisição de” ou “registro de preços para”
+              e mantém <strong className="text-white">no máximo 3 palavras</strong>.
+              Se não achar nada assim, tenta de novo com a frase inteira.
+              <strong className="mb-1.5 mt-3 block text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                Ligada
+              </strong>
+              Vai ao PNCP exatamente o que você escreveu. Use quando a limpeza
+              estiver comendo o essencial — “software de gestão de frotas
+              municipais” vira <em className="text-slate-400">“software de gestão”</em>{' '}
+              com ela desligada, e aí some justamente “frotas”.
+              <span className="mt-3 block border-t border-slate-700 pt-2 text-slate-400">
+                Com 1 ou 2 palavras não muda nada: a limpeza nem chega a rodar.
+                E, ligada, você perde a segunda tentativa automática — se o termo
+                não achar, a lista volta vazia.
+              </span>
+            </Tooltip>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFiltrosAbertos((v) => !v)}
+            aria-expanded={filtrosAbertos}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-black transition-all ${
+              orgaoFiltro
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+            }`}
+          >
+            <SlidersHorizontal size={12} />
+            {filtrosAbertos ? 'Menos filtros' : 'Mais filtros'}
+            {orgaoFiltro && !filtrosAbertos && (
+              <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500" aria-label="filtro ativo" />
+            )}
+          </button>
 
           {/* Botão de análise em lote — lado direito da barra */}
           <button
@@ -978,8 +1189,38 @@ export default function PncpSearch({
           >
             {bulkMode ? <><X size={12} /> Cancelar lote</> : <><Layers size={12} /> Analisar em lote</>}
           </button>
+          </div>
         </div>
       </form>
+
+      {/* Selo do filtro de órgão — FORA do bloco de resultados de propósito.
+          O aviso de filtro regional mora dentro de `results.length > 0`, e por
+          isso some justamente quando a busca volta vazia — que é o momento em
+          que saber qual filtro está ligado importa mais. */}
+      {orgaoFiltro && (
+        <div className="mx-5 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 md:mx-6 relative z-10">
+          <Landmark size={15} className="shrink-0 text-emerald-600" />
+          <span className="min-w-0 text-[11px] font-black uppercase tracking-wider text-emerald-900">
+            Só deste órgão: <span className="normal-case">{orgaoFiltro}</span>
+          </span>
+          {orgaoDescartados > 0 && (
+            <span className="text-[11px] font-medium text-emerald-800/70">
+              · {orgaoDescartados} de outros compradores {orgaoDescartados > 1 ? 'descartados' : 'descartado'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setOrgaoFiltro('');
+              setOrgaoDescartados(0);
+              autoSearchOnFilter(uf, municipioId, municipioNome, '');
+            }}
+            className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+          >
+            <X size={12} /> Remover
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2 relative z-10">
@@ -1115,7 +1356,7 @@ export default function PncpSearch({
       )}
 
       {results.length > 0 && (
-        <div className="space-y-4 max-h-[500px] md:max-h-[60vh] overflow-y-auto pl-5 pr-4 md:pl-6 md:pr-5 pb-8 custom-scrollbar relative z-10">
+        <div className="space-y-4 max-h-[500px] md:max-h-[60dvh] overflow-y-auto pl-5 pr-4 md:pl-6 md:pr-5 pb-8 custom-scrollbar relative z-10">
           {/* `pr-3` sozinho era espaçamento SÓ à direita: os cards encostavam
               na borda do painel de um lado e respiravam do outro. A direita
               fica um pouco menor que a esquerda de propósito — a barra de

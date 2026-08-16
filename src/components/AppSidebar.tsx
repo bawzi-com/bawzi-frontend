@@ -2,25 +2,43 @@
 
 /**
  * AppSidebar.tsx
- * Sidebar direita do painel de análise: navegação principal (Radar PNCP,
- * Decisões, Oportunidades, Renovações, Capital), identidade estratégica e motor de IA.
+ * Barra lateral do painel: navegação primária, contexto ativo e conta.
  *
- * Design: todos os nav items seguem o mesmo template —
- *   [ícone 36px] [label + subtitle] [badge]
- * Estado ativo: fundo sólido na cor da secção, texto branco, dot indicator.
- * Estado inactivo: hover subtil, ícone colorido, badge de feature.
- * Estado bloqueado: opacity-60, ícone lock, badge "NÍV. X".
+ * Template de todo item: [ícone 36px] [rótulo + descrição] [selo].
+ *   · ativo   — fundo sólido no acento da seção, texto branco, ponto branco.
+ *   · inativo — NEUTRO. Cinza. Sem cor.
+ *   · travado — linha compacta com cadeado, agrupada fora da nav.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ POR QUE O ESTADO INATIVO PERDEU A COR
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Cada item tinha o seu próprio matiz no ícone E no selo, o tempo todo:
+ * verde, azul, índigo, ardósia, violeta, verde-água, âmbar. Sete matizes
+ * acesos ao mesmo tempo numa coluna de sete linhas. O problema não é feiura —
+ * é que o estado ATIVO também é uma cor, e ele tinha que se distinguir de um
+ * fundo que já era colorido inteiro. Com o inativo em cinza, existe uma cor só
+ * na barra a cada instante, e ela é exatamente a que diz onde você está.
+ *
+ * O acento por seção continua vivo no estado ativo — ali ele é orientação, e
+ * só um aparece por vez.
+ *
+ * ⚠️ E POR QUE ISTO VIROU UM COMPONENTE SÓ (`NavRow`)
+ * Havia sete blocos de ~25 linhas quase idênticos, copiados um do outro. Foi
+ * essa cópia que deixou "NOVO" sair em três cores diferentes e "IA" em duas:
+ * ninguém compara sete blocos distantes para conferir se combinam. Um
+ * componente com props não tem como divergir de si mesmo.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
-  ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown,
+  ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown, UserCog, FolderOpen,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import UserProfileCard from './UserProfileCard';
+import ActiveContextSwitcher from './ActiveContextSwitcher';
 import NotificationPanel from './NotificationPanel';
+import { getCompanyDisplayName } from '@/lib/activeContext';
 import type { UserData } from '@/lib/types';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
@@ -37,46 +55,118 @@ interface AppSidebarProps {
 
 // ─── Componentes internos ──────────────────────────────────────────────────────
 
-/** Badge padronizado de feature (estado inativo) */
-function FeatureBadge({
-  label,
-  color = 'slate',
-}: {
-  label: string;
-  color?: 'slate' | 'teal' | 'emerald' | 'amber' | 'blue' | 'sky' | 'violet' | 'indigo';
-}) {
-  const styles: Record<string, string> = {
-    slate:  'bg-slate-100  text-slate-600  border-slate-200',
-    teal:   'bg-teal-50    text-teal-700   border-teal-200',
-    emerald:'bg-emerald-50 text-emerald-700 border-emerald-200',
-    amber:  'bg-amber-50   text-amber-700  border-amber-200',
-    blue:   'bg-blue-50    text-blue-700   border-blue-200',
-    sky:    'bg-sky-50     text-sky-700    border-sky-200',
-    violet: 'bg-violet-50  text-violet-700 border-violet-200',
-    indigo: 'bg-indigo-50  text-indigo-700 border-indigo-200',
-  };
-  return (
-    <span className={`shrink-0 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${styles[color]}`}>
-      {label}
-    </span>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+ * SELOS — DUAS ESPÉCIES, NÃO SETE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ⚠️ O QUE HAVIA: nove linhas de menu, nove selos, sete matizes. "NOVO" saía
+ * em violeta no Priorizar, âmbar no Monitor e azul no Capital — três cores
+ * para a mesma palavra. "IA" saía em verde no Radar e índigo na Parametrização
+ * — mesma palavra, duas cores, e nenhuma delas queria dizer nada de diferente.
+ *
+ * O custo não é estético. Selo em navegação significa UMA de duas coisas:
+ * «tem trabalho parado esperando você» (contagem) ou «isto apareceu depois da
+ * última vez que você olhou» (novidade). "SALVO", "EXEC.", "CNAE" e "ATIVO"
+ * não eram nem uma nem outra — eram etiquetas de categoria, que não pedem nada
+ * de ninguém e repetem o que o subtítulo da linha já diz.
+ *
+ * E quando seis de sete linhas vêm marcadas, marca nenhuma chama: o "600" de
+ * Renovações — o único número acionável da barra inteira — disputava atenção
+ * com quatro adesivos decorativos.
+ *
+ * Ficaram duas espécies. Nada mais entra aqui sem ser uma delas.
+ */
 
-/** Indicador de activo (dot branco) */
+/** Até quando cada destino tem direito de se anunciar como novo.
+ *
+ *  ⚠️ SELO DE NOVIDADE PRECISA DE VALIDADE. Sem data, "NOVO" fica para sempre,
+ *  e um aviso permanente é um aviso que ninguém mais lê — o Monitor já
+ *  carregava o dele desde que nasceu. Estender é editar a data aqui; não
+ *  existe caminho que renove sozinho, e é essa a graça.
+ */
+const NOVIDADE_ATE: Record<string, string> = {
+  alertas:  '2026-10-31',  // Monitor
+  comparar: '2026-10-31',  // Priorizar
+  capital:  '2026-12-31',
+};
+
+/** Indicador de ativo (ponto branco sobre o acento da seção) */
 function ActiveDot() {
   return <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-white opacity-80" />;
 }
 
-/** Badge de contagem (ex: Renovações com N contratos) */
-function CountBadge({ count, color = 'amber' }: { count: number; color?: 'amber' | 'teal' }) {
-  const styles: Record<string, string> = {
-    amber: 'bg-white text-amber-600',
-    teal:  'bg-white text-teal-600',
-  };
+/** Contagem — trabalho parado esperando alguém. O único selo com direito de
+ *  competir com o rótulo por atenção. */
+function SeloContagem({ count }: { count: number }) {
   return (
-    <span className={`shrink-0 text-[11px] font-black px-2 py-0.5 rounded-full shadow-sm ${styles[color]}`}>
-      {count}
+    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-black tabular-nums text-amber-800">
+      {count > 99 ? '99+' : count}
     </span>
+  );
+}
+
+/** Novidade — uma cor só, e com prazo. */
+function SeloNovo() {
+  return (
+    <span className="shrink-0 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-violet-700">
+      Novo
+    </span>
+  );
+}
+
+/** Acento de cada seção — usado SÓ no estado ativo. */
+type Acento = 'emerald' | 'sky' | 'indigo' | 'slate' | 'violet' | 'teal' | 'amber';
+const FUNDO_ATIVO: Record<Acento, string> = {
+  emerald: 'bg-emerald-600',
+  sky:     'bg-sky-600',
+  indigo:  'bg-indigo-600',
+  slate:   'bg-slate-900',
+  violet:  'bg-violet-600',
+  teal:    'bg-teal-600',
+  amber:   'bg-amber-600',
+};
+
+/** A linha de navegação. Uma só, para os sete destinos.
+ *
+ *  ⚠️ TUDO AQUI DENTRO É `<span>`, e não `<div>`/`<p>`. Um `<button>` só aceita
+ *  conteúdo de frase; os blocos originais punham `<div>` e `<p>` dentro do
+ *  botão, o que é HTML inválido — o navegador perdoa, mas leitor de tela e
+ *  hidratação do React não têm por que perdoar junto.
+ */
+function NavRow({
+  Icon, rotulo, descricao, ativo, acento, onClick, selo,
+}: {
+  Icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
+  rotulo: string;
+  descricao: string;
+  ativo: boolean;
+  acento: Acento;
+  onClick: () => void;
+  selo?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-current={ativo ? 'page' : undefined}
+      className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left transition-colors ${
+        ativo ? FUNDO_ATIVO[acento] : 'hover:bg-slate-100'
+      }`}
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+        ativo ? 'bg-white/15' : 'border border-slate-200 bg-slate-50'
+      }`}>
+        <Icon size={16} strokeWidth={2.2} className={ativo ? 'text-white' : 'text-slate-500'} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={`block text-[13px] font-black leading-none ${ativo ? 'text-white' : 'text-slate-800'}`}>
+          {rotulo}
+        </span>
+        <span className={`mt-1 block truncate text-[10px] font-medium leading-none ${ativo ? 'text-white/60' : 'text-slate-400'}`}>
+          {descricao}
+        </span>
+      </span>
+      {ativo ? <ActiveDot /> : selo}
+    </button>
   );
 }
 
@@ -116,6 +206,24 @@ export default function AppSidebar({
 
   const isAnalise = activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes';
 
+  // ⚠️ A DATA SÓ É LIDA DEPOIS DE MONTAR. Estas páginas são pré-renderizadas
+  // no build (`○ Static`); comparar `new Date()` durante a renderização faria
+  // o HTML gerado na compilação discordar do que o navegador calcula meses
+  // depois — e discordância de HTML entre servidor e cliente é erro de
+  // hidratação, não detalhe. Antes de montar, nenhum "Novo" aparece: é um
+  // quadro de atraso num selo decorativo, contra uma classe inteira de bug.
+  const [agora, setAgora] = useState<number | null>(null);
+  useEffect(() => { setAgora(Date.now()); }, []);
+  const seloNovo = (chave: string) => {
+    const ate = NOVIDADE_ATE[chave];
+    if (!ate || agora === null) return undefined;
+    return agora < new Date(`${ate}T23:59:59`).getTime() ? <SeloNovo /> : undefined;
+  };
+
+  const empresas = userData?.companies?.length
+    ? userData.companies
+    : userData?.company ? [userData.company] : [];
+
   return (
     <div className="flex flex-col gap-5 sticky top-28 print:hidden">
 
@@ -144,261 +252,119 @@ export default function AppSidebar({
           </>
         )}
 
-        {/* ── Radar PNCP ────────────────────────────────── */}
-        <button
+        <NavRow
+          Icon={Zap} rotulo="Analisar" descricao="Buscar no PNCP ou enviar o seu"
+          ativo={isAnalise} acento="emerald"
           onClick={() => onSetActiveTab('workspace')}
-          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-            isAnalise ? 'bg-emerald-600' : 'hover:bg-emerald-50'
-          }`}
-        >
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-            isAnalise ? 'bg-white/15' : 'bg-emerald-50 border border-emerald-100'
-          }`}>
-            <Zap size={16} className={isAnalise ? 'text-white fill-white' : 'text-emerald-600'} strokeWidth={2.5} />
-          </div>
-          <div className="flex-1 text-left min-w-0">
-            <p className={`text-[13px] font-black leading-none mb-1 ${isAnalise ? 'text-white' : 'text-slate-800'}`}>
-              Radar PNCP
-            </p>
-            <p className={`text-[10px] font-medium leading-none ${isAnalise ? 'text-white/60' : 'text-slate-400'}`}>
-              Encontrar e decidir
-            </p>
-          </div>
-          {isAnalise ? <ActiveDot /> : <FeatureBadge label="IA" color="emerald" />}
-        </button>
+        />
 
-        {/* ── Histórico ──────────────────────────────────── */}
         {/* Sem nível: roda sobre análises que o cliente já pagou. */}
         {token && (
-          <button
+          <NavRow
+            Icon={BookOpen} rotulo="Decisões" descricao="Laudos e resultados salvos"
+            ativo={activeTab === 'history'} acento="sky"
             onClick={() => onSetActiveTab('history')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'history' ? 'bg-sky-600' : 'hover:bg-sky-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'history' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
-            }`}>
-              <BookOpen size={16} className={activeTab === 'history' ? 'text-white' : 'text-sky-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'history' ? 'text-white' : 'text-slate-800'}`}>
-                Decisões
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'history' ? 'text-white/60' : 'text-slate-400'}`}>
-                Laudos e resultados salvos
-              </p>
-            </div>
-            {activeTab === 'history' ? <ActiveDot /> : <FeatureBadge label="SALVO" color="sky" />}
-          </button>
+          />
         )}
 
-        {/* ── Parametrização ────────────────────────────── */}
         {token && (
-          <button
+          <NavRow
+            Icon={SlidersHorizontal} rotulo="Parametrização" descricao="Critérios de avaliação por IA"
+            ativo={activeTab === 'parametrizacao'} acento="indigo"
             onClick={() => onSetActiveTab('parametrizacao')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'parametrizacao' ? 'bg-indigo-600' : 'hover:bg-indigo-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'parametrizacao' ? 'bg-white/15' : 'bg-indigo-50 border border-indigo-100'
-            }`}>
-              <SlidersHorizontal size={16} className={activeTab === 'parametrizacao' ? 'text-white' : 'text-indigo-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'parametrizacao' ? 'text-white' : 'text-slate-800'}`}>
-                Parametrização
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'parametrizacao' ? 'text-white/60' : 'text-slate-400'}`}>
-                Critérios de avaliação por IA
-              </p>
-            </div>
-            {activeTab === 'parametrizacao' ? <ActiveDot /> : <FeatureBadge label="IA" color="indigo" />}
-          </button>
+          />
         )}
 
-        {/* ── Gestão de execução ─────────────────────────── */}
         {/* Sem nível. Estava exigindo 4 aqui e 2 na aba — o usuário do
             Essencial tinha a funcionalidade e não tinha como chegar nela. */}
         {token && (
-          <button
+          <NavRow
+            Icon={ClipboardList} rotulo="Gestão" descricao="Fluxo dos editais"
+            ativo={activeTab === 'gestao'} acento="slate"
             onClick={() => router.push('/gestao')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'gestao' ? 'bg-slate-900' : 'hover:bg-slate-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'gestao' ? 'bg-white/15' : 'bg-slate-50 border border-slate-200'
-            }`}>
-              <ClipboardList size={16} className={activeTab === 'gestao' ? 'text-white' : 'text-slate-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'gestao' ? 'text-white' : 'text-slate-800'}`}>
-                Gestão
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'gestao' ? 'text-white/60' : 'text-slate-400'}`}>
-                Fluxo dos editais
-              </p>
-            </div>
-            {activeTab === 'gestao' ? <ActiveDot /> : <FeatureBadge label="EXEC." color="slate" />}
-          </button>
+          />
         )}
 
-        {/* ── Comparar editais ───────────────────────────── */}
-        {/* Sem nível: comparação entre laudos já pagos. */}
-        {/* Fora da sidebar no lançamento (LAUNCH_FLAGS): a comparação vive
-            como botão dentro de Decisões/Histórico, onde os laudos já estão. */}
-        {LAUNCH_FLAGS.compararNaSidebar && token && (
-          <button
-            onClick={() => onSetActiveTab('comparar')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'comparar' ? 'bg-violet-600' : 'hover:bg-violet-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'comparar' ? 'bg-white/15' : 'bg-violet-50 border border-violet-100'
-            }`}>
-              <GitCompare size={16} className={activeTab === 'comparar' ? 'text-white' : 'text-violet-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'comparar' ? 'text-white' : 'text-slate-800'}`}>
-                Priorizar
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'comparar' ? 'text-white/60' : 'text-slate-400'}`}>
-                Escolha o melhor edital
-              </p>
-            </div>
-            {activeTab === 'comparar' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="violet" />}
-          </button>
-        )}
-
-        {/* ── Oportunidades — Feed CNAE (autenticados) ────── */}
-        {/* Sem nível: PNCP é API pública e a rota tem cache. Continua
-            exigindo `userData` porque o fit depende do CNAE da empresa. */}
+        {/* ── Meus contratos ──────────────────────────────────────────────
+            ⚠️ NÃO É O MESMO QUE "VENCENDO NO MERCADO". Aquele busca por termo
+            de segmento e devolve contratos de QUALQUER fornecedor — prospecção.
+            Este filtra pelo CNPJ da empresa como FORNECEDORA: é a carteira. Os
+            dois falavam de "contrato" e o antigo se chamava "Renovações", o que
+            fazia a linha de prospecção parecer a carteira própria. */}
         {token && userData && (
-          <button
+          <NavRow
+            Icon={FolderOpen} rotulo="Meus contratos" descricao="Carteira da sua empresa"
+            ativo={activeTab === 'meus-contratos'} acento="emerald"
+            onClick={() => onSetActiveTab('meus-contratos')}
+          />
+        )}
+
+        {/* Sem nível: comparação entre laudos já pagos. Fora da barra no
+            lançamento (LAUNCH_FLAGS) — a comparação vive como botão dentro de
+            Decisões, onde os laudos já estão. */}
+        {LAUNCH_FLAGS.compararNaSidebar && token && (
+          <NavRow
+            Icon={GitCompare} rotulo="Priorizar" descricao="Escolha o melhor edital"
+            ativo={activeTab === 'comparar'} acento="violet"
+            onClick={() => onSetActiveTab('comparar')}
+            selo={seloNovo('comparar')}
+          />
+        )}
+
+        {/* Sem nível: PNCP é API pública e a rota tem cache. Continua exigindo
+            `userData` porque o fit depende do CNAE da empresa. */}
+        {token && userData && (
+          <NavRow
+            Icon={Target} rotulo="Sugestões" descricao="O que combina com seu CNAE"
+            ativo={activeTab === 'cnae'} acento="teal"
             onClick={() => onSetActiveTab('cnae')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === 'cnae' ? 'bg-teal-600' : 'hover:bg-teal-50'
-            }`}
-          >
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-              activeTab === 'cnae' ? 'bg-white/15' : 'bg-teal-50 border border-teal-100'
-            }`}>
-              <Target size={16} className={activeTab === 'cnae' ? 'text-white' : 'text-teal-600'} />
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'cnae' ? 'text-white' : 'text-slate-800'}`}>
-                Oportunidades
-              </p>
-              <p className={`text-[10px] font-medium leading-none ${activeTab === 'cnae' ? 'text-white/60' : 'text-slate-400'}`}>
-                Match CNAE e perfil
-              </p>
-            </div>
-            {activeTab === 'cnae' ? <ActiveDot /> : <FeatureBadge label="CNAE" color="teal" />}
-          </button>
+          />
         )}
 
-        {/* ── Monitor inteligente (NÍV. 3) ────────────────── */}
         {token && currentTier >= 3 && (
-            <button
-              onClick={() => onSetActiveTab('alertas')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'alertas' ? 'bg-amber-600' : 'hover:bg-amber-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'alertas' ? 'bg-white/15' : 'bg-amber-50 border border-amber-100'
-              }`}>
-                <Bell size={16} className={activeTab === 'alertas' ? 'text-white' : 'text-amber-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'alertas' ? 'text-white' : 'text-slate-800'}`}>
-                  Monitor
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'alertas' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Sinais críticos PNCP
-                </p>
-              </div>
-              {activeTab !== 'alertas' && <FeatureBadge label="NOVO" color="amber" />}
-            </button>
+          <NavRow
+            Icon={Bell} rotulo="Alertas" descricao="Avisos sobre o que você segue"
+            ativo={activeTab === 'alertas'} acento="amber"
+            onClick={() => onSetActiveTab('alertas')}
+            selo={seloNovo('alertas')}
+          />
         )}
 
-        {/* ── Capital / fôlego financeiro (NÍV. 3) ────────── */}
         {/* Atrás de flag no lançamento: integração bancária é aposta pós-PMF. */}
         {LAUNCH_FLAGS.capital && token && currentTier >= 3 && (
-            <button
-              onClick={() => onSetActiveTab('capital')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'capital' ? 'bg-sky-600' : 'hover:bg-sky-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'capital' ? 'bg-white/15' : 'bg-sky-50 border border-sky-100'
-              }`}>
-                <DollarSign size={16} className={activeTab === 'capital' ? 'text-white' : 'text-sky-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'capital' ? 'text-white' : 'text-slate-800'}`}>
-                  Capital
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'capital' ? 'text-white/60' : 'text-slate-400'}`}>
-                  Fôlego para executar
-                </p>
-              </div>
-              {activeTab === 'capital' ? <ActiveDot /> : <FeatureBadge label="NOVO" color="sky" />}
-            </button>
+          <NavRow
+            Icon={DollarSign} rotulo="Capital" descricao="Fôlego para executar"
+            ativo={activeTab === 'capital'} acento="sky"
+            onClick={() => onSetActiveTab('capital')}
+            selo={seloNovo('capital')}
+          />
         )}
 
-        {/* ── Renovações (NÍV. 4) ─────────────────────────── */}
         {/* Sem nível: `contratos_vencendo.py` não chama modelo nenhum. A
-            exigência real é ter empresa cadastrada, e ela continua abaixo. */}
+            exigência real é ter empresa cadastrada — e é ela que decide entre
+            as duas formas abaixo. */}
         {token && userData && (
-          (userData.companies?.length || userData.company) ? (
-            /* Desbloqueado + empresa configurada */
-            <button
+          empresas.length > 0 ? (
+            <NavRow
+              Icon={RefreshCw} rotulo="Vencendo no mercado"
+              descricao={renovacoesCount && renovacoesCount > 0
+                ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} do setor a vencer`
+                : 'Contratos do setor a vencer'}
+              ativo={activeTab === 'renovacoes'} acento="amber"
               onClick={() => onSetActiveTab('renovacoes')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activeTab === 'renovacoes' ? 'bg-amber-500' : 'hover:bg-amber-50'
-              }`}
-            >
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                activeTab === 'renovacoes' ? 'bg-white/15' : 'bg-amber-50 border border-amber-100'
-              }`}>
-                <RefreshCw size={16} className={activeTab === 'renovacoes' ? 'text-white' : 'text-amber-600'} />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className={`text-[13px] font-black leading-none mb-1 ${activeTab === 'renovacoes' ? 'text-white' : 'text-slate-800'}`}>
-                  Renovações
-                </p>
-                <p className={`text-[10px] font-medium leading-none ${activeTab === 'renovacoes' ? 'text-white/60' : 'text-slate-400'}`}>
-                  {renovacoesCount && renovacoesCount > 0
-                    ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} a vencer`
-                    : 'Contratos vencendo'}
-                </p>
-              </div>
-              {activeTab === 'renovacoes'
-                ? <ActiveDot />
-                : renovacoesCount && renovacoesCount > 0
-                  ? <CountBadge count={renovacoesCount} color="amber" />
-                  : <FeatureBadge label="ATIVO" color="amber" />}
-            </button>
+              selo={renovacoesCount && renovacoesCount > 0
+                ? <SeloContagem count={renovacoesCount} />
+                : undefined}
+            />
           ) : (
-            /* Desbloqueado mas sem empresa */
-            <button
+            /* Sem empresa: a linha vira um convite. O selo "CONFIG." saiu — a
+               descrição já É a instrução, e repeti-la em caixa alta no canto
+               não acrescenta nada que a frase não diga melhor. */
+            <NavRow
+              Icon={RefreshCw} rotulo="Vencendo no mercado" descricao="Configure a empresa primeiro"
+              ativo={false} acento="amber"
               onClick={() => router.push('/profile')}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-amber-50"
-            >
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 border border-amber-100">
-                <RefreshCw size={16} className="text-amber-600" />
-              </div>
-              <div className="flex-1 text-left min-w-0">
-                <p className="text-[13px] font-black leading-none mb-1 text-slate-800">Renovações</p>
-                <p className="text-[10px] font-medium leading-none text-slate-400">Configure a empresa primeiro</p>
-              </div>
-              <FeatureBadge label="CONFIG." color="amber" />
-            </button>
+            />
           )
         )}
       </div>
@@ -423,7 +389,7 @@ export default function AppSidebar({
                 então a única exclusividade real do plano de R$ 497 não
                 circulava nem como promessa. */}
             {currentTier < 3 && (
-              <LockedNavRow label="Monitor" tier="NÍV. 3" onClick={() => router.push('/plans')} />
+              <LockedNavRow label="Alertas" tier="NÍV. 3" onClick={() => router.push('/plans')} />
             )}
             {/* Capital fora do lançamento: não se promete cadeado de um módulo
                 que a flag esconde até para quem paga. */}
@@ -437,14 +403,66 @@ export default function AppSidebar({
         </details>
       )}
 
-      {/* ── IDENTIDADE ESTRATÉGICA ────────────────────────────────────────── */}
+      {/* ═══════════════════════════════════════════════════════════════════
+          RODAPÉ — CONTEXTO E CONTA
+          ═══════════════════════════════════════════════════════════════════
+          ⚠️ AQUI HAVIA UM CARTÃO DE 250px CHAMADO "IDENTIDADE ESTRATÉGICA",
+          com avatar de 56px, nome, crachá de nível, e-mail, barra de vagas da
+          equipe e seletor de contexto. Dois problemas.
+
+          O primeiro é de convenção: conta e perfil ficam no RODAPÉ da barra,
+          discretos, atrás de um divisor — não num painel com título próprio no
+          meio da navegação. Nome e avatar já estavam no topo desta mesma
+          coluna; o cartão era a segunda vez.
+
+          O segundo é de destino: "1 de 10 Vagas" e o e-mail não mudam nada no
+          que você está fazendo agora, e a página /profile já tem os dois, com
+          a lista de membros junto. Fato de conta pertence à tela de conta.
+
+          O que ficou é o que É operacional: o CONTEXTO ATIVO decide por qual
+          CNPJ o app inteiro consulta, e trocar de empresa muda a tela toda. */}
       {token && userData ? (
-        <div className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-5 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-            Identidade Estratégica
-          </h3>
-          <UserProfileCard user={userData} currentTier={currentTier} />
+        <div className="flex flex-col gap-2 rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
+          {/* ⚠️ SÓ RENDERIZA QUANDO HÁ O QUE TROCAR. Com uma empresa só — o
+              caso da maioria — o `ActiveContextSwitcher` desenha um `<p>`
+              estático dentro de uma caixa com borda e rótulo em caixa alta:
+              a moldura de um controle inteiro para exibir um nome. Com uma
+              empresa, o nome desce para a linha da conta, como texto. */}
+          {empresas.length > 1 && (
+            <ActiveContextSwitcher
+              companies={empresas}
+              activeCnpj={userData.active_cnpj}
+              label="Contexto ativo"
+              compact
+              className="border-slate-200 bg-slate-50"
+            />
+          )}
+
+          {/* ⚠️ SEM AVATAR E SEM O NOME AQUI. O topo desta mesma coluna já tem
+              os dois, e a primeira versão deste rodapé repetia ambos — "Marcelo"
+              no alto, "Marcelo Mendes" embaixo, na mesma barra de 288px. O que
+              o rodapé precisa carregar é o que o topo NÃO diz: por qual empresa
+              o app está consultando (visível em toda aba, não só no Radar) e o
+              caminho para a conta. */}
+          {empresas.length === 1 && (
+            <div className="px-2.5 pt-1">
+              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+                Contexto ativo
+              </p>
+              <p className="mt-1 truncate text-[12px] font-black text-slate-800">
+                {getCompanyDisplayName(empresas[0])}
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={() => router.push('/profile')}
+            className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[11px] font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          >
+            <UserCog size={13} className="shrink-0 text-slate-400" />
+            Conta e equipe
+            <span className="ml-auto text-[10px] font-medium text-slate-400">Nível {currentTier}</span>
+          </button>
         </div>
       ) : (
         <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center relative overflow-hidden group">
@@ -465,13 +483,19 @@ export default function AppSidebar({
         </div>
       )}
 
-      {/* ── MOTOR DE ANÁLISE — 4 agentes (colapsado por padrão) ───────────── */}
-      <details className="group bg-white rounded-[2rem] border border-slate-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] overflow-hidden">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-4 transition-colors hover:bg-slate-50">
-          <span className="flex h-2 w-2 relative">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-          </span>
+      {/* ── MOTOR DE ANÁLISE — 4 agentes (colapsado por padrão) ─────────────
+          Isto é copy de página de vendas dentro do produto: descreve o que a
+          ferramenta faz para alguém que já comprou e já usou. Fica, porque
+          colapsado custa uma linha e a lista tem valor de consulta — mas
+          desceu para o fim e perdeu o ponto verde pulsando.
+
+          ⚠️ O PONTO PULSAVA SEM MEDIR NADA. Mesma família do "PNCP ativo" que
+          saiu do topo: animação de "ao vivo" num bloco estático. Nenhum dos
+          quatro agentes é consultado para desenhar esta lista — ela é um array
+          escrito à mão logo abaixo. Ponto parado, cinza. */}
+      <details className="group bg-white rounded-[1.5rem] border border-slate-100 shadow-sm overflow-hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 transition-colors hover:bg-slate-50">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Motor de Análise</span>
           <span className="ml-auto text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold border border-slate-200">
             4 Agentes IA
@@ -507,20 +531,19 @@ export default function AppSidebar({
         </div>
       </details>
 
-      {/* ── SUPORTE ──────────────────────────────────────────────────────────── */}
-      <div className="rounded-[2rem] border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="flex items-center gap-2 mb-1">
-          <MessageCircle size={14} className="text-emerald-600 shrink-0" />
-          <p className="text-[12px] font-black text-slate-800">Precisa de ajuda?</p>
-        </div>
-        <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">Nossa equipe responde em até 24h.</p>
-        <a
-          href="mailto:development@bawzi.com"
-          className="flex items-center justify-center gap-1.5 w-full text-[11px] font-black text-emerald-700 hover:text-emerald-800 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-3 py-2 rounded-xl transition-colors"
-        >
-          Falar com suporte →
-        </a>
-      </div>
+      {/* ── SUPORTE ────────────────────────────────────────────────────────
+          Eram três elementos empilhados num cartão de 110px — título, promessa
+          de SLA e botão — para uma ação que a maioria nunca usa. Virou uma
+          linha. O "responde em até 24h" continua, agora como o próprio rótulo:
+          é a informação que decide se a pessoa clica. */}
+      <a
+        href="mailto:development@bawzi.com"
+        className="flex items-center gap-2 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+      >
+        <MessageCircle size={13} className="shrink-0 text-slate-400" />
+        Falar com o suporte
+        <span className="ml-auto text-[10px] font-medium text-slate-400">responde em 24h</span>
+      </a>
 
     </div>
   );

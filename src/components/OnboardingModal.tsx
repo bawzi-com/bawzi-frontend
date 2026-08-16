@@ -113,7 +113,7 @@ export default function OnboardingModal({ userName, hasCompany, onClose, onGoToP
 
   return (
     <div className="fixed inset-0 z-[900] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[90dvh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
 
         {/* Barra de progresso */}
         <div className="h-1.5 bg-slate-100">
@@ -124,7 +124,7 @@ export default function OnboardingModal({ userName, hasCompany, onClose, onGoToP
         </div>
 
         {/* Conteúdo */}
-        <div className="p-8">
+        <div className="p-8 flex-1 overflow-y-auto">
           {/* Fechar */}
           <div className="flex justify-between items-center mb-6">
             <div className="flex gap-1.5">

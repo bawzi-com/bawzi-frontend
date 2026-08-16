@@ -4,15 +4,38 @@
  * AppHero.tsx
  * Secção hero do painel de análise Bawzi.
  *
- * - Versão autenticada: nav bar com tier + dots + passos + proof bar
+ * - Versão autenticada: UMA LINHA de cumprimento (nome · nível · UF)
  * - Versão anônima: headline de marketing + animação de 4 agentes IA
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⚠️ O QUE SAIU DAQUI, E POR QUÊ
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 1. O SELO "PNCP ATIVO" ERA FALSO. Verde, com ponto pulsando, escrito à mão
+ *    neste arquivo — não lia rota nenhuma. Duzentos pixels abaixo, o
+ *    `PncpStatusBadge` consulta `/api/pncp/status` a cada dois minutos e
+ *    mostrava "PNCP OFFLINE" em vermelho. Os dois na mesma tela, ao mesmo
+ *    tempo, sobre o mesmo fato, com respostas opostas — e o falso ganhava por
+ *    estar mais acima. Um indicador que não está ligado em nada é pior que
+ *    indicador nenhum: ele treina a pessoa a ignorar TAMBÉM o que é verdade.
+ *
+ * 2. OS TRÊS BOTÕES ERAM NAVEGAÇÃO PARA O QUE JÁ ESTAVA NA TELA. "Radar PNCP"
+ *    dava `scrollIntoView` na seção logo abaixo dele; "Enviar edital", na
+ *    seguinte. Numa página de duas seções, os dois rolavam para coisas já
+ *    visíveis. E "Histórico" abria exatamente a aba que a barra lateral chama
+ *    de "Decisões" — mesmo destino, dois nomes, ambos na tela ao mesmo tempo.
+ *
+ * 3. ERA UM CARTÃO DENTRO DE UM CARTÃO. O `analysis-app` já envolve o hero num
+ *    painel branco com borda, sombra e `rounded-[2.5rem]`; aqui dentro havia
+ *    OUTRO painel branco com borda e `rounded-[2rem]`. Seis camadas de padding
+ *    aninhadas para exibir um cumprimento. Agora esta metade devolve só a
+ *    linha, e quem decide a moldura é quem monta a página.
  */
 
 import React from 'react';
 import {
-  ScanSearch, ChevronRight, Crown, Sparkles, MapPin,
-  BookOpen, Scale,
-  Banknote, Shield, UploadCloud, CheckCircle2,
+  ScanSearch, Crown, Sparkles, MapPin, Scale,
+  Banknote, Shield, CheckCircle2,
 } from 'lucide-react';
 
 interface AppHeroProps {
@@ -21,8 +44,6 @@ interface AppHeroProps {
   userData: any | null;
   isCheckingAuth: boolean;
   currentTier: number;
-  onGoToWorkspace: () => void;
-  onGoToHistory: () => void;
 }
 
 export default function AppHero({
@@ -30,8 +51,6 @@ export default function AppHero({
   userData,
   isCheckingAuth,
   currentTier,
-  onGoToWorkspace,
-  onGoToHistory,
 }: AppHeroProps) {
 
   // ─── Versão autenticada ────────────────────────────────────────────────────
@@ -51,93 +70,20 @@ export default function AppHero({
         ? 'border-sky-200 bg-sky-50 text-sky-800'
         : 'border-emerald-200 bg-emerald-50 text-emerald-800';
 
-    const focusRadar = () => {
-      onGoToWorkspace();
-      setTimeout(() => {
-        const target = document.getElementById('radar-pncp-section');
-        if (target) {
-          const y = target.getBoundingClientRect().top + window.scrollY - 80;
-          window.scrollTo({ top: y, behavior: 'smooth' });
-          const input = target.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
-          input?.focus();
-        }
-      }, 80);
-    };
-
-    const focusAnalise = () => {
-      onGoToWorkspace();
-      setTimeout(() => {
-        const target = document.getElementById('area-submissao');
-        if (target) {
-          const y = target.getBoundingClientRect().top + window.scrollY - 80;
-          window.scrollTo({ top: y, behavior: 'smooth' });
-          target.querySelector<HTMLTextAreaElement>('textarea')?.focus();
-        }
-      }, 80);
-    };
-
     return (
-      <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6">
-
-          {/* Identity */}
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-100 bg-emerald-50 text-[13px] font-black text-emerald-800 select-none">
-              {displayName.charAt(0).toUpperCase()}
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-black leading-none text-slate-950">Olá, {firstName}</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${tierClass}`}>
-                  {currentTier >= 4 ? <Crown size={10} className="text-amber-600" /> : <Sparkles size={10} />}
-                  {tierLabel}
-                </span>
-                {userData?.company?.uf && (
-                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-400">
-                    <MapPin size={9} />{userData.company.uf}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Primary actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={focusRadar}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-[12px] font-black text-white shadow-sm transition-all hover:bg-emerald-500 active:scale-[0.98]"
-            >
-              <ScanSearch size={14} />
-              Radar PNCP
-            </button>
-            <button
-              onClick={focusAnalise}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 active:scale-[0.98]"
-            >
-              <UploadCloud size={13} className="text-slate-400" />
-              Enviar edital
-            </button>
-            <button
-              onClick={onGoToHistory}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[12px] font-semibold text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950"
-            >
-              <BookOpen size={13} />
-              Histórico
-            </button>
-          </div>
-
-          {/* Status */}
-          <div className="hidden sm:flex items-center gap-2 shrink-0">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-45" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              </span>
-              PNCP ativo
-            </div>
-          </div>
-
-        </div>
+      <div className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <h1 className="text-lg font-black leading-none tracking-tight text-slate-950 md:text-xl">
+          Olá, {firstName}
+        </h1>
+        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${tierClass}`}>
+          {currentTier >= 4 ? <Crown size={10} className="text-amber-600" /> : <Sparkles size={10} />}
+          {tierLabel}
+        </span>
+        {userData?.company?.uf && (
+          <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-slate-400">
+            <MapPin size={9} />{userData.company.uf}
+          </span>
+        )}
       </div>
     );
   }
@@ -145,10 +91,10 @@ export default function AppHero({
   // ─── Versão anônima ────────────────────────────────────────────────────────
   return (
     <>
-      <div className="xl:w-2/3 bg-gradient-to-br from-white via-emerald-50/35 to-sky-50/45 rounded-[2rem] border border-slate-100 p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
+      <div className="xl:w-2/3 bg-gradient-to-br from-white via-emerald-50/35 to-sky-50/45 rounded-[2rem] border border-slate-100 p-5 sm:p-8 md:p-12 flex flex-col lg:flex-row items-center gap-10 relative overflow-hidden">
 
         <div className="flex-1 relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6 w-max">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-slate-200 shadow-sm mb-6">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>

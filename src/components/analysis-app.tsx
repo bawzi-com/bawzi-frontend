@@ -50,6 +50,7 @@ import PncpSearch from '../components/PncpSearch';
 import ContratosVencendo from '../components/ContratosVencendo';
 import CapitalIntelligence from '../components/CapitalIntelligence';
 import CnaeOportunidades from '../components/CnaeOportunidades';
+import MeusContratos from '../components/MeusContratos';
 import RadarAlertas from '../components/RadarAlertas';
 import OnboardingModal from '../components/OnboardingModal';
 import UpgradeModal from './UpgradeModal';
@@ -1079,16 +1080,27 @@ export default function AnalysisApp() {
 
       <main>
 
-        {/* ── HERO ── */}
-        <div className="w-full max-w-[1400px] mx-auto p-2 md:p-4 font-sans relative group">
-          <div className="bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6">
+        {/* ── HERO ──
+            ⚠️ A MOLDURA É CONDICIONAL, E ISSO NÃO É DETALHE.
+            O painel branco de `rounded-[2.5rem]` com sombra grande existe para
+            a versão ANÔNIMA, que é uma peça de marketing: headline, animação
+            dos 4 agentes e o laudo de exemplo, duas colunas, 380px de altura.
+            Para quem já está logado o hero virou uma linha ("Olá, Marcelo ·
+            Avançado · GO") — e envolver uma linha nessa moldura produzia um
+            cartão branco com borda dentro de outro cartão branco com borda, com
+            padding em seis níveis, ocupando 190px acima da dobra para dizer o
+            nome de quem já sabe o próprio nome. Logado: sem moldura. */}
+        <div className={`mx-auto w-full max-w-[1400px] font-sans ${
+          token && userData && !isCheckingAuth ? 'px-4 pt-6 md:px-6' : 'group relative p-2 md:p-4'
+        }`}>
+          <div className={token && userData && !isCheckingAuth
+            ? ''
+            : 'bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6'}>
             <AppHero
               token={token}
               userData={userData}
               isCheckingAuth={isCheckingAuth}
               currentTier={currentTier}
-              onGoToWorkspace={() => setActiveTab('workspace')}
-              onGoToHistory={() => setActiveTab('history')}
             />
           </div>
         </div>
@@ -1158,7 +1170,13 @@ export default function AnalysisApp() {
               </div>
             </div>
           )}
-          <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_350px]'}`}>
+          {/* ⚠️ 350px → 288px. A faixa usual de barra lateral rotulada é
+              220–300; 350 vinha de quando ela hospedava o cartão de identidade
+              de 250px de altura com avatar de 56px, barra de vagas e seletor de
+              contexto. Esse cartão saiu, e a coluna não precisa mais da largura
+              que ele pedia. Os 62px voltam para a coluna de trabalho — que é
+              exatamente a briga do quadro da Gestão. */}
+          <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_288px]'}`}>
 
             {/* ── COLUNA ESQUERDA ── */}
             <div className="flex flex-col gap-8 w-full overflow-hidden print:m-0">
@@ -1397,7 +1415,7 @@ export default function AnalysisApp() {
                   {currentTier < 3 ? (
                     <TierGateTab
                       requiredTier={3}
-                      featureName="Monitor Inteligente PNCP"
+                      featureName="Alertas do PNCP"
                       onUpgrade={() => handleUpgrade(3)}
                     />
                   ) : (
@@ -1406,7 +1424,17 @@ export default function AnalysisApp() {
                 </div>
               )}
 
-              {/* Aba Oportunidades (Feed CNAE) */}
+              {/* Aba Meus contratos — a carteira da própria empresa.
+                  Distinta de Renovações, que faz prospecção de mercado: aqui o
+                  filtro é o CNPJ do FORNECEDOR, e a fonte é o índice local
+                  porque a API do PNCP não oferece esse recorte. */}
+              {activeTab === 'meus-contratos' && token && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <MeusContratos activeCnpj={userData?.active_cnpj} />
+                </div>
+              )}
+
+              {/* Aba Sugestões (Feed CNAE) */}
               {activeTab === 'cnae' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {/* Aberta a qualquer conta. `/feed-cnae` vive no router_pncp,
@@ -1675,7 +1703,24 @@ export default function AnalysisApp() {
       {token && (
         <button
           onClick={() => setSidebarMobileOpen(true)}
-          className="fixed bottom-6 right-6 z-[500] lg:hidden w-14 h-14 bg-slate-900 hover:bg-emerald-700 text-white rounded-2xl shadow-xl flex items-center justify-center transition-all active:scale-95 print:hidden"
+          // ⚠️ CANTO ESQUERDO, e é deliberado — a direita inteira é do chat.
+          //
+          // Este botão já esteve em `bottom-6 right-6`, empilhado sobre o botão
+          // do ChatWidget (`bottom-5 right-5`, 56px, presente no layout de
+          // TODAS as páginas): com `z-[500]` contra `z-50` ele cobria 86% do
+          // chat e sobrava uma tira em L de 4px — no celular logado o chat era
+          // literalmente inclicável.
+          //
+          // A correção foi subir para `bottom-24`. Só que o PAINEL aberto do
+          // chat também mora em `bottom-24 right-5` (até 368×500), então o
+          // botão voltava a cair em cima dele — agora sobre o campo de mensagem
+          // e o enviar, que é o pior lugar possível.
+          //
+          // Empilhar na vertical não resolve, porque o painel cresce. Trocar de
+          // LADO resolve, e ainda casa com o gesto: a sidebar entra pela
+          // esquerda. Nada mais flutua nesse canto — os toasts do app são todos
+          // `bottom-5 right-5`.
+          className="fixed bottom-6 left-6 z-[500] lg:hidden w-14 h-14 bg-slate-900 hover:bg-emerald-700 text-white rounded-2xl shadow-xl flex items-center justify-center transition-all active:scale-95 print:hidden"
           aria-label="Abrir menu"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

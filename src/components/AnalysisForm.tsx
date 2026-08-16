@@ -9,12 +9,13 @@
 import React, { useEffect, useState } from 'react';
 import {
   Zap, FolderOpen, FileText, ScanSearch, BrainCircuit,
-  AlertTriangle, CheckCircle2, UploadCloud, Gauge, ShieldCheck, Clock3,
+  AlertTriangle, CheckCircle2, UploadCloud, ShieldCheck, Clock3,
   RefreshCw, Coins, ArrowRight,
 } from 'lucide-react';
 import { formatMB } from './analysis-types';
 
 import ResumoCreditos, { BOTAO_PRIMARIO } from './ResumoCreditos';
+import Tooltip from './Tooltip';
 import { useTierConfig } from '../Contexts/TierContext';
 
 export interface QuotaInfo {
@@ -194,19 +195,33 @@ function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
  *  o degrau que não custa nada e é o que ele consegue dar agora. Dos demais
  *  para cima, o convite é para o topo.
  */
+/** Existe degrau acima do plano de agora? Uma fonte só.
+ *
+ *  ⚠️ ESTA PERGUNTA PRECISA SER RESPONDIDA EM DOIS LUGARES: quem DESENHA o
+ *  convite (`EscadaDePlanos`) e quem decide se a barra de cota inteira sequer
+ *  aparece (`quotaPedeAtencao`). Copiar a conta para o segundo lugar é como o
+ *  filtro de UF acabou espalhado por sete campos: no dia em que o topo deixar
+ *  de ser o nível 4, um dos dois continua certo e o outro passa a esconder um
+ *  convite que existe — ou a reservar espaço para um que não existe.
+ */
+function useProximoDegrau(isGuest: boolean, tierAtual: number, habilitado: boolean) {
+  const { tierLimits, tierCredits, tierNames } = useTierConfig();
+  const niveis = Object.keys(tierLimits).map(Number).filter(t => t >= 1).sort((a, b) => a - b);
+  const topo = niveis.length ? niveis[niveis.length - 1] : 4;
+  const atual = isGuest ? -1 : tierAtual;
+  if (!habilitado || atual >= topo) return null;   // já está no topo: nada a oferecer
+  return { destino: isGuest ? (niveis[0] ?? 1) : topo, atual, tierLimits, tierCredits, tierNames };
+}
+
 function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
   isGuest: boolean;
   tierAtual: number;
   onUpgradeClick?: (tier?: number) => void;
 }) {
-  const { tierLimits, tierCredits, tierNames } = useTierConfig();
+  const degrau = useProximoDegrau(isGuest, tierAtual, !!onUpgradeClick);
+  if (!degrau || !onUpgradeClick) return null;
+  const { destino, atual, tierLimits, tierCredits, tierNames } = degrau;
 
-  const niveis = Object.keys(tierLimits).map(Number).filter(t => t >= 1).sort((a, b) => a - b);
-  const topo = niveis.length ? niveis[niveis.length - 1] : 4;
-  const atual = isGuest ? -1 : tierAtual;
-  if (!onUpgradeClick || atual >= topo) return null;   // já está no topo: nada a oferecer
-
-  const destino = isGuest ? (niveis[0] ?? 1) : topo;
   const num = (v: number | undefined) => Number(v || 0).toLocaleString('pt-BR');
   const nome = tierNames[destino] || (isGuest ? 'Gratuito' : 'Avançado');
 
@@ -250,11 +265,69 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
   );
 }
 
+/** A régua da cobrança — como um crédito vira dinheiro.
+ *
+ * ⚠️ ERA UM PARÁGRAFO FIXO NO MEIO DO CAMINHO. Ficava dentro da `QuotaBar`,
+ * entre o campo de anexo e os cartões de modo, e portanto entre "colei o
+ * edital" e "analisar". Mas é uma fórmula: não muda de uma análise para a
+ * outra, e quem usa a ferramenta todo dia já a conhece na terceira vez. O
+ * número que de fato importa na hora de decidir — o custo DESTE pedido — já
+ * está no `SeloCusto`, dentro de cada cartão de modo, calculado sobre o texto
+ * que está na tela.
+ *
+ * Então a fórmula virou sob demanda, atrás do mesmo `Tooltip` usado na "Busca
+ * exata" do Radar. Continua inteira, continua a um clique, e parou de cobrar
+ * duas linhas de leitura de quem já sabe.
+ */
+function ReguaDeCobranca({ quota, isGuest = false }: { quota: QuotaInfo; isGuest?: boolean }) {
+  // Só quando o peso muda alguma coisa. Nos planos em que os dois modos usam o
+  // mesmo par de modelos o backend devolve `unidade: "analises"`, e não há
+  // conceito novo para ensinar.
+  if (isGuest || quota.unidade !== 'creditos') return null;
+
+  return (
+    <>
+      {/* `?.credito_usd` e não só truthiness: com a régua FIXA ativa o backend
+          manda `{}` em `precificacao`, que é truthy — e a frase da régua
+          dinâmica apareceria descrevendo uma cobrança que não está valendo.
+          A régua fixa é a do lançamento. */}
+      {quota.precificacao?.credito_usd ? (
+        /* Régua NOVA: o crédito mede custo, não caracteres. A frase antiga
+           ("1 crédito a cada 50.000 caracteres · profunda multiplica por 4")
+           descrevia uma fórmula que não existe mais — e uma explicação errada
+           da cobrança é pior do que nenhuma. */
+        <>
+          O crédito acompanha o custo real da análise: edital maior e
+          auditoria profunda consomem mais. O preço exato aparece em cada
+          botão antes de você enviar.
+        </>
+      ) : (
+        <>
+          {/* "analisados (texto + PDFs)" e não só "caracteres": a cobrança
+              soma texto colado + PDFs anexados + arquivos do PNCP, mas o
+              contador da caixa só mede o que foi digitado. Sem dizer a base de
+              cálculo, quem cola 20 mil caracteres lê "1 crédito", anexa um PDF
+              grande e é debitado em 4× — a régua certa com a frase incompleta
+              produz a mesma surpresa que uma régua errada (foi exatamente o
+              mecanismo do bug do "+2 créditos"). */}
+          {!!quota.caracteres_por_credito && (
+            <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres analisados (texto + PDFs contam juntos){' · '}</>
+          )}
+          {(quota.peso_profunda ?? 1) > 1
+            ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
+            : <>os dois modos custam igual neste plano</>}
+        </>
+      )}
+    </>
+  );
+}
+
 function QuotaBar({
   quota,
   onUpgradeClick,
   onComprarPacote,
   isGuest = false,
+  semCarteira = false,
 }: {
   quota: QuotaInfo;
   /** Recebe o tier de destino. Sem o parâmetro, o chamador decide — era assim
@@ -265,6 +338,10 @@ function QuotaBar({
    *  meio prefere resolver o mês de hoje a mudar de assinatura. */
   onComprarPacote?: () => void;
   isGuest?: boolean;
+  /** Os quatro números da carteira já estão no cabeçalho do formulário. Sem
+   *  isto, um estado de alerta mostraria "650 / 0 / 500 de 650" duas vezes na
+   *  mesma tela — e ninguém confere dois painéis idênticos, só desconfia. */
+  semCarteira?: boolean;
 }) {
   if (quota.ilimitado) return null;
 
@@ -332,7 +409,7 @@ function QuotaBar({
         <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
           <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
         </div>
-      ) : (
+      ) : semCarteira ? null : (
         /* ── MESMO componente do topo do Radar ────────────────────────────
            Os dois blocos conviviam na mesma página contando a mesma carteira
            com layouts diferentes — um com quatro números, outro com um "9 / 60"
@@ -352,44 +429,8 @@ function QuotaBar({
         />
       )}
 
-      {/* Só quando o peso muda alguma coisa. Nos planos em que os dois modos
-          usam o mesmo par de modelos o backend devolve `unidade: "analises"`,
-          e não há conceito novo para ensinar. */}
-      {emCreditos && (
-        <p className="text-[10px] font-medium leading-4 text-slate-500 mb-1">
-          {/* `?.credito_usd` e não só truthiness: com a régua FIXA ativa o
-              backend manda `{}` em `precificacao`, que é truthy — e a frase
-              da régua dinâmica apareceria descrevendo uma cobrança que não
-              está valendo. A régua fixa é a do lançamento. */}
-          {quota.precificacao?.credito_usd ? (
-            /* Régua NOVA: o crédito mede custo, não caracteres. A frase antiga
-               ("1 crédito a cada 50.000 caracteres · profunda multiplica por 4")
-               descrevia uma fórmula que não existe mais — e uma explicação
-               errada da cobrança é pior do que nenhuma. */
-            <>
-              O crédito acompanha o custo real da análise: edital maior e
-              auditoria profunda consomem mais. O preço exato aparece em cada
-              botão antes de você enviar.
-            </>
-          ) : (
-            <>
-              {/* "analisados (texto + PDFs)" e não só "caracteres": a cobrança
-                  soma texto colado + PDFs anexados + arquivos do PNCP, mas o
-                  contador da caixa só mede o que foi digitado. Sem dizer a
-                  base de cálculo, quem cola 20 mil caracteres lê "1 crédito",
-                  anexa um PDF grande e é debitado em 4× — a régua certa com a
-                  frase incompleta produz a mesma surpresa que uma régua errada
-                  (foi exatamente o mecanismo do bug do "+2 créditos"). */}
-              {!!quota.caracteres_por_credito && (
-                <>1 crédito a cada {quota.caracteres_por_credito.toLocaleString('pt-BR')} caracteres analisados (texto + PDFs contam juntos){' · '}</>
-              )}
-              {(quota.peso_profunda ?? 1) > 1
-                ? <>auditoria profunda multiplica por {quota.peso_profunda}</>
-                : <>os dois modos custam igual neste plano</>}
-            </>
-          )}
-        </p>
-      )}
+      {/* A régua da cobrança saiu daqui — agora mora atrás do `Tooltip` que fica
+          ao lado da carteira, no cabeçalho. Ver `ReguaDeCobranca`, acima. */}
 
       {/* Cortesia: passou do saldo, mas nada mudou para o cliente. */}
       {emCortesia && !motorGratis && (
@@ -587,6 +628,20 @@ export default function AnalysisForm({
   // posição de ATRIBUTO não é sintaxe válida — foi o que o tsc barrou.
   const temOQuePrecificar = text.length > 0 || files.length > 0;
 
+  // ── A barra de cota tem algo a dizer? ──────────────────────────────────────
+  // Espelha, uma a uma, as condições dos blocos que a `QuotaBar` renderiza.
+  // Saudável e no topo do plano: ela não desenha nada além de números que agora
+  // vivem no cabeçalho, então não vai para o meio do caminho.
+  // Convidado é exceção — ele não tem carteira no cabeçalho, e o "0 de 1 ·
+  // reseta amanhã" é a única forma de saber quanto resta do teste.
+  const degrauDisponivel = !!useProximoDegrau(!token, quota?.tier ?? userTier, !!onUpgradeClick);
+  const quotaPedeAtencao =
+    !token
+    || !!quota?.em_cortesia
+    || !!quota?.profunda_pausada
+    || (quota?.restante != null && quota.restante <= 1)
+    || degrauDisponivel;
+
   // ⚠️ SEM ISTO A ANÁLISE DISPARAVA COM A CAIXA VAZIA.
   // O backend recusa abaixo de 80 caracteres, mas a recusa chegava depois de
   // já ter aberto o fluxo de análise — o usuário via a tela entrar em
@@ -626,30 +681,58 @@ export default function AnalysisForm({
 
   return (
     <div id="area-submissao" className="bg-white rounded-[2rem] shadow-sm border border-slate-200 relative z-20 w-full overflow-hidden">
+      {/* ═══════════════════════════════════════════════════════════════════
+          CABEÇALHO
+          ═══════════════════════════════════════════════════════════════════
+          ⚠️ O SUBTÍTULO ERA O MANUAL DO CAMPO QUE VEM LOGO ABAIXO. "Cole o
+          texto ou envie o PDF" ficava a 60px de uma caixa cujo placeholder diz
+          "Cole aqui o texto do edital…" e de um alvo de arraste que diz
+          "Arraste documentos ou clique aqui". Três instruções para a mesma
+          ação, sendo que duas estão DENTRO do controle.
+
+          ⚠️ OS TRÊS SELOS (TEXTO/PDF · SCORE · RISCOS) PARECIAM ABAS. Caixas
+          com borda, numa grade de três, encostadas na direita do cabeçalho —
+          que é exatamente onde abas moram. Não eram clicáveis: eram um resumo
+          do que entra e do que sai. Viraram a linha de subtítulo, que é o lugar
+          onde essa frase não finge ser um controle.
+
+          ⚠️ E A DIREITA GANHOU A CARTEIRA, que estava no meio do caminho.
+          Ver o comentário do `ReguaDeCobranca` e o de `quotaPedeAtencao`. */}
       <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/45 p-5 md:p-6">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-sky-700 shadow-sm">
-          <UploadCloud size={13} />
-          Enviar edital
-        </div>
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-sky-700 shadow-sm">
+              <UploadCloud size={13} />
+              Enviar edital
+            </div>
             <h2 className="text-xl md:text-2xl font-black text-slate-950 tracking-tight">Analisar edital</h2>
-            <p className="mt-1.5 max-w-2xl text-[13px] font-medium leading-relaxed text-slate-500">
-              Cole o texto ou envie o PDF.
+            {/* ⚠️ FRASE CORRIDA, E NÃO UM `flex` DE PEDAÇOS. A primeira versão
+                era um `flex-wrap` com um `<span>` por termo e ícone em cada um;
+                com a carteira à direita a coluna encolhe, e a quebra caía entre
+                os itens do flex — "De texto ou PDF para score e" numa linha,
+                "mapa de riscos" na outra. Texto corrido quebra onde a frase
+                permite, que é o que uma frase deve fazer. */}
+            <p className="mt-1.5 max-w-md text-[13px] font-medium leading-relaxed text-slate-500">
+              De texto ou PDF para <strong className="font-bold text-slate-700">score</strong>{' '}
+              e <strong className="font-bold text-slate-700">mapa de riscos</strong>.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-[10px] font-black uppercase text-slate-500">
-            {[
-              { Icon: FileText, label: 'Texto/PDF' },
-              { Icon: Gauge, label: 'Score' },
-              { Icon: ShieldCheck, label: 'Riscos' },
-            ].map(({ Icon, label }) => (
-              <span key={label} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                <Icon size={12} className="text-emerald-600" />
-                {label}
-              </span>
-            ))}
-          </div>
+
+          {/* A carteira, no cabeçalho: é CONTEXTO da tarefa, não uma etapa dela.
+              Antes ficava entre o campo de anexo e os cartões de modo — quem
+              acabava de colar o edital batia num painel de faturamento com
+              quatro números, barra de progresso, botão de compra e duas linhas
+              de fórmula, e só depois encontrava o botão de analisar. */}
+          {quota && !quota.ilimitado && token && (
+            <ResumoCreditos
+              quota={quota}
+              onComprarPacote={onComprarPacote}
+              className="w-full shrink-0 shadow-sm md:w-auto md:max-w-[32rem]"
+              acessorio={quota.unidade === 'creditos'
+                ? <Tooltip rotulo="como os créditos são cobrados"><ReguaDeCobranca quota={quota} /></Tooltip>
+                : undefined}
+            />
+          )}
         </div>
       </div>
 
@@ -770,10 +853,18 @@ export default function AnalysisForm({
 
         {/* Botões de análise */}
         <div className="mt-6 w-full">
-          {/* Indicador de quota — logado (tier 1-3) ou guest (tier -1) */}
-          {quota && !quota.ilimitado && (
+          {/* ⚠️ A BARRA DE COTA SÓ APARECE QUANDO PEDE UMA DECISÃO.
+              Ela era incondicional, e no estado saudável — que é o estado da
+              esmagadora maioria das sessões — dizia apenas "está tudo bem" em
+              140px, bem no meio do caminho entre o edital colado e o botão de
+              analisar. Os números saudáveis subiram para o cabeçalho, onde são
+              contexto; aqui ficam só os estados que exigem AÇÃO: cortesia,
+              motor gratuito, saldo no fim, e o convite de degrau de plano.
+              Ver `quotaPedeAtencao`. */}
+          {quota && !quota.ilimitado && quotaPedeAtencao && (
             <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick}
-                      onComprarPacote={onComprarPacote} isGuest={!token} />
+                      onComprarPacote={onComprarPacote} isGuest={!token}
+                      semCarteira={!!token} />
           )}
 
           {/* ⚠️ >= 1, não === 4. O seletor era exclusivo do Nível 4 e todo o
@@ -826,7 +917,19 @@ export default function AnalysisForm({
               <Zap size={24} className="relative z-10" />
               <div className="flex flex-col items-start text-left relative z-10">
                 <span className="block leading-tight text-base font-black">Iniciar análise estratégica</span>
-                <span className="text-[10px] text-white/60 font-bold uppercase tracking-widest">Multi-Agente · ~30 segundos</span>
+                {/* ⚠️ AQUI DIZIA "Multi-Agente · ~30 segundos" — as duas metades
+                    falsas para quem lê ESTE botão. Este é o ramo do VISITANTE
+                    (o `else` de `token && userTier >= 1`), que roda com
+                    `agent_count = 1`: não há multi-agente nenhum. E "~30
+                    segundos" contradizia `tempoEstimadoLabel`, 700 linhas
+                    acima nesta mesma tela, que diz "menos de 1 minuto". Agora
+                    sai do MESMO estimador do seletor de modo, para os dois
+                    caminhos não poderem divergir outra vez. */}
+                <span className="text-[10px] text-white/60 font-bold uppercase tracking-widest">
+                  {estimarSegundos
+                    ? `Análise rápida · normalmente ${fmtETA(estimarSegundos('openai'))}`
+                    : `Análise rápida · ${tempoEstimadoLabel(token, userTier)}`}
+                </span>
               </div>
               <svg className="w-5 h-5 ml-auto relative z-10 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
@@ -972,9 +1075,21 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                 </span>
               </div>
             </div>
+            {/* ⚠️ ERAM TRÊS AFORDÂNCIAS PARA UMA ESCOLHA BINÁRIA: o cartão
+                inteiro é clicável, este canto dizia "Selecionar →", e o botão
+                lá embaixo TAMBÉM só seleciona quando o cartão não está ativo
+                ("Usar análise rápida"). Dois rótulos disputando o mesmo verbo,
+                em alturas diferentes do mesmo cartão.
+                Aqui fica o INDICADOR — anel vazio / preenchido, que é a forma
+                que um par de opções exclusivas tem em qualquer interface — e o
+                verbo fica só no botão, que é onde ele já estava escrito por
+                extenso. O anel também deixa os dois cartões simétricos: antes,
+                o selecionado mostrava um ponto e o outro mostrava um link. */}
             {provider === 'openai'
-              ? <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              : <span className="text-[10px] font-bold text-slate-400 group-hover:text-emerald-600 transition-colors">Selecionar →</span>
+              ? <span aria-hidden className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 ring-4 ring-emerald-500/15">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
+              : <span aria-hidden className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-300 transition-colors group-hover:border-emerald-400" />
             }
           </div>
 
@@ -1063,9 +1178,12 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                 </span>
               </div>
             </div>
+            {/* Mesmo indicador do cartão da rápida — ver o comentário lá. */}
             {provider === 'claude'
-              ? <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse" />
-              : <span className="text-[10px] font-bold text-slate-400 group-hover:text-sky-600 transition-colors">Selecionar →</span>
+              ? <span aria-hidden className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-sky-600 ring-4 ring-sky-500/15">
+                  <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
+              : <span aria-hidden className="h-4 w-4 shrink-0 rounded-full border-2 border-slate-300 transition-colors group-hover:border-sky-400" />
             }
           </div>
 

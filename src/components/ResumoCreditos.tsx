@@ -82,11 +82,19 @@ function Numero({ rotulo, valor, cor, sufixo }: {
 }
 
 export default function ResumoCreditos({
-  quota, onComprarPacote, className = '', semAviso = false, semBorda = false,
+  quota, onComprarPacote, className = '', semAviso = false, semBorda = false, acessorio,
 }: {
   quota: QuotaResumo | null | undefined;
   onComprarPacote?: () => void;
   className?: string;
+  /** Encaixe para um controle extra na linha das ações — hoje o `Tooltip` que
+   *  explica a régua de cobrança.
+   *
+   *  ⚠️ ELE PRECISA ENTRAR AQUI DENTRO, e não ao lado do componente. Posto como
+   *  irmão, o gatilho de ajuda ficava pendurado FORA da moldura, no canto
+   *  superior direito, apontando para um cartão inteiro em vez de para o número
+   *  que gera a dúvida. No celular a distância virava meia largura de tela. */
+  acessorio?: React.ReactNode;
   /** Esconde o aviso de cortesia. Dentro da barra de créditos da análise ele
    *  seria o TERCEIRO aviso sobre o mesmo assunto — lá já existem os blocos de
    *  cortesia e motor gratuito, com botão de ação. Repetir a mesma informação
@@ -139,15 +147,20 @@ export default function ResumoCreditos({
           )}
         </div>
 
-        {onComprarPacote && (
-          <button
-            type="button"
-            onClick={onComprarPacote}
-            className={BOTAO_SECUNDARIO}
-          >
-            <Plus size={12} />
-            Comprar créditos
-          </button>
+        {(onComprarPacote || acessorio) && (
+          <div className="flex shrink-0 items-center gap-1">
+            {onComprarPacote && (
+              <button
+                type="button"
+                onClick={onComprarPacote}
+                className={BOTAO_SECUNDARIO}
+              >
+                <Plus size={12} />
+                Comprar créditos
+              </button>
+            )}
+            {acessorio}
+          </div>
         )}
       </div>
 

@@ -162,7 +162,7 @@ export default function LandingPage() {
 
   if (!checked) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60dvh] flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -869,7 +869,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
           <div className="max-w-2xl mx-auto space-y-4">
             {/* Semáforo */}
             {result.semaforo && (
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {(Object.entries(result.semaforo) as [string, SemaforoSinal][]).map(([key, val]) => (
                   <div key={key} className="rounded-2xl px-3 py-3 text-center" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                     <div className={`w-3 h-3 rounded-full mx-auto mb-1.5 ${SEMAFORO_COLOR[val] || 'bg-slate-500'}`} />

@@ -61,7 +61,16 @@ const tiers = [
       'Central de decisões, priorização e gestão do fluxo',
       'Oportunidades com fit CNAE e renovações a vencer',
       'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
-      '1 empresa cadastrada',
+      // ⚠️ AQUI DIZIA "1 empresa cadastrada". O backend dá ZERO:
+      // `TIER_COMPANY_LIMITS[1] = 0` (config.py:95), e cadastrar a primeira
+      // empresa devolve 403 em router_workspaces.py:564.
+      //
+      // A correção anterior virou a linha em "Cadastro de empresa (CNPJ) a
+      // partir do Essencial" — verdadeira lida no cartão, e FALSA na tabela
+      // comparativa, que a marcava com ✓ na coluna do Gratuito. Frase-aviso não
+      // é recurso: ela não sobrevive a ser exibida como célula de uma matriz.
+      // O fato agora é declarado onde ele existe (Essencial, logo abaixo), e a
+      // ausência no Gratuito aparece sozinha, como travessão na tabela.
     ],
     limites: ['Editais até 25.000 caracteres', 'PDF até 5 MB'],
     mbSufixo: '',
@@ -81,6 +90,7 @@ const tiers = [
     // pelo banco, então não corre o risco das quantidades derivadas.
     features: [
       'Agentes de mercado no laudo — concorrentes e preços',
+      'Cadastro de empresa (CNPJ) · 1 empresa',
       '30 dossiês de concorrente por dia',
     ],
     limites: ['Editais até 80.000 caracteres', 'PDF até 15 MB'],
@@ -97,7 +107,7 @@ const tiers = [
       'Fôlego financeiro e capital de execução',
       '100 dossiês por dia · 2 empresas',
     ],
-    limites: ['Editais até 180.000 caracteres', 'PDF até 30 MB'],
+    limites: ['Editais até 180.000 caracteres', 'PDF até 20 MB'],
     mbSufixo: '',
     buttonText: 'Assinar Profissional', tierLevel: 3, popular: true, label: 'Mais popular',
   },
@@ -106,7 +116,7 @@ const tiers = [
     inherits: 3,
     quantidade: '650 créditos por mês',   // reserva; espelha LIMIT_TIER_4 e a âncora do billing_config (R$ 497 ÷ 650)
     // O tamanho do edital saiu daqui: a linha de limites, montada pelo
-    // servidor, já diz "Editais até 400.000 caracteres" — o card exibia duas
+    // servidor, já diz "Editais até 500.000 caracteres" — o card exibia duas
     // vezes. O suporte prioritário também aparecia duas vezes, porque o
     // `mbSufixo` o colava no fim da linha do PDF. Fica só como item.
     features: [
@@ -114,9 +124,14 @@ const tiers = [
       '500 dossiês por dia · 3 empresas',
       'Suporte prioritário',
     ],
-    limites: ['Editais até 400.000 caracteres', 'PDF até 100 MB'],
+    limites: ['Editais até 500.000 caracteres', 'PDF até 20 MB'],
     mbSufixo: '',
-    buttonText: 'Assinar Avançado', tierLevel: 4, popular: false, label: 'Elite',
+    // ⚠️ O selo dizia 'Elite'. "Elite" é um nome de plano que a Bawzi teve e
+    // aposentou — ele sobrevivia em mensagens de erro do backend e aqui, no
+    // card do plano mais caro, ao lado do nome atual. Quem lia via dois nomes
+    // para a mesma coisa e não sabia qual estava comprando. O selo agora diz o
+    // que o plano é, não como ele se chamava.
+    buttonText: 'Assinar Avançado', tierLevel: 4, popular: false, label: 'Completo',
   },
 ] as const;
 
@@ -247,25 +262,29 @@ function SimuladorDePlano({
   limites,
   onEscolher,
   activeTier,
+  onRecomendado,
 }: {
   limites: Record<string, LimitePublico> | null;
   onEscolher: (tierLevel: number) => void;
   activeTier: number;
+  /** Publica o nível recomendado para o resto da página destacar o MESMO
+   *  plano. Sem isto, o simulador respondia "qual é o meu" e logo abaixo os
+   *  cartões, indistintos entre si, faziam a pessoa recomeçar a decisão — a
+   *  resposta morria na altura em que era dada. */
+  onRecomendado?: (nivel: number | null) => void;
 }) {
   const [editais, setEditais] = useState(10);
   const [profundas, setProfundas] = useState(2);
   const [faixaChave, setFaixaChave] = useState('comum');
   const faixa = FAIXAS_TAMANHO.find((f) => f.chave === faixaChave) ?? FAIXAS_TAMANHO[1];
 
-  // Sem os limites do servidor não há simulação honesta possível — e inventar
-  // um fallback aqui seria exatamente a fórmula paralela que este componente
-  // existe para evitar. Some da tela até o dado chegar.
-  if (!limites) return null;
-
   const profundasReais = Math.min(profundas, editais);
   const rapidas = Math.max(0, editais - profundasReais);
 
-  const planos = [2, 3, 4].map((nivel) => {
+  // ⚠️ O CÁLCULO SUBIU PARA ANTES DO `return null` por regra de hooks: o
+  // `useEffect` que publica a recomendação não pode ficar depois de um return
+  // condicional. Como o corpo desreferencia `limites`, ele passa a ser guardado.
+  const planos = !limites ? [] : [2, 3, 4].map((nivel) => {
     const lim = limites[String(nivel)];
     const meta = tiers.find((t) => t.tierLevel === nivel);
     const unidade = lim?.caracteres_por_credito || 50_000;
@@ -309,6 +328,14 @@ function SimuladorDePlano({
   // coubesse: diz a verdade e manda falar com a gente.
   const recomendado = planos.find((p) => p.veredito === 'folga') ?? null;
 
+  const nivelRecomendado = recomendado?.nivel ?? null;
+  useEffect(() => { onRecomendado?.(nivelRecomendado); }, [nivelRecomendado, onRecomendado]);
+
+  // Sem os limites do servidor não há simulação honesta possível — e inventar
+  // um fallback aqui seria exatamente a fórmula paralela que este componente
+  // existe para evitar. Some da tela até o dado chegar.
+  if (!limites) return null;
+
   const CORES: Record<Veredito, { chip: string; texto: string }> = {
     folga:   { chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', texto: 'Atende com folga' },
     limite:  { chip: 'bg-amber-50 text-amber-700 border-amber-200',       texto: 'No limite' },
@@ -318,7 +345,7 @@ function SimuladorDePlano({
   };
 
   return (
-    <div className="@container mb-10 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+    <div className="@container mb-6 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 md:px-6">
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
           Qual plano é o seu
@@ -666,6 +693,392 @@ const tierStyle: Record<string, Record<string, string>> = {
 // Nome curto dos tiers para o label "Inclui tudo do Nível N +"
 const TIER_SHORT: Record<number, string> = { 1: 'Gratuito', 2: 'Essencial', 3: 'Profissional' };
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * TABELA COMPARATIVA
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * O PROBLEMA QUE ELA RESOLVE
+ * ──────────────────────────
+ * Os cartões usam herança — "Tudo do Essencial +" — e isso é ótimo para quem
+ * ESCREVE e hostil para quem LÊ. Para responder "o Profissional tem simulador
+ * de preços?", a pessoa precisa abrir o cartão do Profissional, ler que ele
+ * herda do Essencial, abrir o Essencial, ver que herda do Gratuito, e somar
+ * três listas de cabeça enquanto rola a página. Ninguém faz isso: desiste, ou
+ * chuta. Aqui cada recurso aparece uma vez, com uma coluna por plano.
+ *
+ * Nada foi removido dos cartões — esta seção é ADITIVA. Os cartões continuam
+ * sendo a leitura rápida; a tabela é para quem precisa conferir um item
+ * específico antes de pagar.
+ *
+ * ⚠️ O NÍVEL 0 É A BASE DE TODO MUNDO, e isso precisa de explicação.
+ * No array `tiers`, o Teste tem `inherits: null` e o Gratuito TAMBÉM tem
+ * `inherits: null` — a cadeia de herança só começa no Essencial. Se a tabela
+ * lesse isso ao pé da letra, "Semáforo de viabilidade" apareceria com ✓ apenas
+ * no Teste e com — no Avançado de R$ 497, o que é grosseiramente falso: o
+ * semáforo é saída de toda análise em qualquer nível. O `null` do Gratuito
+ * significa "não repita o óbvio no cartão", não "não tem". Por isso o que o
+ * Teste lista entra como piso universal.
+ */
+
+/** Recursos de um nível, já somando os herdados. Ordem: do mais básico ao
+ *  específico daquele plano, que é a ordem em que fazem sentido lidos juntos. */
+function featuresAcumuladas(nivel: number): string[] {
+  const t = tiers.find((x) => x.tierLevel === nivel);
+  if (!t) return [];
+  const base =
+    nivel > -1
+      ? [...(tiers.find((x) => x.tierLevel === -1)?.features ?? [])]
+      : [];
+  const herdadas = t.inherits !== null ? featuresAcumuladas(t.inherits) : [];
+  const juntas = [...base, ...herdadas, ...t.features];
+  return juntas.filter((f, i) => juntas.indexOf(f) === i);
+}
+
+/** Recursos que SUBSTITUEM outros ao subir de plano, em vez de somar.
+ *
+ *  ⚠️ SEM ISTO A TABELA MENTE POR ACÚMULO — e o render mostrou exatamente
+ *  isso: como o Avançado herda tudo, a coluna dele marcava ✓ ao mesmo tempo em
+ *  "5 por dia", "30 dossiês por dia", "100 dossiês por dia" e "500 dossiês por
+ *  dia". Quatro tetos diários simultâneos e contraditórios para o mesmo
+ *  recurso. Quantidade não se acumula: ela troca.
+ *
+ *  Cada cadeia lista o recurso do nível mais baixo primeiro. Quando um plano
+ *  tem dois elos da mesma cadeia, só o ÚLTIMO conta como dele.
+ *
+ *  Lista explícita, e não heurística por texto: adivinhar "isto parece uma
+ *  quantidade" erraria em silêncio no dia em que alguém escrevesse um recurso
+ *  novo com número no nome. */
+const CADEIAS_QUE_SUBSTITUEM: readonly (readonly string[])[] = [
+  [
+    'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
+    '30 dossiês de concorrente por dia',
+    '100 dossiês por dia · 2 empresas',
+    '500 dossiês por dia · 3 empresas',
+  ],
+  [
+    'Cadastro de empresa (CNPJ) · 1 empresa',
+    '100 dossiês por dia · 2 empresas',
+    '500 dossiês por dia · 3 empresas',
+  ],
+];
+
+/** O plano tem este recurso E ele ainda é o vigente (não foi substituído por um
+ *  elo posterior da mesma cadeia que o plano também possua). */
+function temRecursoVigente(nivel: number, recurso: string): boolean {
+  const acumuladas = featuresAcumuladas(nivel);
+  if (!acumuladas.includes(recurso)) return false;
+  for (const cadeia of CADEIAS_QUE_SUBSTITUEM) {
+    const i = cadeia.indexOf(recurso);
+    if (i === -1) continue;
+    // Existe um elo mais alto da mesma cadeia neste plano? Então este já não vale.
+    if (cadeia.slice(i + 1).some((mais) => acumuladas.includes(mais))) return false;
+  }
+  return true;
+}
+
+/** Em que nível cada recurso APARECE pela primeira vez — é isso que decide
+ *  onde a coluna ganha ✓ e onde ganha travessão. */
+function mapaDeRecursos(): { recurso: string; desde: number }[] {
+  const ordem = [-1, 1, 2, 3, 4];
+  const visto = new Map<string, number>();
+  for (const nivel of ordem) {
+    for (const f of tiers.find((t) => t.tierLevel === nivel)?.features ?? []) {
+      if (!visto.has(f)) visto.set(f, nivel);
+    }
+  }
+  return [...visto.entries()].map(([recurso, desde]) => ({ recurso, desde }));
+}
+
+const NIVEIS_TABELA = [-1, 1, 2, 3, 4] as const;
+
+function CelulaTem({ tem, escuro }: { tem: boolean; escuro?: boolean }) {
+  return tem ? (
+    <Check
+      className={`mx-auto h-4 w-4 ${escuro ? "text-violet-400" : "text-emerald-500"}`}
+      strokeWidth={3}
+    />
+  ) : (
+    // Travessão, não X. "Não incluído" é ausência, e um X vermelho em cinco
+    // linhas seguidas faz o plano de entrada parecer defeituoso em vez de menor.
+    <span className="text-slate-300" aria-label="não incluído">
+      —
+    </span>
+  );
+}
+
+function TabelaComparativa({
+  limites,
+  activeTier,
+  recomendado,
+  onEscolher,
+}: {
+  limites: Record<string, LimitePublico> | null;
+  activeTier: number;
+  recomendado: number | null;
+  onEscolher: (tierLevel: number) => void;
+}) {
+  const [aberta, setAberta] = useState(false);
+  const recursos = mapaDeRecursos();
+
+  const linhasDeLimite = [
+    {
+      rotulo: "Créditos por mês",
+      valor: (n: number) => {
+        const l = limites?.[String(n)];
+        if (!l) return "—";
+        if (l.ilimitado) return "Ilimitado";
+        return n === -1
+          ? `${numeroBr(l.monthly_limit)} por dia`
+          : numeroBr(l.monthly_limit);
+      },
+    },
+    {
+      rotulo: "Tamanho máximo do edital",
+      valor: (n: number) => {
+        const l = limites?.[String(n)];
+        return l?.max_chars ? `${numeroBr(l.max_chars)} car.` : "—";
+      },
+    },
+    {
+      rotulo: "PDF por envio",
+      valor: (n: number) => {
+        const l = limites?.[String(n)];
+        return l?.max_mb ? `${numeroBr(l.max_mb)} MB` : "—";
+      },
+    },
+    {
+      rotulo: "Custo da auditoria profunda",
+      valor: (n: number) => {
+        const l = limites?.[String(n)];
+        if (!l) return "—";
+        const peso = l.peso_profunda ?? 1;
+        // O peso existe no config de todo nível, mas só é acionável onde há
+        // botão de modo (conta criada). Anunciar "×4" no Teste ensinaria uma
+        // regra que aquele nível não tem como usar.
+        return peso > 1 && n >= 1 ? `×${peso}` : "—";
+      },
+    },
+  ];
+
+  return (
+    <section className="mb-16">
+      <button
+        type="button"
+        onClick={() => setAberta((v) => !v)}
+        aria-expanded={aberta}
+        className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left transition-all hover:border-slate-300 hover:shadow-sm"
+      >
+        <span className="min-w-0">
+          <span className="block text-sm font-black text-slate-900">
+            Comparar os 5 planos lado a lado
+          </span>
+          <span className="mt-0.5 block text-xs font-medium text-slate-500">
+            Cada recurso uma vez só, com uma coluna por plano — sem precisar
+            somar “tudo do nível anterior”.
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-emerald-700">
+          {aberta ? "Fechar" : "Abrir"}
+          <ChevronRight
+            className={`h-4 w-4 transition-transform ${aberta ? "rotate-90" : ""}`}
+          />
+        </span>
+      </button>
+
+      {aberta && (
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          {/* `overflow-x-auto` + primeira coluna `sticky`: a 360px cinco colunas
+              não cabem de jeito nenhum, e empilhar a tabela destruiria a única
+              coisa que ela faz de útil, que é comparar na horizontal. Rolando,
+              o nome do recurso fica preso à esquerda e o dado nunca perde o
+              rótulo. */}
+          {/* ⚠️ `relative` NÃO É DECORATIVO. Sem ele, este contêiner é
+              `position: static` e portanto NÃO é bloco de contenção dos
+              descendentes absolutos — e as legendas `sr-only` de cada célula
+              (que o Tailwind posiciona com `absolute`) escapavam do recorte,
+              esticando a PÁGINA INTEIRA em 311px a 390px de largura. A tabela
+              rolava por dentro certinho e mesmo assim o site inteiro deslizava
+              na horizontal. */}
+          <div className="relative overflow-x-auto">
+            {/* `border-separate border-spacing-0` e não `border-collapse`:
+                no Chromium, `position: sticky` em `th`/`td` é IGNORADO quando a
+                tabela usa `border-collapse: collapse`. Medido — a primeira
+                coluna acompanhava a rolagem em vez de ficar presa, e aí a
+                pessoa via ✓ e — sem saber de que recurso eram. */}
+            <table className="w-full min-w-[46rem] border-separate border-spacing-0 text-left">
+              <thead>
+                <tr className="bg-slate-50 [&>th]:border-b [&>th]:border-slate-200">
+                  <th
+                    scope="col"
+                    className="sticky left-0 z-20 bg-slate-50 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  >
+                    Recurso
+                  </th>
+                  {NIVEIS_TABELA.map((n) => {
+                    const t = tiers.find((x) => x.tierLevel === n);
+                    const ehRecomendado = recomendado === n;
+                    return (
+                      <th
+                        key={n}
+                        scope="col"
+                        className={`min-w-[7.5rem] px-3 py-3 text-center align-bottom ${
+                          ehRecomendado ? "bg-emerald-50" : ""
+                        }`}
+                      >
+                        <span className="block text-xs font-black text-slate-900">
+                          {t?.name}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] font-bold text-slate-400">
+                          {t?.price}
+                          {t?.period}
+                        </span>
+                        {activeTier === n && (
+                          <span className="mt-1 inline-block rounded-full border border-slate-300 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-slate-500">
+                            Seu plano
+                          </span>
+                        )}
+                        {ehRecomendado && activeTier !== n && (
+                          <span className="mt-1 inline-block rounded-full bg-emerald-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-white">
+                            Sugerido
+                          </span>
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+
+              <tbody>
+                <tr className="bg-white [&>th]:border-b [&>th]:border-slate-100">
+                  <th
+                    colSpan={6}
+                    scope="colgroup"
+                    /* Sem `sticky` aqui, ao contrário das linhas de recurso:
+                       esta célula tem colSpan={6} e portanto já ocupa a largura
+                       inteira da tabela — não sobra deslocamento para ela
+                       "grudar". A classe daria a impressão de fazer algo e não
+                       faria nada. */
+                    className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  >
+                    O que está incluído
+                  </th>
+                </tr>
+                {recursos.map(({ recurso, desde }) => (
+                  <tr
+                    key={recurso}
+                    className="hover:bg-slate-50/60 [&>*]:border-b [&>*]:border-slate-50 last:[&>*]:border-0"
+                  >
+                    <th
+                      scope="row"
+                      className="sticky left-0 z-10 max-w-[18rem] bg-white px-4 py-2.5 text-[11px] font-medium leading-snug text-slate-600"
+                    >
+                      {recurso}
+                    </th>
+                    {NIVEIS_TABELA.map((n) => (
+                      <td
+                        key={n}
+                        className={`px-3 py-2.5 text-center text-[11px] font-bold ${
+                          recomendado === n ? "bg-emerald-50/60" : ""
+                        }`}
+                      >
+                        <CelulaTem
+                          tem={temRecursoVigente(n, recurso)}
+                          escuro={n === 4}
+                        />
+                        <span className="sr-only">
+                          {temRecursoVigente(n, recurso)
+                            ? `incluído${desde === n ? " (novo neste plano)" : ""}`
+                            : "não incluído"}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+
+                <tr className="bg-white [&>th]:border-y [&>th]:border-slate-100">
+                  <th
+                    colSpan={6}
+                    scope="colgroup"
+                    /* Sem `sticky` aqui, ao contrário das linhas de recurso:
+                       esta célula tem colSpan={6} e portanto já ocupa a largura
+                       inteira da tabela — não sobra deslocamento para ela
+                       "grudar". A classe daria a impressão de fazer algo e não
+                       faria nada. */
+                    className="px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-slate-400"
+                  >
+                    Limites
+                  </th>
+                </tr>
+                {linhasDeLimite.map(({ rotulo, valor }) => (
+                  <tr
+                    key={rotulo}
+                    className="hover:bg-slate-50/60 [&>*]:border-b [&>*]:border-slate-50 last:[&>*]:border-0"
+                  >
+                    <th
+                      scope="row"
+                      className="sticky left-0 z-10 bg-white px-4 py-2.5 text-[11px] font-medium leading-snug text-slate-600"
+                    >
+                      {rotulo}
+                    </th>
+                    {NIVEIS_TABELA.map((n) => (
+                      <td
+                        key={n}
+                        className={`px-3 py-2.5 text-center text-[11px] font-bold tabular-nums text-slate-700 ${
+                          recomendado === n ? "bg-emerald-50/60" : ""
+                        }`}
+                      >
+                        {valor(n)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+
+              <tfoot>
+                <tr className="bg-slate-50/70 [&>*]:border-t [&>*]:border-slate-200">
+                  <td className="sticky left-0 z-10 bg-slate-50/70 px-4 py-3" />
+                  {NIVEIS_TABELA.map((n) => (
+                    <td
+                      key={n}
+                      className={`px-3 py-3 text-center ${recomendado === n ? "bg-emerald-50" : ""}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onEscolher(n)}
+                        disabled={activeTier === n}
+                        className={`w-full rounded-lg px-2 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all disabled:cursor-default ${
+                          activeTier === n
+                            ? "bg-emerald-100 text-emerald-700"
+                            : recomendado === n
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                              : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        {activeTier === n
+                          ? "Atual"
+                          : n <= 1
+                            ? "Começar"
+                            : "Assinar"}
+                      </button>
+                    </td>
+                  ))}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-[11px] font-medium leading-relaxed text-slate-500">
+            Os limites vêm da mesma fonte que o sistema aplica na hora de
+            cobrar. O que o Teste oferece é a base de todos os planos — os
+            cartões acima só não repetem esses itens para não ficarem longos.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+
 export default function PricingSection({ onRegister, onUpgrade, onChangePlan, currentTier: propCurrentTier, compact = false }: PricingSectionProps) {
   const router = useRouter();
 
@@ -681,6 +1094,10 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
   // `null` = ainda não sei. Enquanto não souber, cada cartão exibe o texto de
   // reserva — nunca um número pela metade.
   const [limitesPublicos, setLimitesPublicos] = useState<Record<string, LimitePublico> | null>(null);
+  // Nível que o simulador recomendou. Mora aqui, e não dentro dele, porque o
+  // destaque precisa alcançar os cartões e a tabela — irmãos, não filhos, do
+  // simulador.
+  const [nivelSugerido, setNivelSugerido] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/tiers/limites-publicos`)
@@ -809,102 +1226,14 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
     return tier.buttonText;
   };
 
-  return (
-    <>
-      {checkoutError && (
-        <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border bg-red-50 border-red-200 text-red-800 px-4 py-3 text-sm font-semibold shadow-xl">
-          {checkoutError}
-        </div>
-      )}
-
-      {/* Banner: Convite Promocional */}
-      {isPromo && (
-        <div className="flex flex-wrap items-center gap-3 bg-violet-50 border border-violet-200 px-5 py-4 rounded-2xl mb-6">
-          <div className="flex items-center gap-2 shrink-0">
-            <Sparkles className="w-4 h-4 text-violet-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-violet-700 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-lg">
-              Convite Promocional
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[12px] font-semibold text-violet-900">
-              Você tem acesso completo ao plano <strong>Avançado</strong> via convite.
-            </p>
-            {promoExpiresAt && (
-              <p className="flex items-center gap-1 text-[11px] text-violet-500 font-medium mt-0.5">
-                <CalendarClock className="w-3 h-3" />
-                Expira em {new Date(promoExpiresAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                {' '}— assine abaixo para manter o acesso.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Banner: Assinatura Paga Ativa */}
-      {activeTier > 1 && !isPromo && (
-        <div className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl mb-6">
-          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
-            Assinatura Ativa
-          </span>
-          <p className="text-[12px] font-semibold text-emerald-800 flex-1 min-w-0">
-            Nível {activeTier} — acesso total aos recursos premium.
-          </p>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={forceManualSync}
-              disabled={isSyncing}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 text-[11px] font-bold rounded-xl hover:bg-emerald-50 transition-all disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Sincronizando…' : 'Atualizar'}
-            </button>
-            <button
-              onClick={handleManageSubscription}
-              className="px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-black rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
-            >
-              Gerenciar ↗
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Resumo compacto — usado no workspace, sem repetir a grade completa a cada visita */}
-      {compact && (
-        <div className="mb-10 flex flex-col items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Seu plano</p>
-            <p className="mt-0.5 text-sm font-black text-slate-900">
-              {activeTier > 0
-                ? `Nível ${activeTier} — ${tiers.find((t) => t.tierLevel === activeTier)?.name || ''}`
-                : 'Nível 0 — Teste gratuito'}
-            </p>
-          </div>
-          <Link
-            href="/plans"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700"
-          >
-            Ver todos os planos <ChevronRight size={14} />
-          </Link>
-        </div>
-      )}
-
-      {/* Simulador ANTES dos cartões, e não depois: a pergunta que trava a
-          decisão é "qual deles é o meu", e cinco colunas de recurso não
-          respondem isso. Fica fora do modo `compact` (o resumo dentro do app,
-          onde a pessoa já assinou e a pergunta é outra). */}
-      {!compact && (
-        <SimuladorDePlano
-          limites={limitesPublicos}
-          activeTier={activeTier}
-          onEscolher={handleCardButton}
-        />
-      )}
-
-      {/* Grid de cards */}
-      {!compact && (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end mb-16">
-        {tiers.map((tier) => {
+  /** UM cartão de plano.
+   *
+   *  Extraído para função porque a grade passou a ter DOIS grupos (entrada e
+   *  pagos). Duplicar ~120 linhas de JSX entre eles garantiria que um dia
+   *  divergissem — mexe-se num, esquece o outro, e a página passa a mostrar
+   *  dois desenhos de cartão lado a lado. O conteúdo aqui é exatamente o que
+   *  já existia; nada foi retirado. */
+  const renderCartao = (tier: (typeof tiers)[number]) => {
           const s            = tierStyle[String(tier.tierLevel)];
           const isActivePaid = !isPromo && tier.tierLevel === activeTier;
           const isPromoActive= isPromo  && tier.tierLevel === activeTier;
@@ -1004,8 +1333,206 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
               </div>
             </div>
           );
-        })}
+  };
+
+  return (
+    <>
+      {checkoutError && (
+        <div className="fixed bottom-5 right-5 z-[200] max-w-sm rounded-2xl border bg-red-50 border-red-200 text-red-800 px-4 py-3 text-sm font-semibold shadow-xl">
+          {checkoutError}
+        </div>
+      )}
+
+      {/* Banner: Convite Promocional */}
+      {isPromo && (
+        <div className="flex flex-wrap items-center gap-3 bg-violet-50 border border-violet-200 px-5 py-4 rounded-2xl mb-6">
+          <div className="flex items-center gap-2 shrink-0">
+            <Sparkles className="w-4 h-4 text-violet-500" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-violet-700 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-lg">
+              Convite Promocional
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold text-violet-900">
+              Você tem acesso completo ao plano <strong>Avançado</strong> via convite.
+            </p>
+            {promoExpiresAt && (
+              <p className="flex items-center gap-1 text-[11px] text-violet-500 font-medium mt-0.5">
+                <CalendarClock className="w-3 h-3" />
+                Expira em {new Date(promoExpiresAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                {' '}— assine abaixo para manter o acesso.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Banner: Assinatura Paga Ativa
+          ⚠️ `!compact`: NO WORKSPACE ELE VINHA COLADO NO RESUMO LOGO ABAIXO, e
+          os dois diziam a mesma coisa. "Assinatura Ativa · Nível 4 — acesso
+          total aos recursos premium" seguido de "Seu plano · Nível 4 —
+          Avançado", um encostado no outro, com três botões repartidos entre
+          eles. Contando a página inteira, o nível do plano aparecia QUATRO
+          vezes: o selo do hero, o crachá da barra lateral, e estes dois.
+          Na página /plans (fora do modo compacto) o banner continua — lá ele é
+          a única coisa que diz que a assinatura está em dia, e a grade abaixo
+          é de venda, não de estado. */}
+      {activeTier > 1 && !isPromo && !compact && (
+        <div className="flex flex-wrap items-center gap-3 bg-emerald-50 border border-emerald-200 px-5 py-3 rounded-2xl mb-6">
+          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0">
+            Assinatura Ativa
+          </span>
+          <p className="text-[12px] font-semibold text-emerald-800 flex-1 min-w-0">
+            Nível {activeTier} — acesso total aos recursos premium.
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={forceManualSync}
+              disabled={isSyncing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 text-[11px] font-bold rounded-xl hover:bg-emerald-50 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Sincronizando…' : 'Atualizar'}
+            </button>
+            <button
+              onClick={handleManageSubscription}
+              className="px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-black rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
+            >
+              Gerenciar ↗
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Resumo compacto — usado no workspace, sem repetir a grade completa a
+          cada visita. Recebeu os dois botões do banner de assinatura acima:
+          UMA linha, o nível dito UMA vez, e as três ações que existiam
+          continuam existindo, agora lado a lado. */}
+      {compact && (
+        <div className="mb-10 flex flex-col items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+              Seu plano
+              {activeTier > 1 && !isPromo && (
+                <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] text-emerald-700">
+                  Assinatura ativa
+                </span>
+              )}
+            </p>
+            <p className="mt-0.5 text-sm font-black text-slate-900">
+              {activeTier > 0
+                ? `Nível ${activeTier} — ${tiers.find((t) => t.tierLevel === activeTier)?.name || ''}`
+                : 'Nível 0 — Teste gratuito'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeTier > 1 && !isPromo && (
+              <>
+                <button
+                  onClick={forceManualSync}
+                  disabled={isSyncing}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[11px] font-bold text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                  {isSyncing ? 'Sincronizando…' : 'Atualizar'}
+                </button>
+                <button
+                  onClick={handleManageSubscription}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[11px] font-bold text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+                >
+                  Gerenciar ↗
+                </button>
+              </>
+            )}
+            <Link
+              href="/plans"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-white transition-colors hover:bg-emerald-700"
+            >
+              Ver todos os planos <ChevronRight size={14} />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Simulador ANTES dos cartões, e não depois: a pergunta que trava a
+          decisão é "qual deles é o meu", e cinco colunas de recurso não
+          respondem isso. Fica fora do modo `compact` (o resumo dentro do app,
+          onde a pessoa já assinou e a pergunta é outra). */}
+      {!compact && (
+        <SimuladorDePlano
+          limites={limitesPublicos}
+          activeTier={activeTier}
+          onEscolher={handleCardButton}
+          onRecomendado={setNivelSugerido}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          GRADE DE PLANOS — AGRUPADA, NÃO MAIS CINCO COLUNAS IGUAIS
+          ═══════════════════════════════════════════════════════════════════
+
+          ⚠️ NENHUM CARTÃO FOI REMOVIDO. Os cinco continuam, com exatamente o
+          mesmo conteúdo — mudou a diagramação.
+
+          `lg:grid-cols-5` num contêiner de 1400px dava ~253px por cartão para
+          ler recurso em `text-[11px]`, e punha lado a lado duas coisas que não
+          competem entre si: dois níveis de EXPERIMENTAÇÃO (Teste, sem cadastro;
+          Gratuito) e três de ASSINATURA. Cinco opções paralelas para uma decisão
+          que na prática é binária — "eu testo ou eu compro?" — só adicionam
+          trabalho, e o cartão mais popular acabava com a mesma largura do teste
+          sem cadastro.
+
+          Agora são dois grupos, na mesma ordem crescente de sempre: a dupla de
+          entrada num par estreito, e os três pagos em colunas largas, onde a
+          lista de recursos cabe sem espremer. */}
+      {!compact && (
+      <div className="mb-6">
+        <div className="mb-3 flex items-baseline gap-2">
+          <h3 className="text-sm font-black text-slate-900">Conhecer sem pagar</h3>
+          <span className="text-xs font-medium text-slate-500">
+            para validar com um edital real antes de decidir
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:max-w-[46rem]">
+          {tiers.filter((t) => t.tierLevel <= 1).map(renderCartao)}
+        </div>
       </div>
+      )}
+
+      {/* Planos com assinatura — três colunas largas.
+          Sem o antigo `items-end`: alinhados pelo rodapé, os cabeçalhos ficavam
+          em alturas diferentes conforme o número de recursos, e comparar preço
+          exigia caçar o preço de cada cartão em vez de correr o olho por uma
+          linha só. */}
+      {!compact && (
+      <div className="mb-10">
+        <div className="mb-3 flex flex-wrap items-baseline gap-2">
+          <h3 className="text-sm font-black text-slate-900">Planos com assinatura</h3>
+          <span className="text-xs font-medium text-slate-500">
+            cancelamento a qualquer momento, pelo próprio painel
+          </span>
+          {/* Fecha o ciclo do simulador: ele responde "qual é o meu" lá em cima,
+              e aqui o mesmo plano aparece nomeado, na hora de clicar. */}
+          {nivelSugerido && (
+            <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+              <Check className="h-3 w-3" />
+              Simulação sugere: {tiers.find((t) => t.tierLevel === nivelSugerido)?.name}
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:gap-5">
+          {tiers.filter((t) => t.tierLevel >= 2).map(renderCartao)}
+        </div>
+      </div>
+      )}
+
+      {!compact && (
+        <TabelaComparativa
+          limites={limitesPublicos}
+          activeTier={activeTier}
+          recomendado={nivelSugerido}
+          onEscolher={handleCardButton}
+        />
       )}
 
       <UpgradeModal

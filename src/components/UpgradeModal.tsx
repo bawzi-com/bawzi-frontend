@@ -61,7 +61,7 @@ export default function UpgradeModal({ isOpen, onClose, tier, clientSecret, titl
       <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
 
       <div
-        className="relative bg-white w-full max-w-xl max-h-[92vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden"
+        className="relative bg-white w-full max-w-xl max-h-[92dvh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden"
         style={{ animation: 'modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
 

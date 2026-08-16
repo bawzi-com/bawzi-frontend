@@ -52,7 +52,7 @@ export default function UpsellModal({
 
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
+      <div className="bg-white w-full max-w-md max-h-[90dvh] rounded-[2rem] shadow-2xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
         
         {/* Banner de Gradiente Superior (Background) */}
         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-indigo-600/10 via-violet-600/10 to-fuchsia-600/10 blur-2xl -z-10" />
@@ -65,7 +65,7 @@ export default function UpsellModal({
           <X size={16} />
         </button>
 
-        <div className="p-6 sm:p-8 flex flex-col items-center">
+        <div className="p-6 sm:p-8 flex flex-col items-center flex-1 overflow-y-auto">
           {/* Ícone Animado */}
           <div className="w-20 h-20 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-3xl flex items-center justify-center text-indigo-600 mb-6 shadow-inner border border-white">
             <Rocket size={40} className="animate-bounce" />

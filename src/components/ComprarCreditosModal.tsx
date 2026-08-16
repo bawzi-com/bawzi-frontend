@@ -75,7 +75,7 @@ export default function ComprarCreditosModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-2xl"
+        className="w-full max-w-md max-h-[90dvh] flex flex-col overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-2xl"
       >
         {/* Cabeçalho */}
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 bg-violet-50 p-5">
@@ -100,7 +100,7 @@ export default function ComprarCreditosModal({
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 flex-1 overflow-y-auto">
           {/* Sugestões */}
           <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
             Valores sugeridos

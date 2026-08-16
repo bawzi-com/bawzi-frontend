@@ -15,13 +15,19 @@ interface Message {
   uiOnly?: boolean;
 }
 
-/** Renderiza markdown básico: **negrito**, listas com -, quebras de linha */
+/** Renderiza markdown básico: **negrito**, listas com -, quebras de linha
+ *
+ *  ⚠️ `div` e não `span`. Era tudo `<span className="block">`: renderizava
+ *  certo, mas COPIAR o texto devolvia tudo grudado — "…da Bawzi.Como posso…" —
+ *  porque `span` não gera quebra de linha na área de transferência, nem com
+ *  `display: block`. Num assistente que responde com passos, valores e regras
+ *  que a pessoa vai colar em outro lugar, isso não é detalhe. */
 function MessageContent({ text }: { text: string }) {
   const lines = text.split('\n');
   return (
-    <span className="block space-y-1">
+    <div className="space-y-1">
       {lines.map((line, i) => {
-        if (line.trim() === '') return <span key={i} className="block h-1" />;
+        if (line.trim() === '') return <div key={i} className="h-1" />;
         const isBullet = /^[-•]\s/.test(line.trim());
         const content = isBullet ? line.trim().slice(2) : line;
         const parts = content.split(/\*\*(.+?)\*\*/g);
@@ -30,17 +36,32 @@ function MessageContent({ text }: { text: string }) {
         );
         if (isBullet) {
           return (
-            <span key={i} className="flex gap-1.5 items-start">
+            <div key={i} className="flex gap-1.5 items-start">
               <span className="mt-[5px] shrink-0 w-1.5 h-1.5 rounded-full bg-current opacity-40" />
               <span>{rendered}</span>
-            </span>
+            </div>
           );
         }
-        return <span key={i} className="block">{rendered}</span>;
+        return <div key={i}>{rendered}</div>;
       })}
-    </span>
+    </div>
   );
 }
+
+/** Perguntas de partida. Uma saudação que termina em "como posso te ajudar?"
+ *  devolve o trabalho para o usuário justamente no momento em que ele ainda
+ *  não sabe o que a ferramenta responde — e o resultado é fechar o widget.
+ *  As três apontam para dúvidas que a central de ajuda já documenta. */
+const SUGESTOES = [
+  'Como funciona a cobrança por créditos?',
+  'Qual a diferença entre análise rápida e auditoria profunda?',
+  'O que acontece se minha cota acabar?',
+];
+
+/** Teto do que se digita no chat. Sem ele dá para colar um edital inteiro na
+ *  caixa: o histórico é limitado em QUANTIDADE de mensagens (`slice(-10)`),
+ *  nunca em tamanho, então uma colagem grande ia inteira para o modelo. */
+const MAX_CHARS_PERGUNTA = 1000;
 
 const CTA_MESSAGE: Message = {
   role: 'assistant',
@@ -69,6 +90,9 @@ export default function ChatWidget() {
   const [loading, setLoading] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [isHovering, setIsHovering] = useState(false);
+  /** Última tentativa falhou? Governa o rótulo de status do cabeçalho, que
+   *  antes dizia "Online agora" mesmo com a API fora. */
+  const [falhou, setFalhou] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -140,8 +164,10 @@ export default function ChatWidget() {
         throw new Error(errBody?.detail || undefined);
       }
       const data = await res.json();
+      setFalhou(false);
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
     } catch (err) {
+      setFalhou(true);
       let content = 'Desculpe, ocorreu um erro. Tente novamente em instantes.';
       if (err instanceof SessionExpiredError) {
         content = 'Sua sessão expirou. Faça login novamente para continuar a conversa.';
@@ -173,8 +199,26 @@ export default function ChatWidget() {
     <>
       {open && (
         <div
+          role="dialog"
+          aria-label="Assistente da Bawzi"
           className="fixed bottom-24 right-5 z-50 flex flex-col rounded-2xl overflow-hidden"
-          style={{ width: 368, height: 500, boxShadow: '0 20px 60px -10px rgba(5,150,105,0.18), 0 4px 16px rgba(0,0,0,0.08)', border: '1px solid #d1fae5' }}
+          // ⚠️ ERA `width: 368, height: 500` CRAVADO — e o painel é `fixed`,
+          // então não havia contêiner para adaptá-lo.
+          //
+          // Num iPhone de 375px: 20px de `right-5` + 368 de largura = 388 >
+          // 375. O painel estourava a viewport pela esquerda, com o conteúdo
+          // cortado. E 500px de altura fixa não cabe em tela pequena com o
+          // teclado aberto, que é exatamente o estado em que o chat é usado.
+          //
+          // `dvh` e não `vh`: em navegador móvel a barra de endereço entra e
+          // sai, e `vh` mede a altura MÁXIMA — o rodapé com o campo de digitar
+          // ficava atrás da barra justamente quando ela aparece.
+          style={{
+            width: 'min(368px, calc(100vw - 2.5rem))',
+            height: 'min(500px, calc(100dvh - 8rem))',
+            boxShadow: '0 20px 60px -10px rgba(5,150,105,0.18), 0 4px 16px rgba(0,0,0,0.08)',
+            border: '1px solid #d1fae5',
+          }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3.5 text-white bg-emerald-700">
@@ -182,11 +226,19 @@ export default function ChatWidget() {
               <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
                 <Image src="/icon.png" alt="Bawzi" width={26} height={26} className="object-contain" />
               </div>
+              {/* "Online agora" era FIXO — a tela afirmava um estado que ela
+                  não verificava. Quando a API caía, o cabeçalho dizia "online"
+                  logo acima de "ocorreu um erro". Agora o rótulo reflete o
+                  resultado da última tentativa real. */}
               <div>
                 <p className="font-semibold text-sm leading-tight">Bawzi Assistant</p>
                 <span className="flex items-center gap-1.5 mt-0.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  <p className="text-xs text-emerald-100 leading-tight">Online agora</p>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    falhou ? 'bg-amber-300' : 'bg-emerald-300 animate-pulse'
+                  }`} />
+                  <p className="text-xs text-emerald-100 leading-tight">
+                    {falhou ? 'Instável no momento' : 'Online agora'}
+                  </p>
                 </span>
               </div>
             </div>
@@ -201,8 +253,15 @@ export default function ChatWidget() {
             </button>
           </div>
 
-          {/* Mensagens */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50">
+          {/* Mensagens.
+              `aria-live="polite"` porque a resposta chega DEPOIS, de forma
+              assíncrona: sem isso, quem usa leitor de tela manda a pergunta e
+              nada é anunciado — a conversa acontece em silêncio. */}
+          <div
+            className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50"
+            aria-live="polite"
+            aria-atomic="false"
+          >
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {msg.role === 'assistant' && <BawziAvatar />}
@@ -230,12 +289,32 @@ export default function ChatWidget() {
               <div className="flex gap-2.5 justify-start">
                 <BawziAvatar />
                 <div className="bg-white border border-slate-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                  <span className="flex gap-1 items-center h-4">
+                  {/* Três bolinhas animadas não dizem nada para leitor de tela. */}
+                  <span className="sr-only">Escrevendo a resposta…</span>
+                  <span className="flex gap-1 items-center h-4" aria-hidden="true">
                     {[0, 150, 300].map((d) => (
                       <span key={d} className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
                     ))}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Sugestões só enquanto a conversa não começou. Depois da primeira
+                pergunta elas viram ruído — e reapresentar caminho inicial no
+                meio de um atendimento sugere que a conversa não avançou. */}
+            {messages.length === 1 && !loading && (
+              <div className="flex flex-col gap-1.5 pl-9">
+                {SUGESTOES.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => { setInput(s); inputRef.current?.focus(); }}
+                    className="rounded-xl border border-emerald-100 bg-white px-3 py-2 text-left text-xs font-medium text-emerald-800 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50"
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             )}
             <div ref={bottomRef} />
@@ -253,9 +332,11 @@ export default function ChatWidget() {
                 ref={inputRef}
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => setInput(e.target.value.slice(0, MAX_CHARS_PERGUNTA))}
                 onKeyDown={handleKey}
                 disabled={loading}
+                maxLength={MAX_CHARS_PERGUNTA}
+                aria-label="Sua dúvida"
                 placeholder="Digite sua dúvida..."
                 className="flex-1 text-sm bg-transparent outline-none text-slate-800 placeholder-slate-400 disabled:opacity-50 py-1"
               />
@@ -270,6 +351,13 @@ export default function ChatWidget() {
                 </svg>
               </button>
             </div>
+            {/* O contador só aparece perto do teto: mostrar "0/1000" desde o
+                começo transforma um campo de conversa em formulário. */}
+            {input.length > MAX_CHARS_PERGUNTA * 0.8 && (
+              <p className="mt-1.5 text-right text-[10px] font-bold tabular-nums text-slate-400">
+                {input.length}/{MAX_CHARS_PERGUNTA}
+              </p>
+            )}
             <p className="text-center text-xs text-slate-400 mt-2">Powered by Bawzi AI</p>
           </div>
         </div>

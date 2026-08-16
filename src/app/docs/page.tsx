@@ -28,6 +28,7 @@ import {
   Bell,
   Settings,
   BarChart2,
+  Coins,
 } from 'lucide-react';
 
 // ─── Tipagem ──────────────────────────────────────────────────────────────────
@@ -76,22 +77,41 @@ const NAV: Section[] = [
       { id: 'gestao-decisoes', title: 'Gestão vs. Central de Decisões' },
     ],
   },
+  // Créditos ficam LOGO DEPOIS de Análise, e não dentro de Planos, de
+  // propósito: a dúvida nasce olhando o laudo ("por que esta análise custou
+  // 8?"), não olhando a tabela de preços. Era a única parte do produto que
+  // cobra dinheiro e não tinha uma linha de documentação.
+  {
+    id: 'creditos',
+    label: 'Créditos e consumo',
+    icon: Coins,
+    articles: [
+      { id: 'como-conta-credito', title: 'Como o crédito é contado' },
+      { id: 'rapida-vs-profunda', title: 'Rápida × Auditoria profunda' },
+      { id: 'tamanho-do-edital', title: 'Editais grandes e o teto do plano' },
+      { id: 'cota-acabou', title: 'O que acontece se a cota acabar' },
+    ],
+  },
+  // ⚠️ OS RÓTULOS DESTA NAVEGAÇÃO PRECISAM SER OS DA TELA. "Radar de Alertas"
+  // e "Contratos" não existem no menu lateral do app — os itens reais são
+  // "Monitor" (nív. 3) e "Renovações". Quem lia a ajuda procurava um menu com
+  // o nome errado, não achava, e concluía que o problema era ele.
   {
     id: 'radar',
-    label: 'Radar de Alertas',
+    label: 'Alertas de editais',
     icon: Radar,
     articles: [
-      { id: 'configurar-radar', title: 'Configurar palavras-chave' },
-      { id: 'alertas-email', title: 'Alertas por e-mail' },
+      { id: 'configurar-radar', title: 'Criar um alerta' },
+      { id: 'alertas-email', title: 'O e-mail diário' },
       { id: 'push-notifications', title: 'Notificações push' },
     ],
   },
   {
     id: 'contratos',
-    label: 'Contratos',
+    label: 'Renovações',
     icon: FileText,
     articles: [
-      { id: 'monitorar-contratos', title: 'Monitorar contratos' },
+      { id: 'monitorar-contratos', title: 'Contratos a vencer' },
       { id: 'alertas-vencimento', title: 'Alertas de vencimento' },
     ],
   },
@@ -100,8 +120,8 @@ const NAV: Section[] = [
     label: 'Concorrentes',
     icon: BarChart2,
     articles: [
-      { id: 'monitorar-concorrentes', title: 'Monitorar concorrentes' },
-      { id: 'historico-lances', title: 'Histórico de lances' },
+      { id: 'monitorar-concorrentes', title: 'Dossiê de concorrente' },
+      { id: 'historico-lances', title: 'De onde vem o deságio' },
     ],
   },
   {
@@ -240,10 +260,13 @@ function SectionInicio() {
       </P>
       <P>Com a Bawzi você:</P>
       <UL>
-        <LI>Monitora novos editais 24h por dia com alertas automáticos</LI>
+        {/* ⚠️ "24h por dia" e "histórico de lances em pregões" descreviam
+            capacidades que a plataforma não tem: a varredura é diária (07:00
+            BRT) e não existe leitura de lances — o deságio é estimado. */}
+        <LI>Recebe um alerta diário dos editais novos que combinam com os seus termos</LI>
         <LI>Recebe um score GO / NO-GO com base no perfil da sua empresa</LI>
-        <LI>Acompanha contratos vigentes e recebe aviso antes do vencimento</LI>
-        <LI>Monitora concorrentes e histórico de lances em pregões</LI>
+        <LI>Encontra contratos públicos a vencer e é avisado dos seus antes do prazo</LI>
+        <LI>Levanta o dossiê de um concorrente a partir do histórico público dele</LI>
         <LI>Gerencia a equipe comercial num único workspace</LI>
       </UL>
       <Callout type="tip">
@@ -449,6 +472,21 @@ function SectionAnalise() {
         ver na Gestão não aparece, abra o laudo dele na Central de Decisões e confira se o botão
         "+ Gestão" está ativado.
       </Callout>
+      {/* Comportamento novo: a edição do plano saiu do laudo. Sem este
+          parágrafo, quem já usava o produto procura os campos onde eles não
+          estão mais e conclui que sumiram. */}
+      <H3>Onde se preenche o plano de execução</H3>
+      <P>
+        O laudo <strong>mostra</strong> o plano — os passos, o responsável sugerido, o prazo e o
+        progresso. Quem <strong>executa</strong> é a Gestão: responsável, prazo, nota interna e a
+        marcação de concluído se preenchem lá, abrindo o edital no quadro.
+      </P>
+      <P>
+        A divisão existe porque as duas telas respondem perguntas diferentes. No laudo, o plano
+        está ancorado na cláusula que o gerou — é onde a ação faz sentido. Na Gestão, você vê
+        todos os editais lado a lado, com prazos comparáveis: é onde dá para saber o que vence
+        primeiro entre disputas diferentes, coisa que nenhum laudo isolado mostra.
+      </P>
       <P>
         Para remover um edital da Gestão, abra o laudo e clique em <strong>"Remover do acompanhamento"</strong>.
         Ele some do quadro, mas continua disponível normalmente na Central de Decisões.
@@ -457,50 +495,176 @@ function SectionAnalise() {
   );
 }
 
+/* Seção nova. Tudo aqui descreve a régua FIXA, que é a que o portão aplica
+ * (`precificacao.creditos_do_pedido` → `modos.custo_em_creditos`). Se um dia a
+ * régua por custo for ligada no Admin, este texto precisa mudar junto — é o
+ * mesmo motivo pelo qual o formulário de análise troca a frase conforme
+ * `quota.precificacao.credito_usd`. */
+function SectionCreditos() {
+  return (
+    <>
+      <H2 id="como-conta-credito">Como o crédito é contado</H2>
+      <P>
+        Toda análise consome créditos da sua cota mensal. A regra é uma só, e você
+        consegue fazer a conta antes de enviar:
+      </P>
+      <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <p className="text-sm font-bold text-slate-800">
+          1 crédito a cada 50.000 caracteres analisados
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Arredondando para cima, com mínimo de 1 crédito por análise.
+        </p>
+      </div>
+      <Callout type="warning">
+        <strong>&quot;Analisados&quot; inclui os PDFs, não só o que você digitou.</strong> O contador
+        da caixa de texto mostra apenas o texto colado — mas a cobrança soma o texto,
+        os PDFs que você anexou e os arquivos que baixamos do PNCP por você. É por isso
+        que um edital do Radar quase sempre custa mais do que parece pelo campo de texto:
+        o edital em si costuma ser pequeno perto dos anexos.
+      </Callout>
+      <P>
+        O preço exato aparece no botão antes de você enviar, e é sempre esse valor que é
+        debitado — a tela e a cobrança usam a mesma regra.
+      </P>
+
+      <H2 id="rapida-vs-profunda">Rápida × Auditoria profunda</H2>
+      <P>
+        Os dois modos leem o mesmo edital e entregam as mesmas seções do laudo. O que muda
+        é a profundidade — e o preço.
+      </P>
+      <UL>
+        <LI><strong>Análise rápida</strong> — uma leitura do edital. Custa o valor da régua acima.</LI>
+        <LI><strong>Auditoria profunda</strong> — relê o documento inteiro em blocos, confere cada
+          afirmação contra o texto original e procura contradições que a leitura única não
+          enxerga. Multiplica o custo pelo fator do seu plano (hoje 4×).</LI>
+      </UL>
+      <Callout type="tip">
+        <strong>Aprofundar um laudo que você já rodou paga só a diferença.</strong> Se a rápida
+        custou 8 créditos e o fator é 4×, a auditoria completa custa 32 — e como 8 já foram
+        pagos, você paga 24. A conta aparece inteira antes de confirmar: valor cheio, o que já
+        foi pago e o que você paga.
+      </Callout>
+      <P>
+        O <strong>parecer técnico-jurídico</strong> não depende do modo: ele é liberado a partir do
+        Nível 3 (Profissional) e sai nos dois. O que a auditoria profunda muda é o embasamento —
+        o parecer passa a ser escrito sobre fatos já conferidos contra o documento.
+      </P>
+
+      <H2 id="tamanho-do-edital">Editais grandes e o teto do plano</H2>
+      <P>
+        Além da cota mensal, cada plano tem um teto de tamanho por análise. É um limite
+        diferente da cota: mesmo com créditos sobrando, um edital acima do teto do seu plano
+        não é lido por inteiro.
+      </P>
+      <P>
+        Quando isso acontece, a Bawzi <strong>preserva o início e o final do documento</strong> e
+        omite o miolo — que normalmente é a relação de itens e quantitativos. O final é
+        preservado de propósito: é lá que ficam termo de referência, sanções, minuta de
+        contrato e matriz de risco.
+      </P>
+      <Callout type="info">
+        O laudo sempre avisa quando foi feito sobre um recorte, e a IA é instruída a nunca
+        afirmar que algo &quot;não existe&quot; por não estar no trecho recebido — a ausência é do
+        recorte, não do edital. Se o aviso aparecer com frequência nos seus editais, o
+        simulador da página de Planos mostra qual plano comporta o tamanho que você analisa.
+      </Callout>
+
+      <H2 id="cota-acabou">O que acontece se a cota acabar</H2>
+      <P>
+        As análises não param de uma hora para a outra. A sequência é esta:
+      </P>
+      <UL>
+        <LI><strong>1. Margem de cortesia</strong> — passando da cota, você continua analisando
+          normalmente por uma faixa que é por nossa conta. Esses créditos não são debitados
+          agora nem descontados da próxima recarga.</LI>
+        <LI><strong>2. Motor simplificado</strong> — esgotada a cortesia, as análises continuam
+          saindo, mas num motor mais simples e <strong>sem auditoria profunda</strong>, até a
+          renovação da cota.</LI>
+        <LI><strong>3. Renovação</strong> — no reset mensal a cota do plano volta cheia.</LI>
+      </UL>
+      <Callout type="tip">
+        Para não chegar no motor simplificado, dá para comprar um <strong>pacote avulso</strong> a
+        qualquer momento. Créditos de pacote <strong>não expiram no reset</strong> — eles ficam
+        acumulados por cima da cota mensal.
+      </Callout>
+      <P>
+        A barra de créditos no topo da tela de análise mostra sempre os quatro números: cota do
+        plano, adicionais comprados, disponível e quanto já foi usado no período.
+      </P>
+    </>
+  );
+}
+
 function SectionRadar() {
   return (
     <>
-      <H2 id="configurar-radar">Configurar palavras-chave</H2>
+      {/* ⚠️ ESTA SEÇÃO INTEIRA DESCREVIA OUTRO PRODUTO. Ela mandava "acesse
+          Radar no menu lateral" (o item real é Monitor, e "Radar PNCP" é OUTRA
+          tela — a de busca —, então o leitor ia parar no lugar errado), falava
+          em "Adicionar palavra-chave" (o botão diz "Novo Alerta"), prometia
+          "24h por dia" e "verificação a cada 2 horas" (o job roda UMA vez, às
+          07:00 BRT — `scheduler.py:1003`), e não dizia que o recurso exige
+          nível 3 (`AppSidebar.tsx:304`). */}
+      <H2 id="configurar-radar">Criar um alerta</H2>
       <P>
-        O Radar monitora novos editais publicados no PNCP 24h por dia e dispara alertas toda vez que um
-        edital contém uma das suas palavras-chave. Pense nele como um assistente de prospecção que nunca dorme.
+        Os <strong>Alertas</strong> vasculham os editais publicados no PNCP e avisam quando
+        aparece um que combina com um termo seu. É prospecção que roda sem você abrir a
+        plataforma.
       </P>
-      <Step n={1} title="Acesse Radar no menu lateral">
-        Você verá a lista de palavras-chave já cadastradas e os últimos alertas disparados.
+      <Callout type="info">
+        Os Alertas estão disponíveis a partir do plano <PlanBadge plan="Profissional" />. Nos
+        planos abaixo o item aparece no menu com o cadeado de nível.
+      </Callout>
+      <Step n={1} title="Acesse Alertas no menu lateral">
+        É o item com o sino, descrito como "Avisos sobre o que você segue". Não confunda com
+        <strong> Analisar</strong>, que é a tela de busca manual — os Alertas são o que trabalha
+        sozinho.
       </Step>
-      <Step n={2} title="Clique em 'Adicionar palavra-chave'">
-        Digite o termo e selecione a UF (opcional). Você pode cadastrar termos compostos como
-        "engenharia elétrica" ou termos simples como "limpeza".
+      <Step n={2} title="Clique em 'Novo Alerta'">
+        Abre o formulário "Configurar novo alerta". Digite o termo — pode ser composto, como
+        "engenharia elétrica", ou simples, como "limpeza".
       </Step>
       <Step n={3} title="Defina o filtro de UF (opcional)">
         Se sua empresa atende apenas determinados estados, filtre por UF para reduzir o ruído.
       </Step>
-      <Step n={4} title="Salve e aguarde">
-        O Radar começa a monitorar imediatamente. Na próxima execução (verificação a cada 2 horas),
-        os novos editais encontrados dispararão alertas.
+      <Step n={4} title="Salve e aguarde a próxima varredura">
+        A verificação roda uma vez por dia, às <strong>07:00</strong> (horário de Brasília). Um
+        alerta criado às 10h só produz resultado na manhã seguinte — ele não varre o passado.
       </Step>
       <Callout type="tip">
         Combine termos específicos do seu nicho com termos mais amplos. Ex.: para uma empresa de TI,
         cadastre "desenvolvimento de software", "sistema de informação" e "infraestrutura de TI".
       </Callout>
 
-      <H2 id="alertas-email">Alertas por e-mail</H2>
+      {/* ⚠️ Dizia "cada vez que encontra, um e-mail é enviado", com "valor
+          estimado e link direto para análise". É um DIGEST diário; o valor
+          estimado não vai no e-mail; e o botão é um só, agregado, para a busca
+          — não há link por edital (`scheduler.py:731-753`). */}
+      <H2 id="alertas-email">O e-mail diário</H2>
       <P>
-        Cada vez que o Radar encontra um edital com uma das suas palavras-chave, um e-mail é enviado
-        automaticamente com o título, órgão, UF, valor estimado e link direto para análise.
+        Quando a varredura das 07:00 encontra editais novos para os seus termos, você recebe
+        <strong> um e-mail</strong> com tudo o que apareceu — não é um e-mail por edital. Cada
+        linha traz o <strong>órgão</strong>, a <strong>UF</strong> e o início do objeto; o botão
+        no fim abre a busca já filtrada pelo termo, para você escolher qual analisar.
       </P>
-      <P>Os e-mails de alerta são enviados para o endereço cadastrado na conta. Para alterar, acesse
+      <Callout type="info">
+        O valor estimado não vem no e-mail: ele só aparece depois, no card do edital dentro da
+        plataforma.
+      </Callout>
+      <P>Os e-mails vão para o endereço cadastrado na conta. Para alterar, acesse
         <strong> Perfil → Dados pessoais</strong>.
       </P>
       <Callout type="info">
-        Se você receber muitos alertas irrelevantes, refine os termos do Radar adicionando palavras
+        Se você receber muitos alertas irrelevantes, refine os termos adicionando palavras
         mais específicas ou combinando com o filtro de UF.
       </Callout>
 
       <H2 id="push-notifications">Notificações push</H2>
       <P>
         As notificações push aparecem no seu sistema operacional (Windows, macOS, Android, iOS) mesmo
-        com o navegador em segundo plano. São ideais para alertas urgentes de editais com prazo curto.
+        com o navegador em segundo plano. Elas acompanham os mesmos três avisos que já chegam por
+        e-mail: editais novos dos Alertas, contratos a vencer e alteração de edital em acompanhamento.
       </P>
       <Step n={1} title="Acesse Perfil → Privacidade & Notificações">
         Clique no botão <strong>Ativar notificações</strong>.
@@ -509,12 +673,12 @@ function SectionRadar() {
         Uma janela do navegador pedirá permissão. Clique em <strong>Permitir</strong>.
       </Step>
       <Step n={3} title="Pronto">
-        A partir de agora, novos editais do Radar e alertas de contrato vencendo chegarão como notificações
-        do sistema, com link direto para a plataforma.
+        Os avisos passam a chegar como notificação do sistema, com link direto para a tela
+        correspondente na plataforma.
       </Step>
       <Callout type="warning">
         As notificações push dependem do navegador e do sistema operacional. No iOS, é necessário
-        adicionar a Bawzi à tela inicial (PWA) para que as notificações funcionem.
+        adicionar a Bawzi à tela inicial para que elas funcionem.
       </Callout>
     </>
   );
@@ -523,37 +687,53 @@ function SectionRadar() {
 function SectionContratos() {
   return (
     <>
-      <H2 id="monitorar-contratos">Monitorar contratos</H2>
+      {/* ⚠️ ESTA SEÇÃO DESCREVIA UM REGISTRO DE CONTRATOS QUE A BAWZI NÃO TEM.
+          Mandava para "Gestão → Contratos" (caminho inexistente; a tela é
+          "Renovações", item de primeiro nível no menu), prometia "todos os
+          contratos ativos" numa tela que EXIGE um termo de busca, e listava
+          campos que ela não mostra: número do contrato, número do processo e
+          os status "Ativo / A vencer / Encerrado". */}
+      <H2 id="monitorar-contratos">Contratos a vencer</H2>
       <P>
-        A Bawzi monitora os contratos publicados no PNCP vinculados ao CNPJ da sua empresa (como
-        contratada) e aos órgãos que você escolher acompanhar.
+        A tela <strong>Renovações</strong>, no menu lateral, encontra contratos publicados no PNCP
+        cujo prazo de vigência está terminando. A ideia é prospecção: um contrato que vence é uma
+        licitação que vem aí.
       </P>
-      <P>
-        Na seção <strong>Gestão → Contratos</strong> você encontra todos os contratos ativos, com
-        data de início, data de término, valor e situação atual.
-      </P>
+      <Callout type="info">
+        Não é um registro dos SEUS contratos. É uma busca sobre a base pública do PNCP — por isso
+        ela pede um termo (o seu segmento, ou o CNPJ de um fornecedor) e uma janela de dias.
+      </Callout>
+      <Step n={1} title="Cadastre a empresa no Perfil">
+        Sem CNPJ cadastrado, o item do menu leva ao Perfil em vez de abrir a tela.
+      </Step>
+      <Step n={2} title="Busque pelo seu segmento">
+        Digite o termo e escolha a janela de vencimento — de 30 a 730 dias. O padrão é 30.
+      </Step>
       <H3>Informações disponíveis por contrato</H3>
       <UL>
-        <LI>Número do contrato e número do processo</LI>
-        <LI>Órgão contratante e objeto resumido</LI>
-        <LI>Valor inicial e aditivos (quando publicados)</LI>
-        <LI>Prazo de vigência e dias restantes</LI>
-        <LI>Status: <Tag>Ativo</Tag>, <Tag>A vencer</Tag>, <Tag>Encerrado</Tag></LI>
+        <LI>Órgão contratante, UF e município</LI>
+        <LI>Objeto e valor do contrato</LI>
+        <LI>Data de término e dias restantes</LI>
+        <LI>Fornecedor atual e o CNPJ dele</LI>
+        <LI>Marca <Tag>Já aditivado</Tag> quando o valor global superou o inicial</LI>
+        <LI>Urgência: de <Tag>VENCIDO</Tag> e <Tag>CRÍTICO</Tag> até <Tag>PIPELINE</Tag></LI>
       </UL>
 
+      {/* ⚠️ "90 / 30 / 7 dias antes" era invenção completa: o job usa UMA
+          janela, `dias=30`, e roda às 08:00 BRT (`scheduler.py:552,595`). */}
       <H2 id="alertas-vencimento">Alertas de vencimento</H2>
       <P>
-        O sistema envia alertas automáticos quando um contrato monitorado está prestes a vencer.
-        Os alertas são disparados em três momentos:
+        Além da busca manual, a Bawzi verifica sozinha, todo dia às <strong>08:00</strong> (horário
+        de Brasília), os contratos do CNPJ cadastrado que vencem nos <strong>próximos 30 dias</strong>.
+        Havendo algum, você recebe e-mail, aviso no sino e notificação push.
       </P>
-      <UL>
-        <LI><strong>90 dias antes</strong> — aviso antecipado para iniciar negociação de renovação</LI>
-        <LI><strong>30 dias antes</strong> — alerta de atenção com lembrete de ação</LI>
-        <LI><strong>7 dias antes</strong> — alerta urgente, com notificação push e e-mail</LI>
-      </UL>
+      <Callout type="info">
+        O alerta automático é enviado a partir do plano <PlanBadge plan="Profissional" /> e exige
+        empresa cadastrada no Perfil. A busca manual em Renovações não tem essa exigência de nível.
+      </Callout>
       <Callout type="tip">
-        Use os alertas de 90 dias para preparar a proposta de renovação com antecedência e evitar
-        a correria de última hora.
+        Para preparar renovação com antecedência maior, use a busca manual e aumente a janela de
+        dias — o alerta automático olha só os 30 dias seguintes.
       </Callout>
     </>
   );
@@ -562,36 +742,58 @@ function SectionContratos() {
 function SectionConcorrentes() {
   return (
     <>
-      <H2 id="monitorar-concorrentes">Monitorar concorrentes</H2>
+      {/* ⚠️ ESTA SEÇÃO PROMETIA UM PRODUTO DE MONITORAMENTO CONTÍNUO QUE NÃO
+          EXISTE: não há tela "Gestão → Concorrentes", não há lista de
+          concorrentes cadastrados por CNPJ, e nada notifica quando um
+          concorrente entra num edital seu. O que existe é um dossiê sob
+          demanda, dentro do laudo. Prometer vigilância e entregar consulta é a
+          diferença entre o cliente confiar e o cliente ser pego de surpresa. */}
+      <H2 id="monitorar-concorrentes">Dossiê de concorrente</H2>
       <P>
-        Com o monitoramento de concorrentes, você acompanha as participações de empresas concorrentes
-        em licitações públicas — lances, habilitações, vitórias e padrões de preço.
+        A Bawzi não mantém uma lista de concorrentes vigiados. O que ela faz é montar, na hora, um
+        dossiê de uma empresa específica — e o lugar disso é <strong>dentro do laudo</strong>, na
+        etapa <strong>Concorrentes</strong>, onde os prováveis participantes daquele edital já
+        estão listados.
       </P>
-      <Step n={1} title="Acesse Gestão → Concorrentes">
-        Clique em <strong>Adicionar concorrente</strong> e informe o CNPJ da empresa que deseja monitorar.
+      <Step n={1} title="Abra um laudo e vá até a etapa Concorrentes">
+        A Bawzi já buscou no PNCP quem costuma vencer contratos parecidos com aquele objeto,
+        naquela região.
       </Step>
-      <Step n={2} title="A Bawzi busca o histórico no PNCP">
-        São carregados automaticamente os contratos celebrados, pregões vencidos e padrão de deságio.
-      </Step>
-      <Step n={3} title="Acompanhe novas participações">
-        Sempre que o concorrente participar de um edital que você também está analisando, uma
-        notificação será gerada.
+      <Step n={2} title="Peça o dossiê de um deles">
+        A Bawzi reúne o histórico público da empresa — contratos vencidos, porte, capital social —
+        e produz a leitura ofensiva: onde ela é forte, onde é vulnerável, e o que sustentaria uma
+        impugnação ou um recurso.
       </Step>
       <Callout type="info">
-        O monitoramento de concorrentes é um recurso disponível nos planos <PlanBadge plan="Profissional" /> e
-        {' '}<PlanBadge plan="Avançado" />.
+        Cada plano tem um teto diário de dossiês (5 no <PlanBadge plan="Gratuito" />, 500 no
+        {' '}<PlanBadge plan="Avançado" />). Veja o número do seu na página de Planos.
+      </Callout>
+      <Callout type="warning">
+        Não há alerta de "o concorrente X entrou neste edital". O PNCP publica o resultado, não a
+        lista de participantes em tempo real — esse aviso não teria como existir.
       </Callout>
 
-      <H2 id="historico-lances">Histórico de lances</H2>
+      {/* ⚠️ "extrai o histórico de lances público e exibe a evolução dos preços
+          durante a disputa" — nada disso existe no código. Nenhuma rota lê
+          lances do PNCP. O deságio é ESTIMADO estatisticamente em
+          `pricing.py:1406`, a partir da dispersão de contratos parecidos.
+          Chamar estimativa de extração é o tipo de erro que só aparece quando
+          o cliente confia nela para fechar preço. */}
+      <H2 id="historico-lances">De onde vem o deságio</H2>
       <P>
-        Para cada pregão eletrônico no PNCP, a Bawzi extrai o histórico de lances público e exibe
-        a evolução dos preços durante a disputa, o deságio médio e o percentual do menor lance em
-        relação ao valor de referência.
+        O deságio que aparece no laudo é uma <strong>estimativa</strong>, não a leitura de uma
+        disputa. A Bawzi não lê lance a lance: o PNCP não expõe a sessão em tempo real.
       </P>
       <P>
-        Esses dados alimentam a estimativa de pressão de preço no relatório GO/NO-GO, tornando
-        a recomendação mais precisa para o seu mercado.
+        O que ela faz é reunir contratos já homologados com objeto parecido, no mesmo tipo de
+        órgão e região, medir o quanto os valores variam entre si e traduzir essa dispersão numa
+        faixa de desconto provável — quanto mais disperso o mercado, mais agressiva tende a ser a
+        disputa. Daí saem também o perfil do provável vencedor e o nível de ameaça.
       </P>
+      <Callout type="warning">
+        Trate o número como cenário, não como preço observado. Ele orienta a proposta; quem decide
+        o piso é a sua planilha de custo.
+      </Callout>
     </>
   );
 }
@@ -610,30 +812,53 @@ function SectionEquipe() {
         entram por convite.
       </Callout>
 
+      {/* ⚠️ A ORDEM DOS PASSOS ESTAVA INVERTIDA E ISSO FAZIA O FLUXO FALHAR.
+          Dizia que o convidado "receberá um link por e-mail para criar a conta"
+          — não existe link de convite nem token em lugar nenhum do código. O
+          endpoint procura o e-mail entre usuários JÁ CADASTRADOS e devolve 404
+          ("Ele precisa criar uma conta grátis primeiro") se não achar
+          (`router_workspaces.py:333`). Quem seguia a ajuda tentava convidar
+          alguém que ainda não tinha conta e levava um erro que a documentação
+          dizia ser impossível. */}
       <H2 id="convidar-membros">Convidar membros</H2>
-      <Step n={1} title="Acesse Perfil → Equipe">
-        Você verá a lista de membros ativos e o botão <strong>Convidar membro</strong>.
+      <Callout type="warning">
+        O convidado precisa <strong>já ter uma conta na Bawzi</strong> antes de você convidá-lo.
+        Peça que ele crie a conta gratuita primeiro, com o mesmo e-mail — sem isso o convite
+        retorna "usuário não encontrado".
+      </Callout>
+      <Step n={1} title="Peça ao colega para criar a conta grátis">
+        Qualquer e-mail serve, e a conta gratuita basta. Ele não precisa assinar nada: ao entrar
+        no Workspace, passa a usar o plano da empresa.
       </Step>
-      <Step n={2} title="Informe o e-mail do novo membro">
-        O convidado receberá um link por e-mail para criar a conta e se juntar ao Workspace.
+      <Step n={2} title="Acesse Perfil → Equipe">
+        Você verá a lista de membros ativos e o botão <strong>Convidar Colaborador</strong>.
       </Step>
-      <Step n={3} title="O novo membro aceita o convite">
-        Ao criar a conta pelo link, ele é associado automaticamente ao Workspace da sua empresa.
+      <Step n={3} title="Informe o e-mail que ele usou no cadastro">
+        A entrada é imediata — não há convite a aceitar. Ele recebe um e-mail avisando que foi
+        adicionado e, no próximo acesso, já está no Workspace da empresa.
       </Step>
       <Callout type="warning">
-        Cada plano tem um limite de membros. Veja os limites em <strong>Planos & Assinatura</strong>.
-        Ultrapassar o limite exige upgrade antes de convidar novos membros.
+        Cada plano tem um limite de vagas. Veja o do seu em <strong>Perfil → Assinatura</strong>.
+        Atingido o limite, o convite é recusado e é preciso subir de plano antes de adicionar mais
+        gente.
       </Callout>
 
+      {/* ⚠️ Eram TRÊS papéis, não dois, e o caminho descrito não existia: não
+          há menu de três pontos nem item "Alterar função" no TeamManager — são
+          botões inline, e o rótulo é "Promover"/"Despromover". Também faltava
+          a regra que mais gera ticket: só o PROPRIETÁRIO promove alguém. */}
       <H2 id="funcoes">Funções e permissões</H2>
-      <P>Os membros do Workspace podem ter dois papéis:</P>
+      <P>O Workspace tem três papéis:</P>
       <UL>
-        <LI><strong>Administrador</strong> — pode gerenciar membros, configurar o Radar, acessar a assinatura e ver todos os dados</LI>
-        <LI><strong>Membro</strong> — pode buscar, analisar editais, ver contratos e configurar o próprio perfil</LI>
+        <LI><strong>Proprietário</strong> — quem criou o Workspace. É o único que pode promover ou rebaixar administradores, e não pode ser removido</LI>
+        <LI><strong>Administrador</strong> — pode adicionar e remover membros e ver todos os dados da equipe</LI>
+        <LI><strong>Membro</strong> — pode buscar, analisar editais, ver renovações e configurar o próprio perfil</LI>
       </UL>
       <P>
-        Para alterar o papel de um membro, acesse <strong>Perfil → Equipe</strong>, clique nos três
-        pontos ao lado do nome e selecione <strong>Alterar função</strong>.
+        Para promover alguém a administrador, acesse <strong>Perfil → Equipe</strong> e use o botão
+        <strong> Promover</strong> na linha do membro. O mesmo botão rebaixa quem já é
+        administrador. Se ele não aparecer para você, é porque só o proprietário do Workspace tem
+        essa permissão.
       </P>
 
       <H2 id="empresas-monitoradas">Empresas monitoradas</H2>
@@ -779,6 +1004,21 @@ function SectionPlanos() {
         Acesse <strong>Perfil → Assinatura</strong> para ver a tabela de preços atualizada e fazer
         upgrade com um clique.
       </Callout>
+      {/* O simulador é o caminho mais curto para a resposta que esta seção
+          tenta dar em prosa. Apontar para ele vale mais que uma tabela a mais. */}
+      <H3>Não sabe qual plano é o seu?</H3>
+      <P>
+        A página de <strong>Planos</strong> tem um simulador: você descreve sua rotina — quantos
+        editais por mês, quantos em auditoria profunda e o tamanho típico deles — e ele mostra,
+        para cada plano, quantos créditos aquilo consumiria e se cabe. Ele avalia <em>dois</em>
+        limites diferentes: a cota mensal e o teto de tamanho por edital.
+      </P>
+      <Callout type="info">
+        Um plano pode ter crédito de sobra e ainda assim não servir, se os seus editais forem
+        maiores que o teto dele — nesse caso o simulador marca &quot;recorta os maiores&quot; e não
+        recomenda. Vale conferir o artigo{' '}
+        <strong>Créditos e consumo → Editais grandes e o teto do plano</strong>.
+      </Callout>
 
       <H2 id="upgrade">Fazer upgrade</H2>
       <Step n={1} title="Acesse Perfil → Assinatura">
@@ -863,6 +1103,7 @@ const SECTION_CONTENT: Record<string, React.ReactNode> = {
   inicio:      <SectionInicio />,
   busca:       <SectionBusca />,
   analise:     <SectionAnalise />,
+  creditos:    <SectionCreditos />,
   radar:       <SectionRadar />,
   contratos:   <SectionContratos />,
   concorrentes: <SectionConcorrentes />,
@@ -1091,8 +1332,10 @@ export default function DocsPage() {
           </div>
 
           {/* Footer da doc */}
-          <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
-            <p className="text-xs text-slate-400">Última atualização: Julho 2026</p>
+          {/* `flex-wrap` + `gap`: sem eles, os dois textos disputavam a mesma
+              linha a 360px e o "Fale conosco" saía cortado pela borda. */}
+          <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p className="text-xs text-slate-400">Última atualização: Agosto 2026</p>
             <a
               href="mailto:development@bawzi.com"
               className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-emerald-600 transition-colors"

@@ -623,7 +623,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
 
       {/* Cards */}
       {editaisFiltrados.length > 0 && (
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 pb-4 custom-scrollbar">
+        <div className="space-y-4 max-h-[70dvh] overflow-y-auto pr-2 pb-4 custom-scrollbar">
           {(() => {
             // UFs de todas as empresas cadastradas
             const todasUfsEmpresas = new Set(

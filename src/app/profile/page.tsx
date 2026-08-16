@@ -85,10 +85,17 @@ function SectionHeading({
   );
 }
 
+/** Fallback SÓ para quando `vagas_totais` ainda não chegou da API.
+ *
+ *  ⚠️ O tier 2 dizia 3. O portão de convite usa `WORKSPACE_USER_LIMITS[2]`,
+ *  que é 2 — o Essencial via "3 vagas" nesta tela e levava
+ *  `402 Limite de 2 vaga(s) atingido` ao convidar o terceiro membro.
+ *  Espelha `backend/app/core/config.py:118`; se aquele dicionário mudar, este
+ *  muda junto (é fallback offline, não dá para buscar). */
 function getFallbackSeats(tier: number) {
   if (tier === 4) return 10;
   if (tier === 3) return 5;
-  if (tier === 2) return 3;
+  if (tier === 2) return 2;
   return 1;
 }
 

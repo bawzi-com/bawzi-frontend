@@ -38,13 +38,19 @@ const COLOR_MAP: Record<string, { bg: string; border: string; text: string; icon
   amber:   { bg: 'bg-amber-50',    border: 'border-amber-100',   text: 'text-amber-700',   iconBg: 'bg-amber-100'   },
 };
 
+// ⚠️ CADA LINHA AQUI É UMA ROTA QUE O CLIENTE VAI CHAMAR. Duas estavam erradas
+// e devolviam 404 na primeira tentativa de integração:
+//   · `/api/pncp/busca` — a rota real é `/buscar` (router_pncp.py:178);
+//   · `/api/competitor/ranking` — não existe rota nenhuma com esse nome. O
+//     router de concorrentes tem UMA rota, `POST /offensive-intel`.
+// Ao mexer em rota no backend, confira esta lista.
 const ENDPOINTS = [
-  { method: 'POST', path: '/api/analyze',           desc: 'Análise completa de edital',       tag: 'Análise' },
-  { method: 'GET',  path: '/api/pncp/busca',         desc: 'Busca de editais abertos no PNCP', tag: 'PNCP'    },
-  { method: 'GET',  path: '/api/pncp/media-precos',  desc: 'Média de preços por segmento',     tag: 'Preços'  },
-  { method: 'GET',  path: '/api/competitor/ranking', desc: 'Top concorrentes por termo e UF',  tag: 'Radar'   },
-  { method: 'GET',  path: '/api/analyses/quota',     desc: 'Consumo mensal e limite do plano', tag: 'Conta'   },
-  { method: 'POST', path: '/api/auth/refresh',       desc: 'Renovação de token de acesso',     tag: 'Auth'    },
+  { method: 'POST', path: '/api/analyze',                    desc: 'Análise de edital (multipart/form-data)', tag: 'Análise' },
+  { method: 'GET',  path: '/api/pncp/buscar',                desc: 'Busca de editais abertos no PNCP',        tag: 'PNCP'    },
+  { method: 'GET',  path: '/api/pncp/media-precos',          desc: 'Média de preços por segmento',            tag: 'Preços'  },
+  { method: 'POST', path: '/api/competitor/offensive-intel', desc: 'Inteligência sobre um concorrente',       tag: 'Radar'   },
+  { method: 'GET',  path: '/api/analyses/quota',             desc: 'Consumo mensal e limite do plano',        tag: 'Conta'   },
+  { method: 'POST', path: '/api/auth/refresh',               desc: 'Renovação de token de acesso',            tag: 'Auth'    },
 ];
 
 const METHOD_STYLE: Record<string, string> = {
@@ -54,16 +60,25 @@ const METHOD_STYLE: Record<string, string> = {
   DELETE: 'bg-red-100 text-red-700',
 };
 
+// ⚠️ OS TRÊS EXEMPLOS ENVIAVAM JSON. `/api/analyze` recebe multipart/form-data
+// (`Form(...)`/`File(...)` em router_analyses.py:3068) — copiar e colar o que
+// estava aqui devolvia 422 na primeira chamada, com um erro de validação que
+// não explicava a causa. Também mandavam `"tier": 4`: tier não é parâmetro,
+// vem da conta do token. O que escolhe o modo é `provider`
+// ("openai" = rápida, "claude" = auditoria profunda — ver core/modos.py).
 const CODE_TABS = [
   {
     lang: 'cURL',
     code: `curl -X POST https://api.bawzi.com/api/analyze \\
   -H "Authorization: Bearer SEU_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "raw_text": "PREGÃO ELETRÔNICO Nº 001/2025...",
-    "tier": 4
-  }'`,
+  -F "raw_text=PREGÃO ELETRÔNICO Nº 001/2025..." \\
+  -F "uf=SP" \\
+  -F "provider=openai"
+
+# PDF em vez de texto:
+#   -F "files=@edital.pdf"
+# Auditoria profunda (custa 4×):
+#   -F "provider=claude"`,
   },
   {
     lang: 'Python',
@@ -72,7 +87,10 @@ const CODE_TABS = [
 resp = requests.post(
     "https://api.bawzi.com/api/analyze",
     headers={"Authorization": f"Bearer {token}"},
-    json={"raw_text": edital_text, "tier": 4},
+    data={"raw_text": edital_text, "uf": "SP", "provider": "openai"},
+    # PDFs, se houver:
+    # files=[("files", ("edital.pdf", open("edital.pdf", "rb"), "application/pdf"))],
+    timeout=300,  # a análise completa leva de 1 a 2 minutos
 )
 data = resp.json()
 print(data["analysis"]["score"])    # 82
@@ -80,13 +98,16 @@ print(data["analysis"]["semaforo"]) # "GO"`,
   },
   {
     lang: 'JavaScript',
-    code: `const res = await fetch("https://api.bawzi.com/api/analyze", {
+    code: `const form = new FormData();
+form.append("raw_text", editalText);
+form.append("uf", "SP");
+form.append("provider", "openai");
+// form.append("files", pdfFile);
+
+const res = await fetch("https://api.bawzi.com/api/analyze", {
   method: "POST",
-  headers: {
-    "Authorization": \`Bearer \${token}\`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ raw_text: editalText, tier: 4 }),
+  headers: { "Authorization": \`Bearer \${token}\` }, // sem Content-Type: o
+  body: form,                                       // browser define o boundary
 });
 const { analysis } = await res.json();
 console.log(analysis.score);    // 82
@@ -111,29 +132,39 @@ const RESPONSE_EXAMPLE = `{
   }
 }`;
 
+// ⚠️ NÚMERO EM VITRINE É PROMESSA. Os quatro anteriores eram:
+//   · "400K+ editais indexados" — sem fonte no código; ninguém sabe medir;
+//   · "< 8s por análise" — a própria página, 90 linhas acima, diz "em poucos
+//     minutos", e o backend usa timeout de 15 min;
+//   · "99.7% uptime SLA" — os Termos de Uso (§8) dizem o contrário, por
+//     escrito: "não garante disponibilidade ininterrupta".
+// Só ficou o que se verifica no código.
 const STATS = [
-  { value: '400K+', label: 'editais indexados' },
-  { value: '< 8s',  label: 'por análise'       },
-  { value: '99.7%', label: 'uptime SLA'         },
-  { value: 'REST',  label: 'JSON · Bearer JWT'  },
+  { value: 'REST',   label: 'JSON · Bearer JWT'   },
+  { value: '1–2 min', label: 'por análise'         },
+  { value: '10/min', label: 'rate limit'           },
+  { value: 'PNCP',   label: 'fonte oficial'        },
 ];
 
 const FAQ = [
   {
-    q: 'Como obtenho minha API key?',
-    a: 'Após o upgrade para o plano Avançado, acesse Perfil → API → Gerar nova chave. A chave é gerada instantaneamente e pode ser rotacionada a qualquer momento.',
+    // Não existe emissão de chave de API em lugar nenhum do backend (nem rota,
+    // nem tela em Perfil). A resposta anterior mandava o cliente para
+    // "Perfil → API → Gerar nova chave", um caminho que não existe.
+    q: 'Como autentico minhas chamadas?',
+    a: 'Com o mesmo token JWT da sua sessão: faça POST /api/auth/login e use o access_token no header Authorization: Bearer. Ainda não emitimos chave de API separada, de longa duração — o access token expira em 60 minutos e é renovado por POST /api/auth/refresh. Se você precisa de credencial de serviço para rodar sem um usuário logado, fale com development@bawzi.com.',
   },
   {
     q: 'Existe SDK oficial?',
-    a: 'Ainda não, mas a API é REST pura com JSON — qualquer linguagem que faz HTTP requests funciona. Exemplos em cURL, Python e JavaScript estão disponíveis aqui.',
+    a: 'Ainda não. A API é REST com JSON na resposta — qualquer linguagem que faça HTTP funciona. Atenção a um detalhe: POST /api/analyze recebe multipart/form-data, não JSON. Os exemplos aqui já estão nesse formato.',
   },
   {
     q: 'O que acontece quando atinjo o rate limit?',
-    a: 'A API retorna HTTP 429 com o header Retry-After indicando quantos segundos aguardar. O limite padrão é 60 req/min, expansível sob demanda comercial.',
+    a: 'A API retorna HTTP 429 com o header Retry-After indicando quantos segundos aguardar. O limite em /api/analyze é de 10 requisições por minuto, contadas por workspace (e por IP quando não há sessão). Se o seu caso de uso precisa de mais, fale com development@bawzi.com — não é liberado automaticamente.',
   },
   {
     q: 'Os dados de edital são armazenados após a análise?',
-    a: 'Sim, o texto enviado fica associado à sua conta por 90 dias para histórico. Você pode solicitar exclusão via DELETE /api/analyses/{id} a qualquer momento.',
+    a: 'Sim. O texto enviado e o laudo ficam associados à sua conta no histórico, sem prazo de expiração automático — você controla o que fica. Para apagar, use DELETE /api/analyses/{id} (um laudo) ou DELETE /api/analyses/history/all (todo o histórico).',
   },
 ];
 
@@ -369,11 +400,46 @@ function LockedView() {
   );
 }
 
+// ─── Limites do plano: vêm do backend, não do React ──────────────────────────
+//
+// ⚠️ ESTE BLOCO ANUNCIAVA "∞ · Ilimitado" PARA ANÁLISES/MÊS. O plano Avançado
+// tem 650 créditos/mês (LIMIT_TIER_4) — nada de ilimitado. Também dizia "400K
+// chars" (o real é 500.000) e "100 MB por arquivo" (o plano permite 100, mas
+// `_MAX_FILE_SIZE` corta em 20 MB por requisição, então 100 nunca acontece).
+//
+// Agora os dois primeiros vêm de /api/tiers/limites-publicos — a MESMA fonte
+// que a página de planos usa. Número escrito à mão em duas telas é número que
+// diverge.
+interface LimitePlano {
+  monthly_limit: number;
+  ilimitado: boolean;
+  max_chars: number | null;
+  max_mb: number | null;
+}
+
+// Teto TÉCNICO de upload por requisição, espelha `_MAX_FILE_SIZE` em
+// router_analyses.py:236. Vale para todos os planos, inclusive o Avançado.
+const TETO_UPLOAD_MB = 20;
+
+function useLimiteAvancado() {
+  const [limite, setLimite] = useState<LimitePlano | null>(null);
+  useEffect(() => {
+    apiFetch('/api/tiers/limites-publicos')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.tiers?.['4']) setLimite(d.tiers['4'] as LimitePlano); })
+      .catch((err) => { if (!(err instanceof SessionExpiredError)) console.error(err); });
+  }, []);
+  return limite;
+}
+
+const fmtMilhar = (n: number) => n.toLocaleString('pt-BR');
+
 // ─── Versão AUTORIZADA ────────────────────────────────────────────────────────
 
 function AuthorizedView({ spec }: { spec: unknown }) {
   const [codeTab, setCodeTab] = useState(0);
   const [showSwagger, setShowSwagger] = useState(false);
+  const limite = useLimiteAvancado();
 
   const scrollTo = (id: string) =>
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -462,7 +528,10 @@ function AuthorizedView({ spec }: { spec: unknown }) {
                 {[
                   { label: 'Expiração',  value: '60 min (access token)'       },
                   { label: 'Renovação',  value: 'POST /api/auth/refresh'       },
-                  { label: 'Algoritmo', value: 'JWT RS256'                    },
+                  // HS256, não RS256 (JWT_ALGORITHM em core/config.py:22). Quem
+                  // fosse validar o token do lado dele iria procurar uma chave
+                  // pública que não existe.
+                  { label: 'Algoritmo', value: 'JWT HS256'                    },
                   { label: 'Cookie',    value: 'bawzi_refresh (HttpOnly)'     },
                 ].map(({ label, value }) => (
                   <div key={label} className="flex justify-between text-xs px-4 py-3 bg-slate-50/50">
@@ -557,10 +626,20 @@ curl -H "Authorization: Bearer eyJ..." \\
           <SectionHeader icon={Gauge} title="Limites & SLA" />
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
             {[
-              { label: 'Análises / mês', value: '∞',      sub: 'Ilimitado',   color: 'text-emerald-600' },
-              { label: 'Chars / edital', value: '400K',   sub: 'por chamada', color: 'text-sky-600'     },
-              { label: 'Tamanho máx.',   value: '100 MB', sub: 'por arquivo', color: 'text-amber-600'   },
-              { label: 'Rate limit',     value: '60/min', sub: 'expansível',  color: 'text-teal-600'    },
+              {
+                label: 'Créditos / mês',
+                value: limite ? (limite.ilimitado ? '∞' : fmtMilhar(limite.monthly_limit)) : '—',
+                sub: 'cota do Avançado',
+                color: 'text-emerald-600',
+              },
+              {
+                label: 'Chars / edital',
+                value: limite?.max_chars ? fmtMilhar(limite.max_chars) : '—',
+                sub: 'acima disso, lê em recorte',
+                color: 'text-sky-600',
+              },
+              { label: 'Upload',     value: `${TETO_UPLOAD_MB} MB`, sub: 'teto por requisição', color: 'text-amber-600' },
+              { label: 'Rate limit', value: '10/min',               sub: 'por workspace',       color: 'text-teal-600'  },
             ].map(({ label, value, sub, color }) => (
               <div key={label} className="bg-white border border-slate-200 rounded-2xl p-5 text-center shadow-sm">
                 <p className={`text-3xl font-black mb-0.5 ${color}`}>{value}</p>
@@ -571,7 +650,12 @@ curl -H "Authorization: Bearer eyJ..." \\
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { icon: CheckCircle2, title: 'Uptime 99.7%',          desc: 'SLA contratual com créditos por indisponibilidade acima do limite.',              color: 'text-emerald-600' },
+              // ⚠️ AQUI DIZIA "SLA contratual com créditos por indisponibilidade".
+              // Os Termos de Uso §8, que o cliente assina, dizem o oposto:
+              // "não garante disponibilidade ininterrupta". Uma página de
+              // vendas não pode prometer o que o contrato nega — se um dia
+              // houver SLA, ele nasce nos Termos, não aqui.
+              { icon: CheckCircle2, title: 'Sem SLA contratual',     desc: 'Operamos em melhor esforço, sem garantia de disponibilidade ininterrupta (Termos de Uso, §8).', color: 'text-slate-500'   },
               { icon: AlertCircle,  title: 'HTTP 429 + Retry-After', desc: 'Ao atingir o rate limit, aguarde o valor do header Retry-After (em segundos).',   color: 'text-amber-600'   },
               { icon: Shield,       title: 'TLS 1.3 obrigatório',    desc: 'Toda comunicação é criptografada. Requisições HTTP são redirecionadas para HTTPS.', color: 'text-sky-600'     },
             ].map(({ icon: Icon, color, title, desc }) => (

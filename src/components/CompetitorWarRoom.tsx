@@ -1648,7 +1648,7 @@ export default function CompetitorWarRoom({
       {/* MODAL DO RAIO-X COMPETITIVO (DOSSIÊ) */}
       {dossieTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-[2rem] shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-[2rem] shadow-2xl max-w-3xl w-full max-h-[85dvh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             
             <div className="px-6 py-5 bg-slate-900 text-white flex justify-between items-center border-b border-slate-800">
               <div className="flex items-center gap-3">

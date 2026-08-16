@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   AlertTriangle,
   Building2,
   CalendarDays,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -105,7 +106,13 @@ export default function DecisionManagementTab({
   const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter>('all');
-  const [stageFilter, setStageFilter] = useState<'all' | DecisionQueueKey>('all');
+  /** ⚠️ CONJUNTO, NÃO VALOR ÚNICO. Era `'all' | DecisionQueueKey`, e por isso
+   *  clicar numa etapa sempre descartava a anterior. "Quero ver Proposta E
+   *  Enviado" — as duas pontas de quem está com envio na semana — era
+   *  impossível: dava para ver uma ou todas as nove.
+   *  Conjunto vazio significa "todas", e não "nenhuma": é o estado neutro, o
+   *  mesmo papel que o `'all'` tinha. */
+  const [etapasSelecionadas, setEtapasSelecionadas] = useState<Set<DecisionQueueKey>>(new Set());
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>('all');
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>('all');
   const [monitorFilter, setMonitorFilter] = useState<MonitorFilter>('all');
@@ -118,6 +125,23 @@ export default function DecisionManagementTab({
     return () => window.clearTimeout(t);
   }, [notice]);
 
+  // ⚠️ FALHA DE CARGA PRECISA DE ESTADO PRÓPRIO.
+  // Sem isto, `analyses` ficava `[]` tanto para "você ainda não adicionou
+  // nada" quanto para "a requisição falhou" — e a tela dizia a primeira coisa
+  // nos dois casos. Quem tinha 40 editais em acompanhamento e caía num 500 lia
+  // "Nenhum edital na Gestão ainda" e concluía que a plataforma tinha perdido
+  // o trabalho dele. O toast de erro existia, mas some sozinho em 4s.
+  const [erroDeCarga, setErroDeCarga] = useState<string | null>(null);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  /** Por onde o resumo operacional deve abrir. O cartão tem DOIS caminhos para
+   *  o mesmo modal — "Resumo do edital" e "Ver o plano inteiro" — e eles
+   *  prometem coisas diferentes. Abrir os dois no topo faz o segundo mentir. */
+  const [focoDoResumo, setFocoDoResumo] = useState<'plano' | null>(null);
+  // Fila de gravação do plano de execução. `useRef` e não `useState`: ela é
+  // encadeamento de promessas, não algo que a tela desenha — guardá-la em
+  // estado provocaria re-render a cada `onBlur` sem mudar um pixel.
+  const filaDeGravacaoRef = useRef<Promise<void>>(Promise.resolve());
+  const [recarregar, setRecarregar] = useState(0);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
   const [savingStageId, setSavingStageId] = useState<string | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
@@ -165,6 +189,7 @@ export default function DecisionManagementTab({
 
   useEffect(() => {
     const loadData = async () => {
+      setIsLoading(true);
       try {
         const [historyRes, workspaceRes, learningStatsRes] = await Promise.all([
           apiFetch(`${API_URL}/api/analyses/history`),
@@ -175,6 +200,21 @@ export default function DecisionManagementTab({
           }),
         ]);
 
+        // ⚠️ `.ok` ANTES DE LER O CORPO. Um erro do FastAPI vem como JSON
+        // válido (`{"detail": "..."}`), então `historyRes.json()` NÃO lança:
+        // `data.history` fica `undefined`, `Array.isArray(data)` é `false`
+        // porque é objeto, e o resultado era `[]` — indistinguível de conta
+        // vazia, sem erro nenhum em tela.
+        if (!historyRes.ok) {
+          const corpo = await historyRes.json().catch(() => null);
+          const detalhe = typeof corpo?.detail === 'string' ? corpo.detail : '';
+          throw new Error(
+            historyRes.status === 403
+              ? (detalhe || 'Sem permissão para ver a gestão desta conta.')
+              : `Não foi possível carregar seus editais (erro ${historyRes.status}).${detalhe ? ' ' + detalhe : ''}`,
+          );
+        }
+
         const data = await historyRes.json();
         const history = data.history || (Array.isArray(data) ? data : []);
         // Gestão é opt-in: só entra aqui o que o usuário adicionou de propósito
@@ -184,6 +224,7 @@ export default function DecisionManagementTab({
         if (Array.isArray(history)) {
           setAnalyses(history.filter((item: SavedAnalysis) => item?.tracked_in_gestao === true));
         }
+        setErroDeCarga(null);
 
         if (workspaceRes.ok) {
           const workspaceData = await workspaceRes.json().catch(() => null);
@@ -191,6 +232,12 @@ export default function DecisionManagementTab({
             ? workspaceData.companies
             : [];
           setCompanies(workspaceCompanies.filter((company: Empresa) => company?.cnpj));
+        } else {
+          // Não derruba a tela — a gestão funciona sem o filtro de empresa —,
+          // mas também não finge que a conta não tem empresa nenhuma: sem este
+          // aviso o seletor exibia "Sem empresas" para quem tem três.
+          console.warn(`[gestao] /workspace/details respondeu ${workspaceRes.status}`);
+          setNotice({ type: 'info', message: 'Não consegui carregar suas empresas — o filtro por empresa fica indisponível nesta sessão.' });
         }
 
         if (learningStatsRes?.ok) {
@@ -208,7 +255,11 @@ export default function DecisionManagementTab({
           router.push('/login?redirect=/gestao');
           return;
         }
-        setNotice({ type: 'error', message: 'Erro ao carregar a gestão de decisões.' });
+        const msg = err instanceof Error && err.message
+          ? err.message
+          : 'Erro ao carregar a gestão de decisões.';
+        setErroDeCarga(msg);
+        setNotice({ type: 'error', message: msg });
       } finally {
         setIsLoading(false);
       }
@@ -216,7 +267,9 @@ export default function DecisionManagementTab({
 
     if (token) void loadData();
     else setIsLoading(false);
-  }, [token]);
+    // `recarregar` na lista: é o que o botão "Tentar de novo" incrementa. Sem
+    // ele, a única saída de um erro de carga seria recarregar a página inteira.
+  }, [token, recarregar]);
 
   const companyOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -286,7 +339,7 @@ export default function DecisionManagementTab({
         if (!selectedCompany || !analysisMatchesCompany(card.analysis, selectedCompany)) return false;
       }
 
-      if (stageFilter !== 'all' && card.stage !== stageFilter) return false;
+      if (etapasSelecionadas.size > 0 && !etapasSelecionadas.has(card.stage)) return false;
 
       const score = Number(card.analysis.score || 0);
       if (verdictFilter === 'go' && score < 70) return false;
@@ -299,10 +352,23 @@ export default function DecisionManagementTab({
 
       const monitor = asRecord(card.analysis.pncp_monitor);
       const hasEvents = Array.isArray(card.analysis.pncp_monitor_events) && card.analysis.pncp_monitor_events.length > 0;
-      const hasPncpRef = Boolean(asRecord(card.analysis.pncp_ref).cnpj || card.analysis.pncp_cnpj);
+      // ⚠️ TER REFERÊNCIA DO PNCP NÃO É O MESMO QUE ESTAR SENDO MONITORADO.
+      // O filtro olhava só `pncp_ref`, que é dado que fica gravado para sempre.
+      // Mas o job noturno e o botão de verificação em lote EXCLUEM as etapas
+      // finais — `{"workflow_status": {"$nin": ["won","lost","abandoned",
+      // "executed"]}}` em scheduler.py:384 e router_analyses.py:6113. Um edital
+      // ganho há três meses aparecia em "Monitorados" e o backend não olhava
+      // para ele desde o dia em que foi marcado como ganho.
+      //
+      // A mesma lista de etapas finais que já existe acima (`finalStages`) é a
+      // que decide aqui — se um dia o backend mudar quais etapas encerram o
+      // monitoramento, muda-se num lugar só.
+      const temRefPncp = Boolean(asRecord(card.analysis.pncp_ref).cnpj || card.analysis.pncp_cnpj);
+      const emEtapaFinal = finalStages.includes(card.stage);
+      const monitoradoDeFato = temRefPncp && !emEtapaFinal;
       if (monitorFilter === 'changed' && !hasEvents && monitor.status !== 'mudanca_detectada') return false;
-      if (monitorFilter === 'monitored' && !hasPncpRef) return false;
-      if (monitorFilter === 'unmonitored' && hasPncpRef) return false;
+      if (monitorFilter === 'monitored' && !monitoradoDeFato) return false;
+      if (monitorFilter === 'unmonitored' && monitoradoDeFato) return false;
 
       if (urgencyFilter !== 'all') {
         const deadline = getCriticalDeadline(asRecord(card.analysis), card.nextTask).date;
@@ -328,14 +394,55 @@ export default function DecisionManagementTab({
       const cb = parseOperationalDate(b.analysis.created_at)?.getTime() || 0;
       return cb - ca;
     });
-  }, [activityFilter, allQueueCards, companyFilter, companyOptions, monitorFilter, sortFilter, stageFilter, urgencyFilter, verdictFilter]);
+  }, [activityFilter, allQueueCards, companyFilter, companyOptions, etapasSelecionadas, monitorFilter, sortFilter, urgencyFilter, verdictFilter]);
+
+  /** ⚠️ A TELA É SOBRE PRAZO E NÃO MOSTRAVA PRAZO NENHUM AO ABRIR.
+   *
+   *  Toda a maquinaria existia — `getCriticalDeadline`, `getDeadlineUrgency`, o
+   *  filtro "Prazo", a ordenação "Prazo crítico" — mas nada disso acontece
+   *  sozinho: o padrão ordena por "recente", e um edital vencido ontem aparece
+   *  no meio do quadro, do mesmo tamanho e da mesma cor de um que vence daqui a
+   *  três semanas. Quem abre a Gestão de manhã quer saber o que queima hoje, e
+   *  precisava perguntar isso por meio de dois seletores.
+   *
+   *  Conta sobre `allQueueCards`, e não sobre `queueCards`, de propósito: é o
+   *  risco da CARTEIRA. Contando o que já está filtrado, aplicar um filtro
+   *  faria os vencidos "sumirem" — o oposto do objetivo. */
+  const risco = useMemo(() => {
+    const finais: DecisionQueueKey[] = ['won', 'lost', 'abandoned', 'executed'];
+    const agora = Date.now();
+    let vencidos = 0;
+    let hojeAmanha = 0;
+    for (const card of allQueueCards) {
+      if (finais.includes(card.stage)) continue;   // encerrado não tem prazo a perder
+      const prazo = getCriticalDeadline(asRecord(card.analysis), card.nextTask).date;
+      if (!prazo) continue;
+      const dias = Math.ceil((prazo.getTime() - agora) / 86_400_000);
+      if (dias < 0) vencidos += 1;
+      else if (dias <= 1) hojeAmanha += 1;
+    }
+    return { vencidos, hojeAmanha };
+  }, [allQueueCards]);
 
   const activeSummaryCard = useMemo(() => {
     if (!summaryModal) return null;
     return allQueueCards.find((card) => card.analysis.id === summaryModal.analysis.id) || summaryModal;
   }, [allQueueCards, summaryModal]);
 
-  const counts = useMemo(() => queueCards.reduce<Record<DecisionQueueKey, number>>((acc, card) => {
+  /** ⚠️ CONTAVA `queueCards`, QUE JÁ VEM FILTRADO — e por isso quatro dos nove
+   *  números eram zero por construção.
+   *  O filtro padrão é `activityFilter: 'active'`, que descarta as etapas
+   *  finais. Resultado: a faixa de resumo abria sempre com "0 Ganho, 0
+   *  Perdido, 0 Abandonado, 0 Executado", inclusive para quem tinha dezenas de
+   *  editais ganhos. Um resumo que não resume.
+   *
+   *  Agora conta `allQueueCards`: a carteira inteira dentro da busca por texto.
+   *  A busca continua valendo (ela define o universo em questão); os seletores
+   *  de recorte, não — eles definem o que o QUADRO mostra, e a faixa existe
+   *  justamente para dizer o que existe fora dele. As etapas fora do recorte
+   *  atual aparecem esmaecidas, para o número não ser confundido com o que
+   *  está na tela. */
+  const counts = useMemo(() => allQueueCards.reduce<Record<DecisionQueueKey, number>>((acc, card) => {
     acc[card.stage] += 1;
     return acc;
   }, {
@@ -348,7 +455,115 @@ export default function DecisionManagementTab({
     lost: 0,
     abandoned: 0,
     executed: 0,
-  }), [queueCards]);
+  }), [allQueueCards]);
+
+  /** ⚠️ O QUADRO ABRIA COM QUATRO COLUNAS QUE NÃO PODIAM CONTER NADA.
+   *
+   *  `activityFilter` começa em `'active'`, e o filtro descarta as quatro
+   *  etapas finais (`if (activityFilter === 'active' && isFinal) return false`).
+   *  Só que a grade renderizava as NOVE colunas de qualquer jeito — então o
+   *  estado inicial era: cinco colunas de trabalho e, à direita delas, mil
+   *  pixels de "Sem itens nesta fase" que o próprio filtro garantia que
+   *  ficariam vazios. Quase metade da rolagem horizontal era dedicada a
+   *  colunas estruturalmente impossíveis de preencher.
+   *
+   *  Renderizando só o que o filtro pode preencher, o caso comum (5 colunas)
+   *  cabe em 1440px sem rolagem nenhuma — a barra horizontal deixa de existir
+   *  no uso diário em vez de ser algo a domar com setinhas. */
+  const colunasVisiveis = useMemo(() => {
+    // Seleção explícita manda: escolher duas etapas devolve duas colunas
+    // largas, que é o ganho concreto de poder selecionar mais de uma. Sem
+    // isto, marcar "Proposta + Enviado" deixaria cinco colunas com três vazias.
+    if (etapasSelecionadas.size > 0) return columnOrder.filter((k) => etapasSelecionadas.has(k));
+    const finais: DecisionQueueKey[] = ['won', 'lost', 'abandoned', 'executed'];
+    if (activityFilter === 'active') return columnOrder.filter((k) => !finais.includes(k));
+    if (activityFilter === 'finalized') return columnOrder.filter((k) => finais.includes(k));
+    return columnOrder;
+  }, [activityFilter, etapasSelecionadas]);
+
+  /** Largura mínima por coluna, medida e não estimada.
+   *
+   *  Com as 5 colunas do fluxo ativo, testei 250 / 240 / 230 / 220 px contra os
+   *  três tamanhos de tela mais comuns:
+   *    250 → cabe só em 1440px (1280 fica devendo 52px, um triz);
+   *    240 → cabe em 1440 E em 1280, e o cartão não quebra linha em nenhum;
+   *    230 e abaixo → a 1152px o título do edital começa a quebrar e o cartão
+   *                   cresce de 86px para 101px de altura.
+   *  240 é o maior valor que ainda elimina a rolagem no notebook de 1280. */
+  const LARGURA_COLUNA = 240;
+
+  /** Seleciona (ou desmarca) uma etapa, ajustando o recorte junto.
+   *
+   *  ⚠️ O DETALHE QUE FAZ ISTO FUNCIONAR: `activityFilter` começa em `'active'`,
+   *  que descarta as quatro etapas finais. Sem mexer nele, clicar em "Ganho"
+   *  cruzaria dois filtros contraditórios — etapa = ganho E recorte = ativos —
+   *  e o quadro voltaria vazio, com a pessoa olhando para uma ficha que diz
+   *  "12" e um board que diz "nada aqui". Filtro que se contradiz sozinho é
+   *  pior que filtro nenhum.
+   *
+   *  Por isso a escolha da etapa arrasta o recorte para o lado certo. O mesmo
+   *  vale ao contrário: escolher uma etapa do fluxo estando em "finalizados"
+   *  volta para "ativos".
+   *
+   *  Usado pela faixa de fichas E pelo seletor "Etapa" do painel — o seletor
+   *  tinha o mesmo defeito e ninguém tinha notado, porque escolher "Ganho" por
+   *  lá também devolvia quadro vazio. */
+  const ETAPAS_FINAIS: DecisionQueueKey[] = ['won', 'lost', 'abandoned', 'executed'];
+
+  /** Ajusta o recorte para nunca contradizer a seleção de etapas.
+   *
+   *  ⚠️ COM SELEÇÃO MÚLTIPLA A REGRA PRECISOU DE UM TERCEIRO CASO. Com uma
+   *  etapa só bastava "final → finalizados, ativa → ativos". Marcando
+   *  "Enviado + Ganho" — que é exatamente o que alguém faz para ver o que
+   *  mandou e o que voltou —, qualquer um dos dois recortes apagaria metade da
+   *  seleção. Mistura pede `'all'`. */
+  /** O recorte que valia ANTES de a seleção começar, para poder devolvê-lo.
+   *
+   *  ⚠️ SEM ISTO O CLIQUE NÃO DESFAZ. Um teste de mesa pegou: partindo do
+   *  padrão (ativos), clicar em "Ganho" leva o recorte para "finalizados" — e
+   *  clicar em "Ganho" de novo, esperando voltar ao ponto de partida, deixava
+   *  a pessoa nos encerrados, olhando quatro colunas que ela não pediu. Um
+   *  botão que liga e desliga precisa devolver o estado inteiro, não metade
+   *  dele. Guardar o valor anterior também evita atropelar quem escolheu
+   *  "Finalizados" à mão no painel antes de mexer nas fichas. */
+  const recorteAntesDaSelecao = useRef<ActivityFilter | null>(null);
+
+  const reconciliarRecorte = (sel: Set<DecisionQueueKey>) => {
+    if (sel.size === 0) {
+      if (recorteAntesDaSelecao.current) {
+        setActivityFilter(recorteAntesDaSelecao.current);
+        recorteAntesDaSelecao.current = null;
+      }
+      return;
+    }
+    if (recorteAntesDaSelecao.current === null) {
+      setActivityFilter((atual) => { recorteAntesDaSelecao.current = atual; return atual; });
+    }
+    const temFinal = [...sel].some((k) => ETAPAS_FINAIS.includes(k));
+    const temAtiva = [...sel].some((k) => !ETAPAS_FINAIS.includes(k));
+    if (temFinal && temAtiva) setActivityFilter('all');
+    else if (temFinal) setActivityFilter('finalized');
+    else setActivityFilter('active');
+  };
+
+  /** Liga/desliga uma etapa na seleção. Conjunto vazio = todas. */
+  const alternarEtapa = (key: DecisionQueueKey) => {
+    setEtapasSelecionadas((antes) => {
+      const proxima = new Set(antes);
+      if (proxima.has(key)) proxima.delete(key); else proxima.add(key);
+      reconciliarRecorte(proxima);
+      return proxima;
+    });
+  };
+
+  /** O seletor "Etapa" do painel é de escolha única (é um `<select>` nativo):
+   *  escolher por lá SUBSTITUI a seleção inteira, em vez de somar. Some com a
+   *  multi-seleção sem enganar — quem quer somar usa as fichas. */
+  const selecionarEtapaUnica = (key: DecisionQueueKey | 'all') => {
+    const proxima: Set<DecisionQueueKey> = key === 'all' ? new Set() : new Set([key]);
+    setEtapasSelecionadas(proxima);
+    reconciliarRecorte(proxima);
+  };
 
   const updateBoardScrollState = () => {
     const el = boardScrollRef.current;
@@ -373,7 +588,10 @@ export default function DecisionManagementTab({
       el.removeEventListener('scroll', updateBoardScrollState);
       window.removeEventListener('resize', updateBoardScrollState);
     };
-  }, [queueCards.length, searchText]);
+    // `colunasVisiveis.length` na lista: trocar o filtro muda a largura do
+    // conteúdo, e sem recalcular as setinhas continuavam aparecendo (ou
+    // sumidas) descrevendo o quadro anterior.
+  }, [queueCards.length, searchText, colunasVisiveis.length]);
 
   const scrollBoard = (direction: 'left' | 'right') => {
     const el = boardScrollRef.current;
@@ -389,7 +607,7 @@ export default function DecisionManagementTab({
   const hasActiveFilters = Boolean(
     searchText.trim()
     || companyFilter !== 'all'
-    || stageFilter !== 'all'
+    || etapasSelecionadas.size > 0
     || verdictFilter !== 'all'
     || urgencyFilter !== 'all'
     || monitorFilter !== 'all'
@@ -397,10 +615,31 @@ export default function DecisionManagementTab({
     || sortFilter !== 'recent',
   );
 
+  /** Filtros que, se estiverem ligados, NÃO têm nenhum sinal fora do painel —
+   *  são os únicos que obrigam o painel a abrir.
+   *
+   *  ⚠️ USAR `hasActiveFilters` AQUI SERIA GROSSEIRO. Ele inclui coisas cujo
+   *  estado já está à vista: a busca por texto (a caixa fica sempre visível e
+   *  cheia), o recorte de encerrados (a faixa de contadores esmaece as etapas e
+   *  oferece "Ver fluxo ativo") e a ordenação (que não esconde nada). Com ele,
+   *  clicar em "1 prazo vencido" na faixa de risco escancararia sete seletores
+   *  na cara de quem só queria ver os vencidos.
+   *
+   *  Estes quatro, não: se estiverem ligados e o painel estiver fechado, a
+   *  pessoa vê uma lista curta sem nada em tela dizendo por quê. */
+  const filtrosInvisiveisAtivos = Boolean(
+    companyFilter !== 'all'
+    // `stageFilter` SAIU DAQUI ao virar clicável: a ficha selecionada agora
+    // fica com anel escuro na faixa, à vista. Mantê-lo forçaria o painel de
+    // sete seletores a escancarar toda vez que alguém clicasse numa etapa.
+    || verdictFilter !== 'all'
+    || monitorFilter !== 'all',
+  );
+
   const resetFilters = () => {
     setSearchText('');
     setCompanyFilter('all');
-    setStageFilter('all');
+    setEtapasSelecionadas(new Set());
     setVerdictFilter('all');
     setUrgencyFilter('all');
     setMonitorFilter('all');
@@ -452,7 +691,20 @@ export default function DecisionManagementTab({
     task: DecisionQueueTask,
     patch: { done?: boolean; responsavel?: string; prazo?: string; nota?: string } = { done: true },
   ) => {
-    if (!analysis.id || savingTaskId) return;
+    if (!analysis.id) return;
+    // ⚠️ ANTES ERA `if (!analysis.id || savingTaskId) return;` — e `savingTaskId`
+    // é UM estado para o quadro inteiro, não por tarefa. O efeito: com um save
+    // em voo em qualquer lugar da tela, TODA outra gravação virava um `return`
+    // mudo. No editor de plano, que grava no `onBlur` e não desabilita os
+    // campos, bastava passar de Responsável para Prazo com o Tab: o segundo
+    // `onBlur` disparava antes do primeiro `await` voltar, e a edição sumia sem
+    // erro — o texto continuava na tela, então parecia salvo.
+    //
+    // A fila serializa em vez de descartar. Recusar trabalho do usuário só se
+    // justifica quando há como avisá-lo, e aqui não havia.
+    await filaDeGravacaoRef.current;
+    let liberar: () => void = () => {};
+    filaDeGravacaoRef.current = new Promise<void>((r) => { liberar = r; });
 
     const statusBefore = normalizeDecisionCockpitStatus(analysis.cockpit_status);
     const nowIso = new Date().toISOString();
@@ -519,6 +771,7 @@ export default function DecisionManagementTab({
       setNotice({ type: 'error', message: 'Erro de conexão ao salvar a tarefa.' });
     } finally {
       setSavingTaskId(null);
+      liberar();   // libera o próximo da fila, tenha dado certo ou não
     }
   };
 
@@ -646,7 +899,16 @@ export default function DecisionManagementTab({
         )));
       }
       setLearningModal(null);
-      setNotice({ type: 'success', message: 'Resultado registrado. A Bawzi usará esse histórico nas próximas decisões.' });
+      // ⚠️ AQUI SE PROMETIA UM CICLO DE APRENDIZADO QUE NÃO EXISTE.
+    // A frase era "a Bawzi usará esse histórico nas próximas decisões". O campo
+    // `decision_learning` é gravado por esta rota e pelo worker de resultados,
+    // e é lido em UM lugar só: `GET /analyses/learning-stats`, que calcula a
+    // taxa de acerto exibida no banner. Nenhum arquivo de `app/services/` — nem
+    // o `ai_router` — sequer menciona o campo: o laudo seguinte não sabe que
+    // este resultado existe. Prometer que a IA aprende com o que a pessoa
+    // registra, e não aprender, é a promessa mais cara de desmentir, porque ela
+    // só é verificável depois de meses de uso fiel.
+    setNotice({ type: 'success', message: 'Resultado registrado — ele entra na sua taxa de acerto.' });
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       setNotice({ type: 'error', message: 'Erro de conexão ao registrar o resultado.' });
@@ -782,9 +1044,10 @@ export default function DecisionManagementTab({
       {activeSummaryCard && (
         <OperationalSummaryModal
           card={activeSummaryCard}
+          foco={focoDoResumo}
           savingTaskId={savingTaskId}
           savingStageId={savingStageId}
-          onClose={() => setSummaryModal(null)}
+          onClose={() => { setSummaryModal(null); setFocoDoResumo(null); }}
           onOpenLaudo={(analysis) => {
             setSummaryModal(null);
             void openAnalysisDetail(analysis);
@@ -820,8 +1083,24 @@ export default function DecisionManagementTab({
       )}
 
       <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-6 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:grid-cols-[1fr_auto] md:p-7">
-          <div>
+        {/* ⚠️ SEM FAIXA PRÓPRIA. Este alerta já foi um bloco de largura inteira,
+            com fundo âmbar e o rótulo "PRECISA DE VOCÊ AGORA" em caixa alta —
+            uma banda de ~46px para exibir UM número. Desproporcional: o alerta
+            mais importante da tela não precisa da maior área, precisa do melhor
+            LUGAR. E o cabeçalho tinha o lado direito inteiro vazio, ao lado de
+            um título que ocupa 40% da linha.
+            Agora ele mora ali, na altura dos olhos junto do título, sem gastar
+            uma linha vertical sequer. O rótulo em caixa alta saiu junto: os
+            próprios chips já dizem "1 prazo vencido" — em vermelho, com ícone
+            de alerta. Repetir "precisa de você agora" antes disso era enfeite. */}
+        {/* ⚠️ `flex-col` ATÉ `md`, e isso não é preciosismo: medido.
+            Com `flex-wrap` + `shrink-0` nos chips, a 390px eles reservavam
+            ~150px e sobravam 176px para o título — que passava a quebrar em
+            quatro linhas e levava o cabeçalho de 596px para 710px. O alerta
+            economizava 55px no desktop e custava 114px no celular. Lado a lado
+            só onde há largura para os dois. */}
+        <div className="flex flex-col gap-3 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:flex-row md:items-start md:justify-between md:gap-6 md:p-7">
+          <div className="min-w-0 md:flex-1">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
                 <ClipboardList size={13} />
@@ -843,31 +1122,160 @@ export default function DecisionManagementTab({
               </button>
             </div>
             <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Fluxo completo dos editais</h2>
+            {/* ⚠️ O SUBTÍTULO ERA DECORAÇÃO PERMANENTE.
+                Dizia "acompanhe cada edital desde o primeiro contato
+                operacional até envio, resultado e execução/encerramento" — uma
+                descrição do produto, relida todo dia por quem já sabe o que a
+                tela faz, ocupando duas linhas no topo. Agora ele carrega
+                ESTADO: quantos editais existem aqui. A descrição do fluxo,
+                quem quer, lê na faixa de etapas logo abaixo, que mostra a
+                sequência inteira com os números reais.
+                E os dois parágrafos de ensino viraram um: o segundo explicava
+                o opt-in em três linhas; ele continua, resumido, na mesma
+                frase. */}
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Acompanhe cada edital desde o primeiro contato operacional até envio, resultado e execução/encerramento.
+              {analyses.length > 0 ? (
+                <>
+                  <strong className="font-black text-slate-800">
+                    {analyses.length} {analyses.length === 1 ? 'edital em acompanhamento' : 'editais em acompanhamento'}
+                  </strong>
+                  {' '}— só entram aqui os que você marcou com{' '}
+                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">+ Gestão</span>
+                  {' '}na análise. Os demais continuam em Decisões.
+                </>
+              ) : (
+                <>Acompanhe cada edital desde o primeiro contato operacional até envio, resultado e execução.</>
+              )}
             </p>
-            {/* Com a lista vazia este aviso repete, quase palavra por palavra, o
-                texto do estado vazio logo abaixo. Mostra-se só quando há itens. */}
-            {analyses.length > 0 && (
-              <p className="mt-2 max-w-2xl text-[11px] font-bold text-slate-400">
-                Só aparecem aqui os editais que você adicionou de propósito, clicando em{' '}
-                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-emerald-700">+ Gestão</span>{' '}
-                na análise. As demais análises continuam em Decisões.
-              </p>
-            )}
           </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 md:min-w-[720px]">
-            {columnOrder.map((key) => {
-              const stage = decisionQueueStages[key];
-              return (
-                <div key={key} className={`rounded-2xl border p-3 shadow-sm ${stage.className}`}>
-                  <p className="text-2xl font-black leading-none">{counts[key]}</p>
-                  <p className="mt-1 text-[10px] font-black uppercase text-current opacity-70">{stage.label}</p>
-                </div>
-              );
-            })}
-          </div>
+          {analyses.length > 0 && (risco.vencidos > 0 || risco.hojeAmanha > 0) && (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {/* ⚠️ FUNDO SÓLIDO, NÃO TINTA CLARA. A primeira versão usava
+                  `bg-red-50` com texto `text-red-700` — o padrão de chip suave
+                  do resto da tela. Num cabeçalho que já é branco e claro, ele
+                  simplesmente sumia: o alerta mais importante da tela era o
+                  elemento menos visível dela.
+                  O número ganha caixa própria porque é ele que se lê primeiro:
+                  com cinco vencidos, "5" precisa saltar antes da palavra.
+
+                  ⚠️ E AS CORES SÃO AS QUE PASSAM NO CONTRASTE, não as óbvias.
+                  Branco sobre `amber-500` dá 2,15:1 e sobre `amber-600` dá
+                  3,19:1 — os dois reprovam no mínimo de 4,5:1 para texto de
+                  12px em negrito. Só `amber-700` passa (5,02:1). No vermelho,
+                  `red-500` também reprova (3,76:1); `red-600` passa (4,83:1).
+                  Medido antes de escolher. */}
+              {risco.vencidos > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setUrgencyFilter('late'); setActivityFilter('active'); setSortFilter('deadline'); }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3.5 py-2.5 text-xs font-black text-white shadow-md shadow-red-600/25 transition-all hover:bg-red-700"
+                >
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-lg bg-white/20 px-1 text-sm font-black tabular-nums">
+                    {risco.vencidos}
+                  </span>
+                  {risco.vencidos === 1 ? 'prazo vencido' : 'prazos vencidos'}
+                </button>
+              )}
+              {risco.hojeAmanha > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setUrgencyFilter('urgent'); setActivityFilter('active'); setSortFilter('deadline'); }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-3.5 py-2.5 text-xs font-black text-white shadow-md shadow-amber-700/25 transition-all hover:bg-amber-800"
+                >
+                  <span className="flex h-6 min-w-6 items-center justify-center rounded-lg bg-white/20 px-1 text-sm font-black tabular-nums">
+                    {risco.hojeAmanha}
+                  </span>
+                  {risco.hojeAmanha === 1 ? 'vence hoje/amanhã' : 'vencem hoje/amanhã'}
+                </button>
+              )}
+              {urgencyFilter !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('all')}
+                  className="text-[11px] font-bold text-slate-500 underline underline-offset-2 transition-colors hover:text-slate-800"
+                >
+                  Ver todos
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ⚠️ AS NOVE ETAPAS EM UMA LINHA SÓ, e para isso a faixa precisou sair
+            de dentro da coluna direita do cabeçalho.
+            Ela morava numa grade `grid-cols-2 / sm:3 / xl:5` espremida ao lado
+            do título: nove itens em cinco colunas viram duas fileiras
+            desalinhadas (5 + 4), e a leitura de um fluxo — que é sequencial por
+            natureza — passava a exigir uma quebra de linha no meio da
+            sequência. Ocupando a largura inteira, e com número e rótulo lado a
+            lado dentro de cada ficha (em vez de empilhados), as nove cabem numa
+            fileira só.
+            `overflow-x-auto` + `shrink-0`: no celular nove fichas não cabem de
+            jeito nenhum, e rolar a faixa preserva a leitura em sequência —
+            quebrar em duas linhas é o que se está corrigindo aqui. */}
+        <div className="flex items-stretch gap-2 overflow-x-auto border-t border-slate-100 bg-white px-5 py-3 md:px-7">
+          {columnOrder.map((key) => {
+            const stage = decisionQueueStages[key];
+            const noRecorte = colunasVisiveis.includes(key);
+            const selecionada = etapasSelecionadas.has(key);
+            return (
+              <React.Fragment key={key}>
+                {/* A seta antes das etapas de RESULTADO marca onde o fluxo
+                    linear termina e vira desfecho — era o que a legenda
+                    separada fazia com uma segunda fileira e um "↳". */}
+                {key === 'won' && (
+                  <span className="flex shrink-0 items-center px-0.5 text-slate-300" aria-hidden="true">
+                    <ChevronRight size={14} />
+                  </span>
+                )}
+                {/* ⚠️ DESABILITADA COM ZERO. Contagem vazia é a única em que o
+                    clique tem resultado garantido e inútil: filtra para uma
+                    etapa que não tem nada e devolve "nada corresponde à busca".
+                    Desabilitar diz a mesma coisa antes do clique. */}
+                <button
+                  type="button"
+                  onClick={() => alternarEtapa(key)}
+                  disabled={counts[key] === 0}
+                  aria-pressed={selecionada}
+                  title={
+                    counts[key] === 0
+                      ? `${stage.label} — nenhum edital nesta etapa`
+                      : selecionada
+                        ? `${stage.label} selecionada — clique para tirar do filtro`
+                        : `${stage.helper} — clique para somar ao filtro`
+                  }
+                  className={`flex shrink-0 items-center gap-2 rounded-xl border py-2 pr-3 shadow-sm transition-all ${stage.className} ${
+                    selecionada
+                      ? 'pl-2 ring-2 ring-slate-900 ring-offset-1'
+                      : counts[key] === 0
+                        ? 'cursor-not-allowed pl-3 opacity-40'
+                        : noRecorte
+                          ? 'pl-3 hover:-translate-y-0.5 hover:shadow-md'
+                          : 'pl-3 opacity-40 hover:opacity-100'
+                  }`}
+                >
+                  {/* O check só aparece na selecionada. Com várias marcadas, o
+                      anel sozinho obriga a comparar bordas de fichas coloridas
+                      para saber quais entraram — o ✓ responde item a item. */}
+                  {selecionada && <Check size={13} strokeWidth={3.5} className="shrink-0" />}
+                  <span className="text-lg font-black leading-none tabular-nums">{counts[key]}</span>
+                  <span className="text-[9px] font-black uppercase leading-tight tracking-wide opacity-70">
+                    {stage.label}
+                  </span>
+                </button>
+              </React.Fragment>
+            );
+          })}
+          {/* Estava na legenda; vem para cá junto com ela. É o caminho de volta
+              para as etapas esmaecidas ao lado. */}
+          <button
+            type="button"
+            onClick={() => setActivityFilter(activityFilter === 'active' ? 'finalized' : 'active')}
+            className="ml-1 shrink-0 self-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+          >
+            {activityFilter === 'active' ? 'Ver encerrados' : 'Ver fluxo ativo'}
+          </button>
         </div>
 
         {/* Métrica que exige 5 resultados registados: com zero editais o
@@ -890,18 +1298,55 @@ export default function DecisionManagementTab({
               />
             </div>
 
-            <div className="inline-flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-black uppercase text-slate-500">
+            {/* ⚠️ SETE SELETORES ABERTOS O TEMPO TODO, para uma carteira que
+                normalmente tem uma dúzia de itens. A busca por texto resolve a
+                maioria dos casos e continua sempre visível; o resto vira sob
+                demanda.
+                ⚠️ E NUNCA FECHA COM FILTRO ATIVO (`hasActiveFilters` força
+                aberto): esconder um recorte que está sendo aplicado faz o
+                usuário ver uma lista curta sem nada em tela explicando por quê
+                — o mesmo erro do filtro de órgão no Radar. */}
+            <button
+              type="button"
+              onClick={() => setFiltrosAbertos((v) => !v)}
+              aria-expanded={filtrosAbertos || filtrosInvisiveisAtivos}
+              className={`inline-flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] font-black uppercase transition-all ${
+                hasActiveFilters
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
+              }`}
+            >
               <span className="inline-flex items-center gap-2">
-                <SlidersHorizontal size={13} className="text-emerald-600" />
+                <SlidersHorizontal size={13} className={hasActiveFilters ? 'text-emerald-600' : 'text-slate-400'} />
                 Filtros
+                <ChevronRight size={12} className={`transition-transform ${filtrosAbertos || filtrosInvisiveisAtivos ? 'rotate-90' : ''}`} />
               </span>
               <span className="rounded-full bg-white px-2 py-0.5 text-slate-700 shadow-sm">
                 {queueCards.length} de {analyses.length}
               </span>
-            </div>
+            </button>
+
+            {/* ⚠️ "Limpar filtros" ocupava uma LINHA INTEIRA só para ele,
+                alinhada à direita, abaixo dos sete seletores — e só aparecia
+                quando havia filtro ativo, ou seja, empurrava todo o quadro para
+                baixo justamente no momento em que a pessoa estava mexendo nos
+                filtros e queria ver o resultado.
+                Aqui, ao lado do botão que ele desfaz: mesma linha, zero altura
+                nova, e a relação entre os dois fica óbvia. `shrink-0` porque
+                ele nunca deve ser comprimido pela caixa de busca ao lado. */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              >
+                <RotateCcw size={12} />
+                Limpar
+              </button>
+            )}
           </div>
 
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <div className={`mt-3 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 ${filtrosAbertos || filtrosInvisiveisAtivos ? 'grid' : 'hidden'}`}>
             <label className="block">
               <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
               <select
@@ -925,11 +1370,20 @@ export default function DecisionManagementTab({
 
             <label className="block">
               <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Etapa</span>
+              {/* ⚠️ UM `<select>` NATIVO NÃO SABE MOSTRAR DUAS ETAPAS.
+                  Com várias marcadas nas fichas, exibir a primeira seria
+                  mentira ("Etapa: Proposta" com Enviado também ligado). A
+                  opção `__varias__` existe só para ele ter o que exibir nesse
+                  caso, e está desabilitada porque não é uma escolha — é um
+                  estado. Escolher qualquer outra substitui a seleção inteira. */}
               <select
-                value={stageFilter}
-                onChange={(event) => setStageFilter(event.target.value as 'all' | DecisionQueueKey)}
+                value={etapasSelecionadas.size === 0 ? 'all' : etapasSelecionadas.size === 1 ? [...etapasSelecionadas][0] : '__varias__'}
+                onChange={(event) => selecionarEtapaUnica(event.target.value as 'all' | DecisionQueueKey)}
                 className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
               >
+                {etapasSelecionadas.size > 1 && (
+                  <option value="__varias__" disabled>{etapasSelecionadas.size} etapas marcadas</option>
+                )}
                 <option value="all">Todas</option>
                 {columnOrder.map((key) => (
                   <option key={key} value={key}>{decisionQueueStages[key].label}</option>
@@ -987,8 +1441,8 @@ export default function DecisionManagementTab({
               >
                 <option value="all">Todos</option>
                 <option value="changed">Com mudança</option>
-                <option value="monitored">Monitorados</option>
-                <option value="unmonitored">Sem monitor</option>
+                <option value="monitored">Monitorados agora</option>
+                <option value="unmonitored">Sem monitoramento</option>
               </select>
             </label>
 
@@ -1007,23 +1461,37 @@ export default function DecisionManagementTab({
             </label>
           </div>
 
-          {hasActiveFilters && (
-            <div className="mt-3 flex justify-end">
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <RotateCcw size={12} />
-                Limpar filtros
-              </button>
-            </div>
-          )}
         </div>
         )}
       </div>
 
-      {queueCards.length === 0 ? (
+      {/* ⚠️ FALHA VEM ANTES DE VAZIO, e a ordem é o conserto.
+          Enquanto este ramo não existia, um 500 ou um 403 produziam `[]` e a
+          tela caía no "Nenhum edital na Gestão ainda" — dizendo a quem tem
+          quarenta editais em acompanhamento que ele nunca adicionou nenhum.
+          Agora a lista vazia só é interpretada como vazia quando a carga
+          realmente deu certo. */}
+      {erroDeCarga ? (
+        <div className="rounded-[2rem] border border-red-200 bg-red-50/60 py-16 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-red-500">
+            <AlertTriangle size={24} />
+          </div>
+          <h3 className="text-lg font-black text-red-900">Não consegui carregar seus editais</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-800/80">{erroDeCarga}</p>
+          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-red-700/60">
+            Isto é uma falha de carregamento — nada foi perdido. Seus editais em
+            acompanhamento continuam salvos.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRecarregar((n) => n + 1)}
+            className="mx-auto mt-5 inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-red-700"
+          >
+            <RefreshCw size={14} />
+            Tentar de novo
+          </button>
+        </div>
+      ) : queueCards.length === 0 ? (
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
             <Search size={24} />
@@ -1089,47 +1557,25 @@ export default function DecisionManagementTab({
             </>
           )}
 
-          {/* Stage flow legend */}
-          <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-white px-3 py-2.5 shadow-sm">
-            {/* Active pipeline */}
-            <div className="flex flex-wrap items-center gap-1">
-              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-400 mr-0.5">Fluxo</span>
-              <span className="shrink-0 text-slate-200 mr-0.5">·</span>
-              {(['not_started', 'triage', 'pending', 'proposal', 'submitted'] as const).map((key, i, arr) => (
-                <span key={key} className="flex items-center gap-1">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages[key].className}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages[key].dotClass}`} />
-                    {i + 1}. {decisionQueueStages[key].label}
-                  </span>
-                  {i < arr.length - 1 && <ChevronRight size={9} className="shrink-0 text-slate-300" />}
-                </span>
-              ))}
-            </div>
-            {/* Outcome branch */}
-            <div className="flex flex-wrap items-center gap-1 border-l-2 border-slate-200 pl-2 ml-1">
-              <span className="text-[11px] text-slate-400 mr-0.5">↳</span>
-              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-slate-400 mr-0.5">Resultado</span>
-              <span className="shrink-0 text-slate-200 mr-0.5">·</span>
-              {(['won', 'lost', 'abandoned'] as const).map((key, i, arr) => (
-                <span key={key} className="flex items-center gap-1">
-                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages[key].className}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages[key].dotClass}`} />
-                    {decisionQueueStages[key].label}
-                  </span>
-                  {i < arr.length - 1 && <span className="text-[9px] text-slate-300">/</span>}
-                </span>
-              ))}
-              <ChevronRight size={9} className="shrink-0 text-slate-300" />
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black ${decisionQueueStages.executed.className}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages.executed.dotClass}`} />
-                {decisionQueueStages.executed.label}
-              </span>
-            </div>
-          </div>
-
+          {/* A legenda de fluxo que ficava aqui foi FUNDIDA na faixa de
+              contadores, no topo da tela. Ela listava as mesmas nove etapas, na
+              mesma ordem, a duas telas de distância dos contadores que já
+              listavam as mesmas nove etapas com os números — duas fileiras
+              dizendo a mesma sequência. O que ela tinha de próprio (a seta
+              separando fluxo de resultado, e o botão "Ver encerrados") está
+              agora dentro da faixa. */}
           <div ref={boardScrollRef} className="overflow-x-auto scroll-smooth pb-3">
-            <div className="grid min-w-[2250px] grid-cols-9 gap-3">
-            {columnOrder.map((stageKey) => {
+            {/* Grade por `style` e não por classe: `grid-cols-${n}` dinâmico
+                não existe para o Tailwind, que precisa da classe literal no
+                código para gerá-la. */}
+            <div
+              className="grid gap-3"
+              style={{
+                minWidth: colunasVisiveis.length * LARGURA_COLUNA,
+                gridTemplateColumns: `repeat(${colunasVisiveis.length}, minmax(0, 1fr))`,
+              }}
+            >
+            {colunasVisiveis.map((stageKey) => {
               const stage = decisionQueueStages[stageKey];
               const cards = queueCards.filter((card) => card.stage === stageKey);
               const isExpanded = expandedColumns[stageKey] ?? false;
@@ -1158,7 +1604,7 @@ export default function DecisionManagementTab({
 
                   <div className="space-y-3">
                     {cards.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-8 text-center text-[11px] font-bold text-slate-400">
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-5 text-center text-[11px] font-bold text-slate-400">
                         Sem itens nesta fase
                       </div>
                     ) : visibleCards.map((card) => (
@@ -1169,7 +1615,7 @@ export default function DecisionManagementTab({
                         savingTaskId={savingTaskId}
                         savingStageId={savingStageId}
                         onOpen={openAnalysisDetail}
-                        onOpenSummary={setSummaryModal}
+                        onOpenSummary={(c, foco) => { setFocoDoResumo(foco ?? null); setSummaryModal(c); }}
                         onComplete={(a, t) => salvarTarefa(a, t, { done: true })}
                         onStageChange={updateWorkflowStage}
                         scoreColors={scoreColors}
@@ -1221,7 +1667,7 @@ function DecisionQueueCard({
   savingTaskId: string | null;
   savingStageId: string | null;
   onOpen: (analysis: SavedAnalysis) => void;
-  onOpenSummary: (card: DecisionQueueCardModel) => void;
+  onOpenSummary: (card: DecisionQueueCardModel, foco?: 'plano') => void;
   onComplete: (analysis: SavedAnalysis, task: DecisionQueueTask) => void;
   onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
   scoreColors: (score: number) => { bar: string; text: string; light: string; border: string; label: string };
@@ -1312,23 +1758,76 @@ function DecisionQueueCard({
           </div>
         )}
 
+        {/* ⚠️ O BLOCO INTEIRO É O BOTÃO, e isso corrige duas gerações de erro
+            no mesmo lugar.
+            Primeiro era um ícone de 20px sem rótulo, com o texto só no `title`
+            — que não existe em toque, justamente onde o alvo já era pequeno
+            demais. Depois eu "consertei" o alvo com `box-content p-2`, e o
+            resultado foi pior: o fundo verde passou a pintar os 38px inteiros
+            com um ícone de 10px flutuando no meio, ocupando 26% da área. Virou
+            um selo decorativo — e um render lado a lado deixou isso óbvio.
+            O erro dos dois era o mesmo: tentar resolver por tamanho o que era
+            problema de RÓTULO. Concluir a ação é o verbo desta tela, e estava
+            escrito em lugar nenhum.
+            Alvo agora é a caixa toda (largura do cartão × ~64px) e o rótulo diz
+            o que o clique faz. Custo zero de altura: medido em 272px, o mesmo
+            do desenho anterior, então nenhum cartão a menos por coluna. */}
+        {/* ⚠️ DOIS ALVOS, PORQUE SÃO DUAS INTENÇÕES.
+            A versão anterior fazia a caixa inteira concluir a tarefa — e o
+            texto da ação é cortado em duas linhas (`line-clamp-2`). Uma ação
+            real como "Conferir habilitação, licença sanitária, autorizações
+            aplicáveis e atestado de capacidade técnica" não cabe, e o único
+            clique disponível marcava como feita em vez de deixar ler. Pedir
+            para concluir algo que a pessoa não conseguiu terminar de ler é o
+            oposto do que esta tela deveria fazer.
+            Agora o círculo conclui e o texto abre o plano inteiro (mesmo modal
+            do "Resumo do edital", onde a lista aparece sem corte e editável).
+            Irmãos e não aninhados: botão dentro de botão é HTML inválido e o
+            navegador desmonta a árvore. */}
         {card.nextTask ? (
-          <div className="rounded-xl border border-slate-100 bg-white p-2.5">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Próxima ação</p>
-              <button
-                type="button"
-                title={`Concluir: ${card.nextTask.acao}`}
-                onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
-                disabled={savingTaskId === quickTaskId}
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {savingTaskId === quickTaskId ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
-              </button>
-            </div>
-            <p className="line-clamp-2 text-xs font-black leading-snug text-slate-800">
-              {card.nextTask.acao}
-            </p>
+          <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white p-2.5 transition-all focus-within:border-emerald-200">
+            <button
+              type="button"
+              onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
+              disabled={savingTaskId === quickTaskId}
+              title={`Concluir: ${card.nextTask.acao}`}
+              aria-label={`Concluir ação: ${card.nextTask.acao}`}
+              /* `-m-1.5 p-1.5` no BOTÃO, com o círculo num `span` interno: a
+                 área de toque vai a 36px enquanto o desenho continua 24px. O
+                 truque só funciona porque quem pinta borda e fundo é o span —
+                 foi pôr o `bg` no próprio botão que produziu, da última vez, um
+                 quadrado verde de 38px com um ícone perdido no meio. */
+              className="-m-1.5 shrink-0 rounded-full p-1.5 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-emerald-300 text-emerald-600">
+                {savingTaskId === quickTaskId ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenSummary(card, 'plano')}
+              className="group min-w-0 flex-1 text-left"
+            >
+              <span className="block text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Próxima ação · {card.done} de {card.total}
+              </span>
+              {/* ⚠️ SEM `block` AQUI. `line-clamp-2` funciona definindo
+                  `display: -webkit-box`; a utilitária `block` define
+                  `display: block` e vence na cascata, matando o corte em
+                  silêncio. O original era um `<p>` (que já é bloco por
+                  padrão) e por isso funcionava — ao virar `<span>` eu
+                  acrescentei `block` por reflexo e o texto passou a
+                  ocupar cinco linhas. Só apareceu ao renderizar com uma
+                  ação longa de verdade. */}
+              <span className="mt-0.5 line-clamp-2 text-xs font-black leading-snug text-slate-800">
+                {card.nextTask.acao}
+              </span>
+              {/* O texto é cortado — então a saída para lê-lo por inteiro
+                  precisa estar escrita, não adivinhada. */}
+              <span className="mt-1 block text-[9px] font-black uppercase tracking-wider text-slate-400 transition-colors group-hover:text-emerald-700">
+                Ver o plano inteiro →
+              </span>
+            </button>
           </div>
         ) : (
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-xs font-black text-emerald-800">
@@ -1348,23 +1847,27 @@ function DecisionQueueCard({
 
         <div className="mt-2 flex items-center gap-2">
           {nextStage ? (
+            /* Rotulado pelo mesmo motivo da próxima ação: era uma seta sozinha
+               cujo significado morava num `title`. Divide a linha com o Laudo. */
             <button
               type="button"
               title={`Avançar para ${decisionQueueStages[nextStage].label}`}
               onClick={() => onStageChange(card.analysis, nextStage)}
               disabled={savingStageId === workflowTaskId}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {savingStageId === workflowTaskId ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
+              {savingStageId === workflowTaskId ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
+              Avançar
             </button>
           ) : (
             <button
               type="button"
-              title="Etapa final"
+              title="Etapa final — não há para onde avançar"
               disabled
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400"
             >
-              <CheckCircle2 size={13} />
+              <CheckCircle2 size={11} />
+              Etapa final
             </button>
           )}
           <button
@@ -1394,11 +1897,13 @@ function DecisionQueueCard({
 function PlanoEditavel({ card, savingTaskId, onSalvar }: {
   card: DecisionQueueCardModel;
   savingTaskId: string | null;
+  /** Devolve promessa: o editor precisa esperar a gravação terminar para só
+   *  então descartar o rascunho e passar a ler o valor confirmado. */
   onSalvar: (
     analysis: SavedAnalysis,
     task: DecisionQueueTask,
     patch: { done?: boolean; responsavel?: string; prazo?: string; nota?: string },
-  ) => void;
+  ) => Promise<void> | void;
 }) {
   const [rascunho, setRascunho] = useState<Record<string, { responsavel?: string; prazo?: string; nota?: string }>>({});
   const [aberta, setAberta] = useState<string | null>(null);
@@ -1411,12 +1916,39 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
   const editar = (taskId: string, campo: 'responsavel' | 'prazo' | 'nota', v: string) =>
     setRascunho((r) => ({ ...r, [taskId]: { ...r[taskId], [campo]: v } }));
 
-  const gravar = (task: DecisionQueueTask, campo: 'responsavel' | 'prazo' | 'nota') => {
+  /** ⚠️ O RASCUNHO PRECISA SAIR DA FRENTE DEPOIS DE GRAVAR.
+   *
+   *  `valor()` dá precedência ao rascunho local, e nada nunca o limpava. Duas
+   *  consequências, as duas invisíveis para quem estava usando:
+   *
+   *  1. Se o PATCH falhasse, `salvarTarefa` revertia o estado e mostrava o
+   *     toast — mas o campo continuava exibindo o texto digitado, porque o
+   *     rascunho vencia o valor revertido. Erro anunciado por 4s, e depois uma
+   *     tela que parece salva.
+   *  2. O backend corta os campos (`_texto_curto`: 80 / 40 / 180 caracteres,
+   *     router_analyses.py:5511). Uma nota de 300 caracteres era gravada com
+   *     180 e exibida com 300 pelo resto da sessão — a pessoa só descobriria o
+   *     corte ao reabrir a tela outro dia.
+   *
+   *  Descartar o rascunho após o envio faz o campo passar a ler o que o
+   *  servidor confirmou. É o servidor que decide o que ficou gravado. */
+  const descartarRascunho = (taskId: string, campo: 'responsavel' | 'prazo' | 'nota') =>
+    setRascunho((r) => {
+      const doTask = { ...r[taskId] };
+      delete doTask[campo];
+      return { ...r, [taskId]: doTask };
+    });
+
+  const gravar = async (task: DecisionQueueTask, campo: 'responsavel' | 'prazo' | 'nota') => {
     const atual = rascunho[task.id]?.[campo];
     if (atual === undefined) return;                       // nada foi digitado
     const salvo = card.statusMap[task.id]?.[campo] ?? '';
-    if (atual.trim() === String(salvo).trim()) return;     // digitou e desfez
-    onSalvar(card.analysis, task, { [campo]: atual.trim() });
+    if (atual.trim() === String(salvo).trim()) {
+      descartarRascunho(task.id, campo);                   // digitou e desfez
+      return;
+    }
+    await onSalvar(card.analysis, task, { [campo]: atual.trim() });
+    descartarRascunho(task.id, campo);
   };
 
   return (
@@ -1446,7 +1978,11 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
                   title={feito ? 'Marcar como pendente' : 'Marcar como concluída'}
                   onClick={() => onSalvar(card.analysis, task, { done: !feito })}
                   disabled={salvando}
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all disabled:opacity-50 ${
+                  aria-pressed={feito}
+                  /* Mesma ampliação de área do cartão — ver comentário lá. E
+                     `aria-pressed`: sem ele o leitor de tela anunciava só a
+                     ação ("marcar como concluída"), nunca o estado atual. */
+                  className={`-m-2 mt-0.5 box-content flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 p-2 transition-all disabled:opacity-50 ${
                     feito
                       ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600'
                       : 'border-slate-300 bg-white hover:border-emerald-400'
@@ -1517,6 +2053,7 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
 
 function OperationalSummaryModal({
   card,
+  foco,
   savingTaskId,
   savingStageId,
   onClose,
@@ -1528,6 +2065,8 @@ function OperationalSummaryModal({
   onLearningRequest,
 }: {
   card: DecisionQueueCardModel;
+  /** `'plano'` = abrir já no plano de execução, em vez do topo. */
+  foco: 'plano' | null;
   savingTaskId: string | null;
   savingStageId: string | null;
   onClose: () => void;
@@ -1562,11 +2101,30 @@ function OperationalSummaryModal({
   const isSavingStage = Boolean(savingStageId);
   const isSavingTask = Boolean(savingTaskId);
   const headerOffset = useStickyHeaderOffset();
+  const fecharPeloFundo = useDispensaDeModal(true, onClose);
+
+  /** ⚠️ "VER O PLANO INTEIRO →" PRECISA CAIR NO PLANO INTEIRO.
+   *  O cartão abre este mesmo modal por dois caminhos: "Resumo do edital",
+   *  que quer o topo, e o link do plano, que quer a lista. Os dois abriam no
+   *  topo — e o segundo prometia uma coisa e entregava outra, deixando a
+   *  pessoa rolar atrás do que o link já tinha nomeado.
+   *
+   *  `useLayoutEffect` e não `useEffect`: posicionar depois da pintura faz o
+   *  modal aparecer no topo e pular para o plano, o que dá a impressão de
+   *  falha. `block: 'start'` porque o plano é o fim do conteúdo — centralizar
+   *  deixaria metade da tela vazia embaixo. */
+  const planoRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (foco !== 'plano') return;
+    planoRef.current?.scrollIntoView({ block: 'start' });
+  }, [foco]);
 
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-[140] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
       style={{ top: headerOffset }}
+      onClick={fecharPeloFundo}
+      role="presentation"
     >
       <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]">
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 p-4 sm:p-5">
@@ -1699,11 +2257,13 @@ function OperationalSummaryModal({
               Não é a "próxima ação" só: é a lista inteira, com responsável,
               prazo e nota por passo. Sem isto, a edição não teria mudado de
               casa; teria sumido. */}
-          <PlanoEditavel
-            card={card}
-            savingTaskId={savingTaskId}
-            onSalvar={onSalvarTarefa}
-          />
+          <div ref={planoRef} className="scroll-mt-2">
+            <PlanoEditavel
+              card={card}
+              savingTaskId={savingTaskId}
+              onSalvar={onSalvarTarefa}
+            />
+          </div>
         </div>
 
         <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:justify-end sm:p-4">
@@ -1751,17 +2311,23 @@ function LearningStatsBanner({ stats }: { stats: LearningStats | null }) {
   if (!stats) return null;
   const { go, no_go: noGo, amostra_minima: amostraMinima } = stats;
 
+  // ⚠️ ESTADO VAZIO OCUPAVA UM BLOCO INTEIRO PARA EXPLICAR UMA MÉTRICA QUE
+  // AINDA NÃO EXISTE — título em caixa alta mais três linhas de texto, no topo
+  // da tela, todo dia, até a quinta disputa registrada. O bloco só se justifica
+  // quando tem número para mostrar. Enquanto não tem, é uma linha com o que
+  // falta para chegar lá, e o resto atrás de um clique de quem se interessar.
   if (go.total_com_resultado === 0 && noGo.total_participou_mesmo_assim === 0) {
     return (
-      <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4 md:px-7">
-        <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
-          <Trophy size={12} className="text-slate-400" />
-          Taxa de acerto real — ainda sem resultados registrados
+      <details className="group border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 md:px-7">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600">
+          <Trophy size={12} className="shrink-0 text-slate-400" />
+          Taxa de acerto real · registre {amostraMinima} resultados para começar
+          <ChevronRight size={12} className="ml-auto shrink-0 transition-transform group-open:rotate-90" />
+        </summary>
+        <p className="mt-2 text-xs font-medium leading-relaxed text-slate-500">
+          Assim que você registrar "Ganhou" ou "Perdeu" em pelo menos {amostraMinima} disputas (botão "Registrar resultado" em cada card), esta métrica passa a comparar o veredito da Bawzi com o resultado real. As contagens de GO e de No-Go são independentes: cada uma precisa dos seus {amostraMinima}.
         </p>
-        <p className="mt-1.5 text-xs font-medium text-slate-500">
-          Assim que você registrar "Ganhou" ou "Perdeu" em pelo menos {amostraMinima} disputas (botão "Registrar resultado" em cada card), essa métrica passa a comparar o veredito da Bawzi com o resultado real.
-        </p>
-      </div>
+      </details>
     );
   }
 
@@ -1821,6 +2387,7 @@ function DecisionReviewModal({
   onSubmit: (card: DecisionQueueCardModel, payload: { tipo: string; titulo: string; conteudo: string }) => void;
 }) {
   const headerOffset = useStickyHeaderOffset();
+  const fecharPeloFundo = useDispensaDeModal(true, onClose);
   const [tipo, setTipo] = useState('resposta_orgao');
   const [titulo, setTitulo] = useState('');
   const [conteudo, setConteudo] = useState('');
@@ -1830,6 +2397,8 @@ function DecisionReviewModal({
     <div
       className="fixed inset-x-0 bottom-0 z-[150] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
       style={{ top: headerOffset }}
+      onClick={fecharPeloFundo}
+      role="presentation"
     >
       <form
         onSubmit={(event) => {
@@ -1936,6 +2505,7 @@ function LearningModal({
   onSubmit: (card: DecisionQueueCardModel, payload: { participou: boolean; resultado: string; preco_final: string; vencedor: string; observacao: string; contrato_inicio: string; contrato_fim: string }) => void;
 }) {
   const headerOffset = useStickyHeaderOffset();
+  const fecharPeloFundo = useDispensaDeModal(true, onClose);
   const learning = card.analysis.decision_learning || {};
   const [participou, setParticipou] = useState(Boolean(learning.participou ?? true));
   const [resultado, setResultado] = useState(String(learning.resultado || 'won'));
@@ -1971,6 +2541,8 @@ function LearningModal({
     <div
       className="fixed inset-x-0 bottom-0 z-[150] flex items-start justify-center overflow-hidden bg-slate-950/50 p-3 backdrop-blur-sm sm:p-4"
       style={{ top: headerOffset }}
+      onClick={fecharPeloFundo}
+      role="presentation"
     >
       <form
         onSubmit={(event) => {
@@ -2162,6 +2734,38 @@ function SummaryField({
       <p className="whitespace-pre-wrap break-words text-sm font-black leading-relaxed text-slate-900">{value}</p>
     </div>
   );
+}
+
+/** Dispensa por Escape + clique no fundo + trava a rolagem de trás.
+ *
+ *  ⚠️ OS TRÊS MODAIS DESTA TELA NÃO TINHAM NADA DISSO. Sem `Escape` e sem
+ *  clique no fundo, o único jeito de sair era acertar o ✕ — em teclado, não
+ *  havia jeito nenhum. E como o `body` continuava rolável, rolar dentro do
+ *  modal e chegar ao fim passava a rolar a página atrás dele, tirando o modal
+ *  da vista sem fechá-lo.
+ *
+ *  Um hook e não três cópias: eram três modais com o mesmo `<div>` de fundo
+ *  copiado, e três cópias divergem.
+ *
+ *  Devolve o handler do fundo — ele precisa distinguir clique NO fundo de
+ *  clique que borbulhou de dentro do painel, senão selecionar texto e soltar o
+ *  mouse fora fecharia o modal e descartaria o que a pessoa estava lendo. */
+function useDispensaDeModal(aberto: boolean, aoFechar: () => void) {
+  useEffect(() => {
+    if (!aberto) return;
+    const porTecla = (e: KeyboardEvent) => { if (e.key === 'Escape') aoFechar(); };
+    document.addEventListener('keydown', porTecla);
+    const overflowAntes = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', porTecla);
+      document.body.style.overflow = overflowAntes;
+    };
+  }, [aberto, aoFechar]);
+
+  return (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) aoFechar();
+  };
 }
 
 function useStickyHeaderOffset(defaultOffset = 80) {

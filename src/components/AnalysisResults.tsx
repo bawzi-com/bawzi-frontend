@@ -655,14 +655,23 @@ export default function AnalysisResults({
 
           {/* ── 06 Cockpit ── */}
           {activeStep === 'cockpit' && (() => {
-            // O painel Gestão (menu lateral) é onde o acompanhamento realmente
-            // acontece — é um recurso Nível 4. Quem ainda não tem acesso é
-            // levado para o upgrade em vez de um link que não leva a lugar nenhum.
-            const gestaoDisponivel = Math.max(getCachedTier(userTier), currentTier) >= 4;
-            const onGoToGestao = () => {
-              if (gestaoDisponivel) onSetActiveTab('gestao');
-              else onUpgradeClick();
-            };
+            // ⚠️ AQUI HAVIA UM PORTÃO DE NÍVEL 4 QUE O PRODUTO NÃO TEM MAIS.
+            //
+            // Esta linha era `>= 4`, e o efeito era o pior possível: quem
+            // assinava o Essencial ou o Profissional VIA a Gestão no menu
+            // (`AppSidebar.tsx:221` não exige nível nenhum — o portão foi
+            // removido de propósito, com comentário dizendo que "o usuário do
+            // Essencial tinha a funcionalidade e não tinha como chegar nela"),
+            // entrava nela normalmente, abria um laudo lá de dentro — e o
+            // próprio laudo dizia que o painel Gestão é Nível 4 e oferecia
+            // "Desbloquear painel". Clicar chamava `onUpgradeClick()`.
+            //
+            // Ou seja: a plataforma vendia, por R$ 497/mês, um recurso que
+            // aquela pessoa estava usando naquele exato momento. Pior que um
+            // link quebrado, porque parece cobrança indevida.
+            //
+            // A regra volta a ser a única que existe de verdade: ter sessão.
+            const onGoToGestao = () => onSetActiveTab('gestao');
             return (
             <div className="space-y-6">
               <DecisionCockpit
@@ -673,7 +682,6 @@ export default function AnalysisResults({
                 trackSaving={trackSaving}
                 onToggleTracking={toggleTracking}
                 onGoToGestao={onGoToGestao}
-                gestaoDisponivel={gestaoDisponivel}
               />
 
               {/* Ferramentas operacionais — precificar a proposta e acompanhar
@@ -1513,7 +1521,6 @@ function DecisionCockpit({
   trackSaving,
   onToggleTracking,
   onGoToGestao,
-  gestaoDisponivel,
 }: {
   result: AnalysisResult;
   analysisId: string | null;
@@ -1522,7 +1529,6 @@ function DecisionCockpit({
   trackSaving: boolean;
   onToggleTracking: () => void;
   onGoToGestao: () => void;
-  gestaoDisponivel: boolean;
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
@@ -1618,15 +1624,7 @@ function DecisionCockpit({
                 "Ative + Gestão" mesmo depois de ativado, com o "✓ Em Gestão"
                 aceso ao lado, e prometia o painel a quem não tem Nível 4. */}
             <p className="mt-2.5 text-[11px] font-semibold text-slate-400">
-              {!gestaoDisponivel ? (
-                <>
-                  Preencher e acompanhar estes passos é o{' '}
-                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                    painel Gestão (Nível 4)
-                  </button>
-                  . O plano acima é seu de qualquer forma.
-                </>
-              ) : tracked ? (
+              {tracked ? (
                 <>
                   Em acompanhamento —{' '}
                   <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
@@ -1687,7 +1685,7 @@ function DecisionCockpit({
                 onClick={onGoToGestao}
                 className="flex w-full items-center justify-center gap-1 border-t border-emerald-100 bg-emerald-50/60 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-colors hover:bg-emerald-100"
               >
-                {gestaoDisponivel ? 'Ver no painel →' : 'Desbloquear painel →'}
+                Ver no painel →
               </button>
             )}
           </div>

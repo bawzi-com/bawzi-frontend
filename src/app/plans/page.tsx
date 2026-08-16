@@ -36,8 +36,18 @@ export default function PlansPage() {
         </p>
       </div>
 
-      {/* Seção de planos */}
-      <PricingSection />
+      {/* Seção de planos.
+          ⚠️ O WRAPPER É OBRIGATÓRIO. `PricingSection` não tem contêiner
+          próprio — quem monta é que dá largura máxima e respiro lateral. O
+          outro ponto de montagem (analysis-app) faz isso com
+          `<section className="px-6"><div className="max-w-[1400px] mx-auto">`;
+          aqui o componente estava solto, encostando nas bordas da janela
+          enquanto todo bloco vizinho desta página (breadcrumb, hero, FAQ) usa
+          `max-w-… mx-auto px-6`. Mesmos 1400px do breadcrumb, para os cinco
+          cartões alinharem com o topo da página. */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-6">
+        <PricingSection />
+      </div>
 
       {/* FAQ rápido */}
       <div className="max-w-[700px] mx-auto px-6 py-16">

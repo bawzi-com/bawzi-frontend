@@ -5,45 +5,69 @@ import { apiFetch } from '@/lib/apiClient';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
+/* ⚠️ ESTE ARQUIVO MENTIA SOBRE A CAPACIDADE COMPRADA, na tela de pagamento.
+ *
+ * O que estava escrito aqui, contra o que o servidor entrega:
+ *   Essencial     "1.000 análises/mês"   → cota real: 90 créditos   (11× a mais)
+ *   Profissional  "3.000 análises/mês"   → cota real: 250 créditos  (12× a mais)
+ *   Avançado      "Análises ilimitadas"  → cota real: 650 créditos  (nada é ilimitado)
+ *   Avançado      "Editais até 400.000"  → teto real: 500.000
+ *   Profissional  "4 Agentes IA"         → agent_count máximo da plataforma é 3
+ *
+ * Não é exagero de marketing: é o cartão mostrado no ATO DA TROCA DE PLANO
+ * PAGA. A pessoa confirma acreditando em mil análises e recebe noventa. O
+ * `UpsellModal` já tinha removido "Análises Ilimitadas" com a justificativa
+ * escrita no código; esta cópia ficou para trás — de novo o mesmo número em
+ * dois lugares, um deles errado.
+ *
+ * A correção não é trocar os números: capacidade NÃO MORA MAIS AQUI. Cota e
+ * teto de caracteres vêm de `/api/tiers/limites-publicos`, a mesma fonte que a
+ * página de planos usa e que o portão aplica. O que sobra na lista é RECURSO
+ * (o que o plano faz), que não é numérico e não tem como divergir.
+ */
 export const PLAN_INFO: Record<number, { name: string; price: string; features: string[] }> = {
   2: {
     name: 'Essencial',
     price: 'R$ 79/mês',
     features: [
-      '1.000 análises/mês',
       'Perfil da empresa (CNPJ/UF)',
       'Central de decisões e laudos',
       'Radar 360 — busca PNCP',
-      'Editais até 80.000 chars',
-      'PDF até 15 MB',
+      'Agentes de mercado no laudo',
     ],
   },
   3: {
     name: 'Profissional',
     price: 'R$ 197/mês',
     features: [
-      '3.000 análises/mês',
+      'Tudo do Essencial',
+      'Parecer jurídico no laudo',
       'Oportunidades com fit CNAE',
       'Monitor inteligente PNCP',
-      'Fôlego financeiro',
-      '4 Agentes IA em paralelo',
-      'Editais até 180.000 chars',
+      'Monitoramento de concorrentes',
     ],
   },
   4: {
     name: 'Avançado',
     price: 'R$ 497/mês',
     features: [
-      'Análises ilimitadas',
+      'Tudo do Profissional',
       'Gestão do fluxo completo dos editais',
       'Pipeline de renovações',
       'War Room de concorrentes',
       'Simulador tático de preços',
-      'Editais até 400.000 chars',
-      'PDF até 100 MB',
     ],
   },
 };
+
+/** Cota e teto vindos do servidor. Enquanto forem `null`, a tela não mostra
+ *  número nenhum — texto de reserva inventado foi o que criou o problema. */
+interface LimitePlano {
+  monthly_limit: number;
+  ilimitado: boolean;
+  max_chars: number | null;
+  max_mb: number | null;
+}
 
 interface CouponValidation {
   valid: boolean;
@@ -72,6 +96,17 @@ export default function ChangePlanModal({
   const [couponCode, setCouponCode]           = useState('');
   const [couponValidation, setCouponValidation] = useState<CouponValidation | null>(null);
   const [couponLoading, setCouponLoading]     = useState(false);
+  // Capacidade vem do SERVIDOR — mesma rota que a página de planos consome.
+  // Cota escrita à mão aqui foi o que produziu "1.000 análises/mês" num plano
+  // de 90 créditos, no cartão que a pessoa lê imediatamente antes de pagar.
+  const [limites, setLimites] = useState<Record<string, LimitePlano> | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/tiers/limites-publicos`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.tiers) setLimites(d.tiers); })
+      .catch(() => { /* sem os limites, a linha de capacidade não aparece */ });
+  }, []);
 
   // Limpa estado quando o modal fecha / muda de plano alvo
   useEffect(() => {
@@ -110,6 +145,21 @@ export default function ChangePlanModal({
   const next    = PLAN_INFO[targetTier];
   const isUp    = targetTier > currentTier;
 
+  /** Linha de capacidade do servidor. Devolve `null` se o dado ainda não
+   *  chegou ou se o plano não está na resposta — e aí a tela simplesmente não
+   *  mostra a linha, em vez de preencher com um número de reserva. */
+  const capacidade = (tier: number): string | null => {
+    const l = limites?.[String(tier)];
+    if (!l) return null;
+    const cota = l.ilimitado
+      ? 'Cota mensal ilimitada'
+      : `${l.monthly_limit.toLocaleString('pt-BR')} créditos/mês`;
+    const chars = l.max_chars
+      ? ` · editais até ${l.max_chars.toLocaleString('pt-BR')} caracteres`
+      : '';
+    return cota + chars;
+  };
+
   const handleConfirm = async () => {
     const code = couponCode.trim() || undefined;
     await onConfirm(targetTier, code);
@@ -119,7 +169,11 @@ export default function ChangePlanModal({
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
       <div className="absolute inset-0" onClick={onClose} aria-hidden />
       <div
-        className="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
+        // `max-h` + rolagem no corpo: sem isso, num celular de 640px de altura
+        // o conteúdo (~647px) era CORTADO nas duas pontas pelo `items-center`,
+        // e o botão "Confirmar" ficava inalcançável — na tela de pagamento.
+        // `dvh` porque a barra do navegador móvel come ~110px de `vh`.
+        className="relative bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
         style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
       >
         <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(10px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
@@ -138,12 +192,17 @@ export default function ChangePlanModal({
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-5 overflow-y-auto">
           {/* Comparativo */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* `grid-cols-2` fixo dava 110px por cartão num celular de 360px,
+              e as features de 11px quebravam em três linhas cada. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Plano atual</p>
               <p className="font-black text-slate-950">{current?.name ?? `Nível ${currentTier}`}</p>
+              {capacidade(currentTier) && (
+                <p className="mt-1 text-[11px] font-bold text-slate-500">{capacidade(currentTier)}</p>
+              )}
               <ul className="mt-2 space-y-1">
                 {current?.features.slice(0, 3).map(f => (
                   <li key={f} className="text-[11px] text-slate-500 flex items-start gap-1.5">
@@ -157,6 +216,11 @@ export default function ChangePlanModal({
                 Novo plano
               </p>
               <p className="font-black text-slate-950">{next?.name ?? `Nível ${targetTier}`}</p>
+              {capacidade(targetTier) && (
+                <p className={`mt-1 text-[11px] font-bold ${isUp ? 'text-emerald-700' : 'text-amber-800'}`}>
+                  {capacidade(targetTier)}
+                </p>
+              )}
               <ul className="mt-2 space-y-1">
                 {next?.features.slice(0, 3).map(f => (
                   <li key={f} className={`text-[11px] flex items-start gap-1.5 ${isUp ? 'text-emerald-700' : 'text-amber-800'}`}>
