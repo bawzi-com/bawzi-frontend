@@ -106,7 +106,7 @@ function PromoActivateContent() {
               disponíveis agora. Aproveite ao máximo!
             </p>
             <div className="space-y-2 text-left mb-7">
-              {['Análise ilimitada com 4 Agentes IA', 'Radar de concorrentes e war room', 'Oportunidades com fit CNAE', 'Monitor inteligente e renovações', 'Fôlego financeiro da disputa'].map(f => (
+              {['Análise ilimitada com 4 Agentes IA', 'Radar de concorrentes e war room', 'Sugestões por CNAE', 'Alertas do PNCP e contratos vencendo', 'Fôlego financeiro da disputa'].map(f => (
                 <div key={f} className="flex items-center gap-2 text-sm text-slate-300">
                   <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
                   {f}

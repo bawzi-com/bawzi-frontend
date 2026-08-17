@@ -353,7 +353,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
         : 'Sem histórico recente para estabelecer média.';
 
       const det = c.metadados?.contrato_detalhe;
-      const fornecedorAtual = c.metadados?.fornecedor_nome || 'Não identificado';
+      const fornecedorAtual = (c.metadados?.fornecedor_nome || (c as any).fornecedor_nome || 'Não identificado');
       const promptRenovacao = `
   DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
   ===================================================================

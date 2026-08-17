@@ -733,10 +733,22 @@ export default function DecisionManagementTab({
     )));
 
     try {
+      // ⚠️ O DENOMINADOR VAI JUNTO — SEM ELE O SERVIDOR NÃO SABE SE ACABOU.
+      // `nextStatus` só contém as tarefas que a pessoa TOCOU. Com 2 de 5
+      // concluídas, o mapa tem duas entradas, ambas `done`, e o servidor
+      // concluiria "tudo pronto" com 40% do trabalho feito.
+      //
+      // Quem sabe o total é `buildDecisionQueueTasks`, aqui no cliente, e é
+      // deliberado que continue assim: reimplementá-la em Python criaria duas
+      // definições da mesma lista. O servidor usa esse número para gravar
+      // `workflow_status = "submitted"`, que é o que destrava o registro
+      // automático de derrota (ver `worker_resultados_pncp`) — hoje 0 em 206
+      // análises, porque essa gravação nunca acontecia.
+      const totalTarefas = buildDecisionQueueTasks(analysis).length;
       const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}/cockpit`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks: nextStatus }),
+        body: JSON.stringify({ tasks: nextStatus, total_tarefas: totalTarefas }),
       });
 
       if (!res.ok) {

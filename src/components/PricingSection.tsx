@@ -59,7 +59,14 @@ const tiers = [
       'Análise completa com matriz de riscos e exigências críticas',
       'Auditoria profunda — contradições entre o edital e o cadastro do PNCP',
       'Central de decisões, priorização e gestão do fluxo',
-      'Oportunidades com fit CNAE e renovações a vencer',
+      // ⚠️ NOME DE RECURSO AQUI TEM QUE SER O NOME DO MENU.
+      // Esta lista vendia "Oportunidades com fit CNAE" e "Monitor
+      // inteligente PNCP" — dois nomes que deixaram de existir quando a
+      // barra lateral foi renomeada para "Sugestões" e "Alertas". Quem
+      // comprava procurava no menu o que tinha lido na tabela de preços e
+      // não encontrava. Renomear navegação sem varrer a página de vendas
+      // deixa a promessa e o produto falando línguas diferentes.
+      'Sugestões por CNAE e contratos vencendo no mercado',
       'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
       // ⚠️ AQUI DIZIA "1 empresa cadastrada". O backend dá ZERO:
       // `TIER_COMPANY_LIMITS[1] = 0` (config.py:95), e cadastrar a primeira
@@ -103,7 +110,7 @@ const tiers = [
     quantidade: '250 créditos por mês',   // reserva; espelha LIMIT_TIER_3 — o servidor manda
     features: [
       'Parecer jurídico no laudo — terceiro agente',
-      'Monitor inteligente PNCP (e-mail + sino)',
+      'Alertas do PNCP (e-mail + sino)',
       'Fôlego financeiro e capital de execução',
       '100 dossiês por dia · 2 empresas',
     ],

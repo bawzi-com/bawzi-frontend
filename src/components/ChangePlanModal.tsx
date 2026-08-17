@@ -42,8 +42,8 @@ export const PLAN_INFO: Record<number, { name: string; price: string; features: 
     features: [
       'Tudo do Essencial',
       'Parecer jurídico no laudo',
-      'Oportunidades com fit CNAE',
-      'Monitor inteligente PNCP',
+      'Sugestões por CNAE',
+      'Alertas do PNCP',
       'Monitoramento de concorrentes',
     ],
   },

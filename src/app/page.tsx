@@ -120,7 +120,7 @@ const PLANOS = [
     nivel: 'Nível 3',
     cor: 'from-emerald-500 to-teal-500',
     destaque: true,
-    itens: ['Oportunidades com fit CNAE', 'Monitor inteligente PNCP', 'Fôlego financeiro da disputa', '4 agentes de IA em paralelo'],
+    itens: ['Sugestões por CNAE', 'Alertas do PNCP', 'Fôlego financeiro da disputa', '4 agentes de IA em paralelo'],
   },
   {
     nome: 'Avançado',
