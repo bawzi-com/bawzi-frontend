@@ -845,7 +845,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   if (!mounted) return <div className="min-h-[200px] animate-pulse bg-slate-50 rounded-[2.5rem]" />;
 
   return (
-    <div className="w-full max-w-5xl mx-auto bg-white rounded-[2rem] shadow-sm border border-slate-200 font-sans relative overflow-hidden">
+    /* ⚠️ TINHA `max-w-5xl mx-auto` — TETO DE 1024px, CENTRALIZADO.
+       O Radar é o bloco mais alto da aba e fica encostado em vizinhos que
+       ocupam a coluna inteira. Com o menu oculto a coluna passa de 1400px e ele
+       parava em 1024, sobrando margem dos dois lados: não lia como contenção
+       deliberada, lia como bloco que não acompanhou. A largura de todo bloco
+       desta coluna quem decide é a coluna. */
+    <div className="w-full bg-white rounded-[2rem] shadow-sm border border-slate-200 font-sans relative overflow-hidden">
 
       {/* ========================================== */}
       {/* 1. CABEÇALHO RADAR 360                     */}
@@ -889,9 +895,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
                   companies={contextCompanies}
                   activeCnpj={activeCnpj}
                   label="Empresa analisada"
-                  compact
+                  inline
                   onChange={onActiveCnpjChange}
-                  className="min-w-[220px] border-emerald-100 bg-white/90 shadow-sm"
                 />
               ) : (
                 <strong className="font-black text-slate-800">

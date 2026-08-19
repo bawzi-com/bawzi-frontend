@@ -21,7 +21,7 @@ import {
   Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
   ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
   Maximize2, Minimize2, PanelRightClose, PanelRightOpen, ExternalLink,
-  ScanSearch,
+  ScanSearch, Plus, PinOff,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -44,6 +44,10 @@ interface AnalysisResultsProps {
   result: AnalysisResult;
   activeTab: string;
   onSetActiveTab: (tab: string) => void;
+  /** Abre a aba Gestão JÁ apontando para esta análise — e, com `taskId`, com o
+   *  passo aberto para edição. Sem ela, o fallback é trocar de aba e largar a
+   *  pessoa na fila inteira para procurar o edital de novo. */
+  onAbrirNaGestao?: (analysisId: string, taskId?: string) => void;
   userTier: number;
   currentTier: number;
   termoAlvo: string;
@@ -83,8 +87,11 @@ interface AnalysisResultsProps {
   /** Menu lateral do app-shell (AppSidebar) — só passado por quem tem esse menu
    * pra ocultar (workspace principal). Sem essas props o botão de menu não
    * aparece (ex.: dentro da Gestão, que já tem seu próprio controle). */
-  sidebarHidden?: boolean;
-  onToggleSidebar?: () => void;
+  // ⚠️ PROPS REMOVIDAS: `sidebarHidden` / `onToggleSidebar`.
+  // Este componente rendezia o botão de ocultar menu; ele foi para a casca
+  // (`analysis-app.tsx`), que é quem de fato controla a largura, e passou a
+  // valer para todas as abas. Sem o botão, as props ficariam declaradas e não
+  // usadas — parâmetro morto que o próximo leitor tenta entender.
   /** Abre a compra de pacote avulso. O aviso de laudo degradado é o momento
    *  de maior intenção que existe: o cliente acabou de VER o que perdeu. */
   onComprarPacote?: () => void;
@@ -112,6 +119,7 @@ export default function AnalysisResults({
   result,
   activeTab,
   onSetActiveTab,
+  onAbrirNaGestao,
   userTier,
   currentTier,
   termoAlvo,
@@ -131,8 +139,6 @@ export default function AnalysisResults({
   pesoProfunda,
   saldoCreditos,
   onTrackedChange,
-  sidebarHidden = false,
-  onToggleSidebar,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
@@ -378,15 +384,14 @@ export default function AnalysisResults({
                 <ExternalLink size={15} />
               </a>
             )}
-            {onToggleSidebar && (
-              <button
-                onClick={onToggleSidebar}
-                title={sidebarHidden ? 'Mostrar menu' : 'Ocultar menu para ganhar espaço'}
-                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                {sidebarHidden ? <PanelRightOpen size={15} /> : <PanelRightClose size={15} />}
-              </button>
-            )}
+            {/* ⚠️ O BOTÃO DE OCULTAR MENU SAIU DAQUI.
+                Ele existia neste cabeçalho, noutro no quadro da Gestão e num
+                terceiro no painel de resultados — três posições e três rótulos
+                para o mesmo efeito, e nenhum nas demais abas. Agora há UM, na
+                casca (`analysis-app.tsx`), no mesmo lugar em todas as telas.
+                A prop `onToggleSidebar` continua chegando aqui porque o
+                "Voltar" ainda precisa restaurar o menu — o que mudou é quem
+                oferece o controle, não quem reage a ele. */}
             <button
               onClick={toggleFullscreen}
               title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia — usar 100% da largura'}
@@ -671,7 +676,17 @@ export default function AnalysisResults({
             // link quebrado, porque parece cobrança indevida.
             //
             // A regra volta a ser a única que existe de verdade: ter sessão.
-            const onGoToGestao = () => onSetActiveTab('gestao');
+            // ⚠️ IR PARA A ABA NÃO É CHEGAR NO ITEM. Antes isto só trocava de
+            // aba: a pessoa clicava em "definir responsável" de uma condição
+            // específica e caía na fila inteira, tendo que reencontrar o
+            // edital, abrir o resumo e achar o passo. Com `analysisId` (e o
+            // `taskId`, quando o clique veio de uma condição) a Gestão já abre
+            // no lugar certo. O fallback continua sendo a troca de aba, para o
+            // caso de a casca não passar o callback.
+            const onGoToGestao = (taskId?: string) => {
+              if (analysisId && onAbrirNaGestao) onAbrirNaGestao(analysisId, taskId);
+              else onSetActiveTab('gestao');
+            };
             return (
             <div className="space-y-6">
               <DecisionCockpit
@@ -1528,7 +1543,8 @@ function DecisionCockpit({
   tracked: boolean;
   trackSaving: boolean;
   onToggleTracking: () => void;
-  onGoToGestao: () => void;
+  /** `taskId` opcional: abre a Gestão JÁ com esse passo aberto para edição. */
+  onGoToGestao: (taskId?: string) => void;
 }) {
   const decision = normalizeDecision(result);
   const verdict = decisionUi[decision.veredito];
@@ -1555,6 +1571,21 @@ function DecisionCockpit({
 
   const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
   const progress = Math.round((completed / tasks.length) * 100);
+
+  // ⚠️ "SUGERIDO" NÃO É "DEFINIDO", E A TELA NÃO DIZIA A DIFERENÇA.
+  // O responsável e o prazo que aparecem em cada linha vêm de `task.*`, ou
+  // seja, do que a ANÁLISE propôs (com direito a padrão fixo — "Licitações",
+  // "Hoje", em `lib/decisionQueue`). O que a pessoa realmente assumiu vive em
+  // `cockpit_status`, gravado pelo painel Gestão. Os dois eram renderizados
+  // com o mesmo peso: quem lia "Diretoria / Licitações · HOJE" concluía, com
+  // razão, que aquilo já estava atribuído — e o único aviso do contrário era
+  // uma linha de 11px em cinza-claro no topo. Daqui para baixo as duas coisas
+  // andam separadas: o que falta é contado, dito no cabeçalho e marcado na
+  // própria linha.
+  const semDefinicao = tasks.filter((task) => {
+    const salvo = statusMap[task.id];
+    return !salvo?.done && !(salvo?.responsavel && salvo?.prazo);
+  }).length;
 
   const isNoGo = decision.veredito === 'NO_GO';
   const cockpitTitle = isNoGo ? 'Monitoramento pós-veredito' : 'Plano de execução';
@@ -1625,17 +1656,23 @@ function DecisionCockpit({
                 aceso ao lado, e prometia o painel a quem não tem Nível 4. */}
             <p className="mt-2.5 text-[11px] font-semibold text-slate-400">
               {tracked ? (
-                <>
-                  Em acompanhamento —{' '}
-                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
-                    abrir no painel Gestão
-                  </button>{' '}
-                  para preencher responsável, prazo e conclusão.
-                </>
+                // Com pendência, quem fala é a faixa âmbar logo abaixo — repetir
+                // aqui, em cinza-claro, só enfraquecia as duas.
+                semDefinicao === 0 ? (
+                  <>
+                    Em acompanhamento, com responsável e prazo definidos —{' '}
+                    <button type="button" onClick={() => onGoToGestao()} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                      abrir no painel Gestão
+                    </button>
+                    .
+                  </>
+                ) : null
               ) : (
+                // O rótulo citado aqui tem de ser o que está escrito no botão
+                // ao lado: era "+ Gestão", virou "Acompanhar".
                 <>
-                  Ative <strong className="text-slate-600">+ Gestão</strong> para preencher responsável e prazo destes passos no{' '}
-                  <button type="button" onClick={onGoToGestao} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                  Toque em <strong className="text-slate-600">Acompanhar</strong> para definir responsável e prazo destes passos no{' '}
+                  <button type="button" onClick={() => onGoToGestao()} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
                     painel Gestão
                   </button>
                   .
@@ -1644,8 +1681,12 @@ function DecisionCockpit({
             </p>
           </div>
 
-          {/* Progresso + toggle Gestão — unified card */}
-          <div className={`shrink-0 min-w-[126px] overflow-hidden rounded-2xl border shadow-sm transition-all ${
+          {/* Progresso + acompanhamento.
+              ⚠️ ERAM TRÊS FAIXAS EMPILHADAS num cartão de 126px: o número, o
+              "✓ Em Gestão" e o "VER NO PAINEL →". As duas últimas eram verdes,
+              do mesmo tamanho, coladas — e faziam coisas opostas: a de cima
+              REMOVE do acompanhamento, a de baixo navega. Duas ficaram uma. */}
+          <div className={`shrink-0 w-[214px] overflow-hidden rounded-2xl border shadow-sm transition-all ${
             tracked ? 'border-emerald-200' : 'border-slate-200 bg-white'
           }`}>
             {/* Big progress number */}
@@ -1660,36 +1701,94 @@ function DecisionCockpit({
               <p className="mt-1.5 text-[8px] font-black uppercase tracking-[0.15em] text-slate-400">concluídas</p>
             </div>
 
-            {/* Tracking toggle */}
+            {/* ⚠️ O "✓" SAIU, E ISSO É O PRINCIPAL. Um tique verde diz
+                "concluído"; este botão, clicado, TIRA a análise do
+                acompanhamento. Parecia selo de status passivo e era o
+                controle destrutivo — a pior combinação possível.
+                O alfinete é honesto (cheio = fixado) e o rótulo troca no
+                hover, como um "seguindo → deixar de seguir": o estado fica
+                visível, o efeito do clique fica descoberto antes do clique.
+
+                ⚠️ E O DESTINO VOLTOU AO RÓTULO. Só "Acompanhar" / "Acompanhando"
+                não dizia acompanhar ONDE nem adicionar A QUÊ — virava gerúndio
+                solto embaixo de um contador. "em Gestão" é o substantivo que a
+                pessoa reconhece (é o nome da aba), e o "+" no estado desligado
+                é o que diz que existe algo a adicionar. Fora da Gestão este é
+                o único chamado do painel — a faixa âmbar só aparece depois de
+                acompanhar —, então ele é sólido, não discreto. */}
             <button
               type="button"
               onClick={onToggleTracking}
               disabled={!analysisId || !token || trackSaving}
-              title={tracked ? 'Remover do acompanhamento em Gestão' : 'Adicionar ao acompanhamento em Gestão'}
-              className={`flex w-full items-center justify-center gap-1.5 border-t px-4 py-2.5 text-[11px] font-black transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+              title={tracked
+                ? 'Está sendo acompanhada em Gestão. Clique para remover do acompanhamento — o que já foi preenchido não se perde.'
+                : 'Adicionar esta análise ao acompanhamento no painel Gestão'}
+              className={`group flex w-full items-center justify-center gap-1.5 border-t px-3 py-2.5 text-center text-[10.5px] font-black leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 tracked
-                  ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                  : 'border-slate-100 text-slate-600 hover:bg-slate-100'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'
+                  : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
               }`}
             >
               {trackSaving ? (
-                <RefreshCw size={12} className="animate-spin" />
+                <RefreshCw size={12} className="shrink-0 animate-spin" />
+              ) : tracked ? (
+                <>
+                  <Pin size={12} className="shrink-0 fill-emerald-600 text-emerald-600 group-hover:hidden" />
+                  <PinOff size={12} className="hidden shrink-0 group-hover:block" />
+                </>
               ) : (
-                <Pin size={12} className={tracked ? 'fill-emerald-600 text-emerald-600' : ''} />
+                <Plus size={13} strokeWidth={3} className="shrink-0" />
               )}
-              {tracked ? '✓ Em Gestão' : '+ Gestão'}
+              {trackSaving ? (
+                'Salvando'
+              ) : tracked ? (
+                <>
+                  <span className="group-hover:hidden">Acompanhando em Gestão</span>
+                  <span className="hidden group-hover:inline">Remover da Gestão</span>
+                </>
+              ) : (
+                'Acompanhar em Gestão'
+              )}
             </button>
-            {tracked && (
-              <button
-                type="button"
-                onClick={onGoToGestao}
-                className="flex w-full items-center justify-center gap-1 border-t border-emerald-100 bg-emerald-50/60 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700 transition-colors hover:bg-emerald-100"
-              >
-                Ver no painel →
-              </button>
-            )}
+            {/* ⚠️ O "VER NO PAINEL →" SAIU DAQUI porque já existia duas vezes:
+                na faixa âmbar ("Definir no painel →") quando há o que
+                preencher, e no texto do cabeçalho ("abrir no painel Gestão")
+                quando não há. Um terceiro caminho para o mesmo lugar, colado
+                num botão que faz o oposto, era o que embaralhava o cartão. */}
           </div>
         </div>
+
+        {/* ⚠️ ISTO PRECISA PESAR MAIS QUE UMA NOTA DE RODAPÉ. "✓ Em Gestão"
+            aceso, "Ver no painel →" ao lado e cada linha exibindo um nome e um
+            prazo: tudo na tela dizia "já está resolvido". O que faltava — que
+            aqueles valores são sugestão e ninguém assumiu nada ainda — era a
+            informação mais apagada da página. Aqui ela é uma faixa, diz quantos
+            faltam, e o botão leva direto ao lugar onde se resolve. */}
+        {tracked && semDefinicao > 0 && (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-xs font-black text-amber-900">
+                  {semDefinicao === tasks.length
+                    ? `Falta definir responsável e prazo — ${tasks.length === 1 ? 'do item abaixo' : `dos ${tasks.length} itens abaixo`}`
+                    : `Falta definir responsável e prazo em ${semDefinicao} de ${tasks.length} itens`}
+                </p>
+                <p className="mt-0.5 max-w-xl text-[11px] font-semibold leading-relaxed text-amber-800/80">
+                  O nome e o prazo que aparecem em cada linha são sugestão da análise, não uma
+                  atribuição. Quem assume, até quando e a conclusão se gravam no painel Gestão.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onGoToGestao()}
+              className="shrink-0 rounded-xl bg-amber-600 px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-sm transition-colors hover:bg-amber-700 active:scale-[0.98]"
+            >
+              Definir no painel →
+            </button>
+          </div>
+        )}
 
         {/* O banner de "salvando / salvo no histórico" saiu junto com a
             edição: não há mais nada a salvar nesta tela. */}
@@ -1700,9 +1799,23 @@ function DecisionCockpit({
       <div className="relative px-6">
         <div className="pointer-events-none absolute bottom-6 left-[34px] top-6 w-px bg-slate-200" aria-hidden="true" />
         {tasks.map((task, idx) => {
-          const isDone = !!statusMap[task.id]?.done;
+          const salvo = statusMap[task.id];
+          const isDone = !!salvo?.done;
           const isOpen = expanded.has(task.id);
-          const hasCustomData = !!(statusMap[task.id]?.responsavel || statusMap[task.id]?.prazo || statusMap[task.id]?.nota);
+          const hasCustomData = !!(salvo?.responsavel || salvo?.prazo || salvo?.nota);
+
+          // ⚠️ A LINHA MOSTRAVA SEMPRE A SUGESTÃO, mesmo depois de a pessoa
+          // atribuir outro responsável na Gestão: o valor gravado só aparecia
+          // dentro de "Detalhes". Quem trocasse "Licitações" por um nome via a
+          // tela continuar dizendo "Licitações" e concluía que não tinha salvo.
+          const faltaResponsavel = !salvo?.responsavel;
+          const faltaPrazo = !salvo?.prazo;
+          const responsavelMostrado = salvo?.responsavel || task.responsavel;
+          const prazoMostrado = salvo?.prazo || task.prazo;
+          const aDefinir = !isDone && (faltaResponsavel || faltaPrazo);
+          const oQueFalta = faltaResponsavel && faltaPrazo
+            ? 'responsável e prazo'
+            : faltaResponsavel ? 'responsável' : 'prazo';
           return (
             <div key={task.id} className={`relative border-b border-slate-100 py-4 last:border-b-0 transition-all ${isDone ? 'opacity-60' : ''}`}>
               <div className="flex items-start gap-4">
@@ -1736,11 +1849,45 @@ function DecisionCockpit({
                     }`}>
                       {task.prioridade}
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500 ring-1 ring-slate-200">
+                    {/* ⚠️ TRACEJADO = PALPITE. Sólido = alguém escreveu. Era o
+                        mesmo chip nos dois casos, e "AGORA" ou "HOJE" em caixa
+                        alta tem cara de compromisso assumido mesmo quando não
+                        passa de um padrão do construtor de tarefas. */}
+                    <span
+                      title={faltaPrazo
+                        ? 'Prazo sugerido pela análise — ainda não confirmado no painel Gestão'
+                        : 'Prazo definido no painel Gestão'}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                        faltaPrazo
+                          ? 'border-dashed border-slate-300 bg-white text-slate-400'
+                          : 'border-slate-200 bg-slate-50 text-slate-600'
+                      }`}
+                    >
                       <Clock size={10} />
-                      {task.prazo}
+                      {prazoMostrado}
                     </span>
-                    {hasCustomData && !isOpen && (
+
+                    {/* Não é só um selo: é o caminho. Marca o que falta E leva
+                        ao único lugar onde isso se preenche.
+                        ⚠️ MINÚSCULA E SEM TRACKING, ao contrário dos vizinhos, e
+                        de propósito: "ALTA" e "AGORA" são ESTADO, isto é AÇÃO —
+                        gramática diferente para função diferente. Em caixa alta
+                        e espaçado ficava mais largo e mais gritado que a própria
+                        tarefa, e três linhas idênticas viravam ruído. O verbo
+                        mora na faixa acima; aqui bastam o "+" e o que falta. */}
+                    {aDefinir && (
+                      <button
+                        type="button"
+                        onClick={() => onGoToGestao(task.id)}
+                        title={`Abrir esta condição no painel Gestão para definir ${oQueFalta}`}
+                        className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-amber-300 bg-amber-50/70 px-2 py-0.5 text-[10px] font-bold text-amber-700 transition-colors hover:border-amber-500 hover:bg-amber-100 hover:text-amber-900"
+                      >
+                        <Plus size={11} strokeWidth={3} />
+                        {oQueFalta}
+                      </button>
+                    )}
+
+                    {!aDefinir && hasCustomData && !isOpen && (
                       <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 ring-1 ring-emerald-100">
                         ✓ Preenchido
                       </span>
@@ -1751,7 +1898,14 @@ function DecisionCockpit({
                     {task.acao}
                   </p>
                   <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
-                    <strong className="text-slate-600">{task.responsavel}</strong>
+                    <strong
+                      title={faltaResponsavel
+                        ? 'Área sugerida pela análise — ainda sem responsável definido no painel Gestão'
+                        : 'Responsável definido no painel Gestão'}
+                      className={faltaResponsavel ? 'font-bold text-slate-400' : 'text-slate-700'}
+                    >
+                      {responsavelMostrado}
+                    </strong>
                     {task.resultado_esperado ? ` — ${task.resultado_esperado}` : ''}
                   </p>
                   {task.impacto && (
@@ -1781,7 +1935,7 @@ function DecisionCockpit({
                     Preenchido no painel Gestão
                     <button
                       type="button"
-                      onClick={onGoToGestao}
+                      onClick={() => onGoToGestao()}
                       className="font-black text-slate-600 underline underline-offset-2 hover:text-slate-900"
                     >
                       editar lá →

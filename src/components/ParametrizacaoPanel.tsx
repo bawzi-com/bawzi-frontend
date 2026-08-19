@@ -3,8 +3,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   SlidersHorizontal, Sparkles, Plus, Trash2, ChevronDown,
-  CheckCircle2, Circle, Save, RotateCcw,
+  CheckCircle2, Circle, Save, RotateCcw, AlertTriangle,
   HardHat, Laptop, HeartPulse, Wrench, BarChart3,
+  Package, DraftingCompass, Truck, UtensilsCrossed, GraduationCap, Radio, Megaphone,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { apiFetch, API_URL } from '@/lib/apiClient';
@@ -22,96 +23,43 @@ interface ParametrosData {
   parametros: Parametro[];
 }
 
-// ── Templates por setor (hardcoded — estáticos, não precisam de API) ─────
-// Ícones lucide (consistentes com o resto do app) em vez de emoji cru — cada
-// setor ganha um "chip" colorido, mais alinhado ao resto da UI profissional.
+interface SetorSugerido {
+  setor: string;
+  motivo: string;
+  origem: 'codigo' | 'texto';
+}
+
+// ⚠️ AQUI FICA SÓ A APRESENTAÇÃO DO SETOR — RÓTULO, ÍCONE, COR.
+// Os ~60 critérios de cada template moravam neste arquivo, em
+// `TEMPLATES_LOCAIS`, e OUTRA cópia idêntica morava em
+// `router_parametros.py`. A rota `GET /api/parametros/templates` existia e
+// nunca era chamada: a cópia do backend era código morto e a do front era a
+// viva, então qualquer correção feita no lugar "certo" não chegaria à tela.
+// Agora o conteúdo vem da rota; o que sobra aqui é o que é genuinamente de
+// interface e não tem por que existir no servidor.
+// ⚠️ A ORDEM É DE FREQUÊNCIA NO PNCP, NÃO ALFABÉTICA. Fornecimento de bens vem
+// primeiro porque pregão de aquisição é o que mais aparece; publicidade vem por
+// último porque é o mais raro. Com doze opções, ordenar por nome faria a pessoa
+// varrer a lista inteira para achar o caso comum.
+// ⚠️ E `key` TEM DE BATER COM `TEMPLATES` no backend: quem escolhe aqui pede a
+// lista de critérios de lá pela chave. `test_setor_por_cnae.py` trava o
+// contrato do lado do servidor.
 const SETORES: { key: string; label: string; icon: LucideIcon; iconBg: string; iconColor: string }[] = [
-  { key: 'construcao',  label: 'Construção & Obras',       icon: HardHat,    iconBg: 'bg-amber-100',  iconColor: 'text-amber-700' },
-  { key: 'ti',          label: 'Tecnologia da Informação', icon: Laptop,     iconBg: 'bg-sky-100',    iconColor: 'text-sky-700' },
-  { key: 'saude',       label: 'Saúde & Farmácia',         icon: HeartPulse, iconBg: 'bg-rose-100',   iconColor: 'text-rose-700' },
-  { key: 'servicos',    label: 'Serviços Gerais',          icon: Wrench,     iconBg: 'bg-slate-200',  iconColor: 'text-slate-700' },
-  { key: 'consultoria', label: 'Consultoria',              icon: BarChart3,  iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700' },
+  { key: 'fornecimento', label: 'Fornecimento de Bens',      icon: Package,          iconBg: 'bg-teal-100',    iconColor: 'text-teal-700' },
+  { key: 'servicos',     label: 'Serviços Gerais',           icon: Wrench,           iconBg: 'bg-slate-200',   iconColor: 'text-slate-700' },
+  { key: 'construcao',   label: 'Construção & Obras',        icon: HardHat,          iconBg: 'bg-amber-100',   iconColor: 'text-amber-700' },
+  { key: 'ti',           label: 'Tecnologia da Informação',  icon: Laptop,           iconBg: 'bg-sky-100',     iconColor: 'text-sky-700' },
+  { key: 'saude',        label: 'Saúde & Farmácia',          icon: HeartPulse,       iconBg: 'bg-rose-100',    iconColor: 'text-rose-700' },
+  { key: 'engenharia',   label: 'Engenharia & Arquitetura',  icon: DraftingCompass,  iconBg: 'bg-orange-100',  iconColor: 'text-orange-700' },
+  { key: 'transporte',   label: 'Transporte & Logística',    icon: Truck,            iconBg: 'bg-cyan-100',    iconColor: 'text-cyan-700' },
+  { key: 'alimentacao',  label: 'Alimentação & Nutrição',    icon: UtensilsCrossed,  iconBg: 'bg-lime-100',    iconColor: 'text-lime-700' },
+  { key: 'educacao',     label: 'Educação & Treinamento',    icon: GraduationCap,    iconBg: 'bg-violet-100',  iconColor: 'text-violet-700' },
+  { key: 'telecom',      label: 'Telecom & Conectividade',   icon: Radio,            iconBg: 'bg-blue-100',    iconColor: 'text-blue-700' },
+  { key: 'consultoria',  label: 'Consultoria',               icon: BarChart3,        iconBg: 'bg-indigo-100',  iconColor: 'text-indigo-700' },
+  { key: 'publicidade',  label: 'Publicidade & Comunicação', icon: Megaphone,        iconBg: 'bg-fuchsia-100', iconColor: 'text-fuchsia-700' },
 ];
 
 type Peso = 'alto' | 'medio' | 'baixo';
-const TEMPLATES_LOCAIS: Record<string, Array<{ nome: string; peso: Peso }>> = {
-  construcao: [
-    { nome: 'Atestados e CAT do responsável técnico cobrindo as parcelas de maior relevância', peso: 'alto' },
-    { nome: 'Orçamento de referência (SINAPI/SICRO) exequível com o BDI praticado pela empresa', peso: 'alto' },
-    { nome: 'Prazo de execução e cronograma físico-financeiro executáveis com as equipes atuais', peso: 'alto' },
-    { nome: 'Índices financeiros, capital circulante ou patrimônio líquido mínimo atendidos', peso: 'alto' },
-    { nome: 'Valor da obra dentro do limite operacional e da capacidade de faturamento', peso: 'alto' },
-    { nome: 'Registro CREA/CAU da empresa e do RT, com visto regional para obra fora do estado', peso: 'medio' },
-    { nome: 'Regime de execução (global vs. preço unitário) e risco de quantitativos assumido', peso: 'medio' },
-    { nome: 'Garantias exigidas: proposta, contratual (5-10%) e seguros de engenharia', peso: 'medio' },
-    { nome: 'Visita técnica: obrigatoriedade, data única e custo de deslocamento', peso: 'medio' },
-    { nome: 'Distância do canteiro e custo de mobilização/desmobilização viáveis', peso: 'medio' },
-    { nome: 'Capacidade de pagamento do órgão (CAPAG/Tesouro) sem sinal crítico', peso: 'medio' },
-    { nome: 'Subcontratação permitida para serviços fora da especialidade', peso: 'baixo' },
-    { nome: 'Reajuste previsto e matriz de riscos equilibrada em obras longas', peso: 'baixo' },
-  ],
-  ti: [
-    { nome: 'Atestados de capacidade técnica compatíveis com o objeto e os volumes exigidos', peso: 'alto' },
-    { nome: 'Certificações exigidas (ISO, CMMI, fabricante) detidas ou obteníveis no prazo', peso: 'alto' },
-    { nome: 'SLA, níveis de serviço e penalidades executáveis com o time atual', peso: 'alto' },
-    { nome: 'Métrica de remuneração (UST, ponto de função, posto) com produtividade realista', peso: 'alto' },
-    { nome: 'Equipe mínima exigida (perfis, senioridade, certificações) disponível ou contratável', peso: 'alto' },
-    { nome: 'Atendimento presencial/on-site exigido compatível com a operação', peso: 'medio' },
-    { nome: 'Transição inicial e migração de dados dentro do escopo e do preço', peso: 'medio' },
-    { nome: 'Propriedade do código-fonte e artefatos (cessão ao órgão) aceitável', peso: 'medio' },
-    { nome: 'Exclusividade ou cota ME/EPP compatível com o porte da empresa', peso: 'medio' },
-    { nome: 'Prova de conceito ou amostra técnica: prazo e custo de preparação viáveis', peso: 'medio' },
-    { nome: 'Capacidade de pagamento do órgão (CAPAG/Tesouro) sem sinal crítico', peso: 'medio' },
-    { nome: 'Vigência e reajuste compatíveis com a evolução salarial de TI', peso: 'baixo' },
-    { nome: 'Objeto aderente ao portfólio e ao CNAE da empresa', peso: 'baixo' },
-  ],
-  saude: [
-    { nome: 'Registro ANVISA vigente dos itens cotados', peso: 'alto' },
-    { nome: 'Habilitação sanitária coberta: AFE, licença sanitária e CRF com responsável técnico', peso: 'alto' },
-    { nome: 'Preço de referência viável frente ao custo de aquisição e ao teto CMED/PMVG', peso: 'alto' },
-    { nome: 'Prazo de entrega por ordem de fornecimento executável, incluindo entregas parceladas', peso: 'alto' },
-    { nome: 'Validade mínima dos itens na entrega alcançável (ex.: 12 meses ou 75% do prazo)', peso: 'alto' },
-    { nome: 'Quantitativo dentro da capacidade de fornecimento (em SRP, sem consumo garantido)', peso: 'medio' },
-    { nome: 'Atestados de capacidade técnica compatíveis com objeto e quantitativos', peso: 'medio' },
-    { nome: 'Cadeia de frio para termolábeis (2-8°C) dentro da estrutura logística', peso: 'medio' },
-    { nome: 'Prazo e condições de pagamento definidos no edital (dias após atesto, empenho)', peso: 'medio' },
-    { nome: 'Itens com exclusividade ME/EPP compatíveis com o porte da empresa', peso: 'medio' },
-    { nome: 'Capacidade de pagamento do órgão (CAPAG/Tesouro) sem sinal crítico', peso: 'medio' },
-    { nome: 'Amostras exigidas: prazo e custo de apresentação viáveis', peso: 'baixo' },
-    { nome: 'Garantia contratual e penalidades proporcionais (multa, reposição, recall)', peso: 'baixo' },
-  ],
-  servicos: [
-    { nome: 'Planilha de custos fecha com a CCT vigente da categoria no local da execução', peso: 'alto' },
-    { nome: 'Prazo de mobilização suficiente para recrutar, treinar e alocar o efetivo', peso: 'alto' },
-    { nome: 'Atestados compatíveis com o efetivo exigido (jurisprudência dos 50%)', peso: 'alto' },
-    { nome: 'Patrimônio líquido e índices exigidos para dedicação exclusiva atendidos', peso: 'alto' },
-    { nome: 'Conta-vinculada ou pagamento pelo fato gerador suportado pelo fluxo de caixa', peso: 'medio' },
-    { nome: 'Prazo de pagamento após medição compatível com a folha do mês seguinte', peso: 'medio' },
-    { nome: 'Uniformes, EPIs, materiais e equipamentos por conta da empresa, orçados', peso: 'medio' },
-    { nome: 'Cotas ou exclusividade ME/EPP por item compatíveis com o porte', peso: 'medio' },
-    { nome: 'IMR/produtividade exigida atingível sem glosas recorrentes', peso: 'medio' },
-    { nome: 'Postos e escalas (12x36, noturno, cobertura de férias) operacionalmente viáveis', peso: 'medio' },
-    { nome: 'Capacidade de pagamento do órgão (CAPAG/Tesouro) sem sinal crítico', peso: 'medio' },
-    { nome: 'Vistoria prévia dos locais: obrigatoriedade e custo', peso: 'baixo' },
-    { nome: 'Repactuação prevista e alinhada à data-base da categoria', peso: 'baixo' },
-  ],
-  consultoria: [
-    { nome: 'Objeto dentro da especialidade comprovável por atestados aderentes', peso: 'alto' },
-    { nome: 'Equipe-chave exigida (formação, senioridade, certificações) disponível no quadro', peso: 'alto' },
-    { nome: 'Pontuação técnica alcançável com o acervo e a equipe atuais (técnica e preço)', peso: 'alto' },
-    { nome: 'Entregáveis e cronograma exequíveis com a capacidade instalada', peso: 'alto' },
-    { nome: 'Vínculo exigido da equipe (CLT, sócio, contrato) atendível sem novas contratações', peso: 'medio' },
-    { nome: 'Dedicação da equipe-chave compatível com os projetos em andamento', peso: 'medio' },
-    { nome: 'Forma de remuneração (por produto, homem-hora, êxito) sustentável', peso: 'medio' },
-    { nome: 'Propriedade intelectual e direito de uso dos produtos bem definidos', peso: 'medio' },
-    { nome: 'Capacidade de pagamento do órgão (CAPAG/Tesouro) sem sinal crítico', peso: 'medio' },
-    { nome: 'Impedimentos e conflito de interesse com outros contratos do órgão', peso: 'baixo' },
-    { nome: 'Sigilo/NDA e restrições de divulgação dos trabalhos', peso: 'baixo' },
-    { nome: 'Presença na sede do órgão: frequência exigida e custo de deslocamento', peso: 'baixo' },
-    { nome: 'Participação de MEI/pequeno porte permitida', peso: 'baixo' },
-  ],
-};
-
 const PESO_CONFIG = {
   alto:  { label: 'Crítico',    color: 'bg-red-50 text-red-700 border-red-200',     dot: 'bg-red-400' },
   medio: { label: 'Importante', color: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-400' },
@@ -131,29 +79,48 @@ export default function ParametrizacaoPanel() {
   const [novoNome, setNovoNome]   = useState('');
   const [novoPeso, setNovoPeso]   = useState<Peso>('medio');
   const [setorOpen, setSetorOpen] = useState(false);
+  const [templates, setTemplates] = useState<Record<string, Parametro[]> | null>(null);
+  const [sugestao, setSugestao]   = useState<SetorSugerido | null>(null);
+  const [erro, setErro]           = useState<string | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Carrega parâmetros salvos do usuário ──────────────────────────────
+  // ── Carrega parâmetros salvos + templates + sugestão de setor ─────────
   useEffect(() => {
-    apiFetch(`${API_URL}/api/parametros`)
-      .then(r => r.json())
-      .catch(() => ({ setor: null, parametros: [] }))
-      .then(params => {
-        setData(params && params.parametros ? params : { setor: null, parametros: [] });
-        setLoading(false);
-      });
+    Promise.all([
+      apiFetch(`${API_URL}/api/parametros`).then(r => r.json()).catch(() => null),
+      apiFetch(`${API_URL}/api/parametros/templates`)
+        .then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([params, cat]) => {
+      setData(params && params.parametros ? params : { setor: null, parametros: [] });
+      if (cat?.templates) {
+        setTemplates(cat.templates);
+        setSugestao(cat.setor_sugerido || null);
+      } else {
+        // ⚠️ SEM CÓPIA LOCAL DE RESERVA, DE PROPÓSITO. Um fallback embutido
+        // aqui recriaria a duplicação que acabamos de remover, e a cópia de
+        // reserva envelheceria justamente por só ser usada quando ninguém
+        // está olhando. Falhar visível é melhor que servir template velho.
+        setErro('Não foi possível carregar os templates de setor.');
+      }
+      setLoading(false);
+    });
   }, []);
 
   // ── Aplica template de setor ──────────────────────────────────────────
   const aplicarTemplate = useCallback((setorKey: string) => {
-    const tmpl = TEMPLATES_LOCAIS[setorKey] || [];
+    const tmpl = templates?.[setorKey] || [];
+    if (!tmpl.length) {
+      setErro('Template indisponível. Recarregue a página.');
+      return;
+    }
     setData({
       setor: setorKey,
-      parametros: tmpl.map(p => ({ id: uuid(), ativo: true, ...p })),
+      parametros: tmpl.map(p => ({ ...p, id: p.id || uuid(), ativo: true })),
     });
     setSetorOpen(false);
     setSaved(false);
-  }, []);
+    setErro(null);
+  }, [templates]);
 
   // ── Toggle ativo/inativo ──────────────────────────────────────────────
   const toggleAtivo = (id: string) => {
@@ -195,16 +162,32 @@ export default function ParametrizacaoPanel() {
   // ── Salvar ────────────────────────────────────────────────────────────
   const salvar = async () => {
     setSaving(true);
+    setErro(null);
     try {
-      await apiFetch(`${API_URL}/api/parametros`, {
+      const res = await apiFetch(`${API_URL}/api/parametros`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      // ⚠️ `fetch` NÃO REJEITA EM 4xx/5xx — E ESTA LINHA FALTAVA.
+      // O `try/catch` só pegava queda de rede. Um 401, um 404 de usuário ou um
+      // 500 caíam no caminho de sucesso: `setSaved(true)`, "Critérios salvos"
+      // na tela, e nada gravado no banco.
+      //
+      // Não é hipótese. `analise_parametros` deste usuário está `{}` no Mongo
+      // enquanto a tela exibia "Template aplicado · 6 critérios · 6 ativos".
+      // Salvamento que mente é pior que salvamento que falha: a pessoa fecha a
+      // aba confiante, e a próxima análise roda sem critério nenhum — em
+      // silêncio, porque nada mais volta a avisar.
+      if (!res.ok) {
+        const detalhe = await res.json().catch(() => null);
+        throw new Error(detalhe?.detail || `Erro ${res.status}`);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch {
-      alert('Erro ao salvar parâmetros.');
+    } catch (e) {
+      setSaved(false);
+      setErro(e instanceof Error ? e.message : 'Erro ao salvar critérios.');
     } finally {
       setSaving(false);
     }
@@ -223,7 +206,12 @@ export default function ParametrizacaoPanel() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
+    /* ⚠️ TINHA `max-w-2xl mx-auto` — 672px, centralizado. Mesmo travamento do
+       Radar PNCP e do feed de Sugestões: o bloco centralizava e não acompanhava
+       a coluna. Esta tela não foi citada no relato, mas tinha exatamente o
+       mesmo defeito das outras duas — deixar só ela travada recriaria a
+       inconsistência que o ajuste veio remover. */
+    <div className="w-full p-6 space-y-6">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
@@ -237,12 +225,53 @@ export default function ParametrizacaoPanel() {
           </p>
         </div>
 
-        {/* Badge IA */}
-        <div className="flex-shrink-0 flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-black px-2.5 py-1.5 rounded-xl">
-          <Sparkles size={11} />
-          IA vai sugerir ajustes
-        </div>
+        {/* ⚠️ AQUI FICAVA "IA VAI SUGERIR AJUSTES", QUE NÃO EXISTIA.
+            Um `grep` por qualquer mecanismo de sugestão de critério no backend
+            devolvia nada: era um selo verde com ícone de brilho prometendo uma
+            funcionalidade que ninguém tinha escrito. Selo decorativo que promete
+            comportamento é pior que nenhum selo — cria a expectativa de que os
+            pesos vão se ajustar sozinhos, e a pessoa não mexe neles esperando
+            uma correção que nunca chega.
+            No lugar dele, o número real de critérios ativos. */}
+        {data.parametros.length > 0 && (
+          <div className="flex-shrink-0 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+            {ativos} ativo{ativos === 1 ? '' : 's'}
+          </div>
+        )}
       </div>
+
+      {/* ⚠️ ERRO VISÍVEL, NÃO `alert()` NEM SILÊNCIO. O salvamento antes dizia
+          "salvo" mesmo quando o servidor recusava — ver o comentário em
+          `salvar()`. Se algo falhar, tem de ficar na tela. */}
+      {erro && (
+        <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-500" />
+          <p className="text-sm font-semibold text-red-800">{erro}</p>
+        </div>
+      )}
+
+      {/* Sugestão de setor a partir do CNAE já cadastrado */}
+      {/* ⚠️ SUGERE E EXPLICA — NÃO APLICA SOZINHO. A empresa pode ter CNAE de
+          uma coisa e disputar licitação de outra, o que é comum e legítimo. E
+          aplicar template automaticamente sobrescreveria critérios já
+          configurados: destruir trabalho alheio para economizar um clique. */}
+      {sugestao && data.setor !== sugestao.setor && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
+          <Sparkles size={15} className="shrink-0 text-emerald-600" />
+          <p className="flex-1 min-w-[200px] text-sm text-emerald-900">
+            <strong className="font-black">
+              {SETORES.find(s => s.key === sugestao.setor)?.label || sugestao.setor}
+            </strong>{' '}
+            <span className="text-emerald-700">{sugestao.motivo}</span>
+          </p>
+          <button
+            onClick={() => aplicarTemplate(sugestao.setor)}
+            className="shrink-0 rounded-xl bg-emerald-600 px-3 py-1.5 text-[11px] font-black text-white transition-colors hover:bg-emerald-700"
+          >
+            {data.parametros.length ? 'Substituir pelo template' : 'Usar este template'}
+          </button>
+        </div>
+      )}
 
       {/* Seletor de setor / template */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
@@ -267,7 +296,12 @@ export default function ParametrizacaoPanel() {
             <ChevronDown size={15} className={`text-slate-400 transition-transform ${setorOpen ? 'rotate-180' : ''}`} />
           </button>
           {setorOpen && (
-            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+            /* ⚠️ ROLAGEM VIROU OBRIGATÓRIA AO PASSAR DE 5 PARA 12 OPÇÕES.
+               Com `overflow-hidden` e sem teto, a lista fica com ~550px: em
+               notebook ela passava do fim da janela e os últimos setores —
+               justamente os novos — ficavam inalcançáveis, sem barra e sem
+               indício de que existiam. */
+            <div className="absolute z-20 mt-1 max-h-[min(60vh,20rem)] w-full overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white shadow-lg">
               {SETORES.map(s => {
                 const Icon = s.icon;
                 return (

@@ -31,6 +31,16 @@ export default function HistoryTab({
   onAbrirComparar,
   onAprofundar,
   pesoProfunda,
+  // ⚠️ O LAUDO ABERTO PELAS DECISÕES NÃO TINHA "OCULTAR MENU" — E O MESMO
+  // LAUDO, ABERTO PELO WORKSPACE, TINHA.
+  // `AnalysisResults` renderiza o botão sob `{onToggleSidebar && ...}`. O
+  // caminho do workspace passa a prop; este não passava, então o controle
+  // simplesmente não existia por esta porta. Mesmo componente, mesmo
+  // documento, duas portas, e só uma com o botão — a pessoa aprende o
+  // controle numa tela e o procura em vão na outra.
+  sidebarHidden,
+  onToggleSidebar,
+  onAbrirNaGestao,
 }: {
   token: string;
   userTier?: number;
@@ -50,6 +60,14 @@ export default function HistoryTab({
    *  que cada laudo já custou, o botão mostra o preço exato do
    *  aprofundamento — mesma conta do banner do laudo. */
   pesoProfunda?: number | null;
+  sidebarHidden?: boolean;
+  onToggleSidebar?: () => void;
+  /** ⚠️ MESMA HISTÓRIA DO `onToggleSidebar` LOGO ACIMA, outra prop.
+   *  O laudo aberto por aqui tem os mesmos botões de "definir responsável e
+   *  prazo" do laudo do workspace, mas eles caíam no `onSetActiveTab` que esta
+   *  tela redefine para alternar analise/concorrentes — clicar não fazia nada.
+   *  Mesmo componente, duas portas, e só uma levava a algum lugar. */
+  onAbrirNaGestao?: (analysisId: string, taskId?: string) => void;
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,6 +95,8 @@ export default function HistoryTab({
   /** Nome exato do órgão, ou 'all'. Filtra por comprador. */
   const [orgaoFiltro, setOrgaoFiltro] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);
+  type Ordem = 'recentes' | 'antigos' | 'score_desc' | 'score_asc' | 'valor_desc';
+  const [ordem, setOrdem] = useState<Ordem>('recentes');
 
 
   const [isMounted, setIsMounted] = useState(false);
@@ -295,6 +315,35 @@ export default function HistoryTab({
     });
   }, [analyses, activeFilter, favorites, periodoFiltro, searchText, orgaoFiltro]);
 
+  /** ⚠️ A LISTA NÃO TINHA ORDENAÇÃO NENHUMA.
+   *  Havia busca, período, órgão e veredito — quatro maneiras de REDUZIR a
+   *  lista, e nenhuma de reordená-la. Com 26 laudos, o primeiro card era um
+   *  NO-GO de score 40 só porque foi o último salvo. Quem abre a Central de
+   *  Decisões quer ver primeiro o que vale decidir, e "mais recente" só é a
+   *  ordem certa quando a pergunta é "o que eu acabei de analisar".
+   *
+   *  ⚠️ E A ORDENAÇÃO NÃO INVENTA CAMPO. Só entram chaves que existem em todo
+   *  laudo salvo (`created_at`, `score`) e uma derivada de texto
+   *  (`estimated_value`, que vem como string formatada). Nada de "prazo" ou
+   *  "resultado": o primeiro não é gravado no histórico e o segundo está vazio
+   *  em 100% da base — seriam ordenações que embaralham sem informar. */
+  const analisesOrdenadas = useMemo(() => {
+    const soDigitos = (v: unknown) => {
+      const n = Number(String(v ?? '').replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.'));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const lista = [...filteredAnalyses];
+    switch (ordem) {
+      case 'score_desc': return lista.sort((a, b) => (b.score || 0) - (a.score || 0));
+      case 'score_asc':  return lista.sort((a, b) => (a.score || 0) - (b.score || 0));
+      case 'valor_desc': return lista.sort((a, b) => soDigitos(b.estimated_value) - soDigitos(a.estimated_value));
+      case 'antigos':    return lista.sort((a, b) =>
+        new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      default:           return lista.sort((a, b) =>
+        new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+  }, [filteredAnalyses, ordem]);
+
   /** Órgãos presentes no histórico, com a contagem — a lista do filtro sai
    *  dos dados, não de um cadastro: só aparece quem de fato foi analisado.
    *  Ordenada por volume, que é a ordem em que a pergunta costuma nascer
@@ -312,8 +361,8 @@ export default function HistoryTab({
   const totalPages = Math.ceil(filteredAnalyses.length / itemsPerPage);
   const paginatedAnalyses = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredAnalyses.slice(start, start + itemsPerPage);
-  }, [filteredAnalyses, currentPage]);
+    return analisesOrdenadas.slice(start, start + itemsPerPage);
+  }, [analisesOrdenadas, currentPage]);
 
   const renderHistoryModals = () => (
     <>
@@ -455,6 +504,12 @@ export default function HistoryTab({
         <div className="sticky top-0 z-30 flex flex-col gap-3 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
           <button
             onClick={() => {
+              // ⚠️ VOLTAR TRAZ O MENU DE VOLTA. Quem escondeu o menu para ler
+              // o laudo não pediu para navegar sem menu depois — é a mesma
+              // regra do "Voltar para gestão", que já fazia isso. Sem ela, a
+              // lista reaparece sem navegação e o único jeito de recuperá-la
+              // seria abrir outro laudo.
+              if (sidebarHidden) onToggleSidebar?.();
               setSelectedAnalysis(null);
               setDetailTab('analise');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -486,6 +541,7 @@ export default function HistoryTab({
           result={selectedAnalysis as unknown as AnalysisResult}
           activeTab={detailTab}
           onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
+          onAbrirNaGestao={onAbrirNaGestao}
           userTier={getCachedTier(userTier)}
           currentTier={getCachedTier(userTier)}
           termoAlvo={selectedAnalysis.termo_busca_pncp || selectedAnalysis.title || 'Histórico'}
@@ -536,7 +592,8 @@ export default function HistoryTab({
     };
 
     const header = ['Título', 'Score', 'Classificação', 'Data', 'Valor Estimado', 'UF', 'Termo PNCP', 'ID'];
-    const rows = filteredAnalyses.map(item => [
+    // CSV segue a ordem da tela: exportar noutra ordem quebra a conferência.
+    const rows = analisesOrdenadas.map(item => [
       item.title || '',
       item.score ?? '',
       item.classification || '',
@@ -676,6 +733,29 @@ export default function HistoryTab({
           {/* Linha 2: filtros avançados (colapsável) */}
           {showFilters && (
             <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+              {/* ⚠️ ORDENAR NÃO É FILTRAR — E SÓ HAVIA FILTROS.
+                  Busca, período, órgão e veredito reduzem a lista; nenhum
+                  reordena. Com 26 laudos, o topo era sempre o último salvo,
+                  ainda que fosse um NO-GO de score 40. */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ordenar:</span>
+                <select
+                  value={ordem}
+                  onChange={(e) => { setOrdem(e.target.value as Ordem); setCurrentPage(1); }}
+                  className={`rounded-lg border px-2 py-1 text-[11px] font-bold transition-all ${
+                    ordem !== 'recentes'
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  <option value="recentes">Mais recentes</option>
+                  <option value="score_desc">Maior score</option>
+                  <option value="score_asc">Menor score</option>
+                  <option value="valor_desc">Maior valor</option>
+                  <option value="antigos">Mais antigos</option>
+                </select>
+              </div>
+
               {/* Período */}
               <div className="flex items-center gap-1.5">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Período:</span>

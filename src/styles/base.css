@@ -24,29 +24,69 @@ body {
   overflow-x: hidden; 
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* ⚠️ MESMA ARMADILHA DE CAMADA (ver o bloco de botões abaixo). Sem camada,
+   `color: inherit` vencia `text-emerald-600` e `text-decoration: none` vencia
+   `underline` em TODO link do app — medido: um `<a class="text-emerald-700
+   underline underline-offset-2">` renderizava cinza e sem risco. Ou seja, o
+   verde e o sublinhado que marcam "isto é um link" nunca chegaram à tela;
+   nada parecia quebrado porque o resultado ainda era um layout coerente, só
+   monocromático. Dentro da camada, o padrão continua valendo para link sem
+   classe — muda só quem pediu outra coisa por escrito. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }
 
-button,
-input,
-textarea {
-  font: inherit;
-}
+/* ⚠️ ESTAS DUAS REGRAS PRECISAM ESTAR DENTRO DE `@layer base`, E NÃO É
+   detalhe de organização — sem a camada elas ANULAM as classes do Tailwind em
+   TODO botão, input e textarea do app.
 
-button {
-  cursor: pointer;
+   No Tailwind v4 as utilitárias vivem em `@layer utilities`; CSS sem camada
+   ganha de CSS em camada, por mais específico que o seletor da camada seja.
+   Este arquivo é importado depois de `@import "tailwindcss"` e sem camada
+   nenhuma — então `font: inherit` aqui vencia `text-[10px]` e `font-black`
+   lá, e todo botão do app renderizava com os 16px/400 do body. Dava para ver
+   e era fácil de racionalizar: `uppercase` e `tracking-*` continuavam
+   funcionando (não fazem parte do atalho `font`), então o botão parecia
+   apenas "um pouco grande demais", nunca quebrado.
+
+   O mesmo valia para `cursor: pointer`, que anulava todo
+   `disabled:cursor-not-allowed`.
+
+   ⚠️ `a`, abaixo, tem a mesma forma (`color: inherit` vence `text-*` em
+   link). Ficou fora por ora — vale uma passada dedicada. */
+@layer base {
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
 }
 
 textarea {
   resize: none;
 }
 
-img,
-svg {
-  display: block;
-  max-width: 100%;
+/* ⚠️ MESMO MOTIVO DAS REGRAS DE BOTÃO ACIMA: sem camada, `display: block`
+   aqui vence `hidden`, `inline` e `inline-block` do Tailwind — ou seja, NENHUMA
+   utilitária de display funcionava em ícone nenhum do app. Não era hipótese;
+   três lugares já dependiam disso e estavam quebrados em silêncio:
+   `ImpugnacaoModal` pedia `inline` num ClipboardList e recebia `block`;
+   `CompetitorWarRoom` pedia `md:hidden` num Target que aparecia em toda
+   largura; e o par Pin/PinOff deste arquivo mostrava os dois alfinetes ao
+   mesmo tempo. Dentro da camada, quem escreveu a classe ganha. */
+@layer base {
+  img,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
 }
 
 ::selection {

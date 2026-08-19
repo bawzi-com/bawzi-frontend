@@ -90,6 +90,8 @@ export default function DecisionManagementTab({
   userTier = 1,
   sidebarHidden = false,
   onToggleSidebar,
+  foco = null,
+  onFocoConsumido,
 }: {
   token: string;
   userTier?: number;
@@ -98,6 +100,12 @@ export default function DecisionManagementTab({
    * /gestao não tem esse menu, então não passa essas props e o botão some. */
   sidebarHidden?: boolean;
   onToggleSidebar?: () => void;
+  /** Alvo pedido por outra tela (hoje, o laudo): abrir o resumo desta análise
+   *  já no plano e, se vier `taskId`, com aquele passo aberto para edição. */
+  foco?: { analysisId: string; taskId?: string } | null;
+  /** Avisa a casca que o alvo foi consumido, para ela zerar. Sem isto o efeito
+   *  reabriria o modal a cada re-render desta aba. */
+  onFocoConsumido?: () => void;
 }) {
   const router = useRouter();
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
@@ -137,6 +145,9 @@ export default function DecisionManagementTab({
    *  o mesmo modal — "Resumo do edital" e "Ver o plano inteiro" — e eles
    *  prometem coisas diferentes. Abrir os dois no topo faz o segundo mentir. */
   const [focoDoResumo, setFocoDoResumo] = useState<'plano' | null>(null);
+  /** Qual passo do plano abrir já editando. Vem do `foco` pedido pelo laudo e
+   *  é repassado ao `PlanoEditavel`. */
+  const [tarefaEmFoco, setTarefaEmFoco] = useState<string | null>(null);
   // Fila de gravação do plano de execução. `useRef` e não `useState`: ela é
   // encadeamento de promessas, não algo que a tela desenha — guardá-la em
   // estado provocaria re-render a cada `onBlur` sem mudar um pixel.
@@ -428,6 +439,40 @@ export default function DecisionManagementTab({
     if (!summaryModal) return null;
     return allQueueCards.find((card) => card.analysis.id === summaryModal.analysis.id) || summaryModal;
   }, [allQueueCards, summaryModal]);
+
+  /** ⚠️ CONSOME O `foco` UMA VEZ SÓ. O laudo pede "abra a Gestão nesta análise,
+   *  neste passo"; aqui isso vira o modal do resumo aberto no plano.
+   *
+   *  Três cuidados que não são opcionais:
+   *
+   *  1. Só roda depois de `allQueueCards` existir — na primeira renderização a
+   *     lista está vazia porque o fetch ainda não voltou, e sair sem achar o
+   *     cartão seria abandonar o pedido.
+   *  2. `String(...)` dos dois lados: o `id` vem do Mongo e circula ora como
+   *     string, ora como ObjectId serializado.
+   *  3. Avisa a casca em TODOS os caminhos, inclusive quando não encontra a
+   *     análise — senão o `foco` fica pendurado e este efeito tenta de novo a
+   *     cada re-render, para sempre. */
+  useEffect(() => {
+    if (!foco || !allQueueCards.length) return;
+    const alvo = allQueueCards.find((card) => String(card.analysis.id) === String(foco.analysisId));
+    if (alvo) {
+      setFocoDoResumo('plano');
+      setTarefaEmFoco(foco.taskId ?? null);
+      setSummaryModal(alvo);
+    } else {
+      // ⚠️ NÃO ACHAR TEM DE DOER. Se o pedido chega e a análise não está na
+      // lista (não foi adicionada à Gestão, ou um filtro de texto a escondeu),
+      // ficar em silêncio é indistinguível de "o botão não funciona" — que foi
+      // exatamente como este fluxo apareceu quebrado.
+      setNotice({
+        type: 'info',
+        message: 'Não encontrei este edital na Gestão. Confira se ele está em acompanhamento e se a busca por texto não o escondeu.',
+      });
+    }
+    onFocoConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foco, allQueueCards]);
 
   /** ⚠️ CONTAVA `queueCards`, QUE JÁ VEM FILTRADO — e por isso quatro dos nove
    *  números eram zero por construção.
@@ -986,17 +1031,13 @@ export default function DecisionManagementTab({
             <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">
               Laudo aberto pela gestão
             </span>
-            {onToggleSidebar && (
-              <button
-                type="button"
-                onClick={onToggleSidebar}
-                title={sidebarHidden ? 'Mostrar menu' : 'Ocultar menu para ganhar espaço'}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
-              >
-                {sidebarHidden ? <PanelRightOpen size={14} /> : <PanelRightClose size={14} />}
-                {sidebarHidden ? 'Mostrar menu' : 'Ocultar menu'}
-              </button>
-            )}
+            {/* ⚠️ O BOTÃO DE OCULTAR MENU SAIU DAQUI.
+                Existia neste cabeçalho, num segundo no quadro de colunas e num
+                terceiro no painel de resultados — três posições para o mesmo
+                efeito, e nenhuma nas demais abas. Agora há UM, na casca
+                (`analysis-app.tsx`), no mesmo lugar em todas as telas.
+                `onToggleSidebar` continua chegando porque o "Voltar" ainda
+                restaura o menu: mudou quem OFERECE o controle, não quem reage. */}
             <button
               type="button"
               onClick={() => toggleFullscreen(laudoRef)}
@@ -1013,6 +1054,20 @@ export default function DecisionManagementTab({
           result={selectedAnalysis as unknown as AnalysisResult}
           activeTab={detailTab}
           onSetActiveTab={(tab) => setDetailTab(tab === 'concorrentes' ? 'concorrentes' : 'analise')}
+          /* ⚠️ AQUI O LAUDO JÁ ESTÁ DENTRO DA GESTÃO — não há aba para trocar.
+             Sem esta prop, "definir responsável" caía no `onSetActiveTab` logo
+             acima, que só alterna analise/concorrentes: o clique virava
+             literalmente nada. Daqui o caminho é local: fecha o detalhe e abre
+             o resumo desta mesma análise no plano, no passo pedido. */
+          onAbrirNaGestao={(analysisId, taskId) => {
+            const alvo = allQueueCards.find((c) => String(c.analysis.id) === String(analysisId));
+            if (!alvo) return;
+            setSelectedAnalysis(null);
+            setDetailTab('analise');
+            setFocoDoResumo('plano');
+            setTarefaEmFoco(taskId ?? null);
+            setSummaryModal(alvo);
+          }}
           userTier={getCachedTier(userTier)}
           currentTier={getCachedTier(userTier)}
           termoAlvo={selectedAnalysis.termo_busca_pncp || selectedAnalysis.title || 'Gestão'}
@@ -1057,9 +1112,10 @@ export default function DecisionManagementTab({
         <OperationalSummaryModal
           card={activeSummaryCard}
           foco={focoDoResumo}
+          tarefaEmFoco={tarefaEmFoco}
           savingTaskId={savingTaskId}
           savingStageId={savingStageId}
-          onClose={() => { setSummaryModal(null); setFocoDoResumo(null); }}
+          onClose={() => { setSummaryModal(null); setFocoDoResumo(null); setTarefaEmFoco(null); }}
           onOpenLaudo={(analysis) => {
             setSummaryModal(null);
             void openAnalysisDetail(analysis);
@@ -1118,12 +1174,18 @@ export default function DecisionManagementTab({
                 <ClipboardList size={13} />
                 Gestão de execução
               </div>
-              {/* Só tela cheia aqui. O botão de ocultar menu lateral existe na
-                  visão de laudo e no painel de resultados, onde o utilizador
-                  está mergulhado num documento e quer largura. O quadro é tela
-                  de NAVEGAÇÃO: esconder a navegação a partir dela é armadilha —
-                  some a coluna inteira e o caminho de volta é o mesmo ícone,
-                  sem rótulo. Se voltar a fazer sentido, ponha com texto. */}
+              {/* ⚠️ SÓ TELA CHEIA AQUI. O "Ocultar menu" foi para a casca
+                  (`analysis-app.tsx`) e vale para todas as abas — ver o
+                  comentário de lá. Os dois controles continuam sendo coisas
+                  diferentes: expandir devolve 288px e mantém a barra do
+                  navegador; tela cheia é a API do navegador e some com tudo. */}
+              {/* ⚠️ O BOTÃO DE OCULTAR MENU SAIU DAQUI.
+                  Existia neste cabeçalho, num segundo no quadro de colunas e num
+                  terceiro no painel de resultados — três posições para o mesmo
+                  efeito, e nenhuma nas demais abas. Agora há UM, na casca
+                  (`analysis-app.tsx`), no mesmo lugar em todas as telas.
+                  `onToggleSidebar` continua chegando porque o "Voltar" ainda
+                  restaura o menu: mudou quem OFERECE o controle, não quem reage. */}
               <button
                 type="button"
                 onClick={() => toggleFullscreen(quadroRef)}
@@ -1906,9 +1968,12 @@ function DecisionQueueCard({
  *  O estado local existe para o campo não "pular" enquanto se digita: o valor
  *  vem do rascunho local se houver, senão do que está salvo, senão do default
  *  da tarefa. */
-function PlanoEditavel({ card, savingTaskId, onSalvar }: {
+function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, onSalvar }: {
   card: DecisionQueueCardModel;
   savingTaskId: string | null;
+  /** Passo que já deve nascer aberto — quem chegou aqui por um clique em
+   *  "+ responsável e prazo" no laudo pediu ESTE passo, não a lista. */
+  tarefaInicial?: string | null;
   /** Devolve promessa: o editor precisa esperar a gravação terminar para só
    *  então descartar o rascunho e passar a ler o valor confirmado. */
   onSalvar: (
@@ -1918,7 +1983,22 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
   ) => Promise<void> | void;
 }) {
   const [rascunho, setRascunho] = useState<Record<string, { responsavel?: string; prazo?: string; nota?: string }>>({});
-  const [aberta, setAberta] = useState<string | null>(null);
+  /** ⚠️ INICIALIZADOR, NÃO `useEffect`. O passo pedido tem de estar aberto já
+   *  na PRIMEIRA pintura: o modal rola até o plano num `useLayoutEffect`, e um
+   *  efeito que abrisse o editor depois mudaria a altura embaixo do scroll já
+   *  calculado — a pessoa veria a tela pular. Como estado inicial, a linha já
+   *  nasce expandida e o scroll mede a altura certa.
+   *  Depois disso é estado normal: fechar e abrir outro funciona como sempre. */
+  const [aberta, setAberta] = useState<string | null>(tarefaInicial);
+  const linhaEmFoco = useRef<HTMLDivElement | null>(null);
+
+  /** O plano pode ter cinco passos; rolar até o plano não é rolar até O passo.
+   *  `block: 'center'` porque aqui o alvo é uma linha no meio de uma lista —
+   *  ao contrário do plano inteiro, que é o fim do conteúdo. */
+  useEffect(() => {
+    if (!tarefaInicial) return;
+    linhaEmFoco.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [tarefaInicial]);
 
   if (!card.tasks.length) return null;
 
@@ -1982,8 +2062,15 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
           const feito = !!card.statusMap[task.id]?.done;
           const salvando = savingTaskId === `${card.analysis.id}-${task.id}`;
           const abertaAqui = aberta === task.id;
+          const ehOAlvo = tarefaInicial === task.id;
           return (
-            <div key={task.id} className="py-3">
+            <div
+              key={task.id}
+              ref={ehOAlvo ? linhaEmFoco : undefined}
+              /* Realce de chegada: quem veio de um clique lá no laudo precisa
+                 reconhecer, sem procurar, qual das cinco linhas é a dele. */
+              className={`py-3 ${ehOAlvo ? '-mx-2 rounded-xl bg-amber-50/60 px-2 ring-1 ring-amber-200' : ''}`}
+            >
               <div className="flex items-start gap-3">
                 <button
                   type="button"
@@ -2066,6 +2153,7 @@ function PlanoEditavel({ card, savingTaskId, onSalvar }: {
 function OperationalSummaryModal({
   card,
   foco,
+  tarefaEmFoco,
   savingTaskId,
   savingStageId,
   onClose,
@@ -2079,6 +2167,8 @@ function OperationalSummaryModal({
   card: DecisionQueueCardModel;
   /** `'plano'` = abrir já no plano de execução, em vez do topo. */
   foco: 'plano' | null;
+  /** Passo do plano a abrir já editando (veio de um clique no laudo). */
+  tarefaEmFoco?: string | null;
   savingTaskId: string | null;
   savingStageId: string | null;
   onClose: () => void;
@@ -2273,6 +2363,7 @@ function OperationalSummaryModal({
             <PlanoEditavel
               card={card}
               savingTaskId={savingTaskId}
+              tarefaInicial={tarefaEmFoco ?? null}
               onSalvar={onSalvarTarefa}
             />
           </div>

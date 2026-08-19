@@ -85,7 +85,20 @@ export default function CnaeOportunidades({
     empresaLocalizacao: Record<string, { uf: string; municipio: string }>;
     empresa: string;
     empresas: string[];
-    empresasDetalhe: { nome: string; cnae?: string | null; termo?: string | null; uf?: string | null; municipio?: string | null }[];
+    empresasDetalhe: {
+      nome: string; cnae?: string | null; termo?: string | null; uf?: string | null; municipio?: string | null;
+      /** Todos os termos que esta empresa consulta (o feed usava só o 1º). */
+      termos?: string[];
+      /** Gerou termo de busca? Falso = está no cadastro mas não alimenta o feed. */
+      contribui?: boolean;
+      /** Por que não contribui — some quando contribui. */
+      motivo?: string;
+      /** Outra empresa consulta exatamente os mesmos termos: este chip não
+       *  tem como devolver nada diferente daquele. */
+      mesmos_termos_que?: string | null;
+    }[];
+    /** Quantas das cadastradas realmente geraram o feed. */
+    empresasContribuindo: number;
     termos: string[];
   } | null>(null);
   const [empresaFiltro, setEmpresaFiltro] = useState<string | null>(null);
@@ -98,6 +111,8 @@ export default function CnaeOportunidades({
     geradoEm: number | null;
     fonte: string;
     parcial: boolean;
+    /** Quantos o filtro de relevância cortou por não atender aos termos. */
+    descartados: number;
     buscasOk: number;
     buscasTotal: number;
   } | null>(null);
@@ -167,6 +182,7 @@ export default function CnaeOportunidades({
         geradoEm: typeof data.gerado_em === 'number' ? data.gerado_em : null,
         fonte: data.fonte || 'ao_vivo',
         parcial: !!data.parcial,
+        descartados: Number(data.descartados_relevancia || 0),
         buscasOk: data.buscas_ok ?? 0,
         buscasTotal: data.buscas_total ?? 0,
       });
@@ -181,6 +197,7 @@ export default function CnaeOportunidades({
         empresa: data.empresa || '',
         empresas: data.empresas || [],
         empresasDetalhe: data.empresas_detalhe || [],
+        empresasContribuindo: Number(data.empresas_contribuindo ?? (data.empresas || []).length),
         termos: data.termos_usados || [],
       } : null);
     } catch (err) {
@@ -317,7 +334,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   // ─── Estado: não autenticado ───────────────────────────────────────────────
   if (!token) {
     return (
-      <div className="w-full max-w-5xl mx-auto p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
+      <div className="w-full p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
         <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-slate-100">
           <Target className="w-8 h-8 text-slate-400" />
         </div>
@@ -340,7 +357,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   // ─── Estado: sem CNAE cadastrado ───────────────────────────────────────────
   if (status === 'sem_cnae' || status === 'cnae_nao_mapeado') {
     return (
-      <div className="w-full max-w-5xl mx-auto p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
+      <div className="w-full p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
         <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
           <Building2 className="w-8 h-8 text-amber-500" />
         </div>
@@ -361,7 +378,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   // ─── Estado: carregando ────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="w-full max-w-5xl mx-auto p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100">
+      <div className="w-full p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-slate-100 rounded-lg animate-pulse">
             <Target className="w-6 h-6 text-slate-400" />
@@ -380,7 +397,7 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
   // ─── Estado: erro ──────────────────────────────────────────────────────────
   if (status === 'error') {
     return (
-      <div className="w-full max-w-5xl mx-auto p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
+      <div className="w-full p-8 bg-white rounded-[2rem] shadow-sm border border-slate-100 text-center">
         <p className="text-red-600 font-medium text-sm mb-4">Erro ao carregar oportunidades. Tente novamente.</p>
         <button onClick={() => carregar(true)} className="px-5 py-2.5 bg-slate-900 text-white font-bold rounded-xl text-sm">
           Tentar Novamente
@@ -391,7 +408,14 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
 
   // ─── Feed de editais ───────────────────────────────────────────────────────
   return (
-    <div className="w-full max-w-5xl mx-auto font-sans">
+    /* ⚠️ TINHA `max-w-5xl mx-auto` — TETO DE 1024px, CENTRALIZADO, e estava
+       nos CINCO estados desta tela (carregando, vazio, erro, sem CNAE e o
+       feed). Era o mesmo travamento do Radar PNCP: com o menu oculto a coluna
+       passa de 1400px e o bloco parava em 1024, com margem sobrando dos dois
+       lados — centralizado, mas sem expandir.
+       A largura de bloco desta coluna quem decide é a coluna; contenção, quando
+       necessária, se resolve por dentro do bloco. */
+    <div className="w-full font-sans">
       {ErroEditalToast}
 
       {/* ── Cabeçalho ─────────────────────────────────────────────────────────── */}
@@ -407,14 +431,30 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
               <h2 className="text-base font-black text-slate-800 leading-none">Oportunidades com fit</h2>
               {cnaeInfo && (
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5 leading-none">
+                  {/* ⚠️ CONTA QUEM GEROU O FEED, NÃO QUEM ESTÁ CADASTRADO.
+                      Dizia "3 empresas" mesmo quando duas eram puladas por não
+                      ter CNAE — o laço de termos faz `continue` em silêncio.
+                      Anunciar cadastro como cobertura é prometer um recorte que
+                      não existe. */}
                   {cnaeInfo.empresas.length > 1
-                    ? `${cnaeInfo.empresas.length} empresas · ${editais.length} editais`
+                    ? (cnaeInfo.empresasContribuindo < cnaeInfo.empresas.length
+                        ? `${cnaeInfo.empresasContribuindo} de ${cnaeInfo.empresas.length} empresas · ${editais.length} editais`
+                        : `${cnaeInfo.empresas.length} empresas · ${editais.length} editais`)
                     : `${editais.length} editais encontrados`}
                   {feedMeta && (
                     <span className="text-slate-300">
                       {feedMeta.fonte === 'cache' ? ' · em cache' : ' · ao vivo do PNCP'}
                       {feedMeta.geradoEm
-                        ? ` · ${new Date(feedMeta.geradoEm * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                        /* ⚠️ "15:21" SOZINHO NÃO DIZ DE QUANDO É. Se a aba
+                           ficou aberta desde ontem, o horário sem data faz o
+                           feed parecer fresco por 24 horas. Só o de hoje pode
+                           dispensar a data. */
+                        ? ` · ${(() => {
+                            const d = new Date(feedMeta.geradoEm * 1000);
+                            const hoje = d.toDateString() === new Date().toDateString();
+                            const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                            return hoje ? hora : `${d.toLocaleDateString('pt-BR')} ${hora}`;
+                          })()}`
                         : ''}
                     </span>
                   )}
@@ -497,6 +537,44 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
       {/* ── Transparência da busca ao vivo ───────────────────────────────────── */}
       {status === 'success' && (feedMeta || delta) && (
         <div className="mb-4 space-y-2">
+          {/* ⚠️ O QUE O FILTRO DE RELEVÂNCIA CORTOU.
+              O feed não tinha filtro nenhum além de prazo: o que o
+              `/api/search` do PNCP devolvia entrava na tela, e ele casa por
+              aproximação — daí "AQUISIÇÃO DE MATERIAIS DE ENFERMAGEM" sob o
+              termo "desenvolvimento de software".
+              Agora corta, e DIZ que cortou. Sem esta linha, um feed que caiu de
+              24 para 6 pareceria o PNCP tendo publicado menos; a pessoa clicaria
+              Atualizar procurando editais que nunca foram dela. */}
+          {/* ⚠️ EMPRESA CADASTRADA QUE NÃO ALIMENTA O FEED PRECISA DIZER POR
+              QUÊ. O laço de termos pula quem não tem `cnae_principal` com um
+              `continue` mudo, e o cadastro fica parecendo ativo. Sem CNAE, essa
+              empresa nunca vai aparecer em oportunidade nenhuma — e isso é
+              acionável: são dois campos no perfil. */}
+          {cnaeInfo?.empresasDetalhe?.some(d => d.contribui === false) && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] font-semibold text-amber-800">
+              <span className="text-sm leading-none">⚠️</span>
+              <span>
+                {cnaeInfo.empresasDetalhe.filter(d => d.contribui === false)
+                  .map(d => nomeAbrevEmpresa(d.nome)).join(', ')}
+                {' '}não gera oportunidade nenhuma:{' '}
+                {cnaeInfo.empresasDetalhe.find(d => d.contribui === false)?.motivo}.
+                Enquanto isso, o feed cobre só as demais.
+              </span>
+            </div>
+          )}
+
+          {!!feedMeta?.descartados && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[11px] font-medium text-slate-500">
+              <span className="text-sm leading-none">🎯</span>
+              <span>
+                <strong className="font-black text-slate-700">{feedMeta.descartados}</strong>{' '}
+                edital(is) que o PNCP devolveu não mencionam nenhum dos seus termos e
+                ficaram de fora. O casamento é por palavra do objeto — se algo relevante
+                estiver sumindo, o termo do seu CNAE é que precisa crescer.
+              </span>
+            </div>
+          )}
+
           {/* Resposta parcial do PNCP — a lista pode estar incompleta */}
           {feedMeta?.parcial && (
             <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[11px] font-semibold text-amber-800">
@@ -572,6 +650,32 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
             const nomeChip = nomeAbrevEmpresa(emp);
             const ufEmpFiltro = cnaeInfo.empresaLocalizacao?.[emp]?.uf || '';
             const isActive = empresaFiltro === emp;
+            const det = cnaeInfo.empresasDetalhe.find(d => d.nome === emp);
+            // ⚠️ CHIP QUE NÃO PODE RECORTAR NADA NÃO SE COMPORTA COMO FILTRO.
+            // Empresa sem CNAE mapeado não gerou termo — o chip mostraria zero
+            // sempre. Empresa com os MESMOS termos de outra devolveria
+            // exatamente a mesma lista. Nos dois casos o clique não muda a
+            // tela, e um filtro que não filtra ensina que os filtros da tela
+            // não funcionam. Fica visível, com o motivo no title, e inerte.
+            const inerte = det ? (det.contribui === false || !!det.mesmos_termos_que) : false;
+            const porque = det?.motivo
+              || (det?.mesmos_termos_que
+                    ? `Consulta os mesmos termos de ${nomeAbrevEmpresa(det.mesmos_termos_que)} — o resultado seria idêntico.`
+                    : '');
+            if (inerte) {
+              return (
+                <span
+                  key={emp}
+                  title={porque}
+                  className="flex cursor-default items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-400"
+                >
+                  <span className="max-w-[120px] truncate">{nomeChip}</span>
+                  <span className="shrink-0 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    {det?.contribui === false ? 'sem CNAE' : 'mesmos termos'}
+                  </span>
+                </span>
+              );
+            }
             return (
               <button
                 key={emp}
@@ -622,8 +726,13 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
       )}
 
       {/* Cards */}
+      {/* ⚠️ `grade-cards` só faz efeito com o menu oculto (ver
+          `styles/layout.css`): aí a lista vira DUAS colunas em vez de uma
+          coluna duas vezes mais larga. Card de edital tem objeto longo — ao
+          esticar, a linha passa de 180 caracteres e fica pior de ler, e a
+          rolagem continua mostrando a mesma quantidade de editais. */}
       {editaisFiltrados.length > 0 && (
-        <div className="space-y-4 max-h-[70dvh] overflow-y-auto pr-2 pb-4 custom-scrollbar">
+        <div className="grade-cards space-y-4 max-h-[70dvh] overflow-y-auto pr-2 pb-4 custom-scrollbar">
           {(() => {
             // UFs de todas as empresas cadastradas
             const todasUfsEmpresas = new Set(
@@ -705,18 +814,29 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                         </span>
                       );
                     })()}
-                    {/* Badge empresa — só quando há mais de uma empresa */}
-                    {cnaeInfo && cnaeInfo.empresas.length > 1 && edital.empresa_match && (
+                    {/* ⚠️ SÓ REPETE O QUE O FILTRO ACIMA NÃO JÁ DIZ.
+                        Cada card carregava três rótulos — UF, empresa e termo —
+                        e os três se repetiam idênticos em todos os cards, com o
+                        filtro logo acima anunciando exatamente a mesma coisa.
+                        Rótulo que nunca varia dentro de uma lista não informa:
+                        ocupa a linha onde a diferença entre um card e outro
+                        deveria aparecer.
+                        Com uma empresa selecionada, o crachá dela vira eco. */}
+                    {cnaeInfo && cnaeInfo.empresas.length > 1 && !empresaFiltro && edital.empresa_match && (
                       <span className="flex items-center gap-1 text-[10px] font-black bg-violet-50 text-violet-700 border border-violet-200 px-2.5 py-1 rounded-md max-w-[160px] truncate">
                         <Briefcase className="w-3 h-3 shrink-0" />
                         <span className="truncate">{edital.empresa_match.split(' ').slice(0, 2).join(' ')}</span>
                       </span>
                     )}
-                    {/* Badge CNAE match */}
-                    <span className="flex items-center gap-1 text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md">
-                      <Target className="w-3 h-3" />
-                      {edital.cnae_match}
-                    </span>
+                    {/* Termo: só quando há mais de um em jogo. Com um termo
+                        único, o cabeçalho já o exibe e o crachá é redundância
+                        em cada linha da lista. */}
+                    {(cnaeInfo?.termos?.length ?? 0) > 1 && edital.cnae_match && (
+                      <span className="flex items-center gap-1 text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-md">
+                        <Target className="w-3 h-3" />
+                        {edital.cnae_match}
+                      </span>
+                    )}
                   </div>
                   {valorFmt && (
                     <span className="text-sm font-black text-slate-900 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg shadow-sm shrink-0">
@@ -740,15 +860,27 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                       </div>
                     </div>
                   )}
-                  {edital.situacao && (
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Situação</p>
-                        <p className="text-xs text-emerald-700 font-semibold">{String(edital.situacao)}</p>
+                  {/* ⚠️ A COR SEGUE A SITUAÇÃO, NÃO O FATO DE HAVER UMA.
+                      Era verde sempre: "Suspensa" e "Revogada" saíam com a
+                      mesma bolinha esmeralda de "Divulgada no PNCP". Verde é o
+                      código visual de "está tudo certo" no resto da tela —
+                      usá-lo para um processo parado desmente o próprio rótulo
+                      que está ao lado. */}
+                  {edital.situacao && (() => {
+                    const s = String(edital.situacao).toLowerCase();
+                    const ruim = /suspens|revogad|anulad|fracassad|desert/.test(s);
+                    return (
+                      <div className="flex items-center gap-2">
+                        <div className={`mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full ${ruim ? 'bg-slate-400' : 'bg-emerald-400'}`} />
+                        <div>
+                          <p className="text-[9px] text-slate-400 uppercase font-bold tracking-widest">Situação</p>
+                          <p className={`text-xs font-semibold ${ruim ? 'text-slate-600' : 'text-emerald-700'}`}>
+                            {String(edital.situacao)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                   {dataInicio && (
                     <div className="flex items-center gap-2">
                       <PlayCircle className="w-4 h-4 text-blue-500 shrink-0" />
@@ -776,6 +908,33 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
                     || (edital as Record<string, unknown>).data_fim_vigencia as string | undefined;
                   let radarMsg = 'Prazo não informado · confira no edital original';
                   let radarColor = 'bg-slate-50 text-slate-500 border-slate-200';
+
+                  // ⚠️ A SITUAÇÃO MANDA MAIS QUE O RELÓGIO.
+                  // Este bloco calculava a urgência só pela data de
+                  // encerramento e ignorava `situacao`. Na tela real, um edital
+                  // do CRBio-01 marcado como "Suspensa" exibia
+                  // "Encerra em 1 dia · Atue agora", em vermelho. Processo
+                  // suspenso tem prazo PARADO: agir agora é montar proposta
+                  // para uma data que vai mudar. Revogado e anulado são piores
+                  // — não há mais disputa, e o vermelho chama justamente para o
+                  // que não existe mais.
+                  // A tela existe para dizer onde gastar esforço; nesses casos
+                  // ela estava apontando para onde ele se perde.
+                  const sit = String(edital.situacao || '').toLowerCase();
+                  const paradoPor =
+                    sit.includes('suspens') ? 'Prazo suspenso · aguarde nova data'
+                    : sit.includes('revogad') ? 'Revogada · não haverá disputa'
+                    : sit.includes('anulad') ? 'Anulada · não haverá disputa'
+                    : '';
+                  if (paradoPor) {
+                    return (
+                      <div className="mb-4 flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                        <Timer className="w-3 h-3 shrink-0" />
+                        <span>{paradoPor}</span>
+                      </div>
+                    );
+                  }
+
                   if (fimRaw) {
                     try {
                       const dias = Math.ceil((new Date(String(fimRaw)).getTime() - Date.now()) / 86400000);

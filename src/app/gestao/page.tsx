@@ -2,16 +2,35 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, ClipboardList, FileText, LockKeyhole, Sparkles } from 'lucide-react';
-import DecisionManagementTab from '../../components/DecisionManagementTab';
 import AuthModal from '../../components/AuthModal';
-import type { BawziUpdateEvent } from '@/lib/types';
 import { getAuthToken, initSession } from '@/lib/apiClient';
+
+/** Manda para a aba de Gestão dentro do app, preservando a querystring.
+ *
+ *  ⚠️ PRESERVAR A QUERYSTRING NÃO É DETALHE: as notificações apontam para
+ *  `?tab=gestao` e alguns links carregam `?analysis=<id>`. Redirecionar para
+ *  uma URL limpa abriria a Gestão na análise errada — ou em nenhuma. */
+function RedirecionaParaAba() {
+  const router = useRouter();
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    q.set('tab', 'gestao');
+    router.replace(`/workspace?${q.toString()}`);
+  }, [router]);
+  // O `replace` acontece no efeito, então existe um quadro antes do salto.
+  // Tela branca sem explicação parece travamento; esta linha ocupa o intervalo.
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <p className="text-sm font-semibold text-slate-400">Abrindo a Gestão…</p>
+    </div>
+  );
+}
 
 export default function GestaoPage() {
   const [token, setToken] = useState<string | null>(null);
-  const [userTier, setUserTier] = useState(1);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
 
@@ -23,8 +42,6 @@ export default function GestaoPage() {
       if (!mounted) return;
 
       setToken(sessionToken);
-      const tier = Number(localStorage.getItem('bawzi_tier') || 1);
-      setUserTier(Number.isFinite(tier) ? tier : 1);
     };
 
     void syncSession();
@@ -35,17 +52,10 @@ export default function GestaoPage() {
       setShowAuthModal(true);
     };
 
-    const handleGlobalUpdate = (event: Event) => {
-      const { detail } = event as BawziUpdateEvent;
-      if (detail?.tier) setUserTier(Number(detail.tier));
-    };
-
     window.addEventListener('bawzi_open_auth', handleOpenAuth);
-    window.addEventListener('bawzi_update', handleGlobalUpdate);
     return () => {
       mounted = false;
       window.removeEventListener('bawzi_open_auth', handleOpenAuth);
-      window.removeEventListener('bawzi_update', handleGlobalUpdate);
     };
   }, []);
 
@@ -57,7 +67,24 @@ export default function GestaoPage() {
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-6 lg:py-10">
       {token ? (
-        <DecisionManagementTab token={token} userTier={userTier} />
+        // ⚠️ QUEM ESTÁ LOGADO VAI PARA A ABA, NÃO FICA AQUI.
+        // Esta página renderizava a Gestão sozinha, sem a `AppSidebar` — e o
+        // item "Gestão" do menu apontava para cá com `router.push`, o único do
+        // menu que trocava de ROTA em vez de trocar de aba. O efeito era o menu
+        // inteiro sumir: sem navegação, sem marcação de aba ativa, sem volta a
+        // não ser pelo botão do navegador.
+        //
+        // A aba interna já entrega o que esta página dava por acidente — o
+        // botão "Ocultar menu", que libera os 288px da lateral para as colunas
+        // do fluxo. Espaço vira escolha reversível em vez de consequência da
+        // navegação.
+        //
+        // ⚠️ A ROTA NÃO FOI APAGADA, POR DOIS MOTIVOS. O deslogado continua
+        // vendo a apresentação abaixo, que é conteúdo de entrada e não erro de
+        // arquitetura. E o link já circula em notificação e favorito: devolver
+        // 404 para quem chega por eles seria trocar um menu sumido por uma
+        // página inexistente.
+        <RedirecionaParaAba />
       ) : (
         <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-[0_18px_60px_-36px_rgba(15,23,42,0.34)]">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_410px]">
@@ -157,9 +184,10 @@ export default function GestaoPage() {
         onClose={() => setShowAuthModal(false)}
         defaultView={authMode}
         onSuccess={() => {
+          // Basta o token: com ele o `RedirecionaParaAba` assume e o app shell
+          // resolve o tier. Ler `bawzi_tier` aqui era manter uma segunda cópia
+          // do nível do plano numa página que não usa mais esse dado.
           setToken(getAuthToken());
-          const tier = Number(localStorage.getItem('bawzi_tier') || 1);
-          setUserTier(Number.isFinite(tier) ? tier : 1);
           setShowAuthModal(false);
         }}
       />

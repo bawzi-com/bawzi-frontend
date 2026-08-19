@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Sparkles, Coins, X } from 'lucide-react';
+import { Lock, Sparkles, Coins, X, PanelRightOpen } from 'lucide-react';
 import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
@@ -190,6 +190,30 @@ export default function AnalysisApp() {
   // pela Gestão (DecisionManagementTab) quanto pelo painel de resultados
   // principal (AnalysisResults), cada um com seu próprio botão de toggle.
   const [sidebarHidden, setSidebarHidden] = useState(false);
+
+  /** Alvo pendente da aba Gestão: qual análise (e, opcionalmente, qual passo)
+   *  ela deve abrir assim que montar. A casca é quem guarda porque a troca de
+   *  aba desmonta o laudo — quem pediu o foco não sobrevive para entregá-lo.
+   *  A Gestão consome e devolve `null` via `onFocoConsumido`, senão reabriria
+   *  o mesmo modal a cada re-render dela. */
+  const [focoGestao, setFocoGestao] = useState<{ analysisId: string; taskId?: string } | null>(null);
+  const abrirNaGestao = (analysisId: string, taskId?: string) => {
+    setFocoGestao({ analysisId, taskId });
+    setActiveTab('gestao');
+  };
+
+  /** Clique no sino: leva à aba E ao item, quando o alerta sabe qual é.
+   *  Todo alerta que aponta para a Gestão já gravava `dados.analysis_id`; o que
+   *  faltava era alguém ligar esse identificador ao foco que a Gestão já
+   *  sabe consumir. Sem `analysisId` no alerta (os agregados, do tipo "3
+   *  contratos vencem"), o comportamento correto continua sendo só a aba. */
+  const abrirNotificacao = (tab: string, alvo?: { analysisId?: string; ncp?: string }) => {
+    if (tab === 'gestao' && alvo?.analysisId) {
+      abrirNaGestao(alvo.analysisId);
+      return;
+    }
+    setActiveTab(tab);
+  };
 
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
@@ -1105,8 +1129,25 @@ export default function AnalysisApp() {
           </div>
         </div>
 
-        {/* ── CONTEÚDO PRINCIPAL ── */}
-        <section className="max-w-[1400px] mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0">
+        {/* ── CONTEÚDO PRINCIPAL ──
+            ⚠️ OCULTAR O MENU TAMBÉM SOLTA O TETO DE 1400px.
+            Só colapsar a coluna lateral devolvia 288px DENTRO do mesmo limite:
+            num monitor de 1920px o conteúdo continuava parado em 1400, e o
+            quadro da Gestão — que tem sete colunas — ganhava 41px por coluna.
+            O botão parecia não fazer nada, porque o ganho estava abaixo do que
+            o olho registra.
+
+            "Expandir lateral" e "ocultar o menu" são o mesmo gesto: quem
+            esconde a navegação está pedindo largura. Então o teto vai para
+            1920px junto — o suficiente para sete colunas respirarem sem que a
+            linha de texto fique longa demais em telas ultrawide, onde ler de
+            ponta a ponta cansa.
+
+            O limite volta sozinho ao mostrar o menu: é um estado, não uma
+            preferência gravada. */}
+        <section className={`mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0 transition-[max-width] duration-300 ${
+          sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
+        }`}>
           {token && contextCompanies.length === 0 && <ActiveCompanyBanner />}
 
           {/* ── Retomada de análise (pós-reload) ── */}
@@ -1176,10 +1217,47 @@ export default function AnalysisApp() {
               contexto. Esse cartão saiu, e a coluna não precisa mais da largura
               que ele pedia. Os 62px voltam para a coluna de trabalho — que é
               exatamente a briga do quadro da Gestão. */}
+          {/* ═══════════════════════════════════════════════════════════════
+              ⚠️ AQUI FICA SÓ O REABRIR — O OCULTAR MORA DENTRO DO MENU
+              ═══════════════════════════════════════════════════════════════
+              A versão anterior punha um botão fixo acima do conteúdo, visível
+              nos dois estados. Funcionava, mas era um controle de navegação
+              pairando sobre a área de trabalho em todas as telas.
+
+              Esconder o menu é uma ação SOBRE o menu: o botão foi para dentro
+              dele, ao lado do sino. O que NÃO pode ir junto é o par simétrico —
+              escondido o menu, o botão de reabrir sumiria com ele e não haveria
+              caminho de volta. Foi exatamente o aviso que este repositório já
+              tinha escrito quando recusou o toggle no quadro da Gestão.
+
+              Por isso a volta é uma aba na borda direita, que só existe quando
+              o menu está oculto: ocupa 24px, não disputa espaço com nada, e
+              sobrevive ao fechamento porque é a CASCA que a desenha. */}
+          {sidebarHidden && (
+            <button
+              type="button"
+              onClick={() => setSidebarHidden(false)}
+              title="Mostrar o menu de novo"
+              aria-label="Mostrar menu"
+              className="fixed right-0 top-1/2 z-40 hidden -translate-y-1/2 items-center gap-1.5 rounded-l-xl border border-r-0 border-slate-200 bg-white/95 py-3 pl-2 pr-1.5 text-slate-400 shadow-lg backdrop-blur transition-all hover:pr-3 hover:text-slate-900 lg:flex print:hidden"
+            >
+              <PanelRightOpen size={15} />
+              <span className="text-[9px] font-black uppercase tracking-wider [writing-mode:vertical-rl]">
+                Menu
+              </span>
+            </button>
+          )}
+
           <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_288px]'}`}>
 
             {/* ── COLUNA ESQUERDA ── */}
-            <div className="flex flex-col gap-8 w-full overflow-hidden print:m-0">
+            {/* ⚠️ `coluna-conteudo` é um CONTAINER de CSS, e `expandido` só
+                aparece com o menu oculto. Assim cada tela decide o que fazer
+                com a largura extra (ver `styles/layout.css`): texto ganha teto
+                de medida, grade ganha coluna. Sem isso, "Expandir" apenas
+                estica — que foi o que ficou evidente ao levar o botão para
+                todas as abas. */}
+            <div className={`coluna-conteudo flex flex-col gap-8 w-full overflow-hidden print:m-0 ${sidebarHidden ? 'expandido' : ''}`}>
 
               {/* Abas workspace / análise / concorrentes */}
               {(activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes') && (
@@ -1252,6 +1330,16 @@ export default function AnalysisApp() {
                       )}
 
                       {/* Formulário */}
+                      {/* ⚠️ AQUI HAVIA UM TETO DE MEDIDA (`medida-leitura`) E
+                          ELE FOI REMOVIDO.
+                          Apliquei uma regra de tipografia — 78ch, boa para
+                          texto corrido — a uma área que é FORMULÁRIO. Ninguém
+                          lê o edital colado linha a linha: cola e clica. E os
+                          blocos vizinhos (Radar PNCP, resultados) ocupam a
+                          largura toda, então o único encaixotado no meio deles
+                          não parecia legível, parecia quebrado.
+                          Consistência entre as telas vale mais que a medida
+                          ideal de leitura num campo de entrada. */}
                       <div id="area-submissao" className="scroll-mt-24">
                       <AnalysisForm
                         text={text}
@@ -1294,6 +1382,7 @@ export default function AnalysisApp() {
                       result={result}
                       activeTab={activeTab}
                       onSetActiveTab={setActiveTab}
+                      onAbrirNaGestao={abrirNaGestao}
                       userTier={userTier}
                       currentTier={currentTier}
                       termoAlvo={termoAlvo}
@@ -1331,8 +1420,6 @@ export default function AnalysisApp() {
                           document.getElementById('capital-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         }, 150);
                       } : undefined}
-                      sidebarHidden={sidebarHidden}
-                      onToggleSidebar={() => setSidebarHidden((v) => !v)}
                     />
                   ) : null}
                 </div>
@@ -1481,6 +1568,11 @@ export default function AnalysisApp() {
                     <HistoryTab
                       token={token}
                       userTier={userTier}
+                      // O laudo aberto por aqui é o mesmo do workspace e passa
+                      // a ter o mesmo controle de largura.
+                      sidebarHidden={sidebarHidden}
+                      onToggleSidebar={() => setSidebarHidden((v) => !v)}
+                      onAbrirNaGestao={abrirNaGestao}
                       abrirAnalysisId={analiseParaAbrir}
                       onRedoAnalysis={(analiseAntiga) => {
                         setText(typeof analiseAntiga.raw_text === 'string' ? analiseAntiga.raw_text : '');
@@ -1531,6 +1623,8 @@ export default function AnalysisApp() {
                       userTier={userTier}
                       sidebarHidden={sidebarHidden}
                       onToggleSidebar={() => setSidebarHidden((v) => !v)}
+                      foco={focoGestao}
+                      onFocoConsumido={() => setFocoGestao(null)}
                     />
                   )}
                 </div>
@@ -1581,6 +1675,7 @@ export default function AnalysisApp() {
                       currentTier={currentTier}
                       activeTab={activeTab}
                       onSetActiveTab={(tab) => { setActiveTab(tab); setSidebarMobileOpen(false); }}
+                      onNotificacaoAberta={(tab, alvo) => { abrirNotificacao(tab, alvo); setSidebarMobileOpen(false); }}
                       renovacoesCount={renovacoesCount}
                       onNotifCountChange={setNotifCount}
                       onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); setSidebarMobileOpen(false); }}
@@ -1599,9 +1694,11 @@ export default function AnalysisApp() {
                   currentTier={currentTier}
                   activeTab={activeTab}
                   onSetActiveTab={setActiveTab}
+                  onNotificacaoAberta={abrirNotificacao}
                   renovacoesCount={renovacoesCount}
                   onNotifCountChange={setNotifCount}
                   onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+                  onOcultarMenu={() => setSidebarHidden(true)}
                 />
               </div>
             )}

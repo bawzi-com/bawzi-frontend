@@ -2,8 +2,33 @@
 
 /**
  * AnalysisLoadingOverlay.tsx
- * Painel de loading durante o processamento multi-agente.
- * Exibe tempo estimado, progresso monotônico, etapa atual e botão de cancelar.
+ * Painel de espera enquanto os agentes leem o edital.
+ *
+ * ⚠️ UM SINAL POR FATO. A versão anterior respondia "onde estamos?" cinco
+ * vezes na mesma tela: régua no topo, "ETAPA 2 DE 5", "PROGRESSO 21%", uma
+ * SEGUNDA barra logo abaixo, e a fila lateral com "EM LEITURA". Mais quatro
+ * "NA SEQUÊNCIA", que não informam nada — é evidente que o que está abaixo
+ * vem depois. Cinco vozes dizendo a mesma coisa é o que fazia a tela parecer
+ * agitada, não carregada de informação. Agora cada fato tem um lugar só:
+ *
+ *   quanto falta ......... o anel, com o número no meio (a barra do corpo saiu)
+ *   qual etapa ........... a fila lateral — só ela numera, no cabeçalho dela
+ *   o que a etapa faz .... o título e UMA linha de descrição
+ *
+ * A régua de 4px no topo do cartão ficou porque não disputa: é cromo de borda,
+ * o que se percebe de canto de olho sem olhar para o painel.
+ *
+ * ⚠️ O TEXTO SOLTO ("Estamos cruzando o edital com critérios jurídicos...")
+ * saiu porque repetia, com outras palavras, a descrição da própria etapa que
+ * estava três linhas acima. A variante dele que era informação de verdade —
+ * a espera por consultas externas depois da última etapa — virou a descrição
+ * naquele momento, em vez de um parágrafo a mais.
+ *
+ * ⚠️ SEM CAIXAS NA FILA. Cinco cartões com borda, fundo e rótulo em caixa
+ * alta pesavam mais que o conteúdo. Viraram uma linha do tempo: um trilho de
+ * 1px ligando cinco pontos, o que a lista de caixas nem sequer mostrava — que
+ * as etapas são uma sequência. O ativo se distingue pelo ponto cheio com halo,
+ * não por mais uma moldura.
  */
 
 import React from 'react';
@@ -32,6 +57,18 @@ interface AnalysisLoadingOverlayProps {
   onCancel: () => void;
 }
 
+// Ordem REAL do pipeline (reportada pelo backend etapa a etapa)
+const STEPS = [
+  { label: 'Documento', icon: FileSearch },
+  { label: 'Analista IA', icon: Gauge },
+  { label: 'Mercado & Financeiro', icon: Radar },
+  { label: 'Jurídico', icon: Scale },
+  { label: 'Veredito', icon: CheckCircle2 },
+];
+
+const RAIO = 54;
+const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
+
 export default function AnalysisLoadingOverlay({
   loadingStep,
   loadingMessages,
@@ -48,28 +85,49 @@ export default function AnalysisLoadingOverlay({
     title: 'Preparando análise',
     desc: 'Organizando os dados do edital para iniciar a leitura multiagente.',
   };
+  // ⚠️ As duas listas vivem em arquivos diferentes (`STEPS` aqui,
+  // `LOADING_MESSAGES` no hook). Hoje têm o mesmo tamanho; se um dia
+  // divergirem, a fila continua acesa em vez de apagar por inteiro.
+  const queueStep = Math.min(safeStep, STEPS.length - 1);
+
   const progress = Math.min(99, Math.max(4, Math.round(loadingProgress)));
+
   const formatSeconds = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
     return rest > 0 ? `${minutes}m ${rest}s` : `${minutes}m`;
   };
+
+  // ⚠️ TRÊS ESTADOS, NÃO DOIS. O rótulo antes só perguntava se ainda havia
+  // segundos no relógio e, sem eles, anunciava "Conferindo dados externos" —
+  // mesmo na etapa 3 de 5, que não confere nada externo. O cronômetro zera
+  // quando a ESTIMATIVA acaba, o que pode acontecer muito antes do fim.
   const isExternalFinalizing = remainingSeconds <= 0 && progress >= 94;
-  const remainingLabel = remainingSeconds > 0 ? `~${formatSeconds(remainingSeconds)} restantes` : 'Conferindo dados externos';
-  // Ordem REAL do pipeline (reportada pelo backend etapa a etapa)
-  const steps = [
-    { label: 'Documento', icon: FileSearch },
-    { label: 'Analista IA', icon: Gauge },
-    { label: 'Mercado & Financeiro', icon: Radar },
-    { label: 'Jurídico', icon: Scale },
-    { label: 'Veredito', icon: CheckCircle2 },
-  ];
+  const remainingLabel = remainingSeconds > 0
+    ? `~${formatSeconds(remainingSeconds)} restantes`
+    : isExternalFinalizing
+      ? 'Conferindo dados externos'
+      : 'Ainda processando';
+
+  // ⚠️ `isLive` e `estimatedSeconds` chegavam e não eram usados. Não valem um
+  // aviso na tela — valem o tooltip: quem passar o mouse descobre se o número
+  // é medido ou chutado, e ninguém é interrompido por causa disso.
+  const dicaTempo = [
+    isLive
+      ? 'O servidor está reportando cada etapa em tempo real.'
+      : 'Tempo estimado aqui no navegador — o servidor ainda não reportou esta etapa.',
+    estimatedSeconds > 0 ? `Estimativa total: ~${formatSeconds(estimatedSeconds)}.` : '',
+  ].filter(Boolean).join(' ');
+
+  const descricao = isExternalFinalizing
+    ? 'Finalizando as consultas oficiais e consolidando os sinais do radar.'
+    : currentMessage.desc;
 
   return (
     <div
       id="area-loading"
-      className="min-h-[520px] bg-white rounded-[2rem] shadow-sm border border-slate-200 animate-in fade-in duration-700 relative overflow-hidden"
+      className="relative overflow-hidden rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-emerald-50/30 to-sky-50/50 shadow-sm animate-in fade-in duration-700"
     >
       <div className="absolute inset-x-0 top-0 h-1 bg-slate-100">
         <div
@@ -78,129 +136,204 @@ export default function AnalysisLoadingOverlay({
         />
       </div>
 
-      <div className="relative z-10 grid gap-8 p-6 md:p-10 lg:grid-cols-[1fr_280px]">
-        <div className="flex min-h-[420px] flex-col justify-between rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-white via-emerald-50/35 to-sky-50/60 p-6 md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* ⚠️ `espera-2col` É CONTAINER QUERY, NÃO `lg:`. O `lg:` do Tailwind
+          mede a JANELA: a 1024px ele abria duas colunas sem saber que o menu
+          de 288px já tinha levado a metade, e sobravam ~278px para um anel de
+          128px mais o título. Quem decide aqui é a largura da COLUNA — ver
+          `styles/layout.css`, que já declara `coluna-conteudo` como container. */}
+      <div className="grid gap-6 p-6 md:gap-8 md:p-10 espera-2col">
+
+        {/* ── FOCO: uma coisa acontecendo, um número ─────────────────────── */}
+        {/* ⚠️ SEM ALTURA MÍNIMA. Em duas colunas o grid já iguala as duas pela
+            mais alta — a fila — e as duas se equivalem. Um piso fixo aqui só
+            aparecia quando o painel EMPILHA: abria uns 200px de vazio entre a
+            descrição e a fila, um buraco no meio da tela. */}
+        <div className="flex flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <Image
               src="/logo-bawzi.png"
               alt="Bawzi Logo"
-              width={118}
-              height={34}
+              width={112}
+              height={32}
               className="object-contain"
               priority
             />
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white/80 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700 shadow-sm">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span
+              title={dicaTempo}
+              className="inline-flex cursor-default items-center gap-2 rounded-full border border-slate-200/80 bg-white/70 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-600 shadow-sm backdrop-blur"
+            >
+              <span
+                className={`h-1.5 w-1.5 animate-pulse rounded-full ${isLive ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              />
               {remainingLabel}
             </span>
           </div>
 
-          <div className="py-10 text-center">
-            <div className="relative mx-auto mb-8 flex h-24 w-24 items-center justify-center">
-              <div className="absolute inset-0 rounded-full border border-emerald-100 bg-white shadow-sm" />
-              <div className="absolute inset-2 rounded-full border-2 border-slate-100" />
-              <div className="absolute inset-2 rounded-full border-2 border-transparent border-t-emerald-500 border-r-sky-400 animate-spin" />
-              <Loader2 className="relative h-8 w-8 animate-spin text-emerald-600" />
+          <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
+
+            {/* ⚠️ O ANEL SUBSTITUI A BARRA, não decora. O giro de antes não
+                dizia nada; o arco é o próprio progresso. O anel pontilhado de
+                fora existe só por vivacidade: a porcentagem muda a cada
+                dezenas de segundos e, parada, um anel estático parece travado. */}
+            <div className="relative mb-8 h-32 w-32">
+              <span
+                aria-hidden
+                className="absolute -inset-2 animate-spin rounded-full border border-dashed border-emerald-200/70 [animation-duration:9s]"
+              />
+              <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
+                <defs>
+                  {/* ⚠️ O EIXO SEGUE O ARCO, e por isso não é o diagonal
+                      óbvio. O <svg> está girado -90°, então o arco começa no
+                      TOPO da tela — que, nas coordenadas de dentro, é a
+                      direita. Com o eixo padrão (canto sup. esq. → inf. dir.)
+                      o começo do arco caía já no fim do degradê e o anel
+                      nascia azul: a 21% não havia um pixel de verde. */}
+                  <linearGradient id="bawzi-anel-progresso" x1="1" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#0ea5e9" />
+                  </linearGradient>
+                </defs>
+                <circle cx="64" cy="64" r={RAIO} fill="none" stroke="#eef2f6" strokeWidth="8" />
+                <circle
+                  cx="64" cy="64" r={RAIO} fill="none"
+                  stroke="url(#bawzi-anel-progresso)"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray={CIRCUNFERENCIA}
+                  strokeDashoffset={CIRCUNFERENCIA * (1 - progress / 100)}
+                  className="transition-[stroke-dashoffset] duration-1000 ease-out"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                {/* tabular-nums: o número não muda de largura ao passar de 9 para 10 */}
+                <span className="text-[2rem] font-black leading-none tracking-tight text-slate-950 tabular-nums">
+                  {progress}
+                  <span className="text-base font-black text-slate-300">%</span>
+                </span>
+                <span className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                  concluído
+                </span>
+              </div>
             </div>
 
             <div
               key={safeStep}
-              className="mx-auto max-w-xl animate-in fade-in slide-in-from-bottom-2 duration-500"
+              className="animate-in fade-in slide-in-from-bottom-2 duration-500"
             >
-              <p className="mb-3 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400">
-                Etapa {safeStep + 1} de {totalSteps}
-              </p>
-              <h3 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
+              <h3 className="text-2xl font-black tracking-tight text-slate-950 md:text-[1.7rem]">
                 {currentMessage.title}
               </h3>
-              <p className="mx-auto mt-3 max-w-lg text-sm font-medium leading-relaxed text-slate-600 md:text-base">
-                {currentMessage.desc}
+              <p className="mx-auto mt-3 max-w-md text-sm font-medium leading-relaxed text-slate-600">
+                {descricao}
               </p>
 
-              {/* A auditoria roda em PARALELO com as etapas acima — linha
+              {/* A auditoria roda em PARALELO com as etapas da fila — linha
                   própria, não uma etapa, para os dois textos não brigarem. */}
               {progressoAuditoria && (progressoAuditoria.blocos_total ?? 0) > 0 && (
-                <p className="mx-auto mt-3 inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-1.5 text-[11px] font-bold text-sky-700">
+                <p className="mt-5 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-sky-50/80 px-3.5 py-1.5 text-[11px] font-semibold text-sky-700">
                   <Loader2 size={12} className="animate-spin" />
                   {progressoAuditoria.fase === 'refutacao'
                     ? <>Auditoria: revisão adversarial de {progressoAuditoria.achados ?? 0} achados…</>
-                    : <>Auditoria em paralelo: {progressoAuditoria.blocos_concluidos ?? 0} de {progressoAuditoria.blocos_total} blocos lidos · {progressoAuditoria.achados ?? 0} achados</>}
+                    : <>Auditoria em paralelo · {progressoAuditoria.blocos_concluidos ?? 0} de {progressoAuditoria.blocos_total} blocos · {progressoAuditoria.achados ?? 0} achados</>}
                 </p>
               )}
             </div>
           </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              <span>Progresso</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white border border-slate-100">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-700"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="text-center text-xs font-semibold leading-relaxed text-slate-500">
-              {isExternalFinalizing
-                ? 'Estamos finalizando consultas oficiais e consolidando os sinais do radar. Você pode cancelar a qualquer momento.'
-                : 'Estamos cruzando o edital com critérios jurídicos, financeiros e de mercado. Você pode cancelar a qualquer momento.'}
-            </p>
-          </div>
         </div>
 
-        <aside className="flex flex-col justify-between rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm">
-          <div>
-            <div className="mb-5">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700">Fila dos agentes</p>
-              <h4 className="mt-2 text-lg font-black tracking-tight text-slate-950">O que está sendo analisado</h4>
+        {/* ── FILA: linha do tempo, não lista de caixas ──────────────────── */}
+        <aside className="flex flex-col rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-start justify-between gap-2 px-1.5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+                Fila dos agentes
+              </p>
+              <h4 className="mt-1.5 text-base font-black tracking-tight text-slate-950">
+                O que está sendo lido
+              </h4>
             </div>
+            {/* o "N de M" mora aqui, e só aqui */}
+            <span className="mt-0.5 shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-black text-slate-500 tabular-nums">
+              {safeStep + 1}/{totalSteps}
+            </span>
+          </div>
 
-            <div className="space-y-3">
-              {steps.map((step, index) => {
-                const Icon = step.icon;
-                const isDone = index < safeStep;
-                const isActive = index === safeStep;
+          <ol>
+            {STEPS.map((step, index) => {
+              const Icon = step.icon;
+              const isDone = index < queueStep;
+              const isActive = index === queueStep;
 
-                return (
-                  <div
-                    key={step.label}
-                    className={`flex items-center gap-3 rounded-2xl border p-3 transition-all ${
+              return (
+                <li key={step.label} className="relative flex items-center gap-3 px-1.5 py-2">
+                  {/* Trilho: sai da base deste ponto e encosta no próximo.
+                      left-5 = px-1.5 (6px) + metade do ponto de 28px. */}
+                  {index < STEPS.length - 1 && (
+                    <span
+                      aria-hidden
+                      className={`absolute left-5 top-9 -bottom-2 w-px ${isDone ? 'bg-emerald-200' : 'bg-slate-200'}`}
+                    />
+                  )}
+
+                  <span
+                    className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
                       isActive
-                        ? 'border-emerald-200 bg-emerald-50 shadow-sm'
+                        ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-600/30'
                         : isDone
-                          ? 'border-slate-100 bg-slate-50'
-                          : 'border-slate-100 bg-white'
+                          ? 'bg-white text-emerald-600 ring-1 ring-emerald-200'
+                          : 'bg-white text-slate-300 ring-1 ring-slate-200'
                     }`}
                   >
+                    {isActive && (
+                      <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-emerald-500/25" />
+                    )}
+                    {isDone ? <CheckCircle2 size={14} /> : <Icon size={14} />}
+                  </span>
+
+                  {/* ⚠️ O "EM CURSO" ANDA COLADO NO NOME, não encostado na
+                      borda. Empilhado, a fila ocupa a largura toda e um rótulo
+                      alinhado à direita ficava a meia tela do nome que ele
+                      qualifica. O nome toma a largura natural (e trunca se
+                      faltar espaço) e o rótulo vem logo em seguida. */}
+                  <div className="flex min-w-0 flex-1 items-center gap-2.5">
                     <span
-                      className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                      title={step.label}
+                      className={`min-w-0 truncate text-[13px] ${
                         isActive
-                          ? 'bg-emerald-600 text-white'
+                          ? 'font-black text-emerald-900'
                           : isDone
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-50 text-slate-400'
+                            ? 'font-semibold text-slate-500'
+                            : 'font-semibold text-slate-400'
                       }`}
                     >
-                      {isDone ? <CheckCircle2 size={17} /> : <Icon size={17} className={isActive ? 'animate-pulse' : ''} />}
+                      {step.label}
                     </span>
-                    <div>
-                      <p className={`text-sm font-black ${isActive ? 'text-emerald-900' : 'text-slate-800'}`}>{step.label}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                        {isDone ? 'Concluído' : isActive ? 'Em leitura' : 'Na sequência'}
-                      </p>
-                    </div>
+
+                    {/* Só o ativo tem rótulo. "Na sequência" em quatro linhas
+                        era ruído: a posição na lista já diz isso.
+                        "Em curso" e não "lendo": o último agente consolida o
+                        veredito, não lê nada — um rótulo só serve se servir aos
+                        cinco. */}
+                    {isActive && (
+                      <span className="shrink-0 text-[9px] font-black uppercase tracking-[0.1em] text-emerald-600">
+                        em curso
+                      </span>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          {/* Empurra o cancelar para o rodapé quando a coluna estica, e garante
+              um respiro mínimo quando ela não estica (empilhado, no celular). */}
+          <div aria-hidden className="min-h-4 flex-1" />
 
           <button
             onClick={onCancel}
-            className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 shadow-sm transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
           >
-            <X size={14} />
+            <X size={13} />
             Cancelar análise
           </button>
         </aside>

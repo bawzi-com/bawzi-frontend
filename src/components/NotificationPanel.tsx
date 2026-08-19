@@ -10,7 +10,12 @@ import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
 // ─────────────────────────────────────────────
 export interface Notificacao {
   _id: string;
-  tipo: 'compliance' | 'matchmaker' | 'renovacao' | 'oportunidade' | 'prazo' | 'decisao' | 'pncp_mudanca';
+  // ⚠️ FALTAVAM TRÊS. O catálogo (`catalogo_alertas.py`) tem dez tipos; esta
+  // união listava sete. `disputa_abrindo`, `pncp_resultado` e `radar_alerta`
+  // chegavam do servidor e caíam no rótulo genérico "Ver detalhes" porque
+  // nenhuma tabela desta tela os reconhecia.
+  tipo: 'compliance' | 'matchmaker' | 'renovacao' | 'oportunidade' | 'prazo'
+      | 'decisao' | 'pncp_mudanca' | 'disputa_abrindo' | 'pncp_resultado' | 'radar_alerta';
   prioridade: 1 | 2 | 3;
   icone: string;
   titulo: string;
@@ -18,11 +23,28 @@ export interface Notificacao {
   url: string;
   lida: boolean;
   criada_em?: string;
+  /** ⚠️ ISTO SEMPRE VEIO DO SERVIDOR E NINGUÉM LIA.
+   *  Todo alerta que aponta para a Gestão grava `dados.analysis_id` desde que
+   *  foi escrito, e `_serialize` no `router_notifications.py` devolve o
+   *  documento inteiro. O identificador do item estava no payload o tempo
+   *  todo — o que faltava era a tela usar, em vez de só trocar de aba. */
+  dados?: {
+    analysis_id?: string;
+    ncp?: string;
+    [k: string]: unknown;
+  };
+}
+
+/** Para onde um clique leva. `analysisId` é o que transforma "abrir a Gestão"
+ *  em "abrir ESTE edital na Gestão". */
+export interface AlvoNotificacao {
+  analysisId?: string;
+  ncp?: string;
 }
 
 interface NotificationPanelProps {
   token: string;
-  onNavigate?: (tab: string) => void;
+  onNavigate?: (tab: string, alvo?: AlvoNotificacao) => void;
   onCountChange?: (count: number) => void;
 }
 
@@ -149,14 +171,21 @@ function StatusBadge({ status }: { status: StatusNotif }) {
   );
 }
 
+// ⚠️ O RÓTULO PROMETE O QUE O CLIQUE FAZ, e por isso os de Gestão mudaram.
+// "Abrir gestão" era literal — e era o problema: levava à lista e deixava a
+// pessoa procurar o edital cujo nome estava escrito na própria notificação.
+// Agora o clique abre o edital, então o rótulo diz isso.
 const CTA_LABEL: Record<string, string> = {
-  compliance:   'Verificar certidões',
-  matchmaker:   'Ver editais',
-  renovacao:    'Ver contratos',
-  oportunidade: 'Ver oportunidade',
-  prazo:        'Abrir gestão',
-  decisao:      'Revisar decisão',
-  pncp_mudanca: 'Abrir gestão',
+  compliance:     'Verificar certidões',
+  matchmaker:     'Ver editais',
+  renovacao:      'Ver contratos',
+  oportunidade:   'Ver oportunidade',
+  prazo:          'Abrir este edital',
+  decisao:        'Revisar decisão',
+  pncp_mudanca:   'Abrir este edital',
+  pncp_resultado: 'Ver o resultado',
+  disputa_abrindo: 'Ver contrato',
+  radar_alerta:   'Ver editais',
 };
 
 // ─────────────────────────────────────────────
@@ -294,12 +323,48 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
     return 'nao-lida';
   }
 
+  /** ⚠️ O DESTINO É A ABA MAIS O ITEM — e o item já vinha junto.
+   *
+   *  Antes daqui saía só o nome da aba. Uma notificação que diz o nome do
+   *  edital, com `dados.analysis_id` no mesmo documento, abria a Gestão na
+   *  lista inteira e deixava a pessoa reencontrar à mão aquilo que o alerta
+   *  acabara de nomear. Duas telas depois do clique para chegar onde o clique
+   *  já sabia.
+   *
+   *  ⚠️ E `/workspace` RECARREGAVA A PÁGINA. Os alertas de disputa usam a URL
+   *  absoluta (é a mesma string do push, que abre o app de fora). Dentro do
+   *  app isso virava `window.location.href` — recarga completa, sessão
+   *  remontada, e a pessoa caindo na aba padrão em vez da que ela pediu.
+   *  Rota interna com aba conhecida agora troca de aba; a recarga fica só
+   *  para o que é genuinamente outra página (ex.: `/profile`). */
+  const ABAS_INTERNAS = new Set([
+    'workspace', 'gestao', 'renovacoes', 'radar', 'history', 'analise', 'concorrentes',
+  ]);
+
+  function destinoDe(n: Notificacao): { aba: string; alvo?: AlvoNotificacao } | null {
+    const analysisId = typeof n.dados?.analysis_id === 'string' ? n.dados.analysis_id : undefined;
+    const ncp = typeof n.dados?.ncp === 'string' ? n.dados.ncp : undefined;
+
+    let aba: string | null = null;
+    if (n.url.startsWith('?tab=')) {
+      aba = n.url.slice(5).split('&')[0];
+    } else if (n.url === '/workspace' || n.url.startsWith('/workspace?')) {
+      const q = n.url.split('?')[1] || '';
+      aba = new URLSearchParams(q).get('tab') || (ncp ? 'renovacoes' : 'workspace');
+    }
+    if (!aba || !ABAS_INTERNAS.has(aba)) return null;
+    return { aba, alvo: analysisId || ncp ? { analysisId, ncp } : undefined };
+  }
+
   function handleClick(n: Notificacao) {
     abrirNotificacao(n._id);
-    if (n.url.startsWith('?tab=') && !n.url.includes('&')) {
-      onNavigate?.(n.url.replace('?tab=', ''));
+    const destino = destinoDe(n);
+    if (destino) {
+      onNavigate?.(destino.aba, destino.alvo);
       setOpen(false);
-    } else if (n.url.startsWith('?')) {
+      return;
+    }
+    if (n.url.startsWith('?')) {
       window.location.href = window.location.pathname + n.url;
     } else if (n.url.startsWith('/')) {
       window.location.href = n.url;
@@ -454,8 +519,24 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
                 key={n._id}
                 className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden border-l-4 ${cfg.accent} ${status === 'lida' || status === 'aberto' ? 'opacity-70' : ''}`}
               >
-                {/* Topo do card */}
-                <div className="px-4 pt-4 pb-3">
+                {/* Topo do card.
+                    ⚠️ CLICÁVEL AGORA — e o próprio código já esperava isso: o
+                    botão de remover, logo abaixo, sempre teve
+                    `e.stopPropagation()`, que só faz sentido se houver um
+                    clique no pai para interromper. Ele nunca existiu. Quem lia
+                    a mensagem clicava nela, não acontecia nada, e o caminho
+                    real era um botão pequeno no rodapé do card.
+                    Não vira `<button>` porque há botão dentro (remover) —
+                    aninhar botão é HTML inválido e quebra o teclado. */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleClick(n)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(n); }
+                  }}
+                  className="cursor-pointer px-4 pt-4 pb-3 transition-colors hover:bg-slate-50/70 focus:outline-none focus-visible:bg-slate-50"
+                >
                   <div className="flex items-start gap-3">
                     {/* Ícone */}
                     <div className={`w-9 h-9 rounded-xl ${cfg.iconBg} flex items-center justify-center shrink-0`}>

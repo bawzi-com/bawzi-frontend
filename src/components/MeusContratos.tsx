@@ -114,6 +114,30 @@ interface Filial {
   matriz: boolean;
 }
 
+/** De quem são os contratos desta tela.
+ *
+ *  ⚠️ A BUSCA É POR CNPJ COMPLETO, NÃO POR RAIZ. `filtro_fornecedor` casa os 14
+ *  dígitos em quatro grafias; nunca um prefixo. Logo a lista e o total são de
+ *  UM estabelecimento — e a tela precisa dizer isso, senão "Meus contratos"
+ *  com um valor somado é lido como o grupo inteiro. */
+interface Escopo {
+  raiz: string;
+  cnpj_consultado: string;
+  no_workspace: { cnpj: string; nome: string; consultado: boolean }[];
+  fora_do_workspace: number;
+  fonte: string;
+}
+
+interface DisputasMeta {
+  total: number;
+  truncado: boolean;
+  dentro_total: number;
+  /** Quantos foram descartados pelo filtro de ramo no conjunto INTEIRO. */
+  fora_total: number;
+  /** Quantos desses vieram como amostra — sempre ≤ fora_total. */
+  fora_amostrados: number;
+}
+
 /** Contrato de OUTRO fornecedor, vencendo, num órgão onde a empresa já está.
  *
  *  ⚠️ É O ÚNICO DADO DA TELA QUE FALA DO FUTURO. Contrato público que vence
@@ -138,6 +162,18 @@ interface Oportunidade {
    *  tela MOSTRA: em `aderencia.py`, não saber nunca vira esconder. */
   no_seu_ramo: boolean | null;
   aderencia: number | null;
+  /** Início da vigência — alimenta a barra de progresso do contrato atual. */
+  data_vigencia_ini: string | null;
+  /** O contrato cabe no que a empresa já entregou? Ver `_porte()` no backend.
+   *  NÃO é probabilidade de vitória: é habilitação. `null` quando a carteira
+   *  não tem valor legível para servir de régua. */
+  porte: {
+    maior_seu: number;
+    razao: number;
+    /** Atestado de 50% do quantitativo é alcançável com o maior contrato. */
+    atestado_alcanca: boolean;
+    dentro: boolean;
+  } | null;
   /** Palavras que casaram, da mais distintiva para a mais banal. Existem para
    *  a pessoa poder discordar de forma informada da classificação. */
   comuns: string[];
@@ -146,7 +182,6 @@ interface Oportunidade {
    *  parecer completa sem ser. */
   _total?: number;
   _truncado?: boolean;
-  _fora_do_ramo?: number;
 }
 
 interface OrgaoConcorrencia {
@@ -603,6 +638,12 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   const [arena, setArena] = useState<OrgaoConcorrencia[] | null>(null);
   const [arenaFalhou, setArenaFalhou] = useState(false);
   const [oportunidades, setOportunidades] = useState<Oportunidade[]>([]);
+  // ⚠️ LISTA SEPARADA, NÃO UM FILTRO SOBRE A PRIMEIRA. O que o filtro de ramo
+  // descartou nunca chegava aqui: a ordenação punha os descartados no fim e o
+  // corte em 80 comia todos. O botão "+202 fora do seu ramo" não tinha o que
+  // revelar. Agora o servidor manda uma amostra dos 20 mais caros à parte.
+  const [foraDoRamo, setForaDoRamo] = useState<Oportunidade[]>([]);
+  const [disputasMeta, setDisputasMeta] = useState<DisputasMeta | null>(null);
   // ⚠️ FILTRO NO CLIENTE, NÃO NO SERVIDOR. O backend já devolve até 80 e a
   // agregação é a consulta mais cara da tela — refazer a ida ao cluster a cada
   // clique de chip trocaria uma resposta instantânea por meio segundo de espera
@@ -619,6 +660,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   const [vagas, setVagas] = useState<Vagas | null>(null);
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(new Set());
   const [filiais, setFiliais] = useState<Filial[]>([]);
+  const [escopo, setEscopo]   = useState<Escopo | null>(null);
   const [incluindo, setIncluindo] = useState<string | null>(null);
   // ⚠️ FILTRO SEPARADO DE `filtro`. "Cresceu por aditivo" é uma dimensão
   // diferente de situação — um contrato pode ser vigente E ter aditivo. Enfiar
@@ -653,6 +695,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       setSinc(json.sincronizacao || null);
       setVagas(json.vagas || null);
       setFiliais(json.filiais || []);
+      setEscopo(json.escopo || null);
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
       // ⚠️ MENSAGEM DE ERRO COM SAÍDA. "Falha ao carregar" sem botão deixa a
@@ -673,6 +716,8 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       const json = await res.json();
       setArena(json.orgaos || []);
       setOportunidades(json.oportunidades || []);
+      setForaDoRamo(json.fora_do_ramo || []);
+      setDisputasMeta(json.disputas_meta || null);
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
       // ⚠️ FALHA AQUI NÃO DERRUBA A TELA. O painel é complementar; a carteira
@@ -763,13 +808,11 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   // ⚠️ OS CONTADORES SAEM DO CONJUNTO COMPLETO, NÃO DO FILTRADO. Um chip que
   // mostrasse a contagem já filtrada iria a zero assim que fosse clicado — e a
   // pessoa perderia a referência de quanto existe fora do recorte atual.
-  const disputasVisiveis = oportunidades.filter((o) => {
-    // ⚠️ SÓ ESCONDE O `false` EXPLÍCITO — `null` PASSA.
-    // `null` significa "não deu para classificar" (carteira curta, objeto sem
-    // texto). Tratar isso como "fora do ramo" esconderia um contrato de R$ 16
-    // milhões por causa de um campo vazio, que é o mesmo erro que `prorrogavel`
-    // cometia do outro lado: falta de evidência lida como evidência.
-    if (!verForaDoRamo && o.no_seu_ramo === false) return false;
+  // ⚠️ ALTERNA ENTRE DUAS LISTAS, NÃO FILTRA UMA. Os descartados vêm num campo
+  // próprio da resposta; filtrar `oportunidades` por `no_seu_ramo === false`
+  // não achava nada, porque eles nunca estiveram lá.
+  const baseDisputas = verForaDoRamo ? foraDoRamo : oportunidades;
+  const disputasVisiveis = baseDisputas.filter((o) => {
     if (prazoMax !== null && (o.dias === null || o.dias > prazoMax)) return false;
     if (ocultarProrrogaveis && o.prorrogavel === true) return false;
     if (orgaoDisputa && o.orgao_nome !== orgaoDisputa) return false;
@@ -781,15 +824,18 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
     return true;
   });
   const orgaosDisputa = Array.from(
-    oportunidades.reduce((m, o) => m.set(o.orgao_nome, (m.get(o.orgao_nome) || 0) + 1),
+    baseDisputas.reduce((m, o) => m.set(o.orgao_nome, (m.get(o.orgao_nome) || 0) + 1),
                          new Map<string, number>()),
   ).sort((a, b) => b[1] - a[1]);
   // ⚠️ O "EM JOGO" SOMA SÓ O QUE ESTÁ NA TELA. Somar o que foi escondido faria
   // R$ 31,9 mi aparecer sobre uma lista de R$ 6,8 mi — e o número grande é
   // justamente o que decide se a pessoa vai olhar o painel.
   const valorEmDisputa = disputasVisiveis.reduce((s, o) => s + (o.valor || 0), 0);
-  const foraDoRamo = oportunidades[0]?._fora_do_ramo
-    ?? oportunidades.filter((o) => o.no_seu_ramo === false).length;
+  // ⚠️ O TOTAL DESCARTADO VEM DO META, NÃO DA LISTA. `foraDoRamo` é a AMOSTRA
+  // (20 mais caros); `fora_total` é quanto o filtro descartou de verdade. A
+  // versão anterior confundia os dois e o botão prometia 202 itens que nunca
+  // saíram do servidor.
+  const foraTotal = disputasMeta?.fora_total ?? foraDoRamo.length;
 
   const alternarGrupo = (chave: string) => setGruposAbertos((sa) => {
     const n = new Set(sa);
@@ -1010,6 +1056,52 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
 
         {!carregando && !erro && !semEmpresa && resumo && (
           <>
+            {/* ── De quem são estes contratos ─────────────────────────────── */}
+            {/* ═══════════════════════════════════════════════════════════════
+                ⚠️ ESTA LINHA APARECE SEMPRE, INCLUSIVE QUANDO NÃO HÁ NADA A
+                ACRESCENTAR — E É AÍ QUE ELA MAIS IMPORTA.
+                ═══════════════════════════════════════════════════════════════
+                A busca casa o CNPJ COMPLETO de 14 dígitos, nunca a raiz: a
+                lista e o total são de UM estabelecimento. O card verde abaixo
+                só surge quando existe filial de fora; sem nenhuma, a tela
+                ficava muda — e mudez aqui é lida como "olhamos o grupo todo".
+                Afirmar o recorte é a diferença entre "não encontramos mais
+                nada" e "não procuramos".
+
+                E o texto não promete o cadastro da Receita: só enxergamos
+                estabelecimentos com contrato JÁ indexado. Dizer "seu grupo tem
+                N unidades" seria afirmar algo que este sistema não sabe. */}
+            {escopo && (
+              <p className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-500">
+                <Building2 size={12} className="shrink-0 text-slate-400" />
+                {escopo.no_workspace.length <= 1 ? (
+                  <>
+                    Mostrando os contratos de{' '}
+                    <strong className="font-black text-slate-700">
+                      {cnpjBr(escopo.cnpj_consultado) || escopo.cnpj_consultado}
+                    </strong>
+                    {escopo.fora_do_workspace > 0
+                      ? ` — há ${escopo.fora_do_workspace} outro(s) estabelecimento(s) deste grupo com contrato, ainda fora da sua carteira.`
+                      : ' — nenhum outro estabelecimento deste grupo tem contrato indexado na nossa base.'}
+                  </>
+                ) : (
+                  <>
+                    Este grupo tem{' '}
+                    <strong className="font-black text-slate-700">
+                      {escopo.no_workspace.length} estabelecimentos
+                    </strong>{' '}
+                    na sua carteira. Mostrando um por vez —{' '}
+                    <strong className="font-black text-slate-700">
+                      {cnpjBr(escopo.cnpj_consultado) || escopo.cnpj_consultado}
+                    </strong>
+                    {escopo.fora_do_workspace > 0
+                      ? `, e ainda há ${escopo.fora_do_workspace} fora da carteira.`
+                      : '.'}
+                  </>
+                )}
+              </p>
+            )}
+
             {/* ── Outros estabelecimentos da mesma empresa ────────────────── */}
             {/* ═══════════════════════════════════════════════════════════════
                 ⚠️ O SISTEMA DESCOBRE, A PESSOA DECIDE.
@@ -1400,7 +1492,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                 recebia, em primeiro lugar, um bloco sobre o que vai começar.
                 O painel existe na FRONTEIRA entre presente e passado; sem
                 presente na tela, não há fronteira onde ele faça sentido. */}
-            {oportunidades.length > 0 && filtro !== 'encerrado' && (
+            {(oportunidades.length > 0 || foraDoRamo.length > 0) && filtro !== 'encerrado' && (
               <div className="mt-6 border-t border-slate-100 pt-5">
                 <div className="mb-1 flex items-center gap-2">
                   <CalendarClock size={14} className="text-amber-600" />
@@ -1430,8 +1522,8 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                   {[30, 60, 90, null].map((p) => {
                     const ativo = prazoMax === p;
                     const n = p === null
-                      ? oportunidades.length
-                      : oportunidades.filter((o) => o.dias !== null && o.dias <= p).length;
+                      ? baseDisputas.length
+                      : baseDisputas.filter((o) => o.dias !== null && o.dias <= p).length;
                     return (
                       <button key={String(p)} type="button"
                         onClick={() => setPrazoMax(ativo ? null : p)}
@@ -1461,12 +1553,21 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                                           : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
                     }`}>
                     só disputas prováveis
+                    {/* ⚠️ O CONTADOR FALTAVA, E SÓ NESTE CHIP. Os de prazo
+                        mostram quantos restam; este não mostrava nada. Como
+                        `prorrogavel` virou tri-estado (e é `null` sempre que o
+                        PNCP não mandou o valor inicial), o filtro pode
+                        legitimamente esconder ZERO — e sem número, "não mudou
+                        nada" é indistinguível de "botão quebrado". */}
+                    <span className={ocultarProrrogaveis ? 'ml-1 text-white/70' : 'ml-1 opacity-50'}>
+                      {baseDisputas.filter((o) => o.prorrogavel !== true).length}
+                    </span>
                   </button>
 
                   {/* ⚠️ O CONTADOR É OBRIGATÓRIO AQUI. Escondendo por padrão, é
                       este número que impede o painel de mentir por omissão —
                       sem ele, "8 disputas" pareceria tudo o que existe. */}
-                  {foraDoRamo > 0 && (
+                  {foraDoRamo.length > 0 && (
                     <button type="button"
                       onClick={() => setVerForaDoRamo((v) => !v)}
                       aria-pressed={verForaDoRamo}
@@ -1475,7 +1576,9 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                         verForaDoRamo ? 'border-slate-900 bg-slate-900 text-white'
                                       : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
                       }`}>
-                      {verForaDoRamo ? 'ocultar fora do seu ramo' : `+${foraDoRamo} fora do seu ramo`}
+                      {verForaDoRamo
+                        ? '← voltar às suas disputas'
+                        : `ver ${foraDoRamo.length} fora do seu ramo`}
                     </button>
                   )}
 
@@ -1494,9 +1597,9 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                   )}
 
                   <span className="ml-auto text-[10px] font-bold text-slate-500">
-                    {disputasVisiveis.length === oportunidades.length
-                      ? `${oportunidades.length} disputas`
-                      : `${disputasVisiveis.length} de ${oportunidades.length}`}
+                    {disputasVisiveis.length === baseDisputas.length
+                      ? `${baseDisputas.length} ${verForaDoRamo ? 'fora do ramo' : 'disputas'}`
+                      : `${disputasVisiveis.length} de ${baseDisputas.length}`}
                     {valorEmDisputa > 0 && (
                       <> · <strong className="font-black text-slate-700">{brl(valorEmDisputa)}</strong> em jogo</>
                     )}
@@ -1557,6 +1660,34 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                               do seu ramo
                             </span>
                           )}
+                          {/* ⚠️ PORTE É HABILITAÇÃO, NÃO CHANCE DE VITÓRIA.
+                              A Lei 14.133 permite exigir atestado cobrindo até
+                              50% do quantitativo. Uma disputa de R$ 16,6 mi para
+                              quem nunca passou de R$ 2,1 mi não é "chance baixa":
+                              é inabilitação provável — e descobrir isso depois de
+                              montar proposta é o custo que este selo evita.
+                              O texto diz o FATO (quantas vezes o seu maior) e a
+                              CONSEQUÊNCIA (o atestado alcança ou não). Um "85% de
+                              chance" ali seria número inventado: o histórico
+                              ganhou/perdeu tem zero registro. */}
+                          {o.porte && (
+                            o.porte.dentro ? (
+                              <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700"
+                                    title={`Seu maior contrato: ${brl(o.porte.maior_seu)}. Este cabe dentro dele.`}>
+                                do seu porte
+                              </span>
+                            ) : o.porte.atestado_alcanca ? (
+                              <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-800"
+                                    title={`${o.porte.razao}× o seu maior contrato (${brl(o.porte.maior_seu)}), mas um atestado de 50% do quantitativo ainda é alcançável.`}>
+                                {o.porte.razao}× o seu maior
+                              </span>
+                            ) : (
+                              <span className="rounded-md border border-red-200 bg-red-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-red-700"
+                                    title={`${o.porte.razao}× o seu maior contrato (${brl(o.porte.maior_seu)}). Se o edital exigir atestado de 50%, você não alcança com um contrato só.`}>
+                                {o.porte.razao}× — atestado pode não alcançar
+                              </span>
+                            )
+                          )}
                         </div>
                         <p className="line-clamp-2 text-[13px] font-bold leading-snug text-slate-800">
                           {o.objeto || 'Objeto não informado'}
@@ -1574,6 +1705,40 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                             </strong>
                           </span>
                         </p>
+
+                        {/* ── Quanto do contrato do concorrente já correu ────
+                            ⚠️ "VENCE EM 13 DIAS" NÃO DIZ O TAMANHO DA JANELA.
+                            Treze dias no fim de um contrato de cinco anos é uma
+                            disputa madura, provavelmente já planejada pelo
+                            órgão. Treze dias no fim de um contrato de seis meses
+                            costuma ser contratação emergencial — que tende a
+                            voltar emergencial, com prazo curto e pouca chance
+                            para quem não está lá dentro. Mesmo número de dias,
+                            decisões opostas.
+
+                            A barra mostra a vigência consumida e a duração
+                            total ao lado. Some quando o PNCP não informou o
+                            início: barra sem origem seria desenho, não dado. */}
+                        {(() => {
+                          const p = progressoVigencia(o.data_vigencia_ini, o.data_vigencia_fim);
+                          const dur = duracao(o.data_vigencia_ini, o.data_vigencia_fim);
+                          if (p === null) return null;
+                          return (
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    p >= 0.9 ? 'bg-red-500' : p >= 0.75 ? 'bg-amber-500' : 'bg-emerald-500'
+                                  }`}
+                                  style={{ width: `${Math.round(p * 100)}%` }}
+                                />
+                              </div>
+                              <span className="shrink-0 text-[10px] font-bold text-slate-400">
+                                {Math.round(p * 100)}% de {dur || 'vigência'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-sm font-black leading-none text-slate-900">{brl(o.valor)}</p>
@@ -1607,9 +1772,23 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                     "varredura completa" que esta tela já teve. */}
                 {oportunidades[0]?._truncado && (
                   <p className="mt-2 text-[10px] font-bold text-amber-700">
-                    Mostrando as {oportunidades.length} de maior valor, de{' '}
+                    Mostrando as {oportunidades.length} mais relevantes, de{' '}
                     {oportunidades[0]._total} encontradas. Use os filtros acima para
                     recortar.
+                  </p>
+                )}
+                {/* ⚠️ O QUE O FILTRO DE RAMO DESCARTOU ANTES DO CORTE.
+                    Isto era um botão dizendo "+202 fora do seu ramo" que não
+                    revelava nada: os 202 nunca chegaram ao navegador, porque a
+                    ordenação os põe no fim e o corte em 80 come justamente o
+                    fim. Como texto, o número informa sem prometer um clique
+                    que não funciona — e continua dizendo o que interessa, que
+                    é o tamanho do trabalho que o filtro está fazendo. */}
+                {foraTotal > 0 && (
+                  <p className="mt-1 text-[10px] font-medium text-slate-400">
+                    {verForaDoRamo
+                      ? `Amostra dos ${foraDoRamo.length} de maior valor entre ${foraTotal} descartados por não parecerem do seu ramo. Se algum destes for seu, a classificação errou.`
+                      : `${foraTotal} contrato(s) ficaram de fora por não parecerem do seu ramo — os ${foraDoRamo.length} mais caros estão a um clique, para conferência.`}
                   </p>
                 )}
                 <p className="mt-2.5 text-[10px] font-medium leading-relaxed text-slate-400">

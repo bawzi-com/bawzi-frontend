@@ -34,10 +34,11 @@ import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
   ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown, UserCog, FolderOpen,
+  PanelLeftClose,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
-import NotificationPanel from './NotificationPanel';
+import NotificationPanel, { type AlvoNotificacao } from './NotificationPanel';
 import { getCompanyDisplayName } from '@/lib/activeContext';
 import type { UserData } from '@/lib/types';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
@@ -48,9 +49,18 @@ interface AppSidebarProps {
   currentTier: number;
   activeTab: string;
   onSetActiveTab: (tab: string) => void;
+  /** ⚠️ CANAL SEPARADO DO `onSetActiveTab`, de propósito.
+   *  O sino precisa dizer "abra a Gestão NESTE edital", e `onSetActiveTab` só
+   *  carrega o nome da aba. Alargar a assinatura dele contaminaria os doze
+   *  cliques de menu que não têm alvo nenhum. Sem esta prop, o sino continua
+   *  funcionando pelo caminho antigo — só trocando de aba. */
+  onNotificacaoAberta?: (tab: string, alvo?: AlvoNotificacao) => void;
   renovacoesCount: number | null;
   onNotifCountChange: (n: number) => void;
   onShowAuthModal: (mode: 'login' | 'register') => void;
+  /** Oculta a coluna lateral. Só o OCULTAR mora aqui — reabrir tem de existir
+   *  fora do menu, senão o controle desaparece junto com ele. */
+  onOcultarMenu?: () => void;
 }
 
 // ─── Componentes internos ──────────────────────────────────────────────────────
@@ -170,6 +180,22 @@ function NavRow({
   );
 }
 
+/** Rótulo de grupo da nav.
+ *
+ *  ⚠️ EXISTE PARA TORNAR A ORDEM VISÍVEL, não para decorar. Dez linhas sem
+ *  divisão viram uma lista onde tudo pesa igual e a ordem parece arbitrária —
+ *  que é como estava: "Parametrização", uma tela de configuração, era o
+ *  TERCEIRO item, à frente de Gestão e de tudo que se usa todo dia. Com os
+ *  grupos, a ordem passa a afirmar o ciclo do produto (encontrar → decidir e
+ *  executar → ajustar) em vez de só existir. */
+function GrupoNav({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-3.5 pb-1 pt-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
+      {children}
+    </p>
+  );
+}
+
 /**
  * Linha compacta para item de nav ainda bloqueado por nível.
  * Agrupados à parte (fora da nav ativa) para não competir visualmente
@@ -198,9 +224,11 @@ export default function AppSidebar({
   currentTier,
   activeTab,
   onSetActiveTab,
+  onNotificacaoAberta,
   renovacoesCount,
   onNotifCountChange,
   onShowAuthModal,
+  onOcultarMenu,
 }: AppSidebarProps) {
   const router = useRouter();
 
@@ -242,15 +270,61 @@ export default function AppSidebar({
                   {(userData.name || userData.nome || '').split(' ')[0]}
                 </span>
               </div>
-              <NotificationPanel
-                token={token ?? ''}
-                onNavigate={(tab) => onSetActiveTab(tab)}
-                onCountChange={onNotifCountChange}
-              />
+              <div className="flex items-center gap-0.5">
+                <NotificationPanel
+                  token={token ?? ''}
+                  onNavigate={(tab, alvo) => {
+                    if (alvo && onNotificacaoAberta) onNotificacaoAberta(tab, alvo);
+                    else onSetActiveTab(tab);
+                  }}
+                  onCountChange={onNotifCountChange}
+                />
+                {/* ⚠️ SÓ O "OCULTAR" MORA AQUI — E ISSO É DELIBERADO.
+                    Esconder o menu é uma ação SOBRE o menu, então o lugar dela
+                    é dentro dele: some o botão flutuante que ficava por cima do
+                    conteúdo em todas as telas.
+                    Mas o par simétrico não pode morar junto: escondido o menu,
+                    o botão de reabrir iria junto e não haveria volta. Quem
+                    reabre é a aba na borda direita, renderizada pela casca
+                    (`analysis-app.tsx`) justamente por sobreviver ao
+                    fechamento. Dois lugares porque são dois contextos. */}
+                {onOcultarMenu && (
+                  <button
+                    type="button"
+                    onClick={onOcultarMenu}
+                    title="Ocultar o menu e usar os 288px na tela"
+                    aria-label="Ocultar menu"
+                    className="hidden rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 lg:inline-flex"
+                  >
+                    <PanelLeftClose size={15} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="h-px bg-slate-100 mx-3 mb-0.5" />
           </>
         )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            A ORDEM SEGUE O CICLO DO PRODUTO, e antes não seguia nenhum.
+
+            Estava assim: Analisar, Decisões, Parametrização, Gestão, Meus
+            contratos, Sugestões, Alertas, Vencendo no mercado. Três defeitos
+            concretos nisso:
+
+              • "Parametrização" era o 3º item. É tela de configuração — mexe-se
+                uma vez e quase nunca mais — ocupando o lugar de honra à frente
+                de Gestão, que se usa todo dia.
+              • As duas telas de prospecção ("Sugestões" e a de contratos do
+                setor a vencer) estavam separadas por Alertas e Capital, apesar
+                de responderem à mesma pergunta: onde está o próximo edital.
+              • "Alertas" parece acompanhamento e não é: é onde se ESCOLHE quais
+                avisos receber. Os avisos em si chegam pelo sino. Configuração,
+                portanto — o lugar dela é junto de Parametrização.
+
+            Agora: encontrar → decidir e executar → ajustar.
+            ═══════════════════════════════════════════════════════════════ */}
+        <GrupoNav>Encontrar</GrupoNav>
 
         <NavRow
           Icon={Zap} rotulo="Analisar" descricao="Buscar no PNCP ou enviar o seu"
@@ -258,44 +332,72 @@ export default function AppSidebar({
           onClick={() => onSetActiveTab('workspace')}
         />
 
+        {/* Sem nível: PNCP é API pública e a rota tem cache. Continua exigindo
+            `userData` porque o fit depende do CNAE da empresa. */}
+        {token && userData && (
+          <NavRow
+            Icon={Target} rotulo="Sugestões" descricao="O que combina com seu CNAE"
+            ativo={activeTab === 'cnae'} acento="teal"
+            onClick={() => onSetActiveTab('cnae')}
+          />
+        )}
+
+        {/* ── Disputas que vão abrir ──────────────────────────────────────
+            ⚠️ CHAMAVA-SE "VENCENDO NO MERCADO", e o nome dizia o contrário do
+            que a tela faz. Em português "vencer" é ganhar E expirar, e a frase
+            inteira só tem uma leitura idiomática: sucesso, resultado
+            alcançado. Só que aqui não há nada ganho — são contratos de OUTROS
+            fornecedores chegando ao fim, ou seja, disputas que ainda vão
+            existir. O menu prometia troféu e entregava lista de prospecção.
+
+            "Próximas disputas" fala de oportunidade, que é o que a tela é: o
+            contrato do concorrente acabando é a disputa que vem. O catálogo de
+            alertas chama o mesmo conceito de "Disputas que vão abrir"
+            (`catalogo_alertas.py`) — a frase inteira não cabe aqui em uma
+            linha quando o selo de contagem aparece ao lado, e linha de menu
+            que quebra em duas some com o alinhamento da coluna. Mesmo
+            substantivo, comprimento diferente conforme o espaço.
+
+            ⚠️ NÃO CONFUNDIR COM "MEUS CONTRATOS", logo abaixo: aquele filtra
+            pelo CNPJ da empresa como FORNECEDORA — é a carteira. Este busca
+            por termo de segmento e devolve contrato de qualquer fornecedor.
+
+            Sem nível: `contratos_vencendo.py` não chama modelo nenhum. A
+            exigência real é ter empresa cadastrada — e é ela que decide entre
+            as duas formas abaixo. */}
+        {token && userData && (
+          empresas.length > 0 ? (
+            <NavRow
+              Icon={RefreshCw} rotulo="Próximas disputas"
+              descricao={renovacoesCount && renovacoesCount > 0
+                ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} do setor a vencer`
+                : 'Contratos do setor a vencer'}
+              ativo={activeTab === 'renovacoes'} acento="amber"
+              onClick={() => onSetActiveTab('renovacoes')}
+              selo={renovacoesCount && renovacoesCount > 0
+                ? <SeloContagem count={renovacoesCount} />
+                : undefined}
+            />
+          ) : (
+            /* Sem empresa: a linha vira um convite. O selo "CONFIG." saiu — a
+               descrição já É a instrução, e repeti-la em caixa alta no canto
+               não acrescenta nada que a frase não diga melhor. */
+            <NavRow
+              Icon={RefreshCw} rotulo="Próximas disputas" descricao="Configure a empresa primeiro"
+              ativo={false} acento="amber"
+              onClick={() => router.push('/profile')}
+            />
+          )
+        )}
+
+        {token && <GrupoNav>Decidir e executar</GrupoNav>}
+
         {/* Sem nível: roda sobre análises que o cliente já pagou. */}
         {token && (
           <NavRow
             Icon={BookOpen} rotulo="Decisões" descricao="Laudos e resultados salvos"
             ativo={activeTab === 'history'} acento="sky"
             onClick={() => onSetActiveTab('history')}
-          />
-        )}
-
-        {token && (
-          <NavRow
-            Icon={SlidersHorizontal} rotulo="Parametrização" descricao="Critérios de avaliação por IA"
-            ativo={activeTab === 'parametrizacao'} acento="indigo"
-            onClick={() => onSetActiveTab('parametrizacao')}
-          />
-        )}
-
-        {/* Sem nível. Estava exigindo 4 aqui e 2 na aba — o usuário do
-            Essencial tinha a funcionalidade e não tinha como chegar nela. */}
-        {token && (
-          <NavRow
-            Icon={ClipboardList} rotulo="Gestão" descricao="Fluxo dos editais"
-            ativo={activeTab === 'gestao'} acento="slate"
-            onClick={() => router.push('/gestao')}
-          />
-        )}
-
-        {/* ── Meus contratos ──────────────────────────────────────────────
-            ⚠️ NÃO É O MESMO QUE "VENCENDO NO MERCADO". Aquele busca por termo
-            de segmento e devolve contratos de QUALQUER fornecedor — prospecção.
-            Este filtra pelo CNPJ da empresa como FORNECEDORA: é a carteira. Os
-            dois falavam de "contrato" e o antigo se chamava "Renovações", o que
-            fazia a linha de prospecção parecer a carteira própria. */}
-        {token && userData && (
-          <NavRow
-            Icon={FolderOpen} rotulo="Meus contratos" descricao="Carteira da sua empresa"
-            ativo={activeTab === 'meus-contratos'} acento="emerald"
-            onClick={() => onSetActiveTab('meus-contratos')}
           />
         )}
 
@@ -311,26 +413,40 @@ export default function AppSidebar({
           />
         )}
 
-        {/* Sem nível: PNCP é API pública e a rota tem cache. Continua exigindo
-            `userData` porque o fit depende do CNAE da empresa. */}
+        {/* Sem nível. Estava exigindo 4 aqui e 2 na aba — o usuário do
+            Essencial tinha a funcionalidade e não tinha como chegar nela.
+
+            ⚠️ TROCA DE ABA, NÃO NAVEGA PARA OUTRA ROTA.
+            Este era o ÚNICO item do menu com `router.push` em vez de
+            `onSetActiveTab`, e `/gestao` é uma página avulsa que não renderiza
+            a `AppSidebar`. Clicar em "Gestão" fazia o menu inteiro desaparecer,
+            sem caminho de volta que não fosse o botão do navegador — e some
+            junto a marcação de aba ativa, que é a referência de onde a pessoa
+            está.
+
+            A aba interna já existe (`activeTab === 'gestao'` em
+            `analysis-app.tsx`) e a casca oferece o botão "Expandir", que libera
+            os 288px desta coluna em QUALQUER aba. Espaço vira escolha
+            reversível, em vez de efeito colateral da navegação. */}
+        {token && (
+          <NavRow
+            Icon={ClipboardList} rotulo="Gestão" descricao="Fluxo dos editais"
+            ativo={activeTab === 'gestao'} acento="slate"
+            onClick={() => onSetActiveTab('gestao')}
+          />
+        )}
+
         {token && userData && (
           <NavRow
-            Icon={Target} rotulo="Sugestões" descricao="O que combina com seu CNAE"
-            ativo={activeTab === 'cnae'} acento="teal"
-            onClick={() => onSetActiveTab('cnae')}
+            Icon={FolderOpen} rotulo="Meus contratos" descricao="Carteira da sua empresa"
+            ativo={activeTab === 'meus-contratos'} acento="emerald"
+            onClick={() => onSetActiveTab('meus-contratos')}
           />
         )}
 
-        {token && currentTier >= 3 && (
-          <NavRow
-            Icon={Bell} rotulo="Alertas" descricao="Avisos sobre o que você segue"
-            ativo={activeTab === 'alertas'} acento="amber"
-            onClick={() => onSetActiveTab('alertas')}
-            selo={seloNovo('alertas')}
-          />
-        )}
-
-        {/* Atrás de flag no lançamento: integração bancária é aposta pós-PMF. */}
+        {/* Atrás de flag no lançamento: integração bancária é aposta pós-PMF.
+            Fica na execução, não na descoberta: é fôlego para entregar o que
+            já foi ganho. */}
         {LAUNCH_FLAGS.capital && token && currentTier >= 3 && (
           <NavRow
             Icon={DollarSign} rotulo="Capital" descricao="Fôlego para executar"
@@ -340,32 +456,28 @@ export default function AppSidebar({
           />
         )}
 
-        {/* Sem nível: `contratos_vencendo.py` não chama modelo nenhum. A
-            exigência real é ter empresa cadastrada — e é ela que decide entre
-            as duas formas abaixo. */}
-        {token && userData && (
-          empresas.length > 0 ? (
-            <NavRow
-              Icon={RefreshCw} rotulo="Vencendo no mercado"
-              descricao={renovacoesCount && renovacoesCount > 0
-                ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} do setor a vencer`
-                : 'Contratos do setor a vencer'}
-              ativo={activeTab === 'renovacoes'} acento="amber"
-              onClick={() => onSetActiveTab('renovacoes')}
-              selo={renovacoesCount && renovacoesCount > 0
-                ? <SeloContagem count={renovacoesCount} />
-                : undefined}
-            />
-          ) : (
-            /* Sem empresa: a linha vira um convite. O selo "CONFIG." saiu — a
-               descrição já É a instrução, e repeti-la em caixa alta no canto
-               não acrescenta nada que a frase não diga melhor. */
-            <NavRow
-              Icon={RefreshCw} rotulo="Vencendo no mercado" descricao="Configure a empresa primeiro"
-              ativo={false} acento="amber"
-              onClick={() => router.push('/profile')}
-            />
-          )
+        {token && <GrupoNav>Ajustes</GrupoNav>}
+
+        {/* ⚠️ ALERTAS É CONFIGURAÇÃO, não caixa de entrada. A tela lista os dez
+            tipos de aviso e deixa ligar/desligar cada um; os avisos em si
+            chegam pelo sino, no topo desta mesma coluna. Enquanto ficava no
+            meio da nav, entre Sugestões e Capital, prometia ser o lugar de LER
+            alertas. */}
+        {token && currentTier >= 3 && (
+          <NavRow
+            Icon={Bell} rotulo="Alertas" descricao="Escolha quais avisos receber"
+            ativo={activeTab === 'alertas'} acento="amber"
+            onClick={() => onSetActiveTab('alertas')}
+            selo={seloNovo('alertas')}
+          />
+        )}
+
+        {token && (
+          <NavRow
+            Icon={SlidersHorizontal} rotulo="Parametrização" descricao="Critérios de avaliação por IA"
+            ativo={activeTab === 'parametrizacao'} acento="indigo"
+            onClick={() => onSetActiveTab('parametrizacao')}
+          />
         )}
       </div>
 

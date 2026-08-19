@@ -181,7 +181,18 @@ export default function CnaePriceTrendChart({
     ? (((ultimoPonto?.mediana ?? 0) - primeiroPonto.mediana) / primeiroPonto.mediana) * 100
     : 0;
   const totalContratos = serie.reduce((acc, p) => acc + p.contratos, 0);
-  const mediaGeral = serie.reduce((acc, p) => acc + p.mediana, 0) / serie.length;
+  // ⚠️ ISTO É A MÉDIA DAS MEDIANAS — E SE CHAMAVA SÓ "Média" NO GRÁFICO.
+  // Havia DUAS coisas com esse nome ao mesmo tempo: esta linha de referência
+  // (média dos pontos medianos) e a série `dataKey="media"`, que é a média
+  // mensal de verdade. Duas estatísticas diferentes, o mesmo rótulo, no mesmo
+  // desenho — quem lê não tem como saber a qual delas o número se refere.
+  const medianaMediaPeriodo = serie.reduce((acc, p) => acc + p.mediana, 0) / serie.length;
+  // O quanto a média mensal se afasta da mediana. Divergência grande não é
+  // erro: é a assinatura de um segmento com poucos contratos enormes puxando o
+  // topo. Mas precisa estar escrito, senão o eixo indo a R$ 2 milhões sobre uma
+  // mediana de R$ 10 mil parece defeito de cálculo.
+  const mediaMensalPeriodo = serie.reduce((acc, p) => acc + (p.media || 0), 0) / serie.length;
+  const distorcao = medianaMediaPeriodo > 0 ? mediaMensalPeriodo / medianaMediaPeriodo : 0;
 
   const TendenciaIcon =
     tendencia === 'alta' ? TrendingUp : tendencia === 'baixa' ? TrendingDown : Minus;
@@ -236,7 +247,13 @@ export default function CnaePriceTrendChart({
           <p className="text-base font-bold text-white">{formatarBRL(ultimoPonto?.mediana ?? 0)}</p>
         </div>
         <div className="bg-gray-800/60 rounded-lg p-3">
-          <p className="text-xs text-gray-500 mb-0.5">Variação no período</p>
+          {/* ⚠️ DIZ SOBRE O QUÊ. O painel tem mediana e média lado a lado, e
+              este percentual não declarava qual dos dois seguia — a leitura
+              natural era "variação do ticket", ambígua justamente onde os dois
+              números divergem por ordens de grandeza. É sobre a MEDIANA
+              (`variacaoPct` usa `p.mediana`), que é a referência de quem
+              precifica. */}
+          <p className="text-xs text-gray-500 mb-0.5">Variação da mediana</p>
           <p className={`text-base font-bold flex items-center gap-1 ${corTendencia}`}>
             <TendenciaIcon className="w-4 h-4" />
             {variacaoPct >= 0 ? '+' : ''}{variacaoPct.toFixed(1)}%
@@ -278,12 +295,13 @@ export default function CnaePriceTrendChart({
               width={62}
             />
             <Tooltip content={<TooltipCustom />} />
-            {/* linha de referência = média geral do período */}
+            {/* Referência = média das MEDIANAS do período. O rótulo diz isso
+                agora: antes era "Média", igual ao nome da outra série. */}
             <ReferenceLine
-              y={mediaGeral}
+              y={medianaMediaPeriodo}
               stroke="#374151"
               strokeDasharray="4 4"
-              label={{ value: 'Média', fill: '#4b5563', fontSize: 9, position: 'insideTopRight' }}
+              label={{ value: 'mediana média 12m', fill: '#4b5563', fontSize: 9, position: 'insideTopRight' }}
             />
             <Area
               type="monotone"
@@ -293,7 +311,7 @@ export default function CnaePriceTrendChart({
               strokeDasharray="4 4"
               fill="url(#gradMedia)"
               dot={false}
-              name="Média"
+              name="Média mensal"
             />
             <Area
               type="monotone"
@@ -309,6 +327,20 @@ export default function CnaePriceTrendChart({
         </ResponsiveContainer>
       </div>
 
+      {/* ⚠️ A DISTÂNCIA ENTRE MEDIANA E MÉDIA PRECISA SER DITA, NÃO DEDUZIDA.
+          Com mediana de R$ 10 mil e eixo chegando a R$ 2 milhões, quem lê
+          conclui que a conta está errada. Não está: a média é puxada por poucos
+          contratos muito grandes, e a distância entre as duas é justamente a
+          informação — mede o quanto o segmento mistura portes. Só que ela
+          estava implícita no desenho, e informação implícita num gráfico vira
+          suspeita de bug. */}
+      {distorcao >= 3 && (
+        <p className="mb-1.5 text-xs text-amber-300/90">
+          A média mensal é <strong>{distorcao.toFixed(0)}×</strong> a mediana: poucos
+          contratos muito grandes puxam o topo. Para precificar, use a mediana — a
+          linha verde. A média mostra que o segmento mistura portes bem diferentes.
+        </p>
+      )}
       <p className="text-xs text-gray-600">
         Fonte: PNCP · contratos com <code>data_assinatura</code> nos últimos {janelaAtiva} meses.
         Outliers extremos (5% sup/inf) removidos.

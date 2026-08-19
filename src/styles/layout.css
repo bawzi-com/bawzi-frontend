@@ -271,3 +271,86 @@
   border-radius: calc(var(--radius-lg) - 10px);
   border: 2px dashed var(--color-border);
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODO EXPANDIDO — quando o menu lateral está oculto
+   ═══════════════════════════════════════════════════════════════════════════
+   ⚠️ DAR MAIS LARGURA NÃO É A MESMA COISA QUE USAR MAIS LARGURA.
+   O botão "Expandir" passou a existir em todas as abas, e aí ficou visível uma
+   coisa que só o quadro da Gestão tinha resolvido: tela desenhada para uma
+   coluna de ~900px não melhora ao virar 1400px — ela só estica. Parágrafo de
+   objeto de edital com 180 caracteres por linha é mais difícil de ler que o
+   mesmo texto em 90; e uma lista de cards em coluna única, com o dobro da
+   largura, mostra a MESMA quantidade de informação por rolagem.
+
+   São dois problemas opostos e cada um pede o contrário do outro:
+     · conteúdo de LEITURA quer teto de medida — texto não fica melhor largo;
+     · conteúdo de GRADE quer aproveitar tudo — mais colunas, não colunas mais
+       largas.
+
+   Por isso nada aqui é global: cada tela declara a que grupo pertence. O
+   `.expandido` só é aposto pela casca (`analysis-app.tsx`), então quem não
+   declarar nada continua exatamente como estava.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ AQUI EXISTIA `.expandido .medida-leitura`, COM TETO DE 78ch.
+   Removida: era uma regra de texto corrido aplicada a formulário. A área de
+   submissão ficava encaixotada entre um Radar PNCP e um painel de resultados
+   que ocupam a largura toda — o resultado não lia como "medida confortável",
+   lia como bloco que não redimensionou. Nesta aplicação, expandir significa
+   usar a largura; telas que precisarem de contenção devem resolvê-la por
+   dentro, e não por uma regra global de medida.
+
+/* Grade: DUAS colunas quando o menu está oculto e há espaço para isso.
+
+   ⚠️ A CONDIÇÃO É O ESTADO, NÃO SÓ A LARGURA — e eu errei isso na primeira
+   versão. A regra dependia apenas de `@container (min-width: 1100px)`, sem o
+   `.expandido`. Medido num Chromium com janela de 1500px: a coluna COM o menu
+   aberto tem 1120px, ou seja, já passava do limiar, e a lista virava duas
+   colunas sem ninguém ter clicado em Expandir.
+
+   E não existe limiar que resolva sozinho: numa tela de 1920 a coluna com menu
+   (~1560px) é MAIS larga que a coluna sem menu numa tela de 1440 (~1400px). Os
+   dois casos se sobrepõem em largura; o que os separa é o estado.
+
+   O `@container` continua, mas como piso: evita espremer duas colunas quando
+   alguém expande numa janela estreita. */
+.coluna-conteudo {
+  container-type: inline-size;
+  container-name: conteudo;
+}
+
+@container conteudo (min-width: 900px) {
+  .expandido .grade-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    align-items: start;
+  }
+  /* ⚠️ `space-y-*` DO TAILWIND BRIGA COM GRID. Ele aplica `margin-top` a todo
+     irmão a partir do segundo; num grid isso empurra a segunda coluna para
+     baixo e a lista sai escalonada, com um degrau a cada linha. O gap do grid
+     já cuida do espaçamento — a margem tem de sair. */
+  .expandido .grade-cards > * + * {
+    margin-top: 0;
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   PAINEL DE ESPERA — duas colunas por largura de COLUNA, não de janela
+
+   ⚠️ O `lg:` do Tailwind é media query: mede a janela e ignora que o menu de
+   288px já levou um pedaço dela. A 1024px de janela com o menu aberto sobram
+   ~690px de coluna; o `lg:grid-cols-[1fr_300px]` abria as duas mesmo assim e
+   o lado esquerdo ficava com ~278px — menos que o anel de 128px mais o título
+   ao lado dele. Aqui quem decide é a coluna, que já é um container declarado
+   acima. Abaixo do piso o painel empilha: fila embaixo do foco, que é o que
+   ele faz no celular e funciona bem.
+   ──────────────────────────────────────────────────────────────────────────── */
+@container conteudo (min-width: 880px) {
+  .espera-2col {
+    /* 320px e não 300px: a 300 o nome mais longo da fila ("Mercado &
+       Financeiro") truncava justamente quando estava ativo — que é a linha
+       que mais importa ler — porque dividia a largura com o "EM CURSO". */
+    grid-template-columns: 1fr 320px;
+  }
+}

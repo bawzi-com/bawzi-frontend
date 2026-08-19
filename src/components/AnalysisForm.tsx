@@ -727,7 +727,17 @@ export default function AnalysisForm({
             <ResumoCreditos
               quota={quota}
               onComprarPacote={onComprarPacote}
-              className="w-full shrink-0 shadow-sm md:w-auto md:max-w-[32rem]"
+              /* ⚠️ ERA `shrink-0 md:w-auto md:max-w-[32rem]` — NEM CRESCIA NEM
+                 ENCOLHIA. `w-auto` faz o bloco ter a largura do conteúdo e o
+                 teto de 32rem só limitava; então, por mais larga que ficasse a
+                 tela, ele mantinha o mesmo tamanho e os quatro números
+                 continuavam quebrando em duas linhas enquanto sobrava espaço
+                 vazio ao lado. `flex-1` faz ele acompanhar o cabeçalho; o teto
+                 saiu: com teto de 46rem ele parava em 736px e ficava parado
+                 enquanto a coluna ia a 1900px — o mesmo sintoma, só que mais
+                 tarde. Medido em 1280/1600/1920: sem teto ele acompanha
+                 (947 → 1267 → 1587px). */
+              className="w-full shadow-sm md:flex-1"
               acessorio={quota.unidade === 'creditos'
                 ? <Tooltip rotulo="como os créditos são cobrados"><ReguaDeCobranca quota={quota} /></Tooltip>
                 : undefined}
