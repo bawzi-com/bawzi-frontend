@@ -9,6 +9,14 @@
  *   · inativo — NEUTRO. Cinza. Sem cor.
  *   · travado — linha compacta com cadeado, agrupada fora da nav.
  *
+ * ⚠️ E UMA EXCEÇÃO, UMA SÓ: o botão "Analisar", acima da lista. Ele é verde o
+ * tempo todo, o que a regra abaixo proibiria — mas ele não é uma linha de
+ * navegação: é a AÇÃO pela qual o produto existe, com altura, seta e sombra
+ * próprias, separada do grupo. A regra de "uma cor por vez" vale entre os
+ * DESTINOS, e continua valendo: entre as linhas, só a ativa tem cor. Por isso
+ * "Meus contratos" deixou de ser `emerald` — ativá-la acenderia um segundo
+ * bloco verde e a pergunta "onde estou?" voltaria a ter duas respostas.
+ *
  * ═══════════════════════════════════════════════════════════════════════════
  * ⚠️ POR QUE O ESTADO INATIVO PERDEU A COR
  * ═══════════════════════════════════════════════════════════════════════════
@@ -34,7 +42,7 @@ import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
   ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown, UserCog, FolderOpen,
-  PanelLeftClose,
+  PanelLeftClose, ArrowRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
@@ -324,13 +332,47 @@ export default function AppSidebar({
 
             Agora: encontrar → decidir e executar → ajustar.
             ═══════════════════════════════════════════════════════════════ */}
-        <GrupoNav>Encontrar</GrupoNav>
+        {/* ══ AÇÃO PRINCIPAL — fora da lista, e de propósito ══════════════
+            Analisar não é um lugar entre outros: é o verbo pelo qual o produto
+            existe. Como linha de nav ela pesava igual a "Parametrização", e o
+            único jeito de destacá-la DENTRO da lista seria deixá-la colorida o
+            tempo todo — que é exatamente a regra que o cabeçalho deste arquivo
+            derruba: com sete matizes acesos, o estado ativo deixa de se
+            distinguir de um fundo que já é colorido.
 
-        <NavRow
-          Icon={Zap} rotulo="Analisar" descricao="Buscar no PNCP ou enviar o seu"
-          ativo={isAnalise} acento="emerald"
+            A saída é não competir na mesma língua. Isto é um BOTÃO DE AÇÃO
+            acima da lista, com altura, preenchimento e seta próprios; as
+            linhas abaixo continuam neutras e o ativo continua sendo a única
+            cor entre elas. Duas espécies, dois papéis — como o sino, que
+            também é sólido e ninguém confunde com navegação.
+
+            ⚠️ MAS AINDA É UMA ABA, e por isso o ponto branco aparece quando ela
+            está aberta: sem ele, a única linha que nunca mostraria "você está
+            aqui" seria justamente a mais usada. */}
+        <button
           onClick={() => onSetActiveTab('workspace')}
-        />
+          aria-current={isAnalise ? 'page' : undefined}
+          className={`mb-1.5 flex w-full items-center gap-3 rounded-xl bg-emerald-600 px-3.5 py-3 text-left shadow-sm shadow-emerald-600/25 transition-all hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30 active:scale-[0.99] ${
+            isAnalise ? 'ring-2 ring-emerald-600/25 ring-offset-2 ring-offset-white' : ''
+          }`}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20">
+            <Zap size={17} strokeWidth={2.4} className="text-white" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13px] font-black leading-none text-white">
+              Analisar
+            </span>
+            <span className="mt-1 block truncate text-[10px] font-medium leading-none text-white/70">
+              Buscar no PNCP ou enviar o seu
+            </span>
+          </span>
+          {isAnalise
+            ? <ActiveDot />
+            : <ArrowRight size={14} strokeWidth={2.6} className="shrink-0 text-white/70" />}
+        </button>
+
+        <GrupoNav>Encontrar</GrupoNav>
 
         {/* Sem nível: PNCP é API pública e a rota tem cache. Continua exigindo
             `userData` porque o fit depende do CNAE da empresa. */}
@@ -439,7 +481,11 @@ export default function AppSidebar({
         {token && userData && (
           <NavRow
             Icon={FolderOpen} rotulo="Meus contratos" descricao="Carteira da sua empresa"
-            ativo={activeTab === 'meus-contratos'} acento="emerald"
+            /* ⚠️ ERA `emerald`, E AGORA NÃO PODE SER. Com o botão de Analisar
+               verde o tempo todo, ativar esta linha acenderia um SEGUNDO bloco
+               verde na coluna — e aí "você está aqui" volta a ser ambíguo,
+               que é o problema que o acento único existe para evitar. */
+            ativo={activeTab === 'meus-contratos'} acento="violet"
             onClick={() => onSetActiveTab('meus-contratos')}
           />
         )}
