@@ -53,8 +53,43 @@ export default function AppHero({
   currentTier,
 }: AppHeroProps) {
 
+  // ─── Enquanto a sessão está sendo verificada ───────────────────────────────
+  /* ⚠️ ESTE TERCEIRO ESTADO FALTAVA, E A FALTA DELE MOSTRAVA MARKETING A QUEM
+   *  JÁ É CLIENTE.
+   *
+   *  Só havia dois caminhos: "logado" e "anônimo". Como `isCheckingAuth` começa
+   *  em `true` e `token`/`userData` começam vazios (têm de começar — o valor
+   *  inicial precisa bater com o que o servidor renderizou, senão a hidratação
+   *  quebra), a primeira renderização caía SEMPRE no anônimo. Ou seja: quem
+   *  abria a área de trabalho já logado via a peça de marketing inteira —
+   *  "Modelos líderes em orquestração", a animação dos 4 agentes e o laudo de
+   *  exemplo, 380px — e só depois ela sumia dando lugar a "Olá, Marcelo".
+   *
+   *  E não era um piscar de um quadro: a sessão vive em cookie HttpOnly e se
+   *  restaura por `renewToken()`, que é ida e volta de rede. O anúncio ficava
+   *  na tela o tempo todo dessa requisição, em toda abertura da /workspace.
+   *
+   *  ⚠️ ISTO NÃO CUSTA NADA À LANDING. Este componente só é montado em
+   *  `/workspace` (a home de marketing é `src/app/page.tsx`, outro caminho).
+   *  Aqui, quem não tem sessão é exceção — não é o público do anúncio.
+   *
+   *  O esqueleto tem a altura da linha autenticada, que é o desfecho provável:
+   *  assim a página não pula quando a resposta chega. */
+  if (isCheckingAuth) {
+    return (
+      <div
+        className="flex w-full items-center gap-2.5"
+        aria-busy="true"
+        aria-label="Verificando sua sessão"
+      >
+        <span className="h-5 w-44 animate-pulse rounded-md bg-slate-200/70" />
+        <span className="h-4 w-20 animate-pulse rounded-full bg-slate-100" />
+      </div>
+    );
+  }
+
   // ─── Versão autenticada ────────────────────────────────────────────────────
-  if (token && userData && !isCheckingAuth) {
+  if (token && userData) {
     const displayName = userData.name || userData.nome || 'Estrategista';
     const firstName = displayName.split(' ')[0] || 'Estrategista';
     const tierLabel = currentTier >= 4

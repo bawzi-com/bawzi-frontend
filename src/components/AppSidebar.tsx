@@ -42,7 +42,7 @@ import {
   Zap, BookOpen, RefreshCw, Lock, DollarSign,
   Scale, GitCompare, TrendingDown, ShieldCheck, Cpu, ScanSearch, Target, Bell,
   ClipboardList, MessageCircle, SlidersHorizontal, ChevronDown, UserCog, FolderOpen,
-  PanelLeftClose, ArrowRight,
+  ArrowRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
@@ -66,9 +66,27 @@ interface AppSidebarProps {
   renovacoesCount: number | null;
   onNotifCountChange: (n: number) => void;
   onShowAuthModal: (mode: 'login' | 'register') => void;
-  /** Oculta a coluna lateral. Só o OCULTAR mora aqui — reabrir tem de existir
-   *  fora do menu, senão o controle desaparece junto com ele. */
-  onOcultarMenu?: () => void;
+  /* ⚠️ `onOcultarMenu`/`onExpandirMenu` SAÍRAM DAQUI.
+     O controle morava dentro do cartão e, por isso, precisava existir duas
+     vezes — um "recolher" ao lado do sino e um "abrir" no topo do trilho,
+     porque nenhum dos dois cabia nos dois estados. Agora ele é UM só, na calha
+     entre a barra e a borda da tela, desenhado pela casca (`analysis-app`):
+     de fora, o mesmo botão serve aos dois estados e nunca some com o conteúdo
+     que ele controla. */
+  /** ⚠️ TRILHO DE ÍCONES — A MESMA BARRA, EM 64px.
+   *
+   *  O menu deixou de empurrar o conteúdo: em repouso ele é um trilho de
+   *  ícones e, ao receber o mouse ou o foco, expande para 288px POR CIMA do
+   *  que está ao lado. O conteúdo é diagramado uma vez, na largura cheia, e
+   *  não refluí a cada abre-e-fecha.
+   *
+   *  Isto é uma PROP e não um componente novo de propósito: o cabeçalho deste
+   *  arquivo conta que a barra já teve sete blocos copiados que divergiram
+   *  entre si (o "NOVO" saía em três cores). Um trilho separado seria a oitava
+   *  cópia — a lista de destinos, a ordem, os selos e as regras de nível
+   *  teriam de ser mantidos em dois lugares. Aqui é a mesma `NavRow`, com
+   *  menos coisa visível. */
+  colapsado?: boolean;
 }
 
 // ─── Componentes internos ──────────────────────────────────────────────────────
@@ -152,7 +170,7 @@ const FUNDO_ATIVO: Record<Acento, string> = {
  *  hidratação do React não têm por que perdoar junto.
  */
 function NavRow({
-  Icon, rotulo, descricao, ativo, acento, onClick, selo,
+  Icon, rotulo, descricao, ativo, acento, onClick, selo, colapsado = false,
 }: {
   Icon: React.ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
   rotulo: string;
@@ -161,7 +179,36 @@ function NavRow({
   acento: Acento;
   onClick: () => void;
   selo?: React.ReactNode;
+  colapsado?: boolean;
 }) {
+  /* ⚠️ NO TRILHO, O ÍCONE FICA SOZINHO — MAS O NOME NÃO SOME.
+     Ele vai para o `title` e para o `aria-label`: ícone sem rótulo é adivinha
+     para quem vê e vazio para quem usa leitor de tela, e sete ícones cinzas
+     empilhados não se distinguem de memória no primeiro dia de uso. */
+  if (colapsado) {
+    return (
+      <button
+        onClick={onClick}
+        title={`${rotulo} — ${descricao}`}
+        aria-label={rotulo}
+        aria-current={ativo ? 'page' : undefined}
+        className="flex w-full items-center justify-center rounded-xl py-1.5"
+      >
+        <span className={`relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+          ativo ? FUNDO_ATIVO[acento] : 'border border-slate-200 bg-slate-50 hover:bg-slate-100'
+        }`}>
+          <Icon size={16} strokeWidth={2.2} className={ativo ? 'text-white' : 'text-slate-500'} />
+          {/* O selo não cabe em 36px, mas sumir com ele apagaria o único aviso
+              de trabalho parado. Vira um ponto no canto — a contagem exata
+              reaparece assim que a barra expande. */}
+          {!ativo && selo && (
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
+          )}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={onClick}
@@ -196,7 +243,10 @@ function NavRow({
  *  TERCEIRO item, à frente de Gestão e de tudo que se usa todo dia. Com os
  *  grupos, a ordem passa a afirmar o ciclo do produto (encontrar → decidir e
  *  executar → ajustar) em vez de só existir. */
-function GrupoNav({ children }: { children: React.ReactNode }) {
+function GrupoNav({ children, colapsado = false }: { children: React.ReactNode; colapsado?: boolean }) {
+  // No trilho o rótulo não cabe, mas a DIVISÃO ainda informa: um traço curto
+  // preserva os três grupos sem escrever nada.
+  if (colapsado) return <span aria-hidden className="mx-auto my-1.5 h-px w-6 bg-slate-200" />;
   return (
     <p className="px-3.5 pb-1 pt-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-slate-300">
       {children}
@@ -236,7 +286,7 @@ export default function AppSidebar({
   renovacoesCount,
   onNotifCountChange,
   onShowAuthModal,
-  onOcultarMenu,
+  colapsado = false,
 }: AppSidebarProps) {
   const router = useRouter();
 
@@ -261,7 +311,12 @@ export default function AppSidebar({
     : userData?.company ? [userData.company] : [];
 
   return (
-    <div className="flex flex-col gap-5 sticky top-28 print:hidden">
+    /* ⚠️ SEM `sticky` AQUI — quem fixa é a camada em `analysis-app`.
+       O teto de altura fica: fixada no topo, a barra ocupa da linha 112px para
+       baixo, e se for mais alta que o resto da janela o rodapé dela (suporte,
+       conta, motor de análise) sai da tela sem jeito de alcançar, porque a
+       página rola e ela não. Com o teto, o excedente rola dentro da barra. */
+    <div className="flex max-h-[calc(100vh-8rem)] flex-col gap-5 overflow-y-auto overscroll-contain print:max-h-none print:overflow-visible print:hidden">
 
       {/* ── NAV PRINCIPAL ─────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-0.5 p-2 bg-white rounded-[2rem] border border-slate-100 shadow-sm">
@@ -269,15 +324,23 @@ export default function AppSidebar({
         {/* Perfil + sino */}
         {token && userData && (
           <>
-            <div className="flex items-center justify-between px-3 py-2">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[10px] font-black shrink-0">
-                  {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
+            {/* ⚠️ O SINO SOBREVIVE AO TRILHO; o nome e o "ocultar", não.
+                Num menu de 64px cabe um controle por linha, e a escolha não é
+                arbitrária: o sino é o único aqui que pode estar PEDINDO algo
+                (contagem de não lidas). O primeiro nome de quem está logado é
+                informação de conforto — quem colapsou a barra colapsou por
+                espaço, e reaparece no hover junto com o resto. */}
+            <div className={`flex items-center px-3 py-2 ${colapsado ? 'flex-col gap-1' : 'justify-between'}`}>
+              {!colapsado && (
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[10px] font-black shrink-0">
+                    {(userData.name || userData.nome || 'B').charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-[12px] font-black text-slate-700 truncate max-w-[100px]">
+                    {(userData.name || userData.nome || '').split(' ')[0]}
+                  </span>
                 </div>
-                <span className="text-[12px] font-black text-slate-700 truncate max-w-[100px]">
-                  {(userData.name || userData.nome || '').split(' ')[0]}
-                </span>
-              </div>
+              )}
               <div className="flex items-center gap-0.5">
                 <NotificationPanel
                   token={token ?? ''}
@@ -287,26 +350,6 @@ export default function AppSidebar({
                   }}
                   onCountChange={onNotifCountChange}
                 />
-                {/* ⚠️ SÓ O "OCULTAR" MORA AQUI — E ISSO É DELIBERADO.
-                    Esconder o menu é uma ação SOBRE o menu, então o lugar dela
-                    é dentro dele: some o botão flutuante que ficava por cima do
-                    conteúdo em todas as telas.
-                    Mas o par simétrico não pode morar junto: escondido o menu,
-                    o botão de reabrir iria junto e não haveria volta. Quem
-                    reabre é a aba na borda direita, renderizada pela casca
-                    (`analysis-app.tsx`) justamente por sobreviver ao
-                    fechamento. Dois lugares porque são dois contextos. */}
-                {onOcultarMenu && (
-                  <button
-                    type="button"
-                    onClick={onOcultarMenu}
-                    title="Ocultar o menu e usar os 288px na tela"
-                    aria-label="Ocultar menu"
-                    className="hidden rounded-lg p-1.5 text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 lg:inline-flex"
-                  >
-                    <PanelLeftClose size={15} />
-                  </button>
-                )}
               </div>
             </div>
             <div className="h-px bg-slate-100 mx-3 mb-0.5" />
@@ -352,13 +395,16 @@ export default function AppSidebar({
         <button
           onClick={() => onSetActiveTab('workspace')}
           aria-current={isAnalise ? 'page' : undefined}
-          className={`mb-1.5 flex w-full items-center gap-3 rounded-xl bg-emerald-600 px-3.5 py-3 text-left shadow-sm shadow-emerald-600/25 transition-all hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30 active:scale-[0.99] ${
-            isAnalise ? 'ring-2 ring-emerald-600/25 ring-offset-2 ring-offset-white' : ''
-          }`}
+          title={colapsado ? 'Analisar — buscar no PNCP ou enviar o seu' : undefined}
+          aria-label={colapsado ? 'Analisar' : undefined}
+          className={`mb-1.5 flex w-full items-center rounded-xl bg-emerald-600 text-left shadow-sm shadow-emerald-600/25 transition-all hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30 active:scale-[0.99] ${
+            colapsado ? 'justify-center p-1.5' : 'gap-3 px-3.5 py-3'
+          } ${isAnalise ? 'ring-2 ring-emerald-600/25 ring-offset-2 ring-offset-white' : ''}`}
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20">
             <Zap size={17} strokeWidth={2.4} className="text-white" />
           </span>
+          {!colapsado && (
           <span className="min-w-0 flex-1">
             <span className="block text-[13px] font-black leading-none text-white">
               Analisar
@@ -367,17 +413,19 @@ export default function AppSidebar({
               Buscar no PNCP ou enviar o seu
             </span>
           </span>
-          {isAnalise
+          )}
+          {!colapsado && (isAnalise
             ? <ActiveDot />
-            : <ArrowRight size={14} strokeWidth={2.6} className="shrink-0 text-white/70" />}
+            : <ArrowRight size={14} strokeWidth={2.6} className="shrink-0 text-white/70" />)}
         </button>
 
-        <GrupoNav>Encontrar</GrupoNav>
+        <GrupoNav colapsado={colapsado}>Encontrar</GrupoNav>
 
         {/* Sem nível: PNCP é API pública e a rota tem cache. Continua exigindo
             `userData` porque o fit depende do CNAE da empresa. */}
         {token && userData && (
           <NavRow
+          colapsado={colapsado}
             Icon={Target} rotulo="Sugestões" descricao="O que combina com seu CNAE"
             ativo={activeTab === 'cnae'} acento="teal"
             onClick={() => onSetActiveTab('cnae')}
@@ -410,6 +458,7 @@ export default function AppSidebar({
         {token && userData && (
           empresas.length > 0 ? (
             <NavRow
+              colapsado={colapsado}
               Icon={RefreshCw} rotulo="Próximas disputas"
               descricao={renovacoesCount && renovacoesCount > 0
                 ? `${renovacoesCount} contrato${renovacoesCount > 1 ? 's' : ''} do setor a vencer`
@@ -425,6 +474,7 @@ export default function AppSidebar({
                descrição já É a instrução, e repeti-la em caixa alta no canto
                não acrescenta nada que a frase não diga melhor. */
             <NavRow
+              colapsado={colapsado}
               Icon={RefreshCw} rotulo="Próximas disputas" descricao="Configure a empresa primeiro"
               ativo={false} acento="amber"
               onClick={() => router.push('/profile')}
@@ -432,11 +482,12 @@ export default function AppSidebar({
           )
         )}
 
-        {token && <GrupoNav>Decidir e executar</GrupoNav>}
+        {token && <GrupoNav colapsado={colapsado}>Decidir e executar</GrupoNav>}
 
         {/* Sem nível: roda sobre análises que o cliente já pagou. */}
         {token && (
           <NavRow
+          colapsado={colapsado}
             Icon={BookOpen} rotulo="Decisões" descricao="Laudos e resultados salvos"
             ativo={activeTab === 'history'} acento="sky"
             onClick={() => onSetActiveTab('history')}
@@ -448,6 +499,7 @@ export default function AppSidebar({
             Decisões, onde os laudos já estão. */}
         {LAUNCH_FLAGS.compararNaSidebar && token && (
           <NavRow
+          colapsado={colapsado}
             Icon={GitCompare} rotulo="Priorizar" descricao="Escolha o melhor edital"
             ativo={activeTab === 'comparar'} acento="violet"
             onClick={() => onSetActiveTab('comparar')}
@@ -472,6 +524,7 @@ export default function AppSidebar({
             reversível, em vez de efeito colateral da navegação. */}
         {token && (
           <NavRow
+          colapsado={colapsado}
             Icon={ClipboardList} rotulo="Gestão" descricao="Fluxo dos editais"
             ativo={activeTab === 'gestao'} acento="slate"
             onClick={() => onSetActiveTab('gestao')}
@@ -480,6 +533,7 @@ export default function AppSidebar({
 
         {token && userData && (
           <NavRow
+          colapsado={colapsado}
             Icon={FolderOpen} rotulo="Meus contratos" descricao="Carteira da sua empresa"
             /* ⚠️ ERA `emerald`, E AGORA NÃO PODE SER. Com o botão de Analisar
                verde o tempo todo, ativar esta linha acenderia um SEGUNDO bloco
@@ -495,6 +549,7 @@ export default function AppSidebar({
             já foi ganho. */}
         {LAUNCH_FLAGS.capital && token && currentTier >= 3 && (
           <NavRow
+          colapsado={colapsado}
             Icon={DollarSign} rotulo="Capital" descricao="Fôlego para executar"
             ativo={activeTab === 'capital'} acento="sky"
             onClick={() => onSetActiveTab('capital')}
@@ -502,7 +557,7 @@ export default function AppSidebar({
           />
         )}
 
-        {token && <GrupoNav>Ajustes</GrupoNav>}
+        {token && <GrupoNav colapsado={colapsado}>Ajustes</GrupoNav>}
 
         {/* ⚠️ ALERTAS É CONFIGURAÇÃO, não caixa de entrada. A tela lista os dez
             tipos de aviso e deixa ligar/desligar cada um; os avisos em si
@@ -511,6 +566,7 @@ export default function AppSidebar({
             alertas. */}
         {token && currentTier >= 3 && (
           <NavRow
+          colapsado={colapsado}
             Icon={Bell} rotulo="Alertas" descricao="Escolha quais avisos receber"
             ativo={activeTab === 'alertas'} acento="amber"
             onClick={() => onSetActiveTab('alertas')}
@@ -520,6 +576,7 @@ export default function AppSidebar({
 
         {token && (
           <NavRow
+          colapsado={colapsado}
             Icon={SlidersHorizontal} rotulo="Parametrização" descricao="Critérios de avaliação por IA"
             ativo={activeTab === 'parametrizacao'} acento="indigo"
             onClick={() => onSetActiveTab('parametrizacao')}
@@ -527,6 +584,14 @@ export default function AppSidebar({
         )}
       </div>
 
+      {/* ⚠️ TUDO DAQUI PARA BAIXO SÓ EXISTE NA BARRA EXPANDIDA.
+          Recursos por nível, contexto ativo, conta, motor de análise e
+          suporte são blocos de LEITURA — texto que se consulta, não alvo que
+          se acerta. Em 64px eles virariam ícones sem sentido ou cartões
+          cortados, e nenhum deles é urgente o bastante para justificar a
+          largura. Ficam a um hover de distância. */}
+      {!colapsado && (
+        <>
       {/* ── RECURSOS BLOQUEADOS (agrupados, fora da nav ativa) ──────────────── */}
       {token && (currentTier < 4) && (
         <details open className="group rounded-[1.5rem] border border-slate-100 bg-slate-50/60 px-1 py-1">
@@ -702,6 +767,8 @@ export default function AppSidebar({
         Falar com o suporte
         <span className="ml-auto text-[10px] font-medium text-slate-400">responde em 24h</span>
       </a>
+        </>
+      )}
 
     </div>
   );

@@ -5,7 +5,6 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import ConsentBanner from '../components/ConsentBanner';
 import ChatWidget from '../components/ChatWidget';
-import PromoBanner from '../components/PromoBanner';
 import { TierProvider } from '../Contexts/TierContext';
 
 export const metadata: Metadata = {
@@ -29,11 +28,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* BANNER DE CONSENTIMENTO LGPD — aparece uma única vez por dispositivo */}
           <ConsentBanner />
 
-          {/* CABEÇALHO GLOBAL */}
+          {/* CABEÇALHO GLOBAL — leva junto a barra de promoção.
+              ⚠️ A BARRA SAIU DAQUI DE PROPÓSITO. Como irmã do `Header` ela
+              tinha `z-index: auto` contra o `sticky z-50` dele: bastava rolar
+              34px para o menu cobrir 34 dos seus 48px de altura. Dentro do
+              bloco fixo do cabeçalho ela rola junto e fica sempre à frente do
+              conteúdo. */}
           <Header />
-
-          {/* BANNER PROMOCIONAL — aparece abaixo do header quando ativo */}
-          <PromoBanner />
 
           {/* O CONTEÚDO DA PÁGINA OCUPA O ESPAÇO RESTANTE (flex-1) */}
           <main className="flex-1">

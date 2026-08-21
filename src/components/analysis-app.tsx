@@ -20,7 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Lock, Sparkles, Coins, X, PanelRightOpen } from 'lucide-react';
+import { Lock, Sparkles, Coins, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
@@ -1062,8 +1062,18 @@ export default function AnalysisApp() {
   }
 
 
+  /* ⚠️ `overflow-x-clip` NA RAIZ, E NÃO `hidden` — É O QUE PERMITE O MENU FIXO.
+     `overflow-x: hidden` obriga o `overflow-y` a computar `auto`: a <div> raiz
+     vira contêiner de rolagem, e todo `position: sticky` abaixo dela passa a
+     se posicionar em relação a ELA, não à janela — ou seja, para de grudar.
+     Medido na /workspace real: a barra, com `top: 112px` correto, indo de 217
+     para -717 durante o scroll.
+     A mesma armadilha existia no `body` (ver `base.css`). Corrigir só lá não
+     resolveu, porque este segundo contêiner continuava capturando — e ele só
+     apareceu quando medi a página de verdade, em vez de uma reconstrução.
+     `clip` corta o transbordo horizontal igual e não cria contêiner. */
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden relative">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-clip relative">
       {/* Compra de créditos avulsos — chamada de vários pontos (barra de
           créditos, cards de modo e aviso de laudo degradado). Fica na raiz
           para não ser desmontada quando a aba muda. */}
@@ -1114,10 +1124,16 @@ export default function AnalysisApp() {
             cartão branco com borda dentro de outro cartão branco com borda, com
             padding em seis níveis, ocupando 190px acima da dobra para dizer o
             nome de quem já sabe o próprio nome. Logado: sem moldura. */}
+        {/* ⚠️ A MOLDURA SEGUE O MESMO TERCEIRO ESTADO DO `AppHero`.
+            A condição era `token && userData && !isCheckingAuth`, o que punha
+            a moldura de marketing (2.5rem de raio, sombra larga, duas colunas)
+            em volta de QUALQUER coisa enquanto a sessão era verificada — o
+            esqueleto incluído. A moldura só existe para o anúncio, então só
+            aparece quando o anúncio aparece: check terminado E sem sessão. */}
         <div className={`mx-auto w-full max-w-[1400px] font-sans ${
-          token && userData && !isCheckingAuth ? 'px-4 pt-6 md:px-6' : 'group relative p-2 md:p-4'
+          isCheckingAuth || (token && userData) ? 'px-4 pt-6 md:px-6' : 'group relative p-2 md:p-4'
         }`}>
-          <div className={token && userData && !isCheckingAuth
+          <div className={isCheckingAuth || (token && userData)
             ? ''
             : 'bg-white rounded-[2.5rem] shadow-[0_15px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-200/80 overflow-hidden flex flex-col xl:flex-row p-4 md:p-6 gap-6'}>
             <AppHero
@@ -1148,7 +1164,19 @@ export default function AnalysisApp() {
         <section className={`mx-auto px-4 md:px-6 py-8 relative z-10 print:m-0 print:p-0 transition-[max-width] duration-300 ${
           sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
         }`}>
-          {token && contextCompanies.length === 0 && <ActiveCompanyBanner />}
+          {/* ⚠️ `!isCheckingAuth` NÃO É DETALHE: sem ele o aviso amarelo aparece
+              em TODO refresh de quem já tem empresa.
+              `contextCompanies` sai de `userData`, que só chega no fim da
+              cadeia de fetch — mas `token` é setado logo depois do
+              `initSession()`, bem antes. Nessa janela `token` é verdadeiro e a
+              lista ainda é `[]`, então a condição dava certo pelo motivo
+              errado: lista vazia porque ainda não carregou, lida como "esta
+              conta não tem empresa". O usuário via "Cadastre o CNPJ da sua
+              empresa" e, um instante depois, a tela com a empresa dele já
+              cadastrada.
+              Lista vazia ≠ lista não carregada. `isCheckingAuth` só vira
+              `false` no `finally` da cadeia, depois de `/workspace/details`. */}
+          {token && !isCheckingAuth && contextCompanies.length === 0 && <ActiveCompanyBanner />}
 
           {/* ── Retomada de análise (pós-reload) ── */}
           {analiseRetomada && !isAnalyzing && (
@@ -1217,38 +1245,33 @@ export default function AnalysisApp() {
               contexto. Esse cartão saiu, e a coluna não precisa mais da largura
               que ele pedia. Os 62px voltam para a coluna de trabalho — que é
               exatamente a briga do quadro da Gestão. */}
-          {/* ═══════════════════════════════════════════════════════════════
-              ⚠️ AQUI FICA SÓ O REABRIR — O OCULTAR MORA DENTRO DO MENU
-              ═══════════════════════════════════════════════════════════════
-              A versão anterior punha um botão fixo acima do conteúdo, visível
-              nos dois estados. Funcionava, mas era um controle de navegação
-              pairando sobre a área de trabalho em todas as telas.
+          {/* ⚠️ A ABA NA BORDA DIREITA SAIU DAQUI.
+              Ela existia por um motivo real: com o menu OCULTO, o botão de
+              reabrir sumia junto e não havia caminho de volta — o mesmo aviso
+              que este repositório já tinha escrito ao recusar o toggle no
+              quadro da Gestão.
 
-              Esconder o menu é uma ação SOBRE o menu: o botão foi para dentro
-              dele, ao lado do sino. O que NÃO pode ir junto é o par simétrico —
-              escondido o menu, o botão de reabrir sumiria com ele e não haveria
-              caminho de volta. Foi exatamente o aviso que este repositório já
-              tinha escrito quando recusou o toggle no quadro da Gestão.
+              O trilho de 64px resolve isso por construção. A barra não some
+              mais, então o controle de abrir mora dentro dela e nunca fica
+              inalcançável. Manter as duas seria dar dois caminhos para o mesmo
+              lugar, e um deles pairando fixo sobre o conteúdo. */}
 
-              Por isso a volta é uma aba na borda direita, que só existe quando
-              o menu está oculto: ocupa 24px, não disputa espaço com nada, e
-              sobrevive ao fechamento porque é a CASCA que a desenha. */}
-          {sidebarHidden && (
-            <button
-              type="button"
-              onClick={() => setSidebarHidden(false)}
-              title="Mostrar o menu de novo"
-              aria-label="Mostrar menu"
-              className="fixed right-0 top-1/2 z-40 hidden -translate-y-1/2 items-center gap-1.5 rounded-l-xl border border-r-0 border-slate-200 bg-white/95 py-3 pl-2 pr-1.5 text-slate-400 shadow-lg backdrop-blur transition-all hover:pr-3 hover:text-slate-900 lg:flex print:hidden"
-            >
-              <PanelRightOpen size={15} />
-              <span className="text-[9px] font-black uppercase tracking-wider [writing-mode:vertical-rl]">
-                Menu
-              </span>
-            </button>
-          )}
+          {/* ⚠️ `sidebarHidden` DEIXOU DE SIGNIFICAR "SUMIU" E PASSOU A
+              SIGNIFICAR "TRILHO". A coluna nunca mais vai a zero: alterna
+              entre 288px e 64px, e nos DOIS casos ocupa lugar no grid — ou
+              seja, abrir o menu AJUSTA o conteúdo em vez de cobri-lo.
 
-          <div className={`grid gap-8 md:gap-12 items-start print:block ${sidebarHidden ? '' : 'lg:grid-cols-[1fr_288px]'}`}>
+              Cheguei a fazer a barra sobrepor (margem negativa) para evitar o
+              reflow. Tecnicamente funcionava, visualmente não: painel pousado
+              em cima do relatório não parece parte da página, parece um popup
+              que esqueceram aberto. Reflow controlado sai mais barato que essa
+              sensação.
+
+              Como a barra nunca desaparece, o trilho é o próprio caminho de
+              volta — a aba na borda direita saiu junto. */}
+          <div className={`grid gap-8 md:gap-12 items-start print:block ${
+            sidebarHidden ? 'lg:grid-cols-[1fr_64px]' : 'lg:grid-cols-[1fr_288px]'
+          }`}>
 
             {/* ── COLUNA ESQUERDA ── */}
             {/* ⚠️ `coluna-conteudo` é um CONTAINER de CSS, e `expandido` só
@@ -1280,6 +1303,7 @@ export default function AnalysisApp() {
                             podeUpgrade={currentCharLimit < maxCharLimitPlataforma}
                             userUf={activeCompany?.uf || userData?.company?.uf}
                             contextCompanies={contextCompanies}
+                            carregandoContexto={isCheckingAuth}
                             activeCnpj={userData?.active_cnpj}
                             onActiveCnpjChange={(cnpj) => {
                               setUserData(prev => prev ? { ...prev, active_cnpj: cnpj } : prev);
@@ -1428,6 +1452,13 @@ export default function AnalysisApp() {
               {/* Aba Renovações */}
               {activeTab === 'renovacoes' && (() => {
                 const companies = activeOrderedCompanies;
+
+                // ⚠️ MESMO ENGANO DO AVISO AMARELO, OUTRA TELA. Quem abre
+                // direto nesta aba tem `companies` vazio enquanto o perfil não
+                // volta, e o vazio virava a tela cheia de "Nenhuma empresa
+                // cadastrada" — instrução para resolver um problema que a
+                // pessoa não tem. Em dúvida, não afirmar nada.
+                if (isCheckingAuth) return null;
 
                 if (!companies.length) {
                   return (
@@ -1686,24 +1717,63 @@ export default function AnalysisApp() {
             )}
 
             {/* Desktop: sidebar normal — some quando o laudo da Gestão ou o painel de resultados pede mais espaço */}
-            {!sidebarHidden && (
-              <div className="hidden lg:block">
-                <AppSidebar
-                  token={token}
-                  userData={userData}
-                  currentTier={currentTier}
-                  activeTab={activeTab}
-                  onSetActiveTab={setActiveTab}
-                  onNotificacaoAberta={abrirNotificacao}
-                  renovacoesCount={renovacoesCount}
-                  onNotifCountChange={setNotifCount}
-                  onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-                  onOcultarMenu={() => setSidebarHidden(true)}
-                />
-              </div>
-            )}
+            {/* ⚠️ ESTA COLUNA É SÓ O ESPAÇO RESERVADO — a barra de verdade é
+                desenhada fora do grid, logo abaixo, em camada `fixed`.
+                Motivo: `sticky` gruda apenas DENTRO da caixa do pai, e o pai
+                aqui é a coluna do grid, que termina antes do fim da página
+                (há a faixa de planos e o rodapé depois dela). Medido: a barra
+                grudava a 112px durante todo o conteúdo e soltava aos ~1400px
+                de scroll, com 430px de página ainda por rolar. "Sempre
+                visível" não admite esse último trecho. */}
+            <div aria-hidden className="hidden lg:block" />
           </div>
         </section>
+
+        {/* ⚠️ A CAMADA REPETE AS CLASSES DE CENTRALIZAÇÃO DA <section> ACIMA,
+            e é justamente isso que a mantém alinhada: `mx-auto`, o mesmo
+            `max-w` (que muda com o estado do menu) e o mesmo `px`. Assim a
+            posição horizontal é DERIVADA do mesmo cálculo do conteúdo, em vez
+            de um `right: calc(...)` copiado à mão que sairia do lugar no dia
+            em que alguém mexesse no padding ou no teto de largura.
+
+            `pointer-events-none` na camada e `auto` só na barra: a faixa
+            invisível cobre a largura toda da janela e engoliria cliques do
+            conteúdo se não fosse transparente ao mouse. */}
+        <div className={`pointer-events-none fixed inset-x-0 top-28 z-30 hidden lg:block print:hidden ${
+          sidebarHidden ? 'max-w-none' : ''
+        }`}>
+          <div className={`mx-auto flex justify-end px-4 md:px-6 transition-[max-width] duration-300 ${
+            sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
+          }`}>
+            <div className={`pointer-events-auto relative transition-[width] duration-200 ease-out ${
+              sidebarHidden ? 'w-16' : 'w-72'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setSidebarHidden(v => !v)}
+                title={sidebarHidden ? 'Abrir o menu' : 'Recolher para o trilho de ícones'}
+                aria-label={sidebarHidden ? 'Abrir o menu' : 'Recolher menu'}
+                aria-expanded={!sidebarHidden}
+                className="absolute -left-3 top-7 z-40 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-md transition-all hover:scale-105 hover:border-slate-300 hover:text-slate-700 active:scale-95"
+              >
+                {sidebarHidden ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+              </button>
+
+              <AppSidebar
+                token={token}
+                userData={userData}
+                currentTier={currentTier}
+                activeTab={activeTab}
+                onSetActiveTab={setActiveTab}
+                onNotificacaoAberta={abrirNotificacao}
+                renovacoesCount={renovacoesCount}
+                onNotifCountChange={setNotifCount}
+                onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+                colapsado={sidebarHidden}
+              />
+            </div>
+          </div>
+        </div>
 
         {/* ── PLANO ATUAL (resumo compacto) ── */}
         <section id="planos" className="bg-white py-10 px-6 border-t border-slate-100 print:hidden">

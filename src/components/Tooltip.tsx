@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { HelpCircle } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -30,6 +31,22 @@ import { HelpCircle } from 'lucide-react';
  * relação à viewport: acima do gatilho se couber, abaixo se não couber, e
  * sempre preso dentro das bordas laterais da tela.
  *
+ * ⚠️ E POR QUE, MESMO ASSIM, O BALÃO VAI PARA O `document.body` VIA PORTAL.
+ * `fixed` + `z-[9999]` não bastam: `z-index` só compete DENTRO do contexto de
+ * empilhamento em que o elemento nasce. Medido na tela de análise, a cadeia
+ * acima do gatilho era `section.relative z-10` → `div.relative z-20`, então os
+ * 9999 do balão valiam apenas dentro daquele `z-10` — e o trilho do menu, que
+ * é `fixed z-30` na raiz, passava por cima e cortava a explicação ao meio.
+ * Subir o número não resolveria nada: 99999 dentro de um `z-10` continua
+ * abaixo de um `z-30` de fora.
+ *
+ * ⚠️ E O DEFEITO NÃO APARECE NO `elementFromPoint`. O trilho é
+ * `pointer-events-none`: ele PINTA por cima mas é invisível para o teste de
+ * clique, então toda sondagem por hit-test dizia que o balão estava no topo
+ * enquanto a tela mostrava o contrário. O que o teste checa, por isso, é
+ * estrutural: o balão precisa ser filho do `body`, sem nenhum contexto de
+ * empilhamento no caminho.
+ *
  * ⚠️ O GATILHO É UM <button> IRMÃO, NUNCA FILHO DE UM <label>. Dentro do rótulo
  * de um checkbox, clicar na interrogação alterna o próprio controle que ela
  * explica — a pessoa pede ajuda sobre a "Busca exata" e liga a busca exata.
@@ -43,9 +60,22 @@ interface TooltipProps {
   rotulo: string;
   children: React.ReactNode;
   className?: string;
+  /** `sm` para rótulos miúdos, como os da carteira de créditos (9-10px).
+   *
+   *  ⚠️ O ALVO DE TOQUE NÃO ENCOLHE JUNTO. O botão fica 12px visualmente, mas
+   *  o `before:` estende a área clicável para 36px. Encolher o alvo de verdade
+   *  tornaria a ajuda inalcançável no celular — que é exatamente onde `title=""`
+   *  já falhava e este componente veio resolver.
+   *
+   *  ⚠️ POR QUE 12px E NÃO 16px. Na carteira são QUATRO gatilhos numa linha só;
+   *  a 16px eles sozinhos custavam 72px dos ~316px úteis de um celular — 23% da
+   *  linha para quatro ícones — e era o que fazia a carteira quebrar em 2×2,
+   *  descolando "Disponível" de "Do plano". Medido: 351px exigidos contra 316
+   *  disponíveis. Só a área VISÍVEL encolheu. */
+  tamanho?: 'sm' | 'md';
 }
 
-export default function Tooltip({ rotulo, children, className = '' }: TooltipProps) {
+export default function Tooltip({ rotulo, children, className = '', tamanho = 'md' }: TooltipProps) {
   const [aberto, setAberto] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const id = useId();
@@ -133,12 +163,18 @@ export default function Tooltip({ rotulo, children, className = '' }: TooltipPro
         onMouseLeave={() => { if (!fixadoRef.current) setAberto(false); }}
         onFocus={() => setAberto(true)}
         onBlur={() => { if (!fixadoRef.current) setAberto(false); }}
-        className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+        className={`relative flex items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 ${
+          tamanho === 'sm'
+            // `before:` amplia o alvo de toque sem ocupar espaço no layout —
+            // 12px de ícone com ~36px de área clicável.
+            ? 'h-3 w-3 before:absolute before:-inset-3 before:content-[""]'
+            : 'h-6 w-6'
+        }`}
       >
-        <HelpCircle size={14} strokeWidth={2.5} />
+        <HelpCircle size={tamanho === 'sm' ? 10 : 14} strokeWidth={2.5} />
       </button>
 
-      {aberto && (
+      {aberto && typeof document !== 'undefined' && createPortal(
         <span
           ref={balaoRef}
           id={id}
@@ -150,10 +186,28 @@ export default function Tooltip({ rotulo, children, className = '' }: TooltipPro
             // canto superior esquerdo antes de assumir o lugar certo.
             visibility: pos ? 'visible' : 'hidden',
           }}
-          className={`fixed z-[9999] w-[min(21rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-3 text-left text-[11px] font-medium leading-relaxed text-slate-200 shadow-2xl ${className}`}
+          // ⚠️ `normal-case`, `tracking-normal`, `font-medium` E
+          // `whitespace-normal` FICAM, MESMO COM O PORTAL. Enquanto o balão era
+          // filho do gatilho ele herdava a tipografia do rótulo hospedeiro, e
+          // isso já quebrou a explicação DUAS vezes:
+          //   · ao lado de um rótulo `uppercase tracking-[0.14em] font-black`
+          //     — que é como todo rótulo da carteira é escrito — o parágrafo
+          //     inteiro saía em CAIXA ALTA, espaçado e em negrito;
+          //   · quando a carteira precisou caber em uma linha e o rótulo ganhou
+          //     `whitespace-nowrap`, o texto virou UMA linha só e o
+          //     `overflow-y-auto` recortou tudo à direita — a ajuda aparecia
+          //     como "...É a soma de tudo à esquerda, r" e 228px de explicação
+          //     simplesmente não existiam na tela.
+          // O portal corta a herança na raiz, mas as anulações continuam aqui
+          // de propósito: elas custam nada e são a rede se o balão um dia
+          // voltar a renderizar em linha. Os dois defeitos só aparecem no
+          // navegador — o JSX estava certo nas duas vezes, o CSS herdado é que
+          // não.
+          className={`fixed z-[9999] w-[min(21rem,calc(100vw-1.5rem))] max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain whitespace-normal rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-3 text-left text-[11px] font-medium normal-case tracking-normal leading-relaxed text-slate-200 shadow-2xl ${className}`}
         >
           {children}
-        </span>
+        </span>,
+        document.body,
       )}
     </span>
   );

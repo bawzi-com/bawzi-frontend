@@ -27,6 +27,7 @@ import { subscribeToPush, unsubscribeFromPush } from '../../lib/pushNotification
 import CompanyProfileForm from '../../components/CompanyProfileForm';
 import { useTierConfig } from '../../Contexts/TierContext';
 import PersonalDataForm from '../../components/PersonalDataForm';
+import AvatarUpload from '../../components/AvatarUpload';
 import PasswordChangeForm from '../../components/PasswordChangeForm';
 import TwoFactorSettings from '../../components/TwoFactorSettings';
 import TeamManager from '../../components/TeamManager';
@@ -43,7 +44,17 @@ import { resolveEffectiveTier } from '@/lib/tier';
 import { apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro } from '@/lib/apiClient';
 import ChangePlanModal from '@/components/ChangePlanModal';
 import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
-import { detalhesDeCreditos } from '@/components/ResumoCreditos';
+import { detalhesDeCreditos, corDoDetalhe, ajudasDaCarteira, Numero, BOTAO_SECUNDARIO } from '@/components/ResumoCreditos';
+import { usePrecos, precoPorCiclo } from '@/lib/precos';
+
+/** Rótulo do ciclo → sufixo do preço.
+ *
+ *  ⚠️ EXISTE PORQUE O SUFIXO ESTAVA CRAVADO. O cabeçalho escrevia "/mês" ao
+ *  lado de um selo com o intervalo REAL, e numa assinatura anual saía
+ *  "R$ 4.970,00 /MÊS ANUAL" — errado por 12× e desmentido por si mesmo. */
+const PERIODO_DO_INTERVALO: Record<string, string> = {
+  Mensal: 'mês', Anual: 'ano', Semanal: 'semana', Diária: 'dia',
+};
 
 type ProfileIcon = React.ComponentType<{ size?: number; className?: string }>;
 type SectionTone = 'emerald' | 'sky' | 'slate' | 'amber' | 'red';
@@ -137,6 +148,11 @@ function ProfileContent() {
   const [members, setMembers] = useState<any[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [invoices, setInvoices] = useState<any[]>([]);
+  // ⚠️ SEPARA "não tem" DE "não deu para carregar". Enquanto os dois estados
+  // eram a mesma lista vazia, uma falha nossa aparecia como "Nenhuma fatura
+  // disponível no momento" — afirmação sobre a conta do cliente, dita a partir
+  // de um erro do nosso código, com vinte faturas do outro lado.
+  const [invoicesErro, setInvoicesErro] = useState(false);
   const [subscriptionDetails, setSubscriptionDetails] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -169,6 +185,8 @@ function ProfileContent() {
   // créditos comprados sem nenhum lugar que os exibisse. O número vem de
   // /analyses/quota, a MESMA fonte que o portão de bloqueio consulta.
   const [quota, setQuota] = useState<any>(null);
+  // Preço de cada plano, do Stripe. Ver `lib/precos.ts`.
+  const precos = usePrecos();
   const [pacoteInfo, setPacoteInfo] = useState<PacoteInfo | null>(null);
   const [pacoteAberto, setPacoteAberto] = useState(false);
   const [pacoteEnviando, setPacoteEnviando] = useState(false);
@@ -411,7 +429,12 @@ function ProfileContent() {
       }
       
       if (membersRes.ok) setMembers(await membersRes.json());
-      if (invRes && invRes.ok) setInvoices(await invRes.json());
+      if (invRes && invRes.ok) {
+        setInvoices(await invRes.json());
+        setInvoicesErro(false);
+      } else {
+        setInvoicesErro(true);
+      }
       if (subRes && subRes.ok) setSubscriptionDetails(await subRes.json());
       if (pmRes && pmRes.ok) { const pmData = await pmRes.json(); setSavedCard(pmData.card ?? null); }
       
@@ -542,6 +565,21 @@ function ProfileContent() {
     }
   };
 
+  /** Desfaz um downgrade agendado. Não gera cobrança — só solta o schedule. */
+  const handleCancelarAgendamento = async () => {
+    setBillingAction('agendamento');
+    try {
+      const res = await apiFetch(`${API_URL}/api/billing/cancelar-troca-agendada`, { method: 'POST' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(mensagemDeErro(data?.detail, 'Não foi possível desfazer a troca.'));
+      await fetchData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Não foi possível desfazer a troca.');
+    } finally {
+      setBillingAction(null);
+    }
+  };
+
   const handleCancelSubscription = async () => {
     setShowCancelModal(false);
     setBillingAction('cancel');
@@ -606,7 +644,11 @@ function ProfileContent() {
     setIsDeleting(true);
     try {
       const res = await apiFetch(`${API_URL}/api/users/me`, { method: 'DELETE' });
-      if (res.ok) { clearSession({ notifyExpired: false }); window.location.href = '/'; }
+      // ⚠️ `encerrarSessao`, não `clearSession`. O segundo não mata o cookie de
+      // refresh no servidor — é o padrão contra o qual o docstring do
+      // `apiClient` alerta. Conta excluída com cookie vivo deixa o navegador
+      // tentando renovar uma sessão de uma conta que não existe mais.
+      if (res.ok) { await encerrarSessao({ notifyExpired: false }); window.location.href = '/'; }
     } catch { setIsDeleting(false); }
   };
 
@@ -725,8 +767,10 @@ function ProfileContent() {
         <section className="mb-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1.9fr)]">
           <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-600 to-sky-600 text-xl font-black text-white shadow-sm">
-                {initial}
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-emerald-600 to-sky-600 text-xl font-black text-white shadow-sm">
+                {userData?.avatar_url
+                  ? <img src={`${API_URL}${userData.avatar_url}`} alt="" className="h-full w-full object-cover" />
+                  : initial}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -954,8 +998,20 @@ function ProfileContent() {
             })()}
 
             <section id="sec-perfil" className={panelClass}>
-              <SectionHeading icon={User} title="Dados do perfil" eyebrow="Nome e e-mail da conta" tone="slate" />
+              <SectionHeading icon={User} title="Dados do perfil" eyebrow="Foto, nome e e-mail da conta" tone="slate" />
               <div className="p-5 sm:p-6">
+                {/* ⚠️ A FOTO FICA AQUI, ACIMA DO NOME, E NÃO NUMA SEÇÃO NOVA.
+                    A rota de upload existia no backend desde sempre e nenhuma
+                    tela chamava — ninguém tinha foto porque não havia onde
+                    colocar. Enfiar isso numa aba própria repetiria o erro em
+                    escala menor: é o mesmo assunto que "nome e e-mail", quem
+                    vem editar o perfil vem aqui. */}
+                <AvatarUpload
+                  nome={userData?.name || userData?.nome}
+                  avatarUrl={userData?.avatar_url}
+                  onUpdate={fetchData}
+                />
+                <div className="my-5 border-t border-slate-100" />
                 <PersonalDataForm userData={userData} token={authToken} onUpdate={fetchData} />
               </div>
             </section>
@@ -996,6 +1052,7 @@ function ProfileContent() {
                   members={members}
                   is_admin={isAdmin}
                   workspaceName={userData?.workspace_name}
+                  vagasTotais={userData?.vagas_totais}
                   onUpdate={fetchData}
                 />
               </div>
@@ -1059,15 +1116,20 @@ function ProfileContent() {
                                 </span>
                               )}
                             </span>
+                            {/* ⚠️ O SUFIXO SEGUE O INTERVALO REAL, E O SELO SAIU.
+                                Era `{amount}` + "/mês" cravado + um selo com o
+                                intervalo verdadeiro ao lado. Numa assinatura
+                                anual isso escrevia "R$ 4.970,00 /MÊS ANUAL": o
+                                preço errado por doze vezes, desmentido pelo
+                                próprio selo um espaço depois. Juntando os dois
+                                numa string só, some a contradição E some a
+                                repetição do caso mensal ("/MÊS" + "MENSAL"). */}
                             {subscriptionDetails?.amount && (
                               <p className="mt-0.5 text-sm font-semibold text-white/70">
                                 {subscriptionDetails.amount}
-                                <span className="ml-1 text-[10px] uppercase tracking-wide text-white/50">/mês</span>
-                                {subscriptionDetails?.interval && (
-                                  <span className="ml-2 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white/60">
-                                    {subscriptionDetails.interval}
-                                  </span>
-                                )}
+                                <span className="ml-0.5 text-[11px] text-white/50">
+                                  /{PERIODO_DO_INTERVALO[subscriptionDetails.interval || 'Mensal'] || 'mês'}
+                                </span>
                               </p>
                             )}
                           </div>
@@ -1091,11 +1153,38 @@ function ProfileContent() {
                               Nenhum cartão cadastrado
                             </div>
                           )}
+                          {/* Cobrança recusada, plano ainda de pé.
+
+                              ⚠️ ESTE AVISO É A CONTRAPARTIDA DA CORREÇÃO NO
+                              BACKEND. Antes, uma recusa de cartão rebaixava o
+                              cliente na hora — brutal, mas ao menos visível.
+                              Agora o plano é mantido durante as retentativas
+                              do Stripe, o que só é melhor se ele SOUBER: sem
+                              este bloco, a tolerância vira silêncio, o Stripe
+                              desiste no fim da régua e o rebaixamento chega
+                              sem nunca ter havido aviso.
+
+                              O botão de trocar cartão fica logo abaixo, que é
+                              a única ação que resolve. */}
+                          {subscriptionDetails?.pagamento_pendente && (
+                            <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300/40 bg-amber-500/15 px-3 py-2">
+                              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-200" />
+                              <div className="text-[11px] leading-4 text-amber-50">
+                                <span className="font-bold">Não conseguimos cobrar seu cartão.</span>{' '}
+                                Seu plano continua ativo e vamos tentar de novo nos próximos dias.
+                                Atualize o cartão para não perder o acesso.
+                              </div>
+                            </div>
+                          )}
                           <div className="flex gap-2">
                             <button
                               onClick={handleUpdatePaymentMethod}
                               disabled={billingAction === 'payment'}
-                              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 text-[11px] font-semibold text-white/80 transition hover:bg-white/20 disabled:opacity-50"
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition disabled:opacity-50 ${
+                                subscriptionDetails?.pagamento_pendente
+                                  ? 'bg-amber-400 text-amber-950 hover:bg-amber-300 font-bold'
+                                  : 'border border-white/20 bg-white/10 text-white/80 hover:bg-white/20'
+                              }`}
                             >
                               <CreditCard size={12} />
                               {billingAction === 'payment' ? 'Aguarde...' : savedCard ? 'Alterar cartão' : 'Adicionar cartão'}
@@ -1129,57 +1218,110 @@ function ProfileContent() {
                         justamente o que o cliente consome. E desde que o pacote
                         avulso existe, era possível ter créditos comprados sem
                         nenhuma tela que os mostrasse — só o alerta de cota, no
-                        workspace, sabia deles. */}
+                        workspace, sabia deles.
+
+                        `px-4` no celular (era 5): cada 8px de moldura sai da
+                        linha de números logo abaixo, que é onde faltava. */}
                     {quota && !quota.ilimitado && (
-                      <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-6">
+                      <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-4 sm:px-6">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                                Do plano
-                              </p>
-                              <p className="mt-0.5 text-lg font-black text-slate-900">
-                                {Number(quota.limite || 0).toLocaleString('pt-BR')}
-                                <span className="ml-1 text-[11px] font-bold text-slate-400">/mês</span>
-                              </p>
-                            </div>
-
-                            <div className="h-8 w-px bg-slate-200" />
-
-                            {/* Adicionais aparecem SEMPRE, inclusive zerados: um
-                                campo que some quando vale zero faz a pessoa
-                                achar que a compra não existiu. */}
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                                Adicionais
-                              </p>
-                              <p className={`mt-0.5 text-lg font-black ${quota.creditos_extras > 0 ? 'text-violet-600' : 'text-slate-300'}`}>
-                                {quota.creditos_extras > 0 ? '+' : ''}
-                                {Number(quota.creditos_extras || 0).toLocaleString('pt-BR')}
-                              </p>
-                            </div>
-
-                            <div className="h-8 w-px bg-slate-200" />
-
-                            <div>
-                              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                                Disponível
-                              </p>
-                              <p className="mt-0.5 text-lg font-black text-emerald-600">
-                                {Math.max(0, Number(quota.saldo || 0) - Number(quota.usado || 0)).toLocaleString('pt-BR')}
-                                <span className="ml-1 text-[11px] font-bold text-slate-400">
-                                  de {Number(quota.saldo || 0).toLocaleString('pt-BR')}
-                                </span>
-                              </p>
-                            </div>
+                          {/* ⚠️ ERA O PAINEL DO `ResumoCreditos` COPIADO À MÃO,
+                              e essa cópia já custou três correções feitas em
+                              dobro nesta sessão — bônus de plano, bônus de
+                              campanha e recorrente tiveram de ser escritos aqui
+                              e lá. Agora as duas telas montam os mesmos números
+                              pelo mesmo componente; o que diferia era só o
+                              tamanho, que virou um `prop`. */}
+                          {/* O respiro encolhe no celular para os quatro números
+                              caberem numa linha só — quebrar em 2×2 descola
+                              "Disponível" de "Do plano" e a carteira deixa de
+                              parecer uma conta. O `flex-wrap` fica como válvula:
+                              com campanha + recorrente + bônus + cortesia são
+                              sete colunas, que não cabem em 390px de jeito
+                              nenhum, e vazar o cartão seria pior que quebrar. */}
+                          <div className="flex flex-wrap items-center gap-x-1 gap-y-2 sm:gap-x-5">
+                            {(() => {
+                              const aj = ajudasDaCarteira(quota);
+                              const div = <div className="h-7 w-px shrink-0 bg-slate-200 sm:h-8" />;
+                              const nf = (v: number) => Number(v || 0).toLocaleString('pt-BR');
+                              const camp = Number(quota.bonus_campanha || 0);
+                              const campR = Number(quota.bonus_campanha_restante || 0);
+                              const rec = Number(quota.bonus_recorrente || 0);
+                              const recR = Number(quota.bonus_recorrente_restante || 0);
+                              const bon = Number(quota.bonus || 0);
+                              const bonR = Number(quota.bonus_restante || 0);
+                              const ext = Number(quota.creditos_extras || 0);
+                              const saldo = Number(quota.saldo || 0);
+                              const disp = Math.max(0, saldo - Number(quota.usado || 0));
+                              return (
+                                <>
+                                  <Numero tamanho="lg" rotulo="Do plano" valor={nf(quota.limite)}
+                                          cor="text-slate-900" sufixo="/mês" ajuda={aj.doPlano} />
+                                  {camp > 0 && (<>{div}
+                                    <Numero tamanho="lg" rotulo="Campanha"
+                                            valor={`${campR > 0 ? '+' : ''}${nf(campR)}`}
+                                            cor={campR > 0
+                                              ? (quota.bonus_campanha_dias != null && quota.bonus_campanha_dias <= 3
+                                                  ? 'text-rose-600' : 'text-amber-600')
+                                              : 'text-slate-300'}
+                                            sufixo={quota.bonus_campanha_dias != null
+                                              ? (quota.bonus_campanha_dias === 0 ? 'expira hoje'
+                                                 : `expira em ${quota.bonus_campanha_dias}d`)
+                                              : `de ${nf(camp)}`}
+                                            ajuda={aj.campanha} /></>)}
+                                  {rec > 0 && (<>{div}
+                                    <Numero tamanho="lg" rotulo="Campanha /mês"
+                                            valor={`${recR > 0 ? '+' : ''}${nf(recR)}`}
+                                            cor={recR > 0 ? 'text-amber-600' : 'text-slate-300'}
+                                            sufixo={quota.bonus_recorrente_meses == null ? 'de assinante'
+                                              : quota.bonus_recorrente_meses <= 1 ? 'último mês'
+                                              : `+${quota.bonus_recorrente_meses} meses`}
+                                            ajuda={aj.recorrente} /></>)}
+                                  {bon > 0 && (<>{div}
+                                    <Numero tamanho="lg" rotulo="Bônus"
+                                            valor={`${bonR > 0 ? '+' : ''}${nf(bonR)}`}
+                                            cor={bonR > 0 ? 'text-amber-600' : 'text-slate-300'}
+                                            sufixo={`de ${nf(bon)}`} ajuda={aj.bonus} /></>)}
+                                  {div}
+                                  {/* Adicionais aparecem SEMPRE, inclusive zerados: um campo
+                                      que some quando vale zero faz a pessoa achar que a
+                                      compra não existiu. */}
+                                  <Numero tamanho="lg" rotulo="Adicionais"
+                                          valor={`${ext > 0 ? '+' : ''}${nf(ext)}`}
+                                          cor={ext > 0 ? 'text-violet-600' : 'text-slate-300'}
+                                          ajuda={aj.adicionais} />
+                                  {div}
+                                  <Numero tamanho="lg" rotulo="Disponível" valor={nf(disp)}
+                                          cor={disp > 0 ? 'text-emerald-600' : 'text-amber-600'}
+                                          sufixo={`de ${nf(saldo)}`} ajuda={aj.disponivel} />
+                                  {Number(quota.cortesia_usada || 0) > 0 && (<>{div}
+                                    <Numero tamanho="lg" rotulo="Por nossa conta"
+                                            valor={nf(quota.cortesia_usada)}
+                                            cor="text-emerald-600" ajuda={aj.cortesia} /></>)}
+                                </>
+                              );
+                            })()}
                           </div>
 
+                          {/* ⚠️ ERA UM BOTÃO PRÓPRIO — `h-9`, `text-xs`, `font-bold`,
+                              fundo violeta — enquanto o mesmo "Comprar créditos"
+                              da tela de análise usava `BOTAO_SECUNDARIO`: `h-8`,
+                              11px, `font-black`, fundo branco. Dois botões com o
+                              mesmo texto e a mesma ação em geometrias diferentes é
+                              exatamente o que a constante existe para impedir, e
+                              foi copiar que os fez divergir da primeira vez.
+                              O de lá é o menor: adotá-lo devolve ~16px à linha,
+                              que é o que faltava para o botão parar de cair para
+                              a segunda linha nas larguras intermediárias.
+                              `self-start` porque no celular o `flex-col` esticava
+                              o botão de ponta a ponta — uma barra larga e baixa
+                              que grita mais que o saldo ao lado. */}
                           <button
                             type="button"
                             onClick={abrirCompraCreditos}
-                            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3.5 text-xs font-bold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100"
+                            className={`${BOTAO_SECUNDARIO} self-start sm:self-auto`}
                           >
-                            <Plus size={13} />
+                            <Plus size={12} />
                             Comprar créditos
                           </button>
                         </div>
@@ -1198,15 +1340,18 @@ function ProfileContent() {
                               gerada pelo mesmo helper. Escrita à mão nos três
                               lugares, ela divergiria no primeiro ajuste — e
                               telas discordando sobre saldo é pior do que
-                              discordarem sobre um rótulo. */}
-                          <p className="mt-1.5 text-[11px] text-slate-500">
-                            {detalhesDeCreditos(quota).map((parte, i) => (
+                              discordarem sobre um rótulo.
+                              A cor agora também vem de lá: as duas listas de
+                              `? :` já tinham divergido, e a daqui não pintava o
+                              prazo curto de campanha — o aviso mais urgente da
+                              carteira saía cinza. */}
+                          <p className="mt-1.5 text-[10px] leading-4 text-slate-500">
+                            {/* `semReset`: a linha do ciclo, logo abaixo, já
+                                diz quando renova — e com mais contexto. */}
+                            {detalhesDeCreditos(quota, { semReset: true }).map((parte, i) => (
                               <React.Fragment key={parte}>
                                 {i > 0 && ' · '}
-                                <span className={
-                                  parte.includes('nossa conta') ? 'font-semibold text-emerald-600'
-                                  : parte.includes('adicionais') ? 'font-semibold text-violet-600' : ''
-                                }>{parte}</span>
+                                <span className={corDoDetalhe(parte)}>{parte}</span>
                               </React.Fragment>
                             ))}
                           </p>
@@ -1230,9 +1375,22 @@ function ProfileContent() {
                             <span>⏸</span> Renovação cancelada — acesso até {subscriptionDetails.current_period_end}
                           </div>
                         ) : (
+                          /* ⚠️ A MESMA DATA APARECIA QUATRO VEZES NESTE CARTÃO:
+                             "a cota renova em 12 dias" na carteira, "12d
+                             restantes" aqui, o fim da vigência, e "Próxima
+                             cobrança" — que é exatamente o fim da vigência
+                             repetido. Pior: os dois contadores vinham de contas
+                             DIFERENTES (`(fim.date() - hoje.date()).days` na
+                             cota, `(fim - agora).days` na assinatura) e, medido,
+                             só concordavam quatro horas por dia. Nas outras
+                             vinte a tela mostrava "renova em 12 dias" ao lado de
+                             "11d restantes" e o cliente escolhia em qual
+                             acreditar. Agora a conta é uma só no servidor, e a
+                             frase é uma só aqui: a janela, a barra, e o que
+                             acontece no fim dela. */
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                             <p className="text-xs text-slate-400">
-                              Vigência:{' '}
+                              Ciclo:{' '}
                               <span className="font-semibold text-slate-700">
                                 {subscriptionDetails.current_period_start} → {subscriptionDetails.current_period_end}
                               </span>
@@ -1247,14 +1405,13 @@ function ProfileContent() {
                                     }}
                                   />
                                 </div>
-                                <span className="shrink-0 text-[10px] font-bold text-slate-400">
-                                  {subscriptionDetails.dias_restantes}d restantes
-                                </span>
                               </div>
                             )}
-                            <p className="text-xs text-slate-400">
-                              Próxima cobrança:{' '}
-                              <span className="font-semibold text-slate-700">{subscriptionDetails.current_period_end}</span>
+                            <p className="shrink-0 text-xs text-slate-400">
+                              Cobra de novo em{' '}
+                              <span className="font-semibold text-slate-700">
+                                {subscriptionDetails.dias_restantes} dia{subscriptionDetails.dias_restantes === 1 ? '' : 's'}
+                              </span>
                             </p>
                           </div>
                         )}
@@ -1262,17 +1419,49 @@ function ProfileContent() {
                     )}
                   </div>
 
+                  {/* ── Troca já marcada para o fim do ciclo ──────────────────
+                      ⚠️ SEM ESTE BLOCO, ADIAR O DOWNGRADE SERIA PIOR QUE
+                      APLICÁ-LO NA HORA. A pessoa confirma, nada muda na tela —
+                      porque de fato nada muda hoje — e a conclusão natural é
+                      que o clique não pegou. Aí ela clica de novo. Mudança
+                      combinada precisa aparecer, com data e com saída. */}
+                  {subscriptionDetails?.agendamento && (
+                    <div className="border-b border-slate-100 px-5 py-3 sm:px-6">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3.5 py-2.5">
+                        <p className="min-w-0 flex-1 text-[11px] leading-4 text-sky-900">
+                          <span className="font-bold">
+                            Mudança para o {nomeDoPlano(subscriptionDetails.agendamento.tier)} agendada para{' '}
+                            {subscriptionDetails.agendamento.em}.
+                          </span>{' '}
+                          Até lá nada muda: você segue no {planName}, com a cota de hoje, e não há
+                          cobrança nova até essa data.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleCancelarAgendamento}
+                          disabled={!!billingAction}
+                          className="shrink-0 rounded-lg border border-sky-300 bg-white px-3 py-1.5 text-[11px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+                        >
+                          {billingAction === 'agendamento' ? 'Desfazendo...' : 'Manter meu plano'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* ── Trocar plano — só com assinatura Stripe real ── */}
                   {subscriptionDetails && (
                     <div className="border-b border-slate-100 p-5 sm:p-6">
                       <p className="mb-4 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Trocar plano</p>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                        {([
-                          { tier: 2, price: 'R$ 79/mês'  },
-                          { tier: 3, price: 'R$ 197/mês' },
-                          { tier: 4, price: 'R$ 497/mês' },
-                        ] as const).map(({ tier, price }) => {
+                        {([2, 3, 4] as const).map((tier) => {
                           const name = nomeDoPlano(tier);
+                          // ⚠️ PREÇO DO STRIPE, NÃO LITERAL. Eram três strings
+                          // digitadas aqui — e o cabeçalho logo acima já mostra
+                          // o valor real da assinatura, então numa anual a mesma
+                          // tela dizia "R$ 4.970,00" em cima e "R$ 497/mês"
+                          // aqui. `null` enquanto carrega: sem preço é melhor
+                          // que preço possivelmente errado antes de uma compra.
+                          const price = precoPorCiclo(precos?.[String(tier)]);
                           const isCurrent = tier === userTier;
                           const isUp = tier > userTier;
                           return (
@@ -1308,14 +1497,28 @@ function ProfileContent() {
                                 Nível {tier}
                               </span>
                               <span className={`mt-0.5 text-sm font-black ${isCurrent ? 'text-emerald-900' : 'text-slate-800'}`}>{name}</span>
-                              <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : isUp ? 'text-slate-500' : 'text-amber-700'}`}>{price}</span>
+                              <span className={`text-xs font-semibold ${isCurrent ? 'text-emerald-700' : isUp ? 'text-slate-500' : 'text-amber-700'}`}>
+                                {price ?? '—'}
+                              </span>
                               {!!tierCredits[tier] && (
                                 <span className={`mt-0.5 text-[11px] font-bold ${isCurrent ? 'text-emerald-600' : 'text-slate-400'}`}>
                                   {tierCredits[tier].toLocaleString('pt-BR')} créditos/mês
                                 </span>
                               )}
-                              {!isCurrent && !isUp && (
-                                <span className="mt-1 text-[10px] text-amber-600">Você perderá recursos do plano atual</span>
+                              {/* ⚠️ DIZER O QUE MUDA, COM NÚMERO. "Você perderá
+                                  recursos do plano atual" não informa nada:
+                                  quais recursos, quanto a menos, e sobretudo o
+                                  que dói de verdade — o consumo do ciclo pode
+                                  já passar a cota do destino. Quem está no
+                                  Avançado com 160 usados e olha o Essencial (90)
+                                  precisa ver isso ANTES de clicar, não depois. */}
+                              {!isCurrent && !isUp && !!tierCredits[tier] && !!tierCredits[userTier] && (
+                                <span className="mt-1 text-[10px] leading-3.5 text-amber-600">
+                                  {tierCredits[userTier].toLocaleString('pt-BR')} → {tierCredits[tier].toLocaleString('pt-BR')} créditos/mês
+                                  {Number(quota?.usado || 0) > tierCredits[tier] && (
+                                    <> · você já usou {Number(quota?.usado).toLocaleString('pt-BR')} neste ciclo</>
+                                  )}
+                                </span>
                               )}
                             </button>
                           );
@@ -1323,7 +1526,16 @@ function ProfileContent() {
                       </div>
                     </div>
                   )}
+                  {/* ⚠️ A LISTA NÃO TINHA TÍTULO. Ela saía direto da grade de
+                      planos, então as linhas de cobrança pareciam continuação
+                      dos cartões de plano — e a única pista do que eram ficava
+                      no rodapé ("5 de 20 faturas"), depois de a pessoa já ter
+                      lido tudo. */}
                   {invoices.length > 0 ? (
+                    <>
+                    <p className="px-5 pt-5 pb-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400 sm:px-6">
+                      Histórico de cobranças
+                    </p>
                     <div className="divide-y divide-slate-100">
                       {invoices.slice(0, invoicesVisible).map((inv) => {
                         const coveredByCredit = !!inv.covered_by_credit;
@@ -1359,8 +1571,18 @@ function ProfileContent() {
 
                             {/* Valor + status + PDF */}
                             <div className="flex shrink-0 items-center gap-3">
-                              <span className="text-sm font-black text-slate-950">
+                              {/* ⚠️ COBERTO POR CRÉDITO MOSTRA OS DOIS NÚMEROS.
+                                  Antes só saía "R$ 0,00" com o selo ao lado:
+                                  verdade sobre o cartão, silêncio sobre o
+                                  saldo. Quem confere o extrato precisa saber
+                                  QUANTO de crédito foi consumido ali. */}
+                              <span className="text-right text-sm font-black text-slate-950">
                                 {inv.amount}
+                                {inv.amount_total && (
+                                  <span className="block text-[10px] font-bold text-sky-600">
+                                    {inv.amount_total} em crédito
+                                  </span>
+                                )}
                               </span>
                               <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-black uppercase ${statusCfg.badge}`}>
                                 <span className={`h-1.5 w-1.5 rounded-full ${statusCfg.dot}`} />
@@ -1372,6 +1594,14 @@ function ProfileContent() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                                  /* ⚠️ `aria-label`, NÃO SÓ `title`. O link é um
+                                     ícone sem texto: para quem usa leitor de
+                                     tela ele se anunciava como "link" e nada
+                                     mais. E `title` não abre no toque — foi
+                                     por isso que o componente `Tooltip` teve
+                                     de existir neste projeto. O `title` fica
+                                     para o hover no desktop. */
+                                  aria-label={`Ver fatura ${inv.number} de ${inv.date}`}
                                   title="Ver fatura"
                                 >
                                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1396,6 +1626,34 @@ function ProfileContent() {
                           </button>
                         </div>
                       )}
+                    </div>
+                    {/* ⚠️ TRUNCAGEM DECLARADA. O servidor pede 50 faturas ao
+                        Stripe; acima disso as antigas não vêm, e o rodapé dizia
+                        "5 de 50" como se 50 fosse o total da conta. */}
+                    {invoices.some((f: any) => f.truncado) && (
+                      <p className="px-5 pb-4 text-[10px] text-slate-400 sm:px-6">
+                        Mostrando as 50 cobranças mais recentes. As anteriores estão no portal de
+                        pagamento.
+                      </p>
+                    )}
+                    </>
+                  ) : invoicesErro ? (
+                    <div className="p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                        <p className="text-sm font-bold text-amber-900">
+                          Não conseguimos carregar suas cobranças agora.
+                          <span className="ml-1 font-semibold text-amber-800">
+                            Isto é um problema nosso, não da sua conta.
+                          </span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => fetchData()}
+                          className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-black text-amber-800 transition hover:bg-amber-100"
+                        >
+                          Tentar de novo
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="p-5">

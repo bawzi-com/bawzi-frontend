@@ -55,6 +55,12 @@ interface PncpSearchProps {
   /** UF pré-carregada junto com o initialQuery */
   initialUf?: string;
   contextCompanies?: Empresa[];
+  /** ⚠️ "AINDA NÃO SEI" É DIFERENTE DE "NÃO TEM".
+   *  `getCompanyDisplayName(null)` devolve "Nenhuma empresa ativa", e sem esta
+   *  flag a frase "Buscando para Nenhuma empresa ativa" aparecia em todo
+   *  refresh de quem TEM empresa — pelo tempo que o perfil leva para voltar.
+   *  Enquanto verdadeiro, a frase não afirma nada. */
+  carregandoContexto?: boolean;
   activeCnpj?: string;
   onActiveCnpjChange?: (cnpj: string, company: Empresa | null) => void;
   /** Abre a aba Capital com valor e objeto do edital pré-preenchidos */
@@ -73,6 +79,7 @@ export default function PncpSearch({
   initialQuery,
   initialUf,
   contextCompanies = [],
+  carregandoContexto = false,
   activeCnpj,
   onActiveCnpjChange,
   onMedirFolego,
@@ -890,7 +897,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
                 moldura para exibir um nome que cabe em duas palavras. */}
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] font-medium text-slate-500">
               <span>Buscando para</span>
-              {contextCompanies.length > 1 ? (
+              {carregandoContexto ? (
+                <span className="inline-block h-3.5 w-40 animate-pulse rounded bg-slate-200/70 align-middle" />
+              ) : contextCompanies.length > 1 ? (
                 <ActiveContextSwitcher
                   companies={contextCompanies}
                   activeCnpj={activeCnpj}
@@ -1293,10 +1302,26 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Concorrência</span>
                 <span className="text-sm font-black text-slate-800 leading-tight block">{marketData.competitividade}</span>
               </div>
-              <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Taxa de Vitória</span>
-                <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{marketData.taxaSucesso}%</span>
-              </div>
+              {/* ⚠️ AQUI FICAVA "TAXA DE VITÓRIA: 38,8%", EM VERDE.
+                  O número saía de `(1 - dispersão_de_preços) * 45 + 5` e se
+                  apresentava como a chance DO USUÁRIO ganhar — sem conhecer a
+                  empresa dele, o preço dele nem o histórico dele. E o caminho
+                  com MENOS dado (≤3 registros) caía numa constante que dava
+                  exatamente 38,8%: menos informação, número mais otimista, em
+                  verde, com casa decimal.
+                  No lugar vão as duas contagens de onde a conclusão sai de
+                  verdade — e que o usuário confere sozinho. Muitos
+                  fornecedores distintos = mercado pulverizado; um só
+                  repetindo = nicho dominado. */}
+              {typeof marketData.fornecedoresDistintos === 'number'
+                && (marketData.contratosObservados ?? 0) > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fornecedores distintos</span>
+                  <span className="text-xs font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                    {marketData.fornecedoresDistintos} em {marketData.contratosObservados}
+                  </span>
+                </div>
+              )}
             </div>
             {/* 4. EDITAIS ABERTOS (licitações ativas na busca atual) */}
             <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col justify-center relative overflow-hidden group">

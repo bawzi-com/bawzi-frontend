@@ -5,6 +5,7 @@ import { useGoogleLogin, GoogleOAuthProvider } from '@react-oauth/google';
 import { API_URL, setAccessToken, apiFetch, mensagemDeErro } from '@/lib/apiClient';
 import { subscribeToPush } from '@/lib/pushNotifications';
 import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
+import { campanhaAtual, limparCampanha } from '@/lib/campanha';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -69,6 +70,10 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
   const [error, setError] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [consentAccepted, setConsentAccepted] = useState(false);
+  // Código da campanha. Nasce preenchido quando a pessoa chegou por
+  // `?campanha=X` — o `PromoBanner`, que vive no layout raiz, guardou o código
+  // na primeira página que ela abriu, mesmo que já tenha navegado desde então.
+  const [campanha, setCampanha] = useState('');
   const [selectedCompany, setSelectedCompany] = useState<CompanyLookupResult | null>(null);
   const missingPasswordRequirements = getMissingPasswordRequirements(password);
   const isRegisterPasswordValid = missingPasswordRequirements.length === 0;
@@ -85,6 +90,11 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
       setError('');
       setForgotSuccess(false);
       setConsentAccepted(false);
+      // ⚠️ NÃO ZERA COMO OS OUTROS CAMPOS. O código não foi digitado nesta
+      // sessão do modal — ele veio do link em que a pessoa clicou, talvez
+      // várias páginas atrás. Limpá-lo ao abrir o modal descartaria a
+      // atribuição exatamente no momento em que ela vale.
+      setCampanha(campanhaAtual());
       setSelectedCompany(null);
     }
   }, [isOpen, defaultView]);
@@ -120,7 +130,14 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',  // grava o cookie de refresh (ver nota no handleSubmit)
-          body: JSON.stringify({ token: tokenResponse.access_token }),
+          // ⚠️ O CÓDIGO VAI TAMBÉM POR AQUI. Uma campanha que só creditasse
+          // quem cria senha entregaria bônus a uns e não a outros pelo botão
+          // que a pessoa escolheu clicar. O backend ignora o campo quando o
+          // usuário já existe — só cadastro novo resgata vaga.
+          body: JSON.stringify({
+            token: tokenResponse.access_token,
+            campanha: (campanha || campanhaAtual()).trim().toUpperCase() || undefined,
+          }),
         });
 
         if (!res.ok) {
@@ -145,6 +162,7 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
         subscribeToPush().catch(() => {});
         syncLgpdConsent();
+        limparCampanha();
         if (onSuccess) onSuccess();
         onClose();
       } catch (err: any) {
@@ -214,6 +232,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             company_name: selectedCompany?.razao_social || selectedCompany?.nome_fantasia || undefined,
             company_domain: selectedCompany?.domain || undefined,
             company_website: selectedCompany?.website || undefined,
+            // O que a pessoa DIGITOU vence o que veio do link: quem colou um
+            // código à mão está corrigindo, não completando.
+            campanha: (campanha || '').trim().toUpperCase() || undefined,
           };
 
       const response = await fetch(`${API_URL}${endpoint}`, {
@@ -266,6 +287,11 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
 
         subscribeToPush().catch(() => {});
         syncLgpdConsent();
+        // O código já foi resgatado (ou recusado) pelo servidor. Mantê-lo
+        // guardado faria a próxima conta criada neste navegador tentar
+        // resgatar de novo — e a trava anti-duplicata é por workspace, não por
+        // pessoa, então seria uma vaga a menos na campanha por engano.
+        if (view === 'register') limparCampanha();
         if (onSuccess) onSuccess();
         onClose();
       } else {
@@ -576,6 +602,45 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 {confirmPassword.length > 0 && (
                   <p className={`mt-1.5 px-1 text-xs font-semibold ${confirmPassword === password ? 'text-emerald-600' : 'text-red-500'}`}>
                     {confirmPassword === password ? '✓ Senhas coincidem' : 'As senhas não coincidem'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Código de campanha.
+
+                ⚠️ O CAMPO É OPCIONAL E FICA POR ÚLTIMO, DE PROPÓSITO. Todo
+                campo a mais no cadastro derruba conversão, e este só interessa
+                a uma fração das pessoas. Quem chegou pelo link nem precisa
+                pensar nele: já vem preenchido, com o rótulo confirmando que a
+                campanha foi reconhecida. Quem viu o código num anúncio digita.
+
+                Errar o código não impede nada — o backend ignora código
+                inválido e cria a conta do mesmo jeito. Perder um cadastro por
+                causa de um cupom seria o pior negócio que uma campanha de
+                aquisição pode fazer. */}
+            {view === 'register' && (
+              <div className="px-1">
+                <label htmlFor="campo-campanha" className="mb-1.5 block text-xs font-bold text-slate-500">
+                  Código de campanha <span className="font-medium text-slate-400">(opcional)</span>
+                </label>
+                <input
+                  id="campo-campanha"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  placeholder="Ex: LANCAMENTO"
+                  value={campanha}
+                  onChange={(e) => setCampanha(e.target.value.toUpperCase())}
+                  className={`w-full rounded-xl border bg-slate-50 p-3.5 font-mono text-sm font-bold uppercase tracking-widest outline-none transition-all focus:ring-2 sm:p-4 ${
+                    campanha
+                      ? 'border-emerald-400 focus:border-emerald-500 focus:ring-emerald-500/20'
+                      : 'border-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20'
+                  }`}
+                />
+                {campanha && (
+                  <p className="mt-1.5 text-xs font-semibold text-emerald-600">
+                    ✓ Código aplicado — o bônus entra assim que a conta for criada.
                   </p>
                 )}
               </div>

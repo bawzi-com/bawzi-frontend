@@ -36,9 +36,94 @@ import {
   DollarSign,
   Trash2,
   CreditCard,
+  Coins,
   Layers,
   ExternalLink,
 } from 'lucide-react';
+
+
+/** Os jobs que o scheduler REGISTA, na ordem em que a madrugada acontece.
+ *
+ *  ⚠️ ESTA LISTA ERA FICÇÃO EM DUAS DIREÇÕES AO MESMO TEMPO.
+ *
+ *  Mostrava seis cards. Um deles, "Enrich Fornecedor · 03:00 BRT", apontava
+ *  para `enrich_fornecedor_diario` — um job apagado do scheduler porque
+ *  chamava um caminho inexistente e levava 429 em 100% das chamadas. O card
+ *  continuou lá, prometendo uma execução diária que não existia.
+ *
+ *  E escondia oito. O painel dizia "Agendamento Automático" e omitia a
+ *  varredura nacional, o auto-registro de resultados, o monitor de análises,
+ *  o radar, as disputas, os alertas de renovação, o câmbio e o sincronismo
+ *  das carteiras — metade do que corre de facto todas as noites.
+ *
+ *  Um painel de agendamento que inventa um job e esconde oito não é um painel
+ *  incompleto: é uma fonte de conclusões erradas sobre onde os dados nascem.
+ *
+ *  A fonte da verdade é `PncpScheduler._registar_jobs` em
+ *  `backend/app/core/scheduler.py`. Mexeu lá, mexa aqui.
+ *
+ *  `badge` é escrito por extenso de propósito: o Tailwind varre o código à
+ *  procura de nomes de classe LITERAIS, então o `text-${cor}-400` que estava
+ *  aqui nunca gerava CSS nenhum — as tarjas de horário vinham sem cor.
+ */
+const JOBS_AGENDADOS: Array<{
+  id: string;
+  resKey?: string;
+  label: string;
+  hora: string;
+  desc: string;
+  grupo: string;
+  badge: string;
+  desligado?: boolean;
+  flag?: string;
+}> = [
+  { id: 'itens_contratos_diario', resKey: 'itens_contratos', label: 'Itens Homologados', hora: '00:45',
+    desc: 'Preço unitário real · conta-gotas', grupo: 'Base',
+    badge: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+  { id: 'contratos_diario', resKey: 'contratos', label: 'Contratos sem_termo', hora: '02:00',
+    desc: '~10k contratos novos via /api/search · ~3 min', grupo: 'Base',
+    badge: 'text-violet-400 bg-violet-500/10 border-violet-500/20' },
+  { id: 'expirar_promos_diario', label: 'Expiração de Tier Promocional', hora: '02:05',
+    desc: 'Promoção vencida volta ao plano contratado', grupo: 'Conta',
+    badge: 'text-slate-300 bg-slate-700/30 border-slate-600/40' },
+  { id: 'desabilitar_excedentes_diario', label: 'Desabilitar Empresas Excedentes', hora: '02:15',
+    desc: 'Empresas acima do limite, passado o prazo', grupo: 'Conta',
+    badge: 'text-slate-300 bg-slate-700/30 border-slate-600/40' },
+  { id: 'enrich_via_consulta_diario', resKey: 'enrich_via_consulta', label: 'Enrich via Consulta', hora: '02:30',
+    desc: 'Match por NCP em massa · ~30-90 min', grupo: 'Base',
+    badge: 'text-sky-400 bg-sky-500/10 border-sky-500/20' },
+  { id: 'sync_carteiras_diario', resKey: 'sync_carteiras', label: 'Sincronismo de Carteiras', hora: '03:00',
+    desc: 'Busca dirigida por CNPJ — alimenta "Meus contratos"', grupo: 'Base',
+    badge: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+  { id: 'varredura_nacional_diaria', resKey: 'varredura_nacional', label: 'Varredura Nacional', hora: '04:00',
+    desc: 'Incremental: 3 dias de publicação, pool nacional', grupo: 'Base',
+    badge: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+  { id: 'consulta_uf_diario', resKey: 'consulta_uf', label: 'Consulta UF (legado)', hora: '04:00',
+    desc: 'Substituído pela Varredura Nacional — a API ignora ufSigla, 26 de 27 passadas eram repetição',
+    grupo: 'Base', flag: 'SCHEDULER_CONSULTA_UF_ATIVO', desligado: true,
+    badge: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+  { id: 'resultados_pncp_diario', resKey: 'resultados_pncp', label: 'Auto-registro de Resultados', hora: '05:15',
+    desc: 'Homologação do PNCP vira veredito na Gestão', grupo: 'Base',
+    badge: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+  { id: 'editais_detalhe_diario', resKey: 'editais_detalhe', label: 'Detalhes de Editais', hora: '06:00',
+    desc: 'Plataforma/valor p/ o Radar · ~40 min', grupo: 'Base',
+    badge: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
+  { id: 'cambio_diario', resKey: 'cambio', label: 'Cotação do Dólar (BCB)', hora: '06:10',
+    desc: 'Uma requisição — alimenta a calculadora de margem', grupo: 'Base',
+    badge: 'text-lime-400 bg-lime-500/10 border-lime-500/20' },
+  { id: 'monitor_analises_diario', resKey: 'monitor_analises', label: 'Monitor de Análises', hora: '06:30',
+    desc: 'Mudanças nos editais em acompanhamento', grupo: 'Avisos',
+    badge: 'text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20' },
+  { id: 'radar_alertas_diario', resKey: 'radar_alertas', label: 'Radar de Alertas', hora: '07:00',
+    desc: 'Editais novos que batem nos critérios salvos', grupo: 'Avisos',
+    badge: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
+  { id: 'disputas_diario', resKey: 'disputas', label: 'Disputas que vão abrir', hora: '07:20',
+    desc: 'Logo após o radar, para os avisos chegarem juntos', grupo: 'Avisos',
+    badge: 'text-pink-400 bg-pink-500/10 border-pink-500/20' },
+  { id: 'alertas_renovacao_diario', resKey: 'alertas_renovacao', label: 'Alertas de Renovação', hora: '08:00',
+    desc: 'Contratos de concorrentes a vencer', grupo: 'Avisos',
+    badge: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
+];
 
 
 /** Custo e margem de um plano, ao vivo, com os valores que estão nos campos.
@@ -492,10 +577,15 @@ export default function AdminDashboard() {
   const [bannerLoading, setBannerLoading] = useState(false);
   const [bannerSaving, setBannerSaving] = useState(false);
   const [bannerMsg, setBannerMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [campanhas, setCampanhas] = useState<any[]>([]);
+  const [campanhaEdit, setCampanhaEdit] = useState<any>(null);
+  const [savingCampanha, setSavingCampanha] = useState(false);
+  const [campanhaMsg, setCampanhaMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Estados de Tiers
   const [tierConfigs, setTierConfigs] = useState<any[]>([]);
   const [tierEdits, setTierEdits] = useState<Record<number, any>>({});
+  const [bonusUso, setBonusUso] = useState<any>(null);
   const [savingTier, setSavingTier] = useState<number | null>(null);
   const [tierMsg, setTierMsg] = useState<{ tier_id: number; text: string; ok: boolean } | null>(null);
 
@@ -719,6 +809,95 @@ export default function AdminDashboard() {
       alert('Erro de comunicação com o servidor.');
     } finally {
       setModerationLoading(false);
+    }
+  };
+
+  const loadCampanhas = async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/campanhas`);
+      if (res.ok) {
+        const d = await res.json();
+        // ⚠️ Guarda de tipo antes do `.map` no render. Um endpoint que devolva
+        // `{}` num erro derruba a aba inteira com "c.map is not a function" —
+        // já aconteceu neste app, no painel de notificações.
+        setCampanhas(Array.isArray(d) ? d : []);
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso: é lista de apoio, não pode travar a aba */
+    }
+  };
+
+  const salvarCampanha = async () => {
+    if (!campanhaEdit) return;
+    setSavingCampanha(true);
+    setCampanhaMsg(null);
+    try {
+      const codigo = String(campanhaEdit.codigo || '').trim().toUpperCase();
+      const res = await apiFetch(`${API_URL}/api/admin/campanhas/${encodeURIComponent(codigo)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        // ⚠️ Lista EXPLÍCITA, como o PUT dos tiers. Campo que não esteja
+        // escrito aqui não sai do browser, por mais que exista na tela — foi
+        // exatamente assim que os selects de modelo ficaram sem efeito.
+        body: JSON.stringify({
+          codigo,
+          titulo: campanhaEdit.titulo || '',
+          descricao: campanhaEdit.descricao || '',
+          bonus_creditos: Number(campanhaEdit.bonus_creditos) || 0,
+          modo: campanhaEdit.modo === 'recorrente' ? 'recorrente' : 'unico',
+          // Percentual só no recorrente — o backend recusa a outra combinação,
+          // e mandar 'percentual' num pote daria 422 em vez de salvar.
+          tipo_valor: (campanhaEdit.modo === 'recorrente'
+            && campanhaEdit.tipo_valor === 'percentual') ? 'percentual' : 'fixo',
+          bonus_percentual: Number(campanhaEdit.bonus_percentual) || 0,
+          validade_dias: Number(campanhaEdit.validade_dias) || 30,
+          // `|| 0` e não `|| 30`: aqui o zero é um valor válido e significa
+          // "enquanto for cliente". Um default silencioso mudaria a oferta.
+          duracao_meses: Number(campanhaEdit.duracao_meses) || 0,
+          max_resgates: Number(campanhaEdit.max_resgates) || 1,
+          ativa: !!campanhaEdit.ativa,
+          // Data vazia = sem limite. `|| null` porque "" viraria 422 no parser.
+          inicia_em: campanhaEdit.inicia_em || null,
+          expira_em: campanhaEdit.expira_em || null,
+          cor: campanhaEdit.cor || 'amber',
+          label_desconto: campanhaEdit.label_desconto || '',
+          cta_texto: campanhaEdit.cta_texto || null,
+          cta_url: campanhaEdit.cta_url || null,
+          dismissible: campanhaEdit.dismissible !== false,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setCampanhaMsg({ text: 'Campanha salva!', ok: true });
+        setCampanhaEdit(null);
+        await loadCampanhas();
+      } else {
+        setCampanhaMsg({ text: mensagemDeErro(data.detail, 'Erro ao salvar.'), ok: false });
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setCampanhaMsg({ text: 'Erro de conexão.', ok: false });
+    } finally {
+      setSavingCampanha(false);
+      setTimeout(() => setCampanhaMsg(null), 4000);
+    }
+  };
+
+  const encerrarCampanha = async (codigo: string) => {
+    if (!confirm(
+      `Encerrar a campanha "${codigo}"?\n\n` +
+      'O banner some e novos cadastros deixam de receber o bônus. ' +
+      'Quem já recebeu mantém o crédito até a validade dele. ' +
+      'O histórico de resgates é preservado.'
+    )) return;
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/campanhas/${encodeURIComponent(codigo)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) await loadCampanhas();
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
     }
   };
 
@@ -1000,11 +1179,34 @@ export default function AdminDashboard() {
             limit_rapida:       t.limit_rapida ?? null,
             peso_profunda:      t.peso_profunda ?? 1,
             caracteres_por_credito: t.caracteres_por_credito ?? 50000,
+            // ⚠️ ESTE OBJETO É O CORPO DO PUT, não um diff. Ele é semeado com
+            // TODOS os valores atuais justamente porque `handleSaveTier` envia
+            // a lista inteira: um campo ausente aqui sairia como
+            // `Number(undefined)` = NaN e viraria `null` no JSON. Campo novo na
+            // tela precisa nascer nesta lista também.
+            bonus_creditos:     t.bonus_creditos ?? 0,
           };
         });
         setTierEdits(edits);
         loadPrecosModelo();
+        loadBonusUso();
       }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      /* silencioso */
+    }
+  };
+
+  /** Consumo do bônus, ao lado do campo que o define.
+   *
+   *  Falha em silêncio de propósito: é um relatório de apoio. Se a agregação
+   *  cair, a tela de configuração dos planos tem de continuar utilizável —
+   *  bloquear a edição de limites porque um gráfico não carregou seria trocar
+   *  uma informação a menos por uma tela a menos. */
+  const loadBonusUso = async () => {
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/bonus/uso`);
+      if (res.ok) setBonusUso(await res.json());
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       /* silencioso */
@@ -1046,6 +1248,11 @@ export default function AdminDashboard() {
           limit_rapida:              body.limit_rapida ?? null,
           peso_profunda:             Number(body.peso_profunda) || 1,
           caracteres_por_credito:    Number(body.caracteres_por_credito) || 50000,
+          // `Number(...) || 0` e não `?? 0`: o input devolve string, e um campo
+          // limpo vira `""` — que passa incólume por `??` e chega ao backend
+          // como string, tomando 422. O `||` cobre "", null, undefined e NaN
+          // com o único valor que significa "sem bônus".
+          bonus_creditos:            Number(body.bonus_creditos) || 0,
         }),
       });
       if (res.ok) {
@@ -1534,8 +1741,17 @@ export default function AdminDashboard() {
         >
           <CreditCard size={18} /> Billing
         </button>
+        {/* ⚠️ Comentário FORA da lista de atributos: `{/* *​/}` entre atributos
+            é erro de sintaxe em JSX, não comentário. Já custou um build nesta
+            base — a mensagem ("'...' expected") não aponta para a causa.
+
+            `loadTierConfigs` entra aqui porque a prévia do bônus percentual lê
+            as cotas dos planos. Sem isto ela só apareceria para quem tivesse
+            passado antes pela aba Tiers — e quem fosse direto para Promoções
+            configuraria no escuro. */}
         <button
-          onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); }}
+          onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); loadCampanhas();
+                           if (!tierConfigs.length) loadTierConfigs(); }}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'promo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
           <Zap size={18} /> Promoções
@@ -1866,7 +2082,9 @@ export default function AdminDashboard() {
                 <div className="p-2 bg-slate-700/40 rounded-xl"><Clock size={18} className="text-slate-400" /></div>
                 <div>
                   <h3 className="text-base font-black text-white">Agendamento Automático</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Workers diários — fuso America/Sao_Paulo</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Todos os jobs registados — fuso America/Sao_Paulo
+                  </p>
                 </div>
               </div>
               {schedulerStatus && (
@@ -1881,73 +2099,53 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                {
-                  id: 'itens_contratos_diario',
-                  resKey: 'itens_contratos',
-                  label: 'Itens Homologados',
-                  hora: '00:45',
-                  desc: 'Preço unitário real · ~45 min',
-                  cor: 'rose',
-                },
-                {
-                  id: 'contratos_diario',
-                  resKey: 'contratos',
-                  label: 'Contratos sem_termo',
-                  hora: '02:00',
-                  desc: '~10k contratos novos · ~3 min',
-                  cor: 'violet',
-                },
-                {
-                  id: 'enrich_via_consulta_diario',
-                  resKey: 'enrich_via_consulta',
-                  label: 'Enrich via Consulta',
-                  hora: '02:30',
-                  desc: 'Match por NCP em massa · ~30-90 min',
-                  cor: 'sky',
-                },
-                {
-                  id: 'enrich_fornecedor_diario',
-                  resKey: 'enrich',
-                  label: 'Enrich Fornecedor',
-                  hora: '03:00',
-                  desc: 'Próximos 730 dias · ~10-30 min',
-                  cor: 'amber',
-                },
-                {
-                  id: 'consulta_uf_diario',
-                  resKey: 'consulta_uf',
-                  label: 'Consulta UF',
-                  hora: '04:00',
-                  desc: '5-6 UFs rotativas · ~1-2h',
-                  cor: 'emerald',
-                },
-                {
-                  id: 'editais_detalhe_diario',
-                  resKey: 'editais_detalhe',
-                  label: 'Detalhes de Editais',
-                  hora: '06:00',
-                  desc: 'Plataforma/valor p/ o Radar · ~40 min',
-                  cor: 'teal',
-                },
-              ].map(({ id, resKey, label, hora, desc, cor }) => {
-                const jobProx  = schedulerStatus?.jobs_proximas_exec?.find((j: any) => j.id.startsWith(id));
-                const jobRes   = schedulerStatus?.jobs_resultados?.[resKey];
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {JOBS_AGENDADOS.map(({ id, resKey, label, hora, desc, grupo, badge, desligado, flag }) => {
+                const jobProx  = schedulerStatus?.jobs_proximas_exec?.find((j: any) => j.id === id);
+                const jobRes   = resKey ? schedulerStatus?.jobs_resultados?.[resKey] : null;
                 const proxData = jobProx?.proxima_exec ? new Date(jobProx.proxima_exec) : null;
+                // Um job pode estar desligado por env (`flag`) — nesse caso ele
+                // não aparece em `jobs_proximas_exec` e a ausência é a resposta,
+                // não uma falha de carregamento.
+                const off = desligado && !jobProx;
                 return (
-                  <div key={id} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-200">{label}</span>
-                      <span className={`text-[10px] font-black text-${cor}-400 bg-${cor}-500/10 px-2 py-0.5 rounded-full border border-${cor}-500/20`}>{hora} BRT</span>
+                  <div
+                    key={id}
+                    className={`rounded-xl p-4 space-y-2 border ${
+                      off
+                        ? 'bg-slate-900/50 border-slate-800/60 opacity-70'
+                        : 'bg-slate-800/40 border-slate-700/40'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className={`block text-xs font-black truncate ${off ? 'text-slate-500 line-through' : 'text-slate-200'}`}>
+                          {label}
+                        </span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-600">{grupo}</span>
+                      </div>
+                      <span
+                        className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                          off ? 'text-slate-500 bg-slate-800/60 border-slate-700/60' : badge
+                        }`}
+                      >
+                        {off ? 'DESLIGADO' : `${hora} BRT`}
+                      </span>
                     </div>
                     <p className="text-[10px] text-slate-500">{desc}</p>
                     <div className="pt-1 border-t border-slate-700/40 space-y-1">
-                      <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                        <Clock size={9} />
-                        <span className="font-bold text-slate-400">Próxima:</span>
-                        {proxData ? proxData.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                      </p>
+                      {off ? (
+                        <p className="text-[10px] text-slate-600 flex items-start gap-1">
+                          <Clock size={9} className="mt-0.5 shrink-0" />
+                          <span>Não registado. Religar com <code className="text-slate-400">{flag}=true</code>.</span>
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                          <Clock size={9} />
+                          <span className="font-bold text-slate-400">Próxima:</span>
+                          {proxData ? proxData.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                        </p>
+                      )}
                       {jobRes?.ultima_exec && (
                         <p className="text-[10px] text-slate-600">
                           Última: {new Date(jobRes.ultima_exec).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
@@ -2001,7 +2199,7 @@ export default function AdminDashboard() {
                       ? <><XCircle size={13} /> Erro: {workersStatus.contratos.ultimo_erro.slice(0, 60)}</>
                       : workersStatus.contratos.ultimo_resultado
                         ? <><CheckCircle2 size={13} /> Concluído · {workersStatus.contratos.ultimo_resultado.total_inseridos?.toLocaleString()} contratos inseridos</>
-                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                        : <><Clock size={13} /> Nunca executado</>
                   }
                 </div>
               )}
@@ -2063,7 +2261,7 @@ export default function AdminDashboard() {
                       ? <><XCircle size={13} /> Erro: {workersStatus.municipios.ultimo_erro.slice(0, 60)}</>
                       : workersStatus.municipios.ultimo_resultado
                         ? <><CheckCircle2 size={13} /> Concluído · {workersStatus.municipios.ultimo_resultado.novos} novos · {workersStatus.municipios.ultimo_resultado.total_collection?.toLocaleString()} total</>
-                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                        : <><Clock size={13} /> Nunca executado</>
                   }
                 </div>
               )}
@@ -2103,25 +2301,44 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* WORKER CONSULTA UF */}
-            <div className="bg-slate-900/40 border border-emerald-500/15 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
+            {/* WORKER CONSULTA UF
+                ⚠️ ESTE CARD RECOMENDAVA, EM VERDE E COM SELO, O CAMINHO QUE O
+                BACKEND JÁ TINHA DESCONTINUADO. O selo dizia "recomendado para
+                fornecedor em massa"; o scheduler, na mesma data, media que a
+                premissa do worker é falsa — a API ignora `ufSigla`, e as 27
+                passadas buscam o mesmo pool nacional. Quem seguisse a
+                recomendação queimava cota do PNCP para reindexar 26 vezes o
+                que já tinha. O worker continua aqui, porque serve para
+                diagnóstico e comparação, mas sem se vender como a via boa. */}
+            <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2rem] p-8 backdrop-blur-md shadow-2xl">
               <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 bg-emerald-500/10 rounded-xl"><RefreshCw size={20} className="text-emerald-400" /></div>
+                <div className="p-2.5 bg-slate-700/30 rounded-xl"><RefreshCw size={20} className="text-slate-400" /></div>
                 <div>
                   <h3 className="text-lg font-black text-white">Worker · Consulta UF</h3>
                   <p className="text-xs text-slate-500 mt-0.5">Indexa por UF com curl_cffi (TLS Chrome)</p>
                 </div>
               </div>
 
-              {/* Badge recomendado */}
-              <div className="mb-5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-black text-emerald-400 uppercase tracking-widest">
-                ✦ Recomendado para fornecedor em massa
+              {/* Badge de legado — era "✦ RECOMENDADO PARA FORNECEDOR EM MASSA" */}
+              <div className="mb-5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[10px] font-black text-amber-400 uppercase tracking-widest">
+                <AlertTriangle size={11} /> Legado · desligado no agendamento
               </div>
 
               {/* Alerta de contexto */}
-              <div className="mb-5 px-3 py-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15 text-xs text-emerald-300/80">
-                <span className="font-black text-emerald-400">Por quê?</span> Usa <code className="text-slate-300">curl_cffi</code> que replica o TLS do Chrome — contorna o fingerprinting do PNCP.
-                Retorna <code className="text-slate-300">nomeRazaoSocialFornecedor</code> nativamente em cada contrato.
+              <div className="mb-5 px-3 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 text-xs text-amber-200/80 space-y-1.5">
+                <p>
+                  <span className="font-black text-amber-400">Por que saiu do ar?</span> O worker assume que
+                  <code className="text-slate-300"> /api/consulta/v1/contratos</code> filtra por
+                  <code className="text-slate-300"> ufSigla</code>. Não filtra. Medido na mesma janela:
+                  com <code className="text-slate-300">ufSigla=GO</code> → 506.229 registos; sem UF nenhuma → 506.200,
+                  e os primeiros vêm idênticos. As 27 passadas varrem o mesmo pool nacional: 26 são repetição
+                  que a deduplicação depois descarta.
+                </p>
+                <p className="text-slate-400">
+                  Em produção quem faz este trabalho é a <span className="font-bold text-emerald-400">Varredura Nacional</span> (04:00),
+                  que pagina o pool inteiro e separa a UF do nosso lado, por <code className="text-slate-300">unidadeOrgao.ufSigla</code>.
+                  Mantido aqui para diagnóstico e comparação.
+                </p>
               </div>
 
               {/* Status */}
@@ -2141,7 +2358,7 @@ export default function AdminDashboard() {
                       ? <><XCircle size={13} /> Erro: {workersStatus.consulta_uf.ultimo_erro.slice(0, 60)}</>
                       : workersStatus.consulta_uf.ultimo_resultado
                         ? <><CheckCircle2 size={13} /> {workersStatus.consulta_uf.ultimo_resultado.total_inseridos?.toLocaleString()} inseridos · {workersStatus.consulta_uf.ultimo_resultado.ufs_processadas} UFs</>
-                        : <><Clock size={13} /> Nunca executado nesta sessão</>
+                        : <><Clock size={13} /> Nunca executado</>
                   }
                 </div>
               )}
@@ -2180,11 +2397,11 @@ export default function AdminDashboard() {
                   onClick={triggerWorkerConsultaUf}
                   disabled={!!workerAction || workersStatus?.consulta_uf?.running}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl font-black text-sm transition-all
-                    bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                    bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {workerAction === 'consulta_uf'
                     ? <><Loader2 size={16} className="animate-spin" /> A iniciar...</>
-                    : <><Play size={14} /> Indexar por UF (curl_cffi)</>
+                    : <><Play size={14} /> Rodar mesmo assim (diagnóstico)</>
                   }
                 </button>
               </div>
@@ -2206,16 +2423,26 @@ export default function AdminDashboard() {
                 mas a maioria dos contratos locais não os tem. Este worker resolve a compra-mãe de cada um e preenche.
               </div>
 
-              {/* Status (com progresso ao vivo) */}
-              {workersStatus?.itens_contratos && (
+              {/* Status (com progresso ao vivo)
+                  ⚠️ UM LOTE INTEIRO RECUSADO PELO PNCP SAÍA EM VERDE. A pilha
+                  só olhava para "houve resultado?", e uma execução que não
+                  preencheu nada porque a fonte fechou a porta ficava com a
+                  mesma cor de uma que preencheu tudo. */}
+              {workersStatus?.itens_contratos && (() => {
+                const res = workersStatus.itens_contratos.ultimo_resultado;
+                const maioriaRecusada = !!res && (res.falha_pncp || 0) > 0
+                  && (res.falha_pncp || 0) >= ((res.candidatos || 0) / 2);
+                return (
                 <div className={`flex items-center gap-2 mb-5 px-3 py-2 rounded-xl text-xs font-bold border ${
                   workersStatus.itens_contratos.running
                     ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                     : workersStatus.itens_contratos.ultimo_erro
                       ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                      : workersStatus.itens_contratos.ultimo_resultado
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                        : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
+                      : maioriaRecusada
+                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                        : workersStatus.itens_contratos.ultimo_resultado
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                          : 'bg-slate-800/50 border-slate-700/50 text-slate-500'
                 }`}>
                   {workersStatus.itens_contratos.running
                     ? <><Loader2 size={13} className="animate-spin" />
@@ -2224,12 +2451,22 @@ export default function AdminDashboard() {
                           : '...'}</>
                     : workersStatus.itens_contratos.ultimo_erro
                       ? <><XCircle size={13} /> Erro: {workersStatus.itens_contratos.ultimo_erro.slice(0, 60)}</>
-                      : workersStatus.itens_contratos.ultimo_resultado
-                        ? <><CheckCircle2 size={13} /> {workersStatus.itens_contratos.ultimo_resultado.com_itens} contratos preenchidos · {workersStatus.itens_contratos.ultimo_resultado.sem_itens} sem itens</>
+                      : res
+                        ? <>
+                            {maioriaRecusada ? <AlertTriangle size={13} /> : <CheckCircle2 size={13} />}
+                            <span>
+                              {res.com_itens} preenchidos · {res.sem_itens} sem itens
+                              {/* ⚠️ RECUSA DO PNCP NÃO É AUSÊNCIA DE ITENS. Antes as duas
+                                  somavam no mesmo "sem itens", e um lote inteiro bloqueado
+                                  por 429 lia-se como base pobre — conclusão oposta à certa. */}
+                              {(res.falha_pncp || 0) > 0 && ` · ${res.falha_pncp} recusados pelo PNCP`}
+                            </span>
+                          </>
                         : <><Clock size={13} /> Nunca executado</>
                   }
                 </div>
-              )}
+                );
+              })()}
 
               <div className="space-y-4">
                 <div>
@@ -2245,6 +2482,10 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <p className="text-[10px] text-slate-600">~150 contratos × 18s ≈ 45 min · agendado diariamente às 00:45 BRT</p>
+                <p className="text-[10px] text-slate-600">
+                  Compra sem itens sai da fila por <span className="text-slate-400">7 dias</span>;
+                  recusa do PNCP, só por <span className="text-slate-400">6 horas</span>.
+                </p>
 
                 <button
                   onClick={triggerWorkerItensContratos}
@@ -2513,6 +2754,33 @@ export default function AdminDashboard() {
                 <p className="text-slate-500 text-sm mt-1">Configure o ZeptoMail para envio de e-mails transacionais. Username é sempre <code className="text-amber-400">emailapikey</code>.</p>
               </div>
             </div>
+
+            {/* ⚠️ O CAMINHO EXATO, NÃO SÓ O ENDEREÇO. Esta tela pede uma API
+                Key que não se gera aqui — e "vá ao ZeptoMail" deixa a parte
+                difícil de fora: a chave não fica no perfil da conta, fica
+                dentro de um Mail Agent, em SMTP/API. Quem abre o console sem
+                saber disso procura em Settings e não acha.
+                `noopener`: o link abre um painel de terceiros a partir do
+                admin; sem ele a página aberta recebe `window.opener` e pode
+                navegar esta aba para outro lugar. */}
+            <a
+              href="https://zeptomail.zoho.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mb-8 flex items-start gap-3 rounded-2xl border border-slate-800/60 bg-slate-950/50 px-4 py-3 transition-colors hover:border-amber-500/40 hover:bg-slate-950"
+            >
+              <ExternalLink size={15} className="mt-0.5 shrink-0 text-amber-400" />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-slate-200">
+                  Abrir o console do ZeptoMail
+                </span>
+                <span className="mt-0.5 block text-xs leading-relaxed text-slate-500">
+                  A chave fica no <strong className="font-bold text-slate-400">Mail Agent</strong> que envia por este domínio,
+                  em <strong className="font-bold text-slate-400">SMTP/API → SMTP</strong>. Copie o valor de <em>password</em> para
+                  o campo API Key abaixo — o username já é <code className="text-amber-400/80">emailapikey</code>.
+                </span>
+              </span>
+            </a>
 
             <form onSubmit={handleSaveSMTP} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -3086,6 +3354,83 @@ export default function AdminDashboard() {
             </button>
           </div>
 
+          {/* ── O bônus virou uso, ou morreu na prateleira? ──────────────────
+              Configurar bônus sem medir consumo é dar desconto no escuro. O
+              painel fica AQUI, colado nos campos que definem o número, porque
+              a pergunta "quanto pôr" só tem resposta ao lado de "o que o
+              último valor produziu". */}
+          {bonusUso && (
+            <div className="bg-slate-900/40 border border-amber-500/15 rounded-[2rem] p-6 backdrop-blur-md">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-base font-black text-white flex items-center gap-2">
+                    <Coins size={16} className="text-amber-400" /> Bônus concedido × consumido
+                  </h3>
+                  {/* ⚠️ A JANELA PRECISA ESTAR ESCRITA NA TELA. O relatório mede
+                      mês-calendário; o ciclo real de cada cliente é ancorado na
+                      data em que ele assinou no Stripe. Um número sem a unidade
+                      ao lado seria lido como se batesse com a fatura. */}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Mês-calendário {bonusUso.mes_corrente} · aproximação: o ciclo de cobrança de cada
+                    cliente é ancorado na data da assinatura
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Consumido</p>
+                  <p className="text-2xl font-black text-amber-400">
+                    {Number(bonusUso.total_consumido || 0).toLocaleString('pt-BR')}
+                    <span className="text-sm text-slate-500 font-bold">
+                      {' / '}{Number(bonusUso.total_concedido || 0).toLocaleString('pt-BR')}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {(bonusUso.tiers || [])
+                  .filter((t: any) => t.bonus_por_ciclo > 0 || t.consumido > 0)
+                  .map((t: any) => {
+                    const pct = t.concedido > 0
+                      ? Math.min(100, Math.round((t.consumido / t.concedido) * 100)) : 0;
+                    return (
+                      <div key={t.tier_id} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-black text-slate-200">{t.nome}</span>
+                          <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                            +{Number(t.bonus_por_ciclo).toLocaleString('pt-BR')} / ciclo
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-500">
+                          {Number(t.workspaces_ativos).toLocaleString('pt-BR')} workspace(s) com análise no mês
+                        </p>
+                        <div className="mt-2 h-1.5 w-full bg-slate-700/60 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-500 rounded-full transition-all duration-700"
+                               style={{ width: `${pct}%` }} />
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1.5">
+                          <span className="text-amber-400 font-bold">{Number(t.consumido).toLocaleString('pt-BR')}</span>
+                          {' de '}{Number(t.concedido).toLocaleString('pt-BR')} usados · {pct}%
+                        </p>
+                        <p className="text-[10px] text-slate-600">
+                          {/* Só "a expirar" até a virada. Depois do reset o número
+                              já não existe em lugar nenhum — o bônus não é estoque,
+                              é config, então não sobra registro do que não foi usado. */}
+                          <span className="font-bold text-slate-500">{Number(t.a_expirar).toLocaleString('pt-BR')}</span>
+                          {' expiram na virada do mês'}
+                        </p>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {(bonusUso.tiers || []).every((t: any) => !t.bonus_por_ciclo && !t.consumido) && (
+                <p className="text-xs text-slate-600 text-center py-4">
+                  Nenhum plano com bônus configurado. Defina em &quot;Bônus / ciclo&quot; abaixo.
+                </p>
+              )}
+            </div>
+          )}
+
           {tierConfigs.length === 0 ? (
             <div className="text-center py-16 text-slate-600">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" />
@@ -3300,6 +3645,50 @@ export default function AdminDashboard() {
                         </p>
                       </div>
 
+                      {/* Bônus do ciclo.
+
+                          ⚠️ NÃO É A MESMA COISA QUE O PACOTE AVULSO, e os dois
+                          somam no mesmo saldo — por isso o texto abaixo diz o
+                          que os separa. O `creditos_extras` é campo do
+                          workspace: comprado uma vez, ele levanta a cota de
+                          TODO mês, para sempre. O bônus é config do plano: vale
+                          no ciclo, é gasto antes do crédito do plano e some na
+                          virada, sem deixar saldo para trás.
+
+                          Num plano ilimitado o campo não faz nada: o backend
+                          devolve 0 para bônus quando monthly_limit é 0, senão
+                          um plano sem teto ganharia um saldo finito e passaria
+                          a cair em cortesia. */}
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
+                          Bônus / ciclo
+                          <span className="ml-1 text-slate-600 normal-case font-normal">(0 = sem bônus)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={(edit.monthly_limit ?? tier.monthly_limit) === 0}
+                          value={edit.bonus_creditos ?? tier.bonus_creditos ?? 0}
+                          onChange={e => setTierEdits(prev => ({
+                            ...prev,
+                            [tier.tier_id]: { ...prev[tier.tier_id], bonus_creditos: parseInt(e.target.value) || 0 },
+                          }))}
+                          className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-amber-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        />
+                        <p className="text-[10px] text-slate-600 mt-1">
+                          {(edit.monthly_limit ?? tier.monthly_limit) === 0
+                            ? 'Plano ilimitado não usa bônus.'
+                            : <>
+                                Gasto <span className="text-amber-400 font-bold">antes</span> do crédito do plano e
+                                {' '}<span className="text-amber-400 font-bold">expira</span> no reset.
+                                Saldo do ciclo: {(
+                                  (edit.monthly_limit ?? tier.monthly_limit) +
+                                  (edit.bonus_creditos ?? tier.bonus_creditos ?? 0)
+                                ).toLocaleString('pt-BR')}
+                              </>}
+                        </p>
+                      </div>
+
                       {/* Tetos por MODO.
 
                           O limite acima não distingue uma auditoria profunda de
@@ -3511,8 +3900,398 @@ export default function AdminDashboard() {
           <div>
             <h2 className="text-2xl font-black text-white tracking-tight">Promoções</h2>
             <p className="text-slate-500 text-sm mt-1">
-              Configure o banner de cupom e envie convites de acesso temporário.
+              Campanhas de crédito no cadastro, banner de cupom do Stripe e convites de acesso temporário.
             </p>
+          </div>
+
+          {/* ── CAMPANHAS DE AQUISIÇÃO ───────────────────────────────────
+              ⚠️ FICA ACIMA DO BANNER DE CUPOM DE PROPÓSITO, e o texto abaixo
+              explica a diferença, porque as duas coisas parecem a mesma e não
+              são. Cupom é desconto no PREÇO, no checkout — só alcança quem já
+              paga. Campanha é CRÉDITO, no cadastro — alcança quem ainda não
+              paga nada, que é justamente quem uma campanha de aquisição quer.
+              Sem esse aviso, o operador configura o cupom achando que está
+              dando créditos e descobre semanas depois que não deu nada. */}
+          <div className="bg-slate-900 border border-amber-800/40 rounded-2xl p-6 space-y-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-black text-amber-300 uppercase tracking-widest flex items-center gap-2">
+                  <Coins size={13} /> Campanhas de crédito
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5 max-w-2xl">
+                  Bônus de créditos para os <span className="text-slate-300 font-bold">primeiros N cadastros</span>.
+                  O código viaja no link <code className="text-amber-400">?campanha=CODIGO</code> ou é digitado no
+                  cadastro. O crédito tem prazo próprio e é gasto antes do crédito do plano.
+                </p>
+              </div>
+              <button
+                onClick={() => setCampanhaEdit({
+                  codigo: '', titulo: '', descricao: '', bonus_creditos: 50,
+                  modo: 'unico', tipo_valor: 'fixo', bonus_percentual: 20,
+                  validade_dias: 30, duracao_meses: 12,
+                  max_resgates: 200, ativa: false, cor: 'amber', label_desconto: '',
+                  cta_texto: '', cta_url: '', inicia_em: '', expira_em: '', dismissible: true,
+                })}
+                className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-black transition-all"
+              >
+                <Zap size={14} /> Nova campanha
+              </button>
+            </div>
+
+            {/* Lista */}
+            {campanhas.length === 0 && !campanhaEdit && (
+              <p className="text-xs text-slate-600 py-4 text-center">
+                Nenhuma campanha criada. O banner segue mostrando o cupom configurado abaixo.
+              </p>
+            )}
+
+            <div className="space-y-2">
+              {campanhas.map((c: any) => {
+                const pct = c.max_resgates > 0
+                  ? Math.min(100, Math.round((c.resgates / c.max_resgates) * 100)) : 0;
+                const esgotada = c.vagas_restantes === 0;
+                return (
+                  <div key={c.codigo} className="bg-slate-800/40 border border-slate-700/40 rounded-xl p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="font-mono text-sm font-black text-amber-400 tracking-widest">{c.codigo}</span>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                          !c.ativa ? 'text-slate-500 bg-slate-800 border-slate-700'
+                          : esgotada ? 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                          : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        }`}>
+                          {!c.ativa ? 'DESLIGADA' : esgotada ? 'ESGOTADA' : 'NO AR'}
+                        </span>
+                        <span className="text-xs text-slate-400 truncate">{c.titulo}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setCampanhaEdit({
+                            ...c,
+                            inicia_em: c.inicia_em ? String(c.inicia_em).slice(0, 10) : '',
+                            expira_em: c.expira_em ? String(c.expira_em).slice(0, 10) : '',
+                          })}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all"
+                        >
+                          Editar
+                        </button>
+                        {c.ativa && (
+                          <button
+                            onClick={() => encerrarCampanha(c.codigo)}
+                            className="px-3 py-1.5 bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-300 rounded-lg text-xs font-bold transition-all"
+                          >
+                            Encerrar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2.5 h-1.5 w-full bg-slate-700/60 rounded-full overflow-hidden">
+                      <div className="h-full bg-amber-500 rounded-full transition-all duration-700" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5">
+                      <span className="font-bold text-amber-400">{Number(c.resgates || 0).toLocaleString('pt-BR')}</span>
+                      {' de '}{Number(c.max_resgates || 0).toLocaleString('pt-BR')} vagas
+                      {' · '}+{c.tipo_valor === 'percentual'
+                        ? `${Number(c.bonus_percentual || 0)}% da cota`
+                        : `${Number(c.bonus_creditos || 0).toLocaleString('pt-BR')} créditos`}
+                      {c.modo === 'recorrente'
+                        ? <> <span className="text-amber-400 font-bold">por mês</span>
+                            {c.duracao_meses ? ` durante ${c.duracao_meses} meses` : ' enquanto for cliente'}</>
+                        : ` em pote, válidos ${c.validade_dias} dias`}
+                      {/* O compromisso máximo, para o operador ver o tamanho da
+                          aposta antes de ligar — e não depois. Sem data de fim
+                          não existe teto, e inventar um número seria pior que
+                          não mostrar nenhum. */}
+                      {c.exposicao_aberta
+                        ? <span className="text-rose-400"> · exposição aberta (sem data de fim)</span>
+                        : <> · exposição máxima {Number(c.creditos_no_teto || 0).toLocaleString('pt-BR')} créditos
+                            {' ('}já concedidos {Number(c.creditos_comprometidos || 0).toLocaleString('pt-BR')})</>}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Formulário */}
+            {campanhaEdit && (() => {
+              // Percentual só existe no recorrente — ver a nota no seletor.
+              const ehPercentual = (campanhaEdit.modo || 'unico') === 'recorrente'
+                && (campanhaEdit.tipo_valor || 'fixo') === 'percentual';
+              return (
+              <div className="bg-slate-950/60 border border-amber-700/30 rounded-xl p-5 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {([
+                    ['codigo', 'Código (vai no link)', 'text', 'LANCAMENTO'],
+                    ['titulo', 'Título do banner', 'text', '50 créditos de bônus'],
+                    ['label_desconto', 'Etiqueta', 'text', 'BÔNUS'],
+                  ] as const).map(([campo, rotulo, tipo, ph]) => (
+                    <div key={campo}>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{rotulo}</label>
+                      <input
+                        type={tipo}
+                        value={(campanhaEdit as any)[campo] ?? ''}
+                        onChange={e => setCampanhaEdit((p: any) => ({
+                          ...p, [campo]: campo === 'codigo' ? e.target.value.toUpperCase() : e.target.value,
+                        }))}
+                        placeholder={ph}
+                        disabled={campo === 'codigo' && !!campanhaEdit._id}
+                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 transition-colors placeholder:text-slate-600 disabled:opacity-50"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Descrição</label>
+                  <input
+                    value={campanhaEdit.descricao ?? ''}
+                    onChange={e => setCampanhaEdit((p: any) => ({ ...p, descricao: e.target.value }))}
+                    placeholder="Crie sua conta e receba créditos para testar a auditoria profunda."
+                    className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500 transition-colors placeholder:text-slate-600"
+                  />
+                </div>
+
+                {/* Modo: pote ou recorrente.
+
+                    ⚠️ ESTE SELETOR MUDA O SIGNIFICADO DE "CRÉDITOS POR PESSOA"
+                    — em `unico` é um total, em `recorrente` é POR MÊS. Por isso
+                    o rótulo do campo abaixo muda junto e a linha de exposição
+                    é recalculada: os mesmos "50" podem custar 10 mil ou 120
+                    mil créditos, e o operador não pode descobrir isso depois. */}
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">
+                    Como o bônus é entregue
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {([
+                      ['unico', 'Pote único', 'N créditos para gastar num prazo. Gastou, acabou. Serve para ativação.'],
+                      ['recorrente', 'Todo ciclo', 'N créditos a cada mês, por um tempo. Renova junto com a cota. Serve para retenção.'],
+                    ] as const).map(([valor, titulo, ajuda]) => {
+                      const sel = (campanhaEdit.modo || 'unico') === valor;
+                      return (
+                        <button
+                          key={valor}
+                          type="button"
+                          onClick={() => setCampanhaEdit((p: any) => ({ ...p, modo: valor }))}
+                          className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                            sel ? 'border-amber-500/60 bg-amber-500/10' : 'border-slate-700 bg-slate-800/40 hover:border-slate-600'
+                          }`}
+                        >
+                          <span className={`block text-xs font-black ${sel ? 'text-amber-300' : 'text-slate-300'}`}>{titulo}</span>
+                          <span className="block text-[10px] text-slate-500 mt-0.5">{ajuda}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Valor fixo ou percentual da cota.
+
+                    ⚠️ SÓ APARECE NO RECORRENTE, e não é limitação técnica. Num
+                    POTE o valor é uma quantidade entregue ("você recebeu 18");
+                    resolvê-lo a cada leitura faria o pote mudar de tamanho
+                    depois de a pessoa já ter gasto parte dele — subir de plano
+                    inflaria o saldo, descer sumiria com crédito que ela viu na
+                    tela ontem. Num benefício mensal isso é natural: é a cota do
+                    mês, e a cota mudou. */}
+                {(campanhaEdit.modo || 'unico') === 'recorrente' && (
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">
+                      Quanto vale
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {([
+                        ['fixo', 'Valor fixo', 'O mesmo número em todo plano. Simples de comunicar.'],
+                        ['percentual', '% da cota do plano', 'Acompanha quem sobe de plano: 20% valem mais no Avançado que no Essencial.'],
+                      ] as const).map(([valor, titulo, ajuda]) => {
+                        const sel = (campanhaEdit.tipo_valor || 'fixo') === valor;
+                        return (
+                          <button
+                            key={valor}
+                            type="button"
+                            onClick={() => setCampanhaEdit((p: any) => ({ ...p, tipo_valor: valor }))}
+                            className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                              sel ? 'border-amber-500/60 bg-amber-500/10' : 'border-slate-700 bg-slate-800/40 hover:border-slate-600'
+                            }`}
+                          >
+                            <span className={`block text-xs font-black ${sel ? 'text-amber-300' : 'text-slate-300'}`}>{titulo}</span>
+                            <span className="block text-[10px] text-slate-500 mt-0.5">{ajuda}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {([
+                    ...(ehPercentual
+                      ? [['bonus_percentual', '% da cota do plano, por mês', 1] as const]
+                      : [['bonus_creditos',
+                          (campanhaEdit.modo || 'unico') === 'recorrente'
+                            ? 'Créditos por mês' : 'Créditos por pessoa', 1] as const]),
+                    ...((campanhaEdit.modo || 'unico') === 'recorrente'
+                      ? [['duracao_meses', 'Duração (meses · 0 = enquanto for cliente)', 0] as const]
+                      : [['validade_dias', 'Validade (dias)', 1] as const]),
+                    ['max_resgates', 'Teto de vagas', 1],
+                  ] as const).map(([campo, rotulo, min]) => (
+                    <div key={campo}>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{rotulo}</label>
+                      <input
+                        type="number"
+                        min={min}
+                        value={(campanhaEdit as any)[campo] ?? 0}
+                        onChange={e => setCampanhaEdit((p: any) => ({ ...p, [campo]: parseInt(e.target.value) || 0 }))}
+                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:border-amber-500 transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Prévia: quanto o percentual vale em cada plano.
+
+                    ⚠️ SEM ISTO O OPERADOR ESTÁ CONFIGURANDO NO ESCURO. "20% da
+                    cota" não é um número até dizer de qual plano — e no
+                    gratuito 20% de 5 é 1 crédito, o que muda completamente a
+                    leitura da oferta. Os limites vêm da mesma config que o
+                    portão usa, então a prévia não pode divergir do real. */}
+                {ehPercentual && (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-900/60 px-3 py-2.5">
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">
+                      Quanto isso vale por plano, hoje
+                    </p>
+                    <div className="flex flex-wrap gap-x-5 gap-y-2">
+                      {(tierConfigs.filter((t: any) => t.tier_id >= 1)).map((t: any) => {
+                        const pct = Number(campanhaEdit.bonus_percentual) || 0;
+                        const lim = Number(t.monthly_limit) || 0;
+                        const val = lim > 0 ? Math.floor((lim * pct + 50) / 100) : 0;
+                        return (
+                          <div key={t.tier_id}>
+                            <span className="block text-[10px] text-slate-500">{t.name}</span>
+                            <span className={`text-sm font-black ${val > 0 ? 'text-amber-400' : 'text-slate-600'}`}>
+                              {lim > 0 ? `+${val.toLocaleString('pt-BR')}/mês` : 'ilimitado'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {!tierConfigs.length && (
+                      <p className="text-[10px] text-slate-600">
+                        Abra a aba Tiers &amp; Limites uma vez para carregar as cotas dos planos.
+                      </p>
+                    )}
+                    <p className="text-[10px] text-slate-600 mt-2">
+                      Plano ilimitado não recebe bônus — porcentagem de &quot;sem teto&quot; não é um número.
+                    </p>
+                  </div>
+                )}
+
+                {/* O número que importa antes de ligar: quanto isto pode custar. */}
+                {(() => {
+                  const rec = (campanhaEdit.modo || 'unico') === 'recorrente';
+                  const meses = Number(campanhaEdit.duracao_meses) || 0;
+                  const vagas = Number(campanhaEdit.max_resgates) || 0;
+                  // No percentual o pior caso é todo mundo no plano pago mais
+                  // caro com teto finito. A média esconderia o risco justamente
+                  // quando a campanha der certo e o pessoal subir de plano.
+                  const porPessoa = ehPercentual
+                    ? Math.max(0, ...tierConfigs
+                        .filter((t: any) => t.tier_id >= 1 && Number(t.monthly_limit) > 0)
+                        .map((t: any) => Math.floor(
+                          (Number(t.monthly_limit) * (Number(campanhaEdit.bonus_percentual) || 0) + 50) / 100)))
+                    : Number(campanhaEdit.bonus_creditos) || 0;
+                  const aberta = rec && meses === 0;
+                  return (
+                    <p className={`text-xs rounded-xl px-3 py-2 border ${
+                      aberta ? 'text-rose-300/90 bg-rose-500/5 border-rose-500/20'
+                             : 'text-amber-300/80 bg-amber-500/5 border-amber-500/15'}`}>
+                      {aberta ? (
+                        <>
+                          <span className="font-black text-rose-400">Exposição aberta.</span>{' '}
+                          {vagas.toLocaleString('pt-BR')} pessoas × {porPessoa.toLocaleString('pt-BR')} créditos
+                          {' '}<span className="font-bold">por mês, sem data de fim</span> —{' '}
+                          {(vagas * porPessoa).toLocaleString('pt-BR')} créditos por mês enquanto continuarem
+                          {' '}clientes. Não há teto para calcular.
+                        </>
+                      ) : (
+                        <>
+                          Exposição máxima{ehPercentual ? ' (pior caso: todos no plano mais alto)' : ''}:{' '}
+                          <span className="font-black text-amber-400">
+                            {(vagas * porPessoa * (rec ? meses : 1)).toLocaleString('pt-BR')} créditos
+                          </span>
+                          {' '}— {vagas.toLocaleString('pt-BR')} pessoas × {porPessoa.toLocaleString('pt-BR')}
+                          {rec ? ` × ${meses} ${meses === 1 ? 'mês' : 'meses'}` : ''}.
+                          Depois da última vaga o banner some sozinho e o cadastro deixa de conceder.
+                        </>
+                      )}
+                    </p>
+                  );
+                })()}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cor do banner</label>
+                    <select
+                      value={campanhaEdit.cor ?? 'amber'}
+                      onChange={e => setCampanhaEdit((p: any) => ({ ...p, cor: e.target.value }))}
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    >
+                      {['emerald', 'amber', 'violet', 'rose', 'sky'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {([
+                    ['inicia_em', 'Começa em (opcional)'],
+                    ['expira_em', 'Termina em (opcional)'],
+                  ] as const).map(([campo, rotulo]) => (
+                    <div key={campo}>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{rotulo}</label>
+                      <input
+                        type="date"
+                        value={(campanhaEdit as any)[campo] ?? ''}
+                        onChange={e => setCampanhaEdit((p: any) => ({ ...p, [campo]: e.target.value }))}
+                        className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!campanhaEdit.ativa}
+                      onChange={e => setCampanhaEdit((p: any) => ({ ...p, ativa: e.target.checked }))}
+                      className="rounded accent-amber-500"
+                    />
+                    <span className="text-xs text-slate-300 font-bold">Campanha no ar</span>
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {campanhaMsg && (
+                      <span className={`text-xs font-bold ${campanhaMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {campanhaMsg.text}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => setCampanhaEdit(null)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-xl text-sm font-bold transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={salvarCampanha}
+                      disabled={savingCampanha}
+                      className="flex items-center gap-2 px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-black transition-all disabled:opacity-40"
+                    >
+                      {savingCampanha ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Salvar campanha
+                    </button>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
           </div>
 
           {/* ── BANNER DE CUPOM ─────────────────────────────────────────── */}
@@ -4185,13 +4964,26 @@ export default function AdminDashboard() {
                 const et = analyticsData.por_etapa as any[];
                 const totalEtapas = et.reduce((a, e) => a + e.cost_usd, 0) || 1;
                 const porAnalise = et.reduce((a, e) => a + e.custo_por_analise, 0);
+                // ⚠️ `parecer` e `basica` são A MESMA ETAPA, em duas eras.
+                // `juridico.py` chamava `generate_text` sem `task_type`, então
+                // o parecer caía no default `"basica"` e aparecia aqui como
+                // "Redator", misturado com chamadas genéricas. Corrigido para
+                // `task_type="parecer"` — mas as análises JÁ GRAVADAS ficaram
+                // com o rótulo antigo, e este painel lê histórico.
+                //
+                // Por isso os dois têm cor e nome, e o nome de `basica` diz
+                // que é o registro velho: num período que atravesse o deploy o
+                // custo do parecer sai em DUAS linhas, e sem esta pista alguém
+                // vai concluir que apareceu uma etapa nova na conta.
                 const COR: Record<string, string> = {
                   investigador: '#2a78d6', redator: '#eb6834', auditoria: '#1baf7a',
+                  parecer: '#eb6834', basica: '#c9814f',
                 };
                 const cor = (e: string) => COR[e] || '#898781';
                 const NOME: Record<string, string> = {
                   investigador: 'Investigador', redator: 'Parecer jurídico',
-                  auditoria: 'Auditoria', termo_pncp: 'Extração de termo', basica: 'Redator',
+                  auditoria: 'Auditoria', termo_pncp: 'Extração de termo',
+                  parecer: 'Parecer jurídico', basica: 'Parecer (registro antigo)',
                 };
                 return (
                   <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">

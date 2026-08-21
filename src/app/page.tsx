@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+// A régua de créditos anunciada na landing sai da mesma fonte que o portão
+// aplica (`/api/tiers/config`), não de texto digitado. Ver `SavingsCalculator`.
+import { useTierConfig } from '../Contexts/TierContext';
 import Link from 'next/link';
 // HeroFeed/HeroCards saíram: eram importados e nunca renderizados nesta
 // página (feature construída e órfã). Os componentes continuam no repo;
@@ -1348,6 +1351,11 @@ const HORAS_PARA_LER_LAUDO = 0.5;
 const PLANO_MAIS_BARATO = 79;
 
 function SavingsCalculator() {
+  // A régua vem do backend porque ela é uma chave no Admin. Escrita à mão
+  // aqui, a frase "1 crédito a cada 50.000 caracteres" continuaria na landing
+  // depois de a cobrança ter mudado — e é a primeira conta que um comprador
+  // faz antes de assinar. Ver `TierContext.regua`.
+  const { regua } = useTierConfig();
   const [editais, setEditais] = useState(12);
   const [horas, setHoras] = useState(3);
   const [custoHora, setCustoHora] = useState(85);
@@ -1519,7 +1527,10 @@ function SavingsCalculator() {
                   {Math.floor(economiaMes / PLANO_MAIS_BARATO)}× o plano mais barato
                 </strong>{' '}
                 (R$ {PLANO_MAIS_BARATO}/mês). Qual plano atende o seu volume depende do
-                tamanho dos editais — a régua é 1 crédito a cada 50.000 caracteres analisados.
+                tamanho dos editais —{' '}
+                {regua.tipo === 'custo'
+                  ? 'cada análise custa os créditos que ela consome, e o número aparece antes de você enviar.'
+                  : `a régua é 1 crédito a cada ${(regua.caracteres_por_credito ?? 50000).toLocaleString('pt-BR')} caracteres analisados.`}
               </p>
             ) : (
               <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"

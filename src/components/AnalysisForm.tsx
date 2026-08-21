@@ -26,6 +26,12 @@ export interface QuotaInfo {
   restante: number | null;
   reseta_em: string;       // "YYYY-MM-DD"
   dias_para_reset: number;
+  /** Bônus do plano no ciclo. Já vem SOMADO em `saldo` e descontado em
+   *  `usado` — exibir como carteira separada conta o mesmo crédito duas
+   *  vezes. É consumido ANTES do crédito do plano e expira no reset. */
+  bonus?: number;
+  bonus_usado?: number;
+  bonus_restante?: number;
   /** Quanto uma auditoria profunda debita. 1 = os dois modos custam igual
    *  neste plano (Explorador e Gratuito usam o mesmo par de modelos). */
   peso_profunda?: number;
@@ -697,8 +703,13 @@ export default function AnalysisForm({
           onde essa frase não finge ser um controle.
 
           ⚠️ E A DIREITA GANHOU A CARTEIRA, que estava no meio do caminho.
-          Ver o comentário do `ReguaDeCobranca` e o de `quotaPedeAtencao`. */}
-      <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/45 p-5 md:p-6">
+          Ver o comentário do `ReguaDeCobranca` e o de `quotaPedeAtencao`.
+
+          ⚠️ `p-3.5` NO CELULAR (era `p-5`) POR CAUSA DA CARTEIRA, que mora aqui
+          dentro: cada 8px de moldura sai da linha dos quatro números. Medido a
+          390px — 290px úteis para 307px de conteúdo, e a linha quebrava em 2×2,
+          descolando "Disponível" de "Do plano". A partir de `sm:` volta a 20. */}
+      <div className="border-b border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/45 p-3.5 sm:p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white px-3 py-1.5 text-[10px] font-black uppercase text-sky-700 shadow-sm">

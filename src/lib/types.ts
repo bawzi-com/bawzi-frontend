@@ -148,5 +148,8 @@ export interface Concorrente {
 // ─── Evento customizado ───────────────────────────────────────────────────────
 
 export interface BawziUpdateEvent extends Event {
-  detail?: { tier?: number; name?: string };
+  // `avatar_url: null` significa "removeu a foto" — é diferente de ausente,
+  // que significa "este evento não fala de foto". Quem escuta precisa
+  // distinguir os dois com `!== undefined`.
+  detail?: { tier?: number; name?: string; avatar_url?: string | null };
 }

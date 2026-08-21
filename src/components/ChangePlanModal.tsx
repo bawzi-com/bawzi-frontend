@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '@/lib/apiClient';
+import { usePrecos, precoPorCiclo } from '@/lib/precos';
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
@@ -25,10 +26,16 @@ const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').rep
  * página de planos usa e que o portão aplica. O que sobra na lista é RECURSO
  * (o que o plano faz), que não é numérico e não tem como divergir.
  */
-export const PLAN_INFO: Record<number, { name: string; price: string; features: string[] }> = {
+/** ⚠️ O PREÇO SAIU DAQUI, PELA MESMA RAZÃO QUE A COTA JÁ TINHA SAÍDO.
+ *  O docstring acima conta que capacidade escrita à mão produziu "1.000
+ *  análises/mês" num plano de 90 créditos. A correção mandou a capacidade para
+ *  `/api/tiers/limites-publicos` — e deixou o preço, que é o número mais
+ *  perigoso dos dois: é o que a pessoa lê no segundo anterior a autorizar uma
+ *  cobrança. Agora vem de `/api/tiers/precos-publicos`, que lê o `unit_amount`
+ *  do próprio `Price` que será faturado. Ver `lib/precos.ts`. */
+export const PLAN_INFO: Record<number, { name: string; features: string[] }> = {
   2: {
     name: 'Essencial',
-    price: 'R$ 79/mês',
     features: [
       'Perfil da empresa (CNPJ/UF)',
       'Central de decisões e laudos',
@@ -38,7 +45,6 @@ export const PLAN_INFO: Record<number, { name: string; price: string; features: 
   },
   3: {
     name: 'Profissional',
-    price: 'R$ 197/mês',
     features: [
       'Tudo do Essencial',
       'Parecer jurídico no laudo',
@@ -49,7 +55,6 @@ export const PLAN_INFO: Record<number, { name: string; price: string; features: 
   },
   4: {
     name: 'Avançado',
-    price: 'R$ 497/mês',
     features: [
       'Tudo do Profissional',
       'Gestão do fluxo completo dos editais',
@@ -93,6 +98,8 @@ export default function ChangePlanModal({
   onConfirm,
   isConfirming,
 }: ChangePlanModalProps) {
+  const precos = usePrecos();
+  const precoDe = (t: number | null) => (t ? precoPorCiclo(precos?.[String(t)]) : null);
   const [couponCode, setCouponCode]           = useState('');
   const [couponValidation, setCouponValidation] = useState<CouponValidation | null>(null);
   const [couponLoading, setCouponLoading]     = useState(false);
@@ -186,8 +193,15 @@ export default function ChangePlanModal({
           <h2 className="mt-1 text-lg font-black text-white">
             {current?.name ?? `Nível ${currentTier}`} → {next?.name ?? `Nível ${targetTier}`}
           </h2>
+          {/* ⚠️ A FRASE DO DOWNGRADE MUDOU JUNTO COM O COMPORTAMENTO. Ela
+              dizia "ajuste proporcional no ciclo atual" nos dois sentidos —
+              verdade no upgrade, mentira no downgrade, que agora só entra no
+              fim do período já pago. */}
           <p className="mt-0.5 text-sm text-white/70">
-            {next?.price} · A Stripe aplica ajuste proporcional no ciclo atual
+            {precoDe(targetTier) ?? `Nível ${targetTier}`}
+            {isUp
+              ? ' · a Stripe aplica ajuste proporcional no ciclo atual'
+              : ' · a partir da próxima renovação'}
           </p>
         </div>
 
@@ -231,14 +245,31 @@ export default function ChangePlanModal({
             </div>
           </div>
 
-          {/* Nota de cobrança */}
+          {/* Nota de cobrança.
+              ⚠️ ESTE PARÁGRAFO ERA FALSO NO DOWNGRADE, e falso na única tela em
+              que o próximo clique é uma cobrança. Ele prometia "no próximo
+              ciclo" enquanto `_sync_update_subscription_tier` trocava o preço
+              com `proration_behavior="always_invoice"` — valia na hora e
+              faturava na hora. Quem descia de 650 para 90 com 160 já
+              consumidos perdia os recursos no mesmo segundo E entrava
+              estourado, depois de ler o contrário.
+              O backend passou a agendar de verdade (`SubscriptionSchedule`),
+              então agora as duas frases são verificáveis. */}
           <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
             {isUp
               ? 'O upgrade é imediato. A diferença proporcional do ciclo atual será cobrada no cartão cadastrado.'
-              : 'O downgrade ocorre no próximo ciclo. Você mantém os recursos atuais até o fim do período já pago.'}
+              : 'Nada muda hoje: você fica no plano atual, com a cota de hoje, até o fim do período já pago. '
+                + 'Não há cobrança agora, e dá para desfazer a qualquer momento antes dessa data.'}
           </p>
 
-          {/* Cupom de desconto */}
+          {/* Cupom de desconto — só no upgrade.
+              ⚠️ NO DOWNGRADE O CAMPO ERA UMA ARMADILHA. A troca agora só entra
+              no fim do ciclo, e um desconto aplicado hoje incidiria sobre o
+              plano ANTIGO, o mais caro, que a pessoa está justamente deixando:
+              ela usaria o cupom no lugar errado e o perderia. O backend ignora
+              cupom em downgrade (ver `_sync_agendar_troca`) — deixar o campo na
+              tela seria pedir um dado para descartar em silêncio. */}
+          {isUp && (
           <div>
             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">
               Cupom de desconto{' '}
@@ -296,6 +327,7 @@ export default function ChangePlanModal({
               <p className="mt-1.5 text-xs font-semibold text-red-500">✗ {couponValidation.error}</p>
             )}
           </div>
+          )}
 
           {/* Botões */}
           <div className="flex gap-3">

@@ -198,15 +198,37 @@ export function startSessionKeepAlive(
 }
 
 // ─── Limpar sessão ────────────────────────────────────────────────────────────
+/** ⚠️ LISTA DE PERMISSÃO, NÃO LISTA DE REMOÇÃO.
+ *
+ *  A limpeza era uma lista do que APAGAR — `bawzi_tier`, `user_name`,
+ *  `user_email`, `bawzi_user`, `bawzi_token` — e ficava para trás tudo o que
+ *  não estivesse nela: `bawzi_workspace_id`, `bawzi_active_cnpj`,
+ *  `bawzi_analise_em_curso` (que guarda o `progressToken` usado para REABRIR
+ *  uma análise em andamento), `bawzi_ultimo_delta_profunda`, favoritos, cota
+ *  de convidado. Em máquina compartilhada, o próximo usuário herdava o
+ *  workspace, o CNPJ ativo e o handle de uma análise alheia.
+ *
+ *  Uma lista de remoção envelhece mal por construção: toda chave nova nasce
+ *  fora dela, e ninguém lembra de voltar aqui. Invertendo, o padrão passa a ser
+ *  "some no logout" e a exceção precisa ser justificada uma a uma.
+ */
+const CHAVES_QUE_SOBREVIVEM = new Set([
+  'bawzi_consent_accepted',   // consentimento LGPD é do NAVEGADOR, não da conta
+  'bawzi_uf_override',        // preferência de exibição, sem dado de conta
+  'theme',
+]);
+
 export function clearSession({ notifyExpired = true }: { notifyExpired?: boolean } = {}): void {
   _accessToken = null;
   if (typeof window === 'undefined') return;
-  localStorage.removeItem('bawzi_tier');
-  localStorage.removeItem('user_name');
-  localStorage.removeItem('user_email');
-  localStorage.removeItem('bawzi_user');
-  // Manter bawzi_token por retrocompatibilidade com componentes ainda não migrados
-  localStorage.removeItem('bawzi_token');
+  try {
+    for (const chave of Object.keys(localStorage)) {
+      if (!CHAVES_QUE_SOBREVIVEM.has(chave)) localStorage.removeItem(chave);
+    }
+  } catch {
+    // Modo privado ou storage bloqueado: não há o que limpar, e falhar aqui
+    // impediria o resto do logout de acontecer.
+  }
   if (notifyExpired) {
     window.dispatchEvent(new CustomEvent('bawzi_session_expired'));
   }

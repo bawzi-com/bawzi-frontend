@@ -12,7 +12,26 @@ interface TierContextProps {
    *  backend. Escrever à mão no frontend foi o que produziu quatro
    *  vocabulários para os mesmos cinco planos. */
   tierNames: Record<number, string>;
+  /** Como o crédito é contado AGORA, para a cópia das páginas públicas.
+   *
+   *  ⚠️ Existe porque a frase "1 crédito a cada 50.000 caracteres" estava
+   *  escrita à mão na home e na /docs. Ligar `regua_por_custo` no Admin
+   *  mudava a cobrança e deixava as duas páginas explicando a regra antiga —
+   *  e uma explicação que não bate com o extrato é pior do que nenhuma.
+   *
+   *  `tipo: 'fixa'` → imprima a fórmula com os números abaixo.
+   *  `tipo: 'custo'` → o crédito virou unidade de DINHEIRO; os dois números
+   *  vêm nulos porque não descrevem mais nada, e a cópia precisa falar de
+   *  custo estimado em vez de tamanho.
+   */
+  regua: ReguaInfo;
   isLoading: boolean;
+}
+
+export interface ReguaInfo {
+  tipo: 'fixa' | 'custo';
+  caracteres_por_credito: number | null;
+  peso_profunda: number | null;
 }
 
 // Valores de segurança (Fallbacks)
@@ -40,6 +59,14 @@ const fallbackTierCredits = { [-1]: 1, 1: 5, 2: 90, 3: 250, 4: 650 };
 const fallbackTierNames: Record<number, string> = {
   [-1]: 'Visitante', 1: 'Gratuito', 2: 'Essencial', 3: 'Profissional', 4: 'Avançado',
 };
+// Régua do LANÇAMENTO. Com a API fora, a página imprime a regra que o portão
+// aplica por padrão — nunca a nova, que só vale se alguém tiver ligado o
+// `regua_por_custo` no Admin. Errar para o lado da régua antiga só mostra um
+// número desatualizado; errar para o outro anuncia uma fórmula que o backend
+// não está usando.
+const fallbackRegua: ReguaInfo = {
+  tipo: 'fixa', caracteres_por_credito: 50000, peso_profunda: 4,
+};
 
 // Criar o Contexto
 const TierContext = createContext<TierContextProps>({
@@ -47,6 +74,7 @@ const TierContext = createContext<TierContextProps>({
   tierFileLimits: fallbackTierFileLimits,
   tierCredits: fallbackTierCredits,
   tierNames: fallbackTierNames,
+  regua: fallbackRegua,
   isLoading: true,
 });
 
@@ -56,6 +84,7 @@ export function TierProvider({ children }: { children: ReactNode }) {
   const [tierFileLimits, setTierFileLimits] = useState<Record<number, number>>(fallbackTierFileLimits);
   const [tierCredits, setTierCredits] = useState<Record<number, number>>(fallbackTierCredits);
   const [tierNames, setTierNames] = useState<Record<number, string>>(fallbackTierNames);
+  const [regua, setRegua] = useState<ReguaInfo>(fallbackRegua);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -104,6 +133,24 @@ export function TierProvider({ children }: { children: ReactNode }) {
           if (Object.keys(novosCreditos).length) setTierCredits(prev => ({ ...prev, ...novosCreditos }));
           if (Object.keys(novosNomes).length) setTierNames(prev => ({ ...prev, ...novosNomes }));
         }
+
+        // Lido FORA do `if (data.config)` de propósito: a régua é um campo
+        // irmão de `config`, não filho dele. Aninhar a leitura faria o mesmo
+        // erro que deixou este arquivo dois releases lendo `data.tiers` — um
+        // nome errado que não quebra nada, só desliga a funcionalidade em
+        // silêncio. `tipo` é validado contra os dois valores possíveis para
+        // que um campo novo no backend não vire string solta na cópia.
+        if (data.regua?.tipo === 'fixa' || data.regua?.tipo === 'custo') {
+          setRegua({
+            tipo: data.regua.tipo,
+            caracteres_por_credito:
+              typeof data.regua.caracteres_por_credito === 'number'
+                ? data.regua.caracteres_por_credito : null,
+            peso_profunda:
+              typeof data.regua.peso_profunda === 'number'
+                ? data.regua.peso_profunda : null,
+          });
+        }
       } catch {
         // Mantém os limites locais quando a API não está disponível.
       } finally {
@@ -115,7 +162,7 @@ export function TierProvider({ children }: { children: ReactNode }) {
   }, []); // Executa apenas 1x ao abrir o site
 
   return (
-    <TierContext.Provider value={{ tierLimits, tierFileLimits, tierCredits, tierNames, isLoading }}>
+    <TierContext.Provider value={{ tierLimits, tierFileLimits, tierCredits, tierNames, regua, isLoading }}>
       {children}
     </TierContext.Provider>
   );

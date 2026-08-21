@@ -972,9 +972,31 @@ function DecisionSnapshot({
                 Confiança
                 <CircleHelp size={10} className="shrink-0 opacity-70" />
               </p>
-              <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-slate-500" style={{ width: `${decision.confianca}%` }} />
-              </div>
+              {/* ⚠️ A BARRA MOSTRAVA A ESCALA ERRADA. O número vem de
+                  `_calcular_confianca`, que termina em
+                  `_clamp_int(base, minimo=35, maximo=95)` — a faixa útil é
+                  35–95, não 0–100. Desenhar `width: 35%` numa trilha de 0–100
+                  pinta um terço cheio quando 35 significa exatamente o
+                  contrário: é o PISO, o mínimo que este indicador consegue
+                  dizer. A pior análise possível parecia "um terço confiante".
+                  Aqui a barra é normalizada para a faixa real: 35 esvazia, 95
+                  enche. O número exibido não muda — quem estava errada era a
+                  régua embaixo dele. */}
+              {(() => {
+                const PISO = 35, TETO = 95;
+                const bruto = Number(decision.confianca);
+                const preenchido = Number.isFinite(bruto)
+                  ? Math.max(0, Math.min(100, ((bruto - PISO) / (TETO - PISO)) * 100))
+                  : 0;
+                return (
+                  <div
+                    className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200"
+                    title={`Escala de ${PISO}% a ${TETO}% — ${PISO}% é o mínimo que este indicador expressa.`}
+                  >
+                    <div className="h-full rounded-full bg-slate-500" style={{ width: `${preenchido}%` }} />
+                  </div>
+                );
+              })()}
             </div>
             {typeof result.qualidade_extracao?.cobertura_pct === 'number' && (
               <div
@@ -3933,7 +3955,16 @@ function ScoreBreakdownSection({ result }: { result: AnalysisResult }) {
         dense
         items={itens.map((item, i) => {
           const positivo = item.pontos > 0;
-          const tone: TimelineTone = positivo ? 'emerald' : 'red';
+          // ⚠️ O FECHO ARITMÉTICO NÃO É UM FATOR, E NÃO PODE SER VERDE.
+          // A última linha do breakdown existe só para a conta bater quando os
+          // fatores declarados pela IA não somam o score final. Colorida por
+          // sinal como as outras, um resíduo positivo aparecia como
+          // "+24 Ajuste de calibração do motor" em verde — lido como pontos
+          // devolvidos pelo motor, embaixo do subtítulo "Nota auditável".
+          // O backend marca essa linha com `tipo: 'residuo'`; aqui ela fica em
+          // tom neutro, com ou sem sinal positivo.
+          const eResiduo = (item as { tipo?: string }).tipo === 'residuo';
+          const tone: TimelineTone = eResiduo ? 'slate' : positivo ? 'emerald' : 'red';
           return {
             key: i,
             tone,

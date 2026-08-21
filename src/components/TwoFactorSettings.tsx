@@ -12,7 +12,12 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck, ShieldOff, Loader2, Copy, Check, QrCode, KeyRound, Smartphone } from 'lucide-react';
 import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 
-type Etapa = 'idle' | 'qr' | 'backup';
+/** ⚠️ `senha` É UM PASSO NOVO, e não é burocracia.
+ *  Ligar o 2FA passou a exigir a senha porque, sem isso, quem tivesse um token
+ *  roubado ligava o 2FA no PRÓPRIO autenticador e recebia os códigos de backup
+ *  — trancando o dono legítimo para fora em definitivo, já que desativar exige
+ *  senha E código. Era mais barato LIGAR o controle de segurança que desligar. */
+type Etapa = 'idle' | 'senha' | 'qr' | 'backup';
 
 /** Quebra o segredo em grupos de 4 para leitura e digitação manual.
  *  "2XELYSG64TXEQMKT" numa linha só é uma parede de caracteres: quem digita à
@@ -27,6 +32,9 @@ export default function TwoFactorSettings() {
   const [segredoManual, setSegredoManual] = useState('');
   const [codigo, setCodigo] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  // Guardada entre o `setup` e o `activate`: o servidor pede nos dois, e
+  // pedir duas vezes à pessoa no mesmo fluxo seria atrito sem ganho.
+  const [senhaAtivar, setSenhaAtivar] = useState('');
   const [senhaDisable, setSenhaDisable] = useState('');
   const [codigoDisable, setCodigoDisable] = useState('');
   const [mostrarDisable, setMostrarDisable] = useState(false);
@@ -52,7 +60,10 @@ export default function TwoFactorSettings() {
   const iniciarSetup = async () => {
     setLoading(true); setErro('');
     try {
-      const r = await apiFetch(`${API_URL}/api/auth/2fa/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const r = await apiFetch(`${API_URL}/api/auth/2fa/setup`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: senhaAtivar }),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(mensagemDeErro(d.detail, 'Falha ao gerar o QR.'));
       setQrBase64(d.qr_png_base64); setSegredoManual(d.segredo_manual); setCodigo('');
@@ -68,12 +79,14 @@ export default function TwoFactorSettings() {
     setLoading(true); setErro('');
     try {
       const r = await apiFetch(`${API_URL}/api/auth/2fa/activate`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: codigo }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: codigo, password: senhaAtivar }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(mensagemDeErro(d.detail, 'Código inválido.'));
       setBackupCodes(d.backup_codes || []);
       setAtivo(true); setBackupRestantes((d.backup_codes || []).length);
+      setSenhaAtivar('');          // não fica em memória depois de usada
       setEtapa('backup');
     } catch (e) {
       if (e instanceof SessionExpiredError) { clearSession(); return; }
@@ -159,13 +172,49 @@ export default function TwoFactorSettings() {
             Desativar
           </button>
         ) : etapa === 'idle' && (
-          <button onClick={iniciarSetup} disabled={loading} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-amber-700 disabled:opacity-50 transition-colors">
-            {loading ? 'Gerando…' : 'Ativar agora'}
+          <button onClick={() => { setEtapa('senha'); setErro(''); setSenhaAtivar(''); }} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white shadow-sm hover:bg-amber-700 transition-colors">
+            Ativar agora
           </button>
         )}
       </div>
 
       {erro && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700">{erro}</p>}
+
+      {/* Etapa: confirmar a senha antes de gerar o QR.
+          Ver o comentário de `Etapa`: é o que impede alguém com uma sessão
+          roubada de ligar o 2FA no próprio celular e trancar o dono da conta. */}
+      {etapa === 'senha' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-sm font-black text-slate-900">Confirme sua senha</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Ligar a verificação em dois passos muda como você entra na conta. Pedimos a senha para
+            garantir que é você — e não alguém com a sua sessão aberta.
+          </p>
+          <form
+            onSubmit={(e) => { e.preventDefault(); iniciarSetup(); }}
+            className="mt-4 flex flex-col gap-2 sm:flex-row"
+          >
+            <input
+              type="password" autoComplete="current-password" value={senhaAtivar}
+              onChange={(e) => setSenhaAtivar(e.target.value)} placeholder="Sua senha"
+              aria-label="Sua senha"
+              className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+            />
+            <button
+              type="submit" disabled={loading || !senhaAtivar}
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-sm font-black text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {loading ? <><Loader2 size={14} className="animate-spin" /> Verificando…</> : 'Continuar'}
+            </button>
+            <button
+              type="button" onClick={() => { setEtapa('idle'); setSenhaAtivar(''); setErro(''); }}
+              className="h-11 shrink-0 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50"
+            >
+              Cancelar
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Etapa: escanear QR + confirmar primeiro código.
           A versão anterior espremia as duas etapas numa linha de texto de 12px
@@ -254,7 +303,7 @@ export default function TwoFactorSettings() {
                   {loading ? <><Loader2 size={14} className="animate-spin" /> Confirmando…</> : <><ShieldCheck size={14} /> Confirmar e ativar</>}
                 </button>
                 <button
-                  onClick={() => setEtapa('idle')}
+                  onClick={() => { setEtapa('idle'); setSenhaAtivar(''); }}
                   className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
                 >
                   Cancelar

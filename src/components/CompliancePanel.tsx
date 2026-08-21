@@ -21,7 +21,9 @@ interface CertidaoStatus {
   vencimento: string | null; 
   statusForcado?: 'vencida' | 'alerta' | 'valida' | 'indisponivel' | 'processando';
   icone: any;
-  engine?: string; 
+  engine?: string;
+  /** Quando a raspagem foi feita — diferente de até quando a certidão vale. */
+  consultadaEm?: string | null;
 }
 
 const memoryCache: {
@@ -147,7 +149,12 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
             vencimento: data.data_validade,
             statusForcado: statusForce,
             icone: tipo === 'federal' ? Landmark : tipo === 'trabalhista' ? Briefcase : Building,
-            engine: data.dados?.engine || data.engine || 'Robô + IA'
+            engine: data.dados?.engine || data.engine || 'Robô + IA',
+            // ⚠️ QUANDO OLHAMOS ≠ ATÉ QUANDO VALE. A única data na tela era
+            // "Válida até 09/11/2026", que é a validade da certidão — a
+            // raspagem pode ser de meses atrás e o documento ter sido revogado
+            // desde então. O campo existia no modelo e nunca chegava aqui.
+            consultadaEm: data.ultima_consulta ?? null,
           };
 
           setCert(certPronta);
@@ -211,6 +218,19 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
   // ====================================================================
   // MOTOR VISUAL DE VENCIMENTO
   // ====================================================================
+  /** Há quanto tempo esta certidão foi raspada. `null` quando não sabemos. */
+  const idadeDaConsulta = (cert: CertidaoStatus): string | null => {
+    const bruto = (cert as { consultadaEm?: string | null }).consultadaEm;
+    if (!bruto) return null;
+    const quando = new Date(bruto);
+    if (Number.isNaN(quando.getTime())) return null;
+    const horas = Math.floor((Date.now() - quando.getTime()) / 3_600_000);
+    if (horas < 1) return 'consultada agora';
+    if (horas < 24) return `consultada há ${horas}h`;
+    const dias = Math.floor(horas / 24);
+    return `consultada há ${dias} ${dias === 1 ? 'dia' : 'dias'}`;
+  };
+
   const calcularStatusVencimento = (cert: CertidaoStatus) => {
     if (cert.statusForcado === 'processando') {
       return { texto: 'Na Fila / Extraindo...', cor: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', icon: <Bot size={14} className="animate-pulse" /> };
@@ -218,8 +238,21 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
     if (cert.statusForcado === 'indisponivel') {
       return { texto: 'Governo Indisponível', cor: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', icon: <AlertTriangle size={14} /> };
     }
-    if (cert.statusForcado === 'vencida' || !cert.vencimento) {
+    // ⚠️ O `|| !cert.vencimento` TRANSFORMAVA DADO AUSENTE EM ACUSAÇÃO.
+    // "Irregular / Vencida", em vermelho, é uma afirmação categórica sobre a
+    // regularidade fiscal de uma empresa — e bastava a data não vir para ela
+    // aparecer. Caminho real e verificado: em `cnd_agent_api.py` o robô lê
+    // "REGULAR" e grava `status: "negativa"` (= regular), mas se a data não
+    // casar com `dd/mm/yyyy` sai `data_validade: None`. Aqui, `negativa` não
+    // casa com nenhum `statusForcado`, `vencimento` é null, e uma empresa que
+    // o próprio robô leu como REGULAR era pintada de irregular.
+    if (cert.statusForcado === 'vencida') {
       return { texto: 'Irregular / Vencida', cor: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-200', icon: <XCircle size={14} /> };
+    }
+    // Sem data não dá para afirmar nem regularidade nem vencimento — e das
+    // duas, errar para o lado da acusação é o pior.
+    if (!cert.vencimento) {
+      return { texto: 'Validade não lida', cor: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200', icon: <AlertTriangle size={14} /> };
     }
 
     const hoje = new Date();
@@ -235,6 +268,15 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
   const isCguApproved = cguData?.vereditto === 'APROVADO';
   const hasCguSanctions = cguData?.vereditto === 'REPROVADO_COM_SANCÃO';
+  // ⚠️ QUANTAS DAS TRÊS FONTES REALMENTE RESPONDERAM. Antes não havia campo
+  // nenhum aqui que distinguisse "consultei e está limpo" de "não consegui
+  // consultar": o backend devolvia `{limpo: true}` nos dois casos, byte a
+  // byte igual, e o veredito continuava "APROVADO". Timeout do Portal da
+  // Transparência, 429, 403 de chave inválida ou 500 do governo pintavam um
+  // cartão verde com escudo dizendo "Sem sanções CGU encontradas".
+  const fontesOk = Number(cguData?.fontes_consultadas ?? 0);
+  const fontesTotais = Number(cguData?.fontes_totais ?? 0);
+  const fontesFalhas: string[] = Array.isArray(cguData?.fontes_falhas) ? cguData.fontes_falhas : [];
 
   // Achado crítico — abre o dossiê sozinho assim que a sanção é detectada.
   // A informação mais importante do painel não pode ficar escondida atrás
@@ -303,7 +345,12 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
           <div className={`flex items-center gap-1.5 text-[11px] font-bold ${visual.cor} ${isProcessing ? 'opacity-70' : ''}`}>
             {visual.icon} {visual.texto}
           </div>
-          {cert.engine && !isProcessing && (
+          {!isProcessing && idadeDaConsulta(cert) && (
+                   <span className="text-[9px] font-bold text-slate-400" title="Quando o robô leu esta certidão — não é a validade dela.">
+                     {idadeDaConsulta(cert)}
+                   </span>
+                )}
+                {cert.engine && !isProcessing && (
              <span className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1" title="Lido por Inteligência Artificial">
                 <Bot size={10} /> IA
              </span>
@@ -456,8 +503,14 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
           </div>
         )}
 
+        {/* ⚠️ O RÓTULO AFIRMAVA "CEIS/CNEP CONSULTADO" INCONDICIONALMENTE —
+            inclusive quando o cartão logo abaixo dizia "Falha ao consultar
+            CGU". Duas afirmações contraditórias empilhadas. E citava só
+            CEIS/CNEP quando o CEPIM também entra na consulta. */}
         <p className="px-2 mb-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
-          Certidões {hasCguSanctions ? '' : '· CEIS/CNEP consultado, oficiais ficam pendentes até extração'}
+          Certidões {hasCguSanctions || cguError || fontesFalhas.length > 0
+            ? ''
+            : '· CEIS/CNEP/CEPIM consultados, oficiais ficam pendentes até extração'}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-1">
           {/* CGU — só ocupa um card na grade quando NÃO há sanção (o achado
@@ -497,9 +550,32 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
                   )}
                 </div>
               </div>
-              <div className={`flex items-center gap-1.5 text-[11px] font-bold ${isCguApproved ? 'text-emerald-700' : 'text-amber-700'} ${isRefreshingCgu ? 'opacity-50' : ''}`}>
-                {isCguApproved ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                {isRefreshingCgu ? 'Consultando...' : isCguApproved ? 'Sem sanções CGU encontradas' : 'Análise incompleta'}
+              {/* ⚠️ "SEM SANÇÕES" SÓ QUANDO TODAS AS FONTES RESPONDERAM.
+                  A frase antiga saía de `vereditto === 'APROVADO'`, e o
+                  veredito era APROVADO mesmo com as três consultas falhando.
+                  Agora, com fonte faltando, o texto diz quantas responderam —
+                  e a cor sai do verde, porque verde numa tela de compliance
+                  é permissão para não olhar. */}
+              <div className={`flex flex-col gap-0.5 text-[11px] font-bold ${isRefreshingCgu ? 'opacity-50' : ''}`}>
+                <span className={`flex items-center gap-1.5 ${
+                  isCguApproved && fontesFalhas.length === 0 ? 'text-emerald-700' : 'text-amber-700'
+                }`}>
+                  {isCguApproved && fontesFalhas.length === 0
+                    ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                  {isRefreshingCgu
+                    ? 'Consultando...'
+                    : isCguApproved && fontesFalhas.length === 0
+                      ? 'Sem sanções CGU encontradas'
+                      : fontesFalhas.length > 0
+                        ? `Consulta incompleta — ${fontesOk} de ${fontesTotais} fontes responderam`
+                        : 'Análise incompleta'}
+                </span>
+                {!isRefreshingCgu && fontesFalhas.length > 0 && (
+                  <span className="text-[10px] font-medium leading-tight text-amber-600">
+                    Sem resposta de {fontesFalhas.join(', ').toUpperCase()}. Ausência de sanção
+                    não foi verificada nessas fontes.
+                  </span>
+                )}
               </div>
             </div>
           )}

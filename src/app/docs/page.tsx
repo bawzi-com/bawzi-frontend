@@ -3,6 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+// A régua de créditos é uma chave no Admin. A documentação lê a MESMA fonte
+// que o portão de cobrança aplica, para não ensinar uma conta que o extrato
+// não confirma. Ver `SectionCreditos`.
+import { useTierConfig } from '../../Contexts/TierContext';
 import {
   Search,
   BookOpen,
@@ -495,27 +499,69 @@ function SectionAnalise() {
   );
 }
 
-/* Seção nova. Tudo aqui descreve a régua FIXA, que é a que o portão aplica
- * (`precificacao.creditos_do_pedido` → `modos.custo_em_creditos`). Se um dia a
- * régua por custo for ligada no Admin, este texto precisa mudar junto — é o
- * mesmo motivo pelo qual o formulário de análise troca a frase conforme
- * `quota.precificacao.credito_usd`. */
+/* Como o crédito é contado — e o texto TROCA quando a régua troca.
+ *
+ * ⚠️ ANTES ISTO ERA PROSA FIXA, com "50.000" digitado no meio da frase.
+ * A régua é uma chave no Admin (`regua_por_custo`): virá-la mudava a
+ * cobrança e deixava esta página ensinando a conta antiga. Para um
+ * comprador B2B isso não é um detalhe de cópia — é o extrato deixando de
+ * ser reproduzível, que é exatamente o motivo de a régua ser fixa no
+ * lançamento.
+ *
+ * `useTierConfig().regua` vem de `/api/tiers/config`, a MESMA fonte que o
+ * portão consulta. Com a API fora cai no fallback da régua fixa, que é o
+ * padrão do produto — errar para o lado do texto antigo mostra um número
+ * velho; errar para o outro anuncia uma fórmula que ninguém está usando. */
 function SectionCreditos() {
+  const { regua } = useTierConfig();
+  const porCusto = regua.tipo === 'custo';
+  const unidade = (regua.caracteres_por_credito ?? 50000).toLocaleString('pt-BR');
+  const peso = regua.peso_profunda ?? 4;
+
   return (
     <>
       <H2 id="como-conta-credito">Como o crédito é contado</H2>
-      <P>
-        Toda análise consome créditos da sua cota mensal. A regra é uma só, e você
-        consegue fazer a conta antes de enviar:
-      </P>
-      <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-        <p className="text-sm font-bold text-slate-800">
-          1 crédito a cada 50.000 caracteres analisados
-        </p>
-        <p className="mt-1 text-sm text-slate-600">
-          Arredondando para cima, com mínimo de 1 crédito por análise.
-        </p>
-      </div>
+      {porCusto ? (
+        <>
+          <P>
+            Toda análise consome créditos da sua cota mensal. Um crédito mede o{' '}
+            <strong>custo de processar a análise</strong> — não o tamanho do edital.
+          </P>
+          <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm font-bold text-slate-800">
+              O preço é estimado antes de enviar e aparece no botão
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Ele soma três coisas: um custo fixo por análise, um custo por caractere
+              lido e, na auditoria profunda, um custo por bloco relido. Arredondando
+              para cima, com mínimo de 1 crédito.
+            </p>
+          </div>
+          <Callout type="info">
+            <strong>Por que não é uma conta por caractere.</strong> Boa parte do custo de
+            uma análise não depende do tamanho do edital: ela existe do mesmo jeito num
+            documento de 5 mil caracteres e num de 500 mil. Cobrar só por tamanho fazia
+            edital pequeno pagar caro por caractere e edital grande pagar barato demais.
+            Medindo custo, o preço por caractere <em>cai</em> conforme o edital cresce —
+            como o custo real sempre caiu.
+          </Callout>
+        </>
+      ) : (
+        <>
+          <P>
+            Toda análise consome créditos da sua cota mensal. A regra é uma só, e você
+            consegue fazer a conta antes de enviar:
+          </P>
+          <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm font-bold text-slate-800">
+              1 crédito a cada {unidade} caracteres analisados
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Arredondando para cima, com mínimo de 1 crédito por análise.
+            </p>
+          </div>
+        </>
+      )}
       <Callout type="warning">
         <strong>&quot;Analisados&quot; inclui os PDFs, não só o que você digitou.</strong> O contador
         da caixa de texto mostra apenas o texto colado — mas a cobrança soma o texto,
@@ -534,16 +580,22 @@ function SectionCreditos() {
         é a profundidade — e o preço.
       </P>
       <UL>
-        <LI><strong>Análise rápida</strong> — uma leitura do edital. Custa o valor da régua acima.</LI>
+        <LI><strong>Análise rápida</strong> — uma leitura do edital.{' '}
+          {porCusto
+            ? 'É o modo mais barato, e a diferença cresce com o tamanho do edital.'
+            : 'Custa o valor da régua acima.'}</LI>
         <LI><strong>Auditoria profunda</strong> — relê o documento inteiro em blocos, confere cada
           afirmação contra o texto original e procura contradições que a leitura única não
-          enxerga. Multiplica o custo pelo fator do seu plano (hoje 4×).</LI>
+          enxerga.{' '}
+          {porCusto
+            ? 'Custa mais porque faz mais chamadas e usa os modelos mais capazes do seu plano — quanto mais, aparece no botão antes de você confirmar.'
+            : `Multiplica o custo pelo fator do seu plano (hoje ${peso}×).`}</LI>
       </UL>
       <Callout type="tip">
-        <strong>Aprofundar um laudo que você já rodou paga só a diferença.</strong> Se a rápida
-        custou 8 créditos e o fator é 4×, a auditoria completa custa 32 — e como 8 já foram
-        pagos, você paga 24. A conta aparece inteira antes de confirmar: valor cheio, o que já
-        foi pago e o que você paga.
+        <strong>Aprofundar um laudo que você já rodou paga só a diferença.</strong>{' '}
+        {porCusto
+          ? 'Se a rápida custou 2 créditos e a auditoria completa custa 14, você paga 12. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.'
+          : `Se a rápida custou 8 créditos e o fator é ${peso}×, a auditoria completa custa ${8 * peso} — e como 8 já foram pagos, você paga ${8 * peso - 8}. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`}
       </Callout>
       <P>
         O <strong>parecer técnico-jurídico</strong> não depende do modo: ele é liberado a partir do

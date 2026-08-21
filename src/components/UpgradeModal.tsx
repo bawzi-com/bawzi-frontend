@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
+import { usePrecos, precoPorCiclo } from '@/lib/precos';
 import {
   EmbeddedCheckoutProvider,
   EmbeddedCheckout
@@ -9,11 +10,14 @@ import {
 
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
-// Classes completas são necessárias para o Tailwind JIT não purgá-las
-const PLAN_INFO: Record<number, { name: string; price: string; headerClass: string; orbs: string }> = {
-  2: { name: 'Essencial',    price: 'R$ 79/mês',  headerClass: 'bg-gradient-to-br from-sky-500 via-sky-500 to-indigo-600',      orbs: 'from-indigo-400/30 to-sky-300/20' },
-  3: { name: 'Profissional', price: 'R$ 197/mês', headerClass: 'bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-600', orbs: 'from-teal-400/30 to-emerald-300/20' },
-  4: { name: 'Avançado',     price: 'R$ 497/mês', headerClass: 'bg-gradient-to-br from-amber-500 via-amber-500 to-orange-600',   orbs: 'from-orange-400/30 to-amber-300/20' },
+// Classes completas são necessárias para o Tailwind JIT não purgá-las.
+// ⚠️ O PREÇO SAIU DAQUI. Era a terceira cópia do mesmo literal no app (das
+// cinco que existiam), enquanto o valor cobrado mora só no Stripe. Agora vem
+// de `/api/tiers/precos-publicos` — ver `lib/precos.ts`.
+const PLAN_INFO: Record<number, { name: string; headerClass: string; orbs: string }> = {
+  2: { name: 'Essencial',    headerClass: 'bg-gradient-to-br from-sky-500 via-sky-500 to-indigo-600',      orbs: 'from-indigo-400/30 to-sky-300/20' },
+  3: { name: 'Profissional', headerClass: 'bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-600', orbs: 'from-teal-400/30 to-emerald-300/20' },
+  4: { name: 'Avançado',     headerClass: 'bg-gradient-to-br from-amber-500 via-amber-500 to-orange-600',   orbs: 'from-orange-400/30 to-amber-300/20' },
 };
 
 interface UpgradeModalProps {
@@ -36,10 +40,14 @@ export default function UpgradeModal({ isOpen, onClose, tier, clientSecret, titl
       .catch(() => {});
   }, [isOpen]);
 
+  // ⚠️ ANTES do `return null`: hook não pode ficar atrás de saída antecipada.
+  const precos = usePrecos();
+
   if (!isOpen) return null;
 
-  const plan = PLAN_INFO[tier] ?? { name: 'Plano Bawzi', price: '', headerClass: 'bg-gradient-to-br from-emerald-500 to-sky-600', orbs: 'from-sky-400/30 to-emerald-300/20' };
-  const modalTitle = title ?? `${plan.name} ${plan.price ? `· ${plan.price}` : ''}`;
+  const plan = PLAN_INFO[tier] ?? { name: 'Plano Bawzi', headerClass: 'bg-gradient-to-br from-emerald-500 to-sky-600', orbs: 'from-sky-400/30 to-emerald-300/20' };
+  const preco = precoPorCiclo(precos?.[String(tier)]);
+  const modalTitle = title ?? `${plan.name}${preco ? ` · ${preco}` : ''}`;
 
   return (
     <div

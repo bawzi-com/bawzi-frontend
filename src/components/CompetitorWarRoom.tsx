@@ -1,11 +1,19 @@
 'use client';
 
 import React, { useEffect, useState, useMemo, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap, RefreshCw } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
 import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
+import {
+  perfilDoConcorrente,
+  evidenciasDoPerfil,
+  acaoSugerida,
+  linkExternoValido,
+  type ContratoDoConcorrente,
+} from '@/lib/perfilConcorrente';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -99,6 +107,12 @@ export interface PricingIntelligenceData {
    * calculadas carimbava o laudo inteiro como CATMAT.
    */
   fonteConfiabilidade?: 'CATMAT_COMPRAS' | 'PAINEL_PRECOS' | 'PNCP_HOMOLOGADO' | 'DB_ESTRUTURADO' | 'DB_CALCULADO' | 'ESTIMADO';
+  /** O que foi conferido — origem, coerência e tamanho da amostra juntos.
+   *  Substitui o "✓ Verificado PNCP", que só media a origem. */
+  seloVerificacao?: { nivel: 'forte' | 'bom' | 'parcial' | 'fraco'; texto: string; detalhe?: string };
+  /** Contratos distintos na amostra (antes contava LINHAS de contrato). */
+  linhasPrecosUnitarios?: number;
+  coerenciaAmostra?: { veredito: string; razao: number | null; amostra: number; motivo: string };
   /** Distribuição completa das fontes, para responder "quantos dos N vieram de onde". */
   fonteConfiabilidadeDetalhe?: {
     dominante: string;
@@ -369,7 +383,14 @@ export default function CompetitorWarRoom({
         }
       }
       const numVitorias = parseInt(String(vitorias).replace(/\D/g, ''), 10) || 0;
-      const prob = `~${Math.min(95, 18 + (numVitorias * 7))}%`;
+      // ⚠️ AQUI NASCIA O "~25% DE AMEAÇA COMPETITIVA":
+      //     const prob = `~${Math.min(95, 18 + (numVitorias * 7))}%`;
+      // Zero vitórias já valiam 18%; cada vitória somava 7. O número era a
+      // contagem de vitórias com outro nome — e pior, ele voltava a ser lido
+      // por `getScoreConcorrente`, que o rebaldava em 1/2/3 para calcular
+      // OUTRO percentual. Um circuito fechado que nunca tocou em dado novo.
+      // Nada substitui `prob`: onde ele aparecia agora vão vitórias, deságio
+      // medido e data da última vitória — ver `lib/perfilConcorrente.ts`.
       const ufEmpresa = item.uf || item.uf_empresa || "";
       const ufDisputa = item.uf_disputa || item.uf_contrato || item.ufOrgao || item.orgao_uf || (tipo === 'regional' ? uf : "");
 
@@ -379,7 +400,6 @@ export default function CompetitorWarRoom({
         cnpj,
         cleanCnpj,
         vitorias: numVitorias,
-        prob,
         tipo,
         porte,
         municipio,
@@ -780,14 +800,50 @@ export default function CompetitorWarRoom({
     return match ? Number(match[1]) : 0;
   }, [pricing]);
 
+  // ── O órgão DESTA licitação ───────────────────────────────────────────────
+  // Saber que o rival já venceu neste mesmo órgão vale mais do que qualquer
+  // índice: é o sinal mais forte de que ele vai aparecer de novo.
+  const orgaoAlvo = useMemo(() => {
+    const fr = fullResult as Record<string, unknown>;
+    for (const k of ['orgao_nome', 'orgaoNome', 'orgao', 'nome_orgao', 'orgao_razao_social']) {
+      const v = fr?.[k];
+      if (typeof v === 'string' && v.trim()) return v;
+    }
+    return null;
+  }, [fullResult]);
+
+  const perfilAlvo = useMemo(
+    () => perfilDoConcorrente(target?.contratos as ContratoDoConcorrente[] | undefined, { orgaoAlvo }),
+    [target, orgaoAlvo],
+  );
+  const evidenciasAlvo = useMemo(() => evidenciasDoPerfil(perfilAlvo), [perfilAlvo]);
+
   const vereditoCompetitivo = useMemo(() => {
     const principal = concorrentesRanqueadosTodos[0] || null;
-    const threatPct = principal ? Math.min(100, Math.round((principal.threatScore / 60) * 100)) : 0;
+    // ⚠️ ELEGER UM LÍDER EXIGE QUE HAJA UM. Com cinco empresas de 1 vitória
+    // cada, o score é idêntico e o #1 é só quem o `sort` deixou na frente —
+    // mas a tela afirmava "FULANO é o rival que mais exige atenção", apontando
+    // uma empresa ao acaso. O licitante então vigia a errada e ignora as
+    // outras quatro, que são igualmente prováveis.
+    const empatados = concorrentesRanqueadosTodos.length > 1
+      && concorrentesRanqueadosTodos.every((c) => c.threatScore === concorrentesRanqueadosTodos[0].threatScore);
+    const perfilLider = perfilDoConcorrente(
+      principal?.contratos as ContratoDoConcorrente[] | undefined, { orgaoAlvo });
     const totalConcorrentes = concorrentesRanqueadosTodos.length;
     const nivelRaw = String(pricing?.nivelAmeaca || '').toUpperCase();
+    // ⚠️ O NÍVEL AGORA SAI DE OBSERVAÇÃO, NÃO DE PONTUAÇÃO. Antes vinha de
+    // `threatPct >= 80 / >= 55`, e o `threatPct` era a contagem de vitórias
+    // reescalada — um limiar sobre um número inventado. Continua sendo uma
+    // regra, mas cada entrada dela é um fato verificável, e a regra está
+    // escrita aqui em vez de escondida numa fórmula:
+    //   já venceu NESTE órgão            → ALTA   (o sinal mais forte que existe)
+    //   3+ vitórias e ativo no último ano → MODERADA
+    //   há concorrente mapeado            → BAIXA
+    const mesesUltima = perfilLider.ultimaVitoria?.mesesAtras ?? Infinity;
     const nivel =
-      nivelRaw.includes('ALTO') || threatPct >= 80 ? 'ALTA' :
-      nivelRaw.includes('MODERADO') || nivelRaw.includes('MEDIO') || threatPct >= 55 ? 'MODERADA' :
+      nivelRaw.includes('ALTO') || perfilLider.vitoriasNoOrgao !== null ? 'ALTA' :
+      (perfilLider.vitorias >= 3 && mesesUltima <= 12)
+        || nivelRaw.includes('MODERADO') || nivelRaw.includes('MEDIO') ? 'MODERADA' :
       totalConcorrentes > 0 ? 'BAIXA' : 'INDEFINIDA';
     const faixaMinDesagio = desagioPrevisto > 0 ? Math.max(0, desagioPrevisto - 4) : 0;
     const faixaMaxDesagio = desagioPrevisto > 0 ? desagioPrevisto + 4 : 0;
@@ -795,8 +851,18 @@ export default function CompetitorWarRoom({
     const precoMax = valorEstimatedSeguro > 0 && faixaMinDesagio > 0 ? valorEstimatedSeguro * (1 - faixaMinDesagio / 100) : 0;
     const amostra = Number(pricing?.amostraPrecosUnitarios || pricing?.amostraPrecosUnitariosRegional || 0);
     const fonte = String(pricing?.fonteConfiabilidade || '');
+    // ⚠️ PONTA SOLTA DA CORREÇÃO ANTERIOR. Eu criei `coerenciaAmostra` e o selo
+    // de verificação, e deixei ESTE rótulo julgando só origem + contagem. O
+    // resultado seria pior que antes: no mesmo cartão, o selo dizendo "objetos
+    // divergentes" e o campo ao lado dizendo "Confiança: Alta". Duas leituras
+    // opostas do mesmo dado, lado a lado, ensinam a não acreditar em nenhuma.
+    // Sem `coerenciaAmostra` (análises antigas em cache) cai na regra de antes.
+    const coer = pricing?.coerenciaAmostra;
     const confianca =
       pricing?.usandoDefaultFallback ? 'Estimativa frágil' :
+      coer?.veredito === 'incomparavel' ? 'Sem base comparável' :
+      coer?.veredito === 'amostra_insuficiente' ? 'Amostra insuficiente' :
+      coer?.veredito === 'disperso' ? 'Baixa' :
       fonte === 'PNCP_HOMOLOGADO' && amostra >= 3 ? 'Alta' :
       fonte && amostra > 0 ? 'Média' :
       totalConcorrentes > 0 ? 'Parcial' : 'Baixa';
@@ -830,7 +896,8 @@ export default function CompetitorWarRoom({
     return {
       principal,
       nivel,
-      threatPct,
+      empatados,
+      perfilLider,
       totalConcorrentes,
       faixaDesagio: desagioPrevisto > 0 ? `${faixaMinDesagio.toFixed(1)}% a ${faixaMaxDesagio.toFixed(1)}%` : 'Sem faixa segura',
       faixaPreco: precoMin > 0 && precoMax > 0 ? `${formatarMoeda(precoMin)} a ${formatarMoeda(precoMax)}` : 'Depende do orçamento detalhado',
@@ -844,21 +911,43 @@ export default function CompetitorWarRoom({
     const motivos: string[] = [];
     const vitorias = getNumeroVitorias(concorrente.vitorias);
     const ufDisputa = getUfDisputa(concorrente);
+    const p = perfilDoConcorrente(
+      concorrente.contratos as ContratoDoConcorrente[] | undefined, { orgaoAlvo });
+
+    // Já venceu NESTE órgão é o sinal mais forte que existe — vem primeiro.
+    if (p.vitoriasNoOrgao !== null) motivos.push(`já venceu neste órgão (${p.vitoriasNoOrgao}×)`);
     if (isConcorrenteRegional(concorrente)) motivos.push(`tem histórico na UF do edital${ufDisputa ? ` (${ufDisputa})` : ''}`);
-    if (vitorias > 0) motivos.push(`${vitorias} vitória${vitorias > 1 ? 's' : ''} recente${vitorias > 1 ? 's' : ''}`);
+
+    // ⚠️ "RECENTE" ERA INCONDICIONAL. A frase saía como "1 vitória recente"
+    // mesmo quando a vitória era de 2023 — o adjetivo não consultava data
+    // nenhuma. Uma empresa parada há três anos não é a mesma ameaça de uma que
+    // venceu mês passado, e a tela dizia a mesma coisa das duas. Agora a data
+    // manda: só é "recente" se for do último ano; senão a frase diz quando foi.
+    if (vitorias > 0) {
+      const meses = p.ultimaVitoria?.mesesAtras;
+      const quando =
+        meses === undefined ? '' :
+        meses <= 12 ? ' recente' : ` (última ${p.ultimaVitoria!.rotulo})`;
+      motivos.push(`${vitorias} vitória${vitorias > 1 ? 's' : ''}${quando}`);
+    }
+
+    // Deságio medido é motivo de verdade para prestar atenção num rival.
+    if (p.desagio) motivos.push(`corta ${p.desagio.mediana.toFixed(0)}% em mediana`);
     if (concorrente.forca) motivos.push(`perfil ${String(concorrente.forca).toLowerCase()}`);
-    if (concorrente.cnae) motivos.push('CNAE informado');
+
+    // ⚠️ "CNAE INFORMADO" SAIU. Ter CNAE registrado é verdade para
+    // praticamente toda empresa do país — é um não-fato vestido de sinal, o
+    // mesmo defeito de "Sem sanções CGU encontradas". Ocupava uma das três
+    // vagas da frase empurrando fora informação que decide alguma coisa.
     if (motivos.length === 0) return 'Há sinais competitivos, mas a base ainda não explica completamente a ameaça.';
     return motivos.slice(0, 3).join(', ') + '.';
   };
 
-  const recomendarAcaoConcorrente = (concorrente: ConcorrenteData, posicao: number): string => {
-    const regional = isConcorrenteRegional(concorrente);
-    if (posicao === 0 && regional) return 'Validar preço mínimo, atestados e vantagem regional antes da proposta.';
-    if (posicao === 0) return 'Simular margem contra o deságio provável e revisar habilitação.';
-    if (regional) return 'Monitorar participação local e preparar resposta de preço.';
-    return 'Usar como referência de preço e histórico, sem consumir esforço jurídico pesado.';
-  };
+  const recomendarAcaoConcorrente = (concorrente: ConcorrenteData): string =>
+    acaoSugerida(
+      perfilDoConcorrente(concorrente.contratos as ContratoDoConcorrente[] | undefined, { orgaoAlvo }),
+      { regional: isConcorrenteRegional(concorrente) },
+    );
 
   const normalizarTexto = (texto: any): string =>
     String(texto || '')
@@ -1032,9 +1121,11 @@ export default function CompetitorWarRoom({
                 </div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Veredito competitivo</p>
                 <h3 className="text-2xl md:text-3xl font-black text-slate-950 tracking-tight leading-tight">
-                  {vereditoCompetitivo.principal
-                    ? `${vereditoCompetitivo.principal.nome} é o rival que mais exige atenção.`
-                    : 'Ainda não há concorrente forte o suficiente para orientar a estratégia.'}
+                  {vereditoCompetitivo.empatados
+                    ? `${vereditoCompetitivo.totalConcorrentes} concorrentes com histórico equivalente — nenhum se destaca.`
+                    : vereditoCompetitivo.principal
+                      ? `${vereditoCompetitivo.principal.nome} é o rival que mais exige atenção.`
+                      : 'Ainda não há concorrente forte o suficiente para orientar a estratégia.'}
                 </h3>
                 <p className="mt-4 text-sm md:text-base font-medium text-slate-600 leading-relaxed">
                   {vereditoCompetitivo.estrategia}
@@ -1042,11 +1133,19 @@ export default function CompetitorWarRoom({
               </div>
 
               <div className="grid grid-cols-2 gap-3 w-full xl:w-[420px] shrink-0">
+                {/* ⚠️ ERA "RISCO DO LÍDER: 25%" — a contagem de vitórias
+                    dividida por um denominador arbitrário. Vitórias medidas
+                    dizem menos e valem mais: dá para conferir no PNCP. */}
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Risco do líder</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Vitórias do líder</p>
                   <p className="text-2xl font-black text-slate-900">
-                    {vereditoCompetitivo.threatPct > 0 ? `${vereditoCompetitivo.threatPct}%` : '—'}
+                    {vereditoCompetitivo.perfilLider.vitorias > 0 ? vereditoCompetitivo.perfilLider.vitorias : '—'}
                   </p>
+                  {vereditoCompetitivo.perfilLider.vitoriasNoOrgao !== null && (
+                    <p className="mt-0.5 text-[10px] font-bold text-rose-600">
+                      {vereditoCompetitivo.perfilLider.vitoriasNoOrgao}× neste órgão
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Confiança</p>
@@ -1138,34 +1237,44 @@ export default function CompetitorWarRoom({
                   {/* Mediana Unitária */}
                   <div className="bg-white/80 rounded-xl p-4 border border-white/60">
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Preço Unitário Mediano</p>
-                    {/* Badge de confiança da fonte */}
-                    {pricing.fonteConfiabilidade && (
-                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase mb-2 ${
-                        pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? 'bg-emerald-100 text-emerald-700' :
-                        pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'bg-blue-100 text-blue-700' :
-                        pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>
+                    {/* ━━━ SELO: O QUE FOI VERIFICADO ━━━━━━━━━━━━━━━━━━━━━━━
+                        ⚠️ ANTES ERA "✓ VERIFICADO PNCP", derivado SÓ da origem
+                        do dado. Origem e pertinência são independentes: um
+                        preço homologado de verdade, de um objeto diferente, é
+                        100% verificado e 0% útil — e era exatamente o que a
+                        tela mostrava num edital de publicidade cujas sete
+                        "evidências" eram seis linhas de um mesmo contrato,
+                        variando 9× entre si. O selo é o único elemento que se
+                        apresenta como conferido, então era o mais perigoso.
+                        Agora o backend responde O QUE conferiu, considerando
+                        origem, coerência da amostra e tamanho dela. */}
+                    {pricing.seloVerificacao && (
+                      <div
+                        title={pricing.seloVerificacao.detalhe || undefined}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase mb-2 ${
+                          pricing.seloVerificacao.nivel === 'forte' ? 'bg-emerald-100 text-emerald-700' :
+                          pricing.seloVerificacao.nivel === 'bom' ? 'bg-teal-100 text-teal-700' :
+                          pricing.seloVerificacao.nivel === 'parcial' ? 'bg-amber-100 text-amber-700' :
+                          'bg-rose-100 text-rose-700'
+                        }`}
+                      >
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? 'bg-emerald-500' :
-                          pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'bg-blue-500' :
-                          pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'bg-yellow-500' :
-                          'bg-amber-500'
+                          pricing.seloVerificacao.nivel === 'forte' ? 'bg-emerald-500' :
+                          pricing.seloVerificacao.nivel === 'bom' ? 'bg-teal-500' :
+                          pricing.seloVerificacao.nivel === 'parcial' ? 'bg-amber-500' :
+                          'bg-rose-500'
                         }`} />
-                        {pricing.fonteConfiabilidade === 'CATMAT_COMPRAS' ? '✓ CATMAT' :
-                         pricing.fonteConfiabilidade === 'PNCP_HOMOLOGADO' ? '✓ Verificado PNCP' :
-                         pricing.fonteConfiabilidade === 'PAINEL_PRECOS' ? 'Painel de Preços' :
-                         pricing.fonteConfiabilidade === 'DB_ESTRUTURADO' ? 'Base Local' :
-                         pricing.fonteConfiabilidade === 'DB_CALCULADO' ? 'Base Local (Calculado)' :
-                         'Estimado'}
-                        {/* Participação da fonte dominante: o selo antigo era a
-                            MELHOR fonte presente, então uma única evidência
-                            CATMAT entre 50 calculadas carimbava tudo como CATMAT.
-                            Mostrar o percentual responde "quantos dos N?". */}
-                        {pricing.fonteConfiabilidadeDetalhe && pricing.fonteConfiabilidadeDetalhe.amostra > 0 && (
-                          <span className="opacity-70">· {pricing.fonteConfiabilidadeDetalhe.participacao_pct}%</span>
-                        )}
+                        {pricing.seloVerificacao.texto}
                       </div>
+                    )}
+                    {/* O motivo por extenso, quando há ressalva — o selo cabe
+                        em duas palavras, a explicação não. */}
+                    {pricing.seloVerificacao?.detalhe
+                      && pricing.seloVerificacao.nivel !== 'forte'
+                      && pricing.seloVerificacao.nivel !== 'bom' && (
+                      <p className="mb-1.5 text-[9px] font-bold leading-relaxed text-amber-700">
+                        {pricing.seloVerificacao.detalhe}
+                      </p>
                     )}
                     {/* Composição completa da amostra por fonte */}
                     {pricing.fonteConfiabilidadeDetalhe &&
@@ -1194,9 +1303,20 @@ export default function CompetitorWarRoom({
                         </p>
                       )}
                       {/* Amostra com intervalo de datas */}
+                      {/* ⚠️ "7 CONTRATOS" ERA FALSO, NÃO ARREDONDADO. A
+                          deduplicação usava `valor|órgão`, e as LINHAS de um
+                          mesmo contrato têm valores diferentes por serem itens
+                          diferentes — então cada linha virava um "contrato".
+                          Um contrato de publicidade com seis itens contava
+                          seis. Agora `amostraPrecosUnitarios` conta contratos
+                          e `linhasPrecosUnitarios` conta itens; quando os dois
+                          divergem, a tela mostra os dois. */}
                       {amostraUnitarios > 0 && (
                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
                           {amostraUnitarios} contrato{amostraUnitarios > 1 ? 's' : ''}
+                          {Number(pricing.linhasPrecosUnitarios) > amostraUnitarios && (
+                            <> · {pricing.linhasPrecosUnitarios} itens</>
+                          )}
                           {pricing.intervaloAmostral?.inicio && (
                             <> · {pricing.intervaloAmostral.inicio} → {pricing.intervaloAmostral.fim}</>
                           )}
@@ -1296,7 +1416,7 @@ export default function CompetitorWarRoom({
                           className={`h-full rounded-lg flex items-center px-3 transition-all ${estado === uf ? 'bg-rose-500' : 'bg-indigo-500'}`}
                           style={{ width: `${Math.round((count / maxVal) * 100)}%` }}
                         >
-                          <span className="text-[10px] font-black text-white">{count} rival{count > 1 ? 'is' : ''}</span>
+                          <span className="text-[10px] font-black text-white">{count} {count > 1 ? 'rivais' : 'rival'}</span>
                         </div>
                       </div>
                       {estado === uf && <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest shrink-0">← SEU ESTADO</span>}
@@ -1398,6 +1518,14 @@ export default function CompetitorWarRoom({
               const forcaIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={14} className="text-red-500" />, Agressivo: <Target size={14} className="text-orange-500" />, Conservador: <Shield size={14} className="text-blue-500" />, Iniciante: <Activity size={14} className="text-green-500" /> };
               const ranked = concorrentesRanqueadosAtivos;
               const maxScore = ranked[0]?.threatScore || 1;
+              // ⚠️ EMPATE GERAL É O CASO COMUM, NÃO A EXCEÇÃO. Quando todos os
+              // concorrentes têm o mesmo número de vitórias — cinco empresas
+              // com 1 vitória cada, situação corriqueira — o score é idêntico
+              // para todos e a barra relativa pinta 100% em cima de cada nome.
+              // A ordem #1..#5 também vira arbitrária. Detectar o empate é o
+              // que permite a tela parar de fingir que ordenou alguma coisa.
+              const houveEmpateGeral = ranked.length > 1
+                && ranked.every((r) => r.threatScore === maxScore);
               return (
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
@@ -1406,7 +1534,16 @@ export default function CompetitorWarRoom({
                   </div>
                   <div className="divide-y divide-slate-50">
                     {ranked.slice(0, 6).map((item, idx) => {
-                      const threatPct = Math.round((item.threatScore / maxScore) * 100);
+                      // ⚠️ A BARRA SÓ EXISTE SE HOUVER O QUE COMPARAR.
+                      // `threatScore / maxScore` dá 100% para TODO MUNDO quando
+                      // os scores empatam — e eles empatam sempre que os
+                      // concorrentes têm o mesmo número de vitórias, que é o
+                      // caso comum: cinco empresas com 1 vitória cada viravam
+                      // cinco barras cheias, todas "100%". Uma barra que nunca
+                      // varia não ordena nada; só faz a lista parecer analisada.
+                      const larguraRelativa = houveEmpateGeral
+                        ? 0
+                        : Math.round((item.threatScore / maxScore) * 100);
                       const isTop = idx === 0;
                       return (
                         <div key={idx} className={`flex flex-col lg:flex-row lg:items-center gap-3 px-4 py-4 ${isTop ? 'bg-red-50' : 'bg-white'}`}>
@@ -1424,7 +1561,7 @@ export default function CompetitorWarRoom({
                                 </>
                               )}
                               <span className="text-[9px] font-bold text-slate-400">·</span>
-                              <span className="text-[9px] font-bold text-slate-400">{item.vitorias} vitórias</span>
+                              <span className="text-[9px] font-bold text-slate-400">{getNumeroVitorias(item.vitorias)} vitória{getNumeroVitorias(item.vitorias) === 1 ? '' : 's'}</span>
                               {forcaIcon[item.forca] || <Bot size={14} className="text-slate-400" />}
                               {item.cnpj && <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>}
                             </div>
@@ -1432,14 +1569,22 @@ export default function CompetitorWarRoom({
                               <span className="font-black text-slate-800">Por que importa:</span> {explicarConcorrente(item)}
                             </p>
                             <p className="text-[11px] font-semibold text-indigo-700 leading-snug mt-1">
-                              <span className="font-black">Resposta sugerida:</span> {recomendarAcaoConcorrente(item, idx)}
+                              <span className="font-black">Resposta sugerida:</span> {recomendarAcaoConcorrente(item)}
                             </p>
                           </div>
                           <div className="w-20 shrink-0">
-                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${isTop ? 'bg-red-500' : threatPct > 65 ? 'bg-orange-400' : 'bg-slate-300'}`} style={{ width: `${threatPct}%` }} />
+                            <div className={`h-2 bg-slate-100 rounded-full overflow-hidden ${houveEmpateGeral ? 'hidden' : ''}`}>
+                              <div className={`h-full rounded-full ${isTop ? 'bg-red-500' : larguraRelativa > 65 ? 'bg-orange-400' : 'bg-slate-300'}`} style={{ width: `${larguraRelativa}%` }} />
                             </div>
-                            <p className={`text-[9px] font-black text-right mt-0.5 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>{threatPct}%</p>
+                            {/* ⚠️ A BARRA É COMPARAÇÃO, O RÓTULO ERA AFIRMAÇÃO.
+                                `threatScore / maxScore` serve para ordenar a
+                                lista — mas escrito como "68%" ao lado de um
+                                CNPJ vira uma medida sobre a empresa, que ele
+                                não é. A barra fica (compara), o número vira
+                                vitórias (fato conferível no PNCP). */}
+                            <p className={`text-[9px] font-black text-right mt-0.5 ${isTop ? 'text-red-500' : 'text-slate-400'}`}>
+                              {getNumeroVitorias(item.vitorias)} vitória{getNumeroVitorias(item.vitorias) === 1 ? '' : 's'}
+                            </p>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <button onClick={() => handleOpenDossie(item)} className="flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white border border-indigo-200 transition-colors group" title="Ver Dossiê">
@@ -1541,10 +1686,42 @@ export default function CompetitorWarRoom({
                 <h2 className="text-xl md:text-2xl font-black tracking-tight">{target.nome}</h2>
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
                   <span className="bg-slate-800 px-2 py-0.5 rounded">CNPJ: {target.cnpj || 'N/A'}</span>
-                  <span>{target.prob} de ameaça competitiva</span>
+                  {perfilAlvo.ultimaVitoria && (
+                    <span>última vitória {perfilAlvo.ultimaVitoria.rotulo}</span>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* ━━━ O QUE SE SABE DE FATO ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                ⚠️ AQUI FICAVA "~25% DE AMEAÇA COMPETITIVA". Aquele percentual
+                era `18 + 7 × vitórias`, rebaldado em 1/2/3 e dividido por um
+                denominador arbitrário — a contagem de vitórias com roupa de
+                probabilidade. Quem lesse "25%" e relaxasse teria sido induzido
+                ao erro por um número que só sabia contar.
+                Cada item abaixo é contagem, data ou mediana de valor
+                observado, e nenhum aparece sem observação por trás. */}
+            {evidenciasAlvo.length > 0 ? (
+              <div className="relative z-10 mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {evidenciasAlvo.map((e) => (
+                  <div key={e.rotulo} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{e.rotulo}</p>
+                    <p className="mt-1 text-xl font-black leading-none text-white">{e.valor}</p>
+                    {e.detalhe && (
+                      <p className="mt-1 text-[10px] font-bold leading-tight text-slate-400">{e.detalhe}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // ⚠️ DIZER QUE NÃO SE SABE É UM RESULTADO. A versão anterior
+              // preenchia este espaço com o percentual justamente quando não
+              // havia histórico — o caso em que ele era mais enganoso.
+              <p className="relative z-10 mt-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs font-bold text-slate-400">
+                Ainda não há contrato deste CNPJ na base para medir histórico.
+                O Dossiê PNCP, acima, é o caminho para conferir manualmente.
+              </p>
+            )}
           </div>
 
           {target.cleanCnpj && target.cleanCnpj.length >= 11 && (
@@ -1645,8 +1822,29 @@ export default function CompetitorWarRoom({
         </div>
       )}
 
-      {/* MODAL DO RAIO-X COMPETITIVO (DOSSIÊ) */}
-      {dossieTarget && (
+      {/* ━━━ MODAL DO RAIO-X COMPETITIVO (DOSSIÊ) ━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ⚠️ VAI POR PORTAL, E NÃO É PRECAUÇÃO — É CORREÇÃO DE UM CORTE REAL.
+          O topo do modal (a barra escura com "Raio-X Competitivo", o nome e o
+          ✖) aparecia por baixo do cabeçalho do site.
+
+          O motivo NÃO é `z-index` baixo: o overlay já pedia `z-50`. É que
+          `analysis-app.tsx` envolve a página inteira numa
+          `<section className="... relative z-10">`, e `position: relative` com
+          `z-index` numérico CRIA UM CONTEXTO DE EMPILHAMENTO. Todo o `z-50`
+          daqui para dentro passa a valer só entre irmãos dessa seção; lá fora,
+          quem compete com o cabeçalho é a seção, com z-10. O cabeçalho é
+          `sticky z-50` na raiz, então ganha.
+
+          Medido no navegador, viewport de 800px: o cartão nasce em y=60 e o
+          cabeçalho ocupa 0–73, então 13px do topo ficam encobertos — mais em
+          telas baixas, porque o cartão é `85dvh` e centralizado. Com a seção,
+          `elementFromPoint` no topo do cartão devolve o `<header>`; sem ela,
+          devolve o próprio cartão. Mesma geometria, só muda o empilhamento.
+
+          Subir o `z-index` não resolveria: dentro de um contexto de z-10,
+          `z-[9999]` continua valendo 10 do lado de fora. Sair do contexto
+          resolve — e `document.body` é o único lugar garantidamente fora. */}
+      {dossieTarget && typeof document !== 'undefined' && createPortal(
         <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-[2rem] shadow-2xl max-w-3xl w-full max-h-[85dvh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
             
@@ -1759,7 +1957,15 @@ export default function CompetitorWarRoom({
                         const cObjeto = contrato.objeto || contrato.descricao || "Descrição indisponível";
                         const cData = contrato.data || contrato.data_homologacao || "";
                         const cValor = contrato.valor || contrato.valorTotal || "";
-                        const cLink = contrato.link || contrato.url || contrato.link_pncp || contrato.linkSistemaOrigem;
+                        // ⚠️ SEGUNDA BARREIRA, DE PROPÓSITO. O backend já filtra
+                        // (`link_externo_valido`), mas estes contratos também
+                        // vêm de documentos JÁ GRAVADOS na base local, com
+                        // links coletados antes daquele filtro existir. Sem a
+                        // checagem aqui, um caminho relativo antigo continua
+                        // virando `<a href="/contratos/...">` e o "Link
+                        // Oficial" leva para uma página nossa que não existe.
+                        const cLink = linkExternoValido(
+                          contrato.link || contrato.url || contrato.link_pncp || contrato.linkSistemaOrigem);
                         const precoMeta = getPrecoMeta(contrato);
                         const confiancaPreco = Number(precoMeta?.confianca ?? contrato.confiancaPreco ?? 0);
                         const fontePreco = getFontePreco(contrato);
@@ -1860,7 +2066,8 @@ export default function CompetitorWarRoom({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

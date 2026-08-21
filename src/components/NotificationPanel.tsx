@@ -206,9 +206,19 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
         method: 'POST',
       });
       if (!res.ok) return;
-      const data: Notificacao[] = await res.json();
-      setNotifs(data);
-      onCountChange?.(data.filter(n => !n.lida).length);
+      // ⚠️ A ANOTAÇÃO DE TIPO NÃO VERIFICA NADA EM TEMPO DE EXECUÇÃO.
+      // `const data: Notificacao[] = await res.json()` convence o TypeScript e
+      // não convence o navegador: se a rota devolver 200 com qualquer coisa
+      // que não seja lista, o `.filter()` da linha seguinte lança e derruba a
+      // PÁGINA INTEIRA no ErrorBoundary — sino quebrado vira tela branca.
+      // Descobri isto sem querer, com um stub que devolvia `{}`.
+      const data = await res.json();
+      if (!Array.isArray(data)) {
+        console.warn('[notificacoes] resposta fora do formato esperado:', data);
+        return;
+      }
+      setNotifs(data as Notificacao[]);
+      onCountChange?.((data as Notificacao[]).filter(n => !n.lida).length);
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       /* silencioso */

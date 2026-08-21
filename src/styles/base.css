@@ -20,8 +20,16 @@ body {
   font-family: var(--font-sans);
 }
 
+/* ⚠️ `clip`, NÃO `hidden` — E ISSO DECIDE SE `position: sticky` FUNCIONA.
+   `overflow-x: hidden` obriga o `overflow-y` a computar `auto`: o <body> vira
+   um contêiner de rolagem, e todo `sticky` descendente passa a se posicionar
+   em relação a ELE em vez da janela. Medido nesta página: `overflow-y: auto`
+   no body, e a barra lateral com `top: 112px` correto rolando até -944px, ou
+   seja, sem grudar em lugar nenhum.
+   `clip` corta o transbordo horizontal do mesmo jeito e NÃO cria contêiner de
+   rolagem, então o sticky volta a enxergar a janela. */
 body {
-  overflow-x: hidden; 
+  overflow-x: clip;
 }
 
 /* ⚠️ MESMA ARMADILHA DE CAMADA (ver o bloco de botões abaixo). Sem camada,
