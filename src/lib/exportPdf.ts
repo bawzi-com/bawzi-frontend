@@ -1,5 +1,6 @@
 import type { AnalysisResult } from '@/components/analysis-types';
 import { textoDoItem } from '@/components/analysis-types';
+import { formatarDataCritica, dataCriticaExpirada, dataCriticaUrgente } from './datasCriticas';
 
 export function exportPdf(result: AnalysisResult, onError: (msg: string) => void): void {
   const printWindow = window.open('', '_blank');
@@ -25,9 +26,20 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     : decisionVerdict === 'NO_GO'
       ? '#fef2f2'
       : '#fffbeb';
+  // ⚠️ O `else` DESTE TERNÁRIO INVENTAVA UM VEREDITO. Com `veredito` vazio mas
+  // `resumo_decisao` presente, o bloco era renderizado assim mesmo (ver
+  // `decisionHtml`) e saía com pílula "GO CONDICIONADO" e título "Participar
+  // somente após validações" — um veredito que ninguém emitiu, num documento
+  // assinado que circula na diretoria.
   const decisionLabel = decision?.rotulo || (
-    decisionVerdict === 'GO' ? 'Participar' : decisionVerdict === 'NO_GO' ? 'Não participar agora' : 'Participar somente após validações'
+    decisionVerdict === 'GO' ? 'Participar'
+      : decisionVerdict === 'NO_GO' ? 'Não participar agora'
+        : decisionVerdict === 'GO_CONDICIONADO' ? 'Participar somente após validações'
+          : 'Veredito não emitido pela análise'
   );
+  const decisionPill = decisionVerdict
+    ? decisionVerdict.replace('_', ' ')
+    : 'SEM VEREDITO';
 
   const semaforoIcon = (status: string) =>
     status === 'ok' ? '✅' : status === 'alerta' ? '⚠️' : '❌';
@@ -42,22 +54,24 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
       ? `<div class="section"><h3>${num}. ${esc(title)}</h3>${body}</div>`
       : '';
 
-  const dateLabel = (iso: string | null) => {
-    if (!iso) return '—';
-    try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
-  };
-
+  // ⚠️ `new Date(iso).toLocaleDateString` imprimia o dia ANTERIOR ao prazo
+  // (T00:00:00Z lido no fuso local). E `d.urgente` vem congelado do dia da
+  // análise, então o ⚠️ nunca aparecia num laudo gerado com antecedência.
+  // Mesma régua da tela — `datasCriticas.ts`.
   const datasHtml = (() => {
     const datas = result.datas_criticas || [];
     if (!datas.length) return '';
-    const rows = datas.map(d =>
-      `<tr>
+    const rows = datas.map(d => {
+      const texto = formatarDataCritica(d.data_iso, 'numerico') ?? '—';
+      const expirado = dataCriticaExpirada(d.data_iso);
+      const urgente = !expirado && dataCriticaUrgente(d.data_iso);
+      const cor = expirado ? 'color:#94a3b8;text-decoration:line-through' : urgente ? 'color:#dc2626' : '';
+      const selo = expirado ? ' — ENCERRADO' : urgente ? ' ⚠️ URGENTE' : '';
+      return `<tr>
         <td>${esc(d.label)}</td>
-        <td style="font-weight:bold;${d.urgente ? 'color:#dc2626' : ''}">
-          ${dateLabel(d.data_iso)}${d.urgente ? ' ⚠️' : ''}
-        </td>
-      </tr>`
-    ).join('');
+        <td style="font-weight:bold;${cor}">${esc(texto)}${selo}</td>
+      </tr>`;
+    }).join('');
     return `<table><thead><tr><th>Prazo</th><th>Data</th></tr></thead><tbody>${rows}</tbody></table>`;
   })();
 
@@ -93,13 +107,84 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
   const checklistHtml = (() => {
     const cl = result.checklist || [];
     if (!cl.length) return '';
+    // ⚠️ `item.label || item.item || item.descricao || item` NÃO INCLUÍA
+    // `tarefa` — que é o campo real: o checklist é `{fase, tarefa, impacto}`.
+    // A cadeia caía no objeto cru e o PDF imprimia "[object Object]" em toda
+    // linha. `textoDoItem` é o mesmo helper que a tela usa; os dois lados
+    // passam a ler o mesmo campo.
     return `<ul>${cl.map((item: Record<string, unknown>) => {
-      const label = esc(item.label || item.item || item.descricao || item);
-      const done  = item.done || item.checked || item.ok;
+      const label = esc(textoDoItem(item));
+      const fase = typeof item.fase === 'string' && item.fase.trim() ? `<em style="color:#666">${esc(item.fase)}: </em>` : '';
+      if (!label) return '';
+      // Não existe estado "concluído" neste dado: o ☐/☑ vinha de campos que
+      // nunca chegam (`done`/`checked`/`ok`), então era sempre ☐ — um checkbox
+      // que sugeria acompanhamento inexistente. Vira marcador simples.
       return `<li style="list-style:none;margin-bottom:4px">
-        <span style="margin-right:6px">${done ? '☑' : '☐'}</span>${label}
+        <span style="margin-right:6px">•</span>${fase}${label}
       </li>`;
-    }).join('')}</ul>`;
+    }).filter(Boolean).join('')}</ul>`;
+  })();
+
+  /**
+   * ⚠️ OS IMPEDITIVOS SÓ EXISTIAM NA TELA.
+   *
+   * `elegibilidade_me_epp` (a empresa pode estar VEDADA de participar por
+   * porte), o edital já encerrado, o CAPAG do órgão e a exigência de programa
+   * de integridade têm banner na tela e não apareciam em lugar nenhum do PDF.
+   * O documento que circula na diretoria e vira decisão assinada era
+   * justamente a versão sem os bloqueios — e ninguém que só lê o PDF tem como
+   * saber que faltou alguma coisa.
+   *
+   * Vai no topo, antes do veredito: se há impeditivo, ele antecede a
+   * recomendação.
+   */
+  const impeditivosHtml = (() => {
+    const avisos: string[] = [];
+
+    const meEpp = result.elegibilidade_me_epp;
+    if (meEpp && !meEpp.elegivel) {
+      avisos.push(`<div style="border-left:4px solid #e11d48;background:#fff1f2;padding:10px 14px;margin-bottom:8px">
+        <strong style="color:#9f1239">POSSÍVEL IMPEDITIVO · ME/EPP</strong>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#4c0519">${esc(meEpp.mensagem)}</p>
+      </div>`);
+    } else if (meEpp?.cota_reservada) {
+      avisos.push(`<div style="border-left:4px solid #0284c7;background:#f0f9ff;padding:10px 14px;margin-bottom:8px">
+        <strong style="color:#075985">COTA RESERVADA · ME/EPP</strong>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#0c4a6e">${esc(meEpp.mensagem)}</p>
+      </div>`);
+    }
+
+    // Mesmos rótulos-chave que `getDataExpirada` usa na tela, mesma régua de
+    // expiração — um PDF gerado depois do prazo precisa dizer isso na cara.
+    const encerrada = (result.datas_criticas || []).find((d) => {
+      const l = String(d.label || '').toLowerCase();
+      const chave = ['proposta', 'sessão', 'sessao', 'abertura', 'limite', 'encerramento'].some((k) => l.includes(k));
+      const excluido = ['impugna', 'esclarec', 'recurso', 'entrega', 'vigenc', 'pagamento'].some((k) => l.includes(k));
+      return chave && !excluido && dataCriticaExpirada(d.data_iso);
+    });
+    if (encerrada) {
+      avisos.push(`<div style="border-left:4px solid #334155;background:#f1f5f9;padding:10px 14px;margin-bottom:8px">
+        <strong style="color:#0f172a">EDITAL ENCERRADO</strong>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#334155">A ${esc(encerrada.label)} ocorreu em ${esc(formatarDataCritica(encerrada.data_iso, 'longo') ?? '—')}. Laudo válido apenas como referência e estudo de mercado.</p>
+      </div>`);
+    }
+
+    const capag = String(result.orgao_risk?.classificacao || '').trim().toUpperCase();
+    if (capag === 'C' || capag === 'D') {
+      avisos.push(`<div style="border-left:4px solid #d97706;background:#fffbeb;padding:10px 14px;margin-bottom:8px">
+        <strong style="color:#92400e">SAÚDE FISCAL DO ÓRGÃO · CAPAG ${esc(capag)}</strong>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#78350f">Capacidade de pagamento fraca segundo o Tesouro Nacional — considere o risco de atraso no recebimento ao precificar.</p>
+      </div>`);
+    }
+
+    if (result.programa_integridade_obrigatorio?.exigido) {
+      avisos.push(`<div style="border-left:4px solid #d97706;background:#fffbeb;padding:10px 14px;margin-bottom:8px">
+        <strong style="color:#92400e">PROGRAMA DE INTEGRIDADE EXIGIDO</strong>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#78350f">${esc(result.programa_integridade_obrigatorio.mensagem || 'O edital exige programa de integridade implantado como condição de contratação.')}</p>
+      </div>`);
+    }
+
+    return avisos.join('');
   })();
 
   const decisionHtml = (() => {
@@ -107,7 +192,7 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     return `
       <div class="decision-card">
         <div>
-          <span class="decision-pill">${esc(String(decision?.veredito || 'GO_CONDICIONADO').replace('_', ' '))}</span>
+          <span class="decision-pill">${esc(decisionPill)}</span>
           <h2>${esc(decisionLabel)}</h2>
           <p>${esc(decision?.resumo_decisao || decision?.decisao_executiva || result.recommendation || '')}</p>
         </div>
@@ -167,9 +252,23 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
   const aderenciaHtml = (() => {
     const fit = result.aderencia_negocio;
     if (!fit) return '';
+    // O slug cru ("match_forte", "nao_avaliado") vazava para o PDF entregue ao
+    // cliente. `nao_avaliado` sem tradução seria lido como um veredito, e não
+    // como a ausência dele.
+    const rotuloStatus: Record<string, string> = {
+      match_forte: 'Aderente ao CNAE da empresa',
+      match_parcial: 'Aderência parcial',
+      sem_match: 'Sem aderência ao CNAE',
+      indeterminado: 'Inconclusivo',
+      sem_cnae: 'CNAE da empresa não cadastrado',
+      nao_avaliado: 'Não avaliado nesta análise',
+    };
     const rows = [
-      `<tr><td>Status</td><td>${esc(fit.status || '—')}</td></tr>`,
-      fit.score != null && `<tr><td>Match CNAE</td><td>${esc(fit.score)}/100</td></tr>`,
+      `<tr><td>Status</td><td>${esc(rotuloStatus[String(fit.status || '')] || fit.status || '—')}</td></tr>`,
+      // Sem medida não se imprime número: "Match CNAE 50/100" era um default.
+      fit.score != null
+        ? `<tr><td>Match CNAE</td><td>${esc(fit.score)}/100</td></tr>`
+        : `<tr><td>Match CNAE</td><td>não medido</td></tr>`,
       fit.cnae_principal && `<tr><td>CNAE</td><td>${esc(fit.cnae_principal)}${fit.cnae_descricao ? ` — ${esc(fit.cnae_descricao)}` : ''}</td></tr>`,
       fit.objeto_detectado && `<tr><td>Objeto do edital</td><td>${esc(fit.objeto_detectado)}</td></tr>`,
     ].filter(Boolean).join('');
@@ -338,6 +437,7 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
       <p>${esc(result.recommendation || result.rationale || '')}</p>
     </div>
   </div>
+  ${impeditivosHtml ? `<div style="margin-bottom:16px">${impeditivosHtml}</div>` : ''}
   ${decisionHtml ? section('1', 'Veredito Executivo', decisionHtml) : ''}
   ${aderenciaHtml ? section('2', 'Aderência ao Negócio (CNAE)', aderenciaHtml) : ''}
   ${evidenceHtml ? section('3', 'Evidências que Sustentam a Decisão', evidenceHtml) : ''}

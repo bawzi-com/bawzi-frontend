@@ -30,6 +30,9 @@ export type ItemExigencia =
       categoria?: string;
       origem?: string;
       citacao_conferida?: boolean;
+      /** A citação que a IA escreveu e que a conferência NÃO encontrou no
+       *  documento. O backend a move para cá e esvazia `trecho`. */
+      trecho_nao_conferido?: string;
     };
 
 /** Texto exibível de um item que pode ser string ou objeto. */
@@ -43,6 +46,34 @@ export function textoDoItem(item: ItemExigencia | null | undefined): string {
 export function citacaoDoItem(item: ItemExigencia | null | undefined): string {
   if (!item || typeof item === 'string') return '';
   return String(item.trecho_edital || item.trecho || '').trim();
+}
+
+/**
+ * O que a conferência de citações concluiu sobre este item.
+ *
+ * ⚠️ `citacao_conferida: false` EXISTIA E NINGUÉM LIA. O backend
+ * (`auditoria.py`, `conferir_citacoes`) tem três desfechos possíveis, e a tela
+ * renderizava os três iguais:
+ *
+ *   • conferida  — o trecho foi localizado no documento, caractere a caractere;
+ *   • curta      — abaixo de 25 caracteres normalizados: devolvida COMO VEIO,
+ *                  sem nenhuma busca no edital (`citacao_conferida: false`);
+ *   • removida   — não existe no documento; o campo é esvaziado e o texto
+ *                  original vai para `trecho_nao_conferido`.
+ *
+ * O comentário que acompanhava o render dizia "a citação vem da auditoria e já
+ * foi conferida caractere a caractere" — verdade para o primeiro caso e falsa
+ * para os outros dois, que apareciam com a mesma aspa e a mesma borda.
+ */
+export type EstadoDaCitacao = 'conferida' | 'nao_conferida' | 'removida' | 'sem_citacao';
+
+export function estadoDaCitacao(item: ItemExigencia | null | undefined): EstadoDaCitacao {
+  if (!item || typeof item === 'string') return 'sem_citacao';
+  if (item.trecho_nao_conferido) return 'removida';
+  if (!citacaoDoItem(item)) return 'sem_citacao';
+  // `undefined` = laudo anterior à conferência; não afirmamos nem negamos.
+  if (item.citacao_conferida === false) return 'nao_conferida';
+  return 'conferida';
 }
 
 export interface EngenhariaReversa {
@@ -79,6 +110,11 @@ export interface OrgaoRiskData {
   classificacao: string;
   descricao: string;
   fonte: string;
+  /** true = a compra é MUNICIPAL, o município não está na tabela do Tesouro e
+   *  esta nota é a do ESTADO. Precisa aparecer na tela: a nota estadual
+   *  costuma ser melhor que a de município pequeno, então exibi-la sem
+   *  ressalva tranquiliza sobre um risco que ninguém mediu. */
+  substituicao_municipio?: boolean;
 }
 
 /** Alerta quando a garantia exigida no edital excede o teto legal da Lei 14.133/2021. */
@@ -241,8 +277,11 @@ export interface CockpitTaskPersistedState {
 export type CockpitStatusMap = Record<string, CockpitTaskPersistedState>;
 
 export interface BusinessFitData {
-  status?: 'match_forte' | 'match_parcial' | 'sem_match' | 'indeterminado' | 'sem_cnae' | string;
-  score?: number;
+  /** `nao_avaliado` = a IA não devolveu nem status nem score: nada foi comparado.
+   *  Diferente de `indeterminado`, que é uma leitura que ficou no meio. Nesse
+   *  estado `score` vem `null` — não existe medida para desenhar na tela. */
+  status?: 'match_forte' | 'match_parcial' | 'sem_match' | 'indeterminado' | 'sem_cnae' | 'nao_avaliado' | string;
+  score?: number | null;
   cnae_principal?: string | null;
   cnae_descricao?: string | null;
   objeto_detectado?: string | null;
@@ -296,6 +335,10 @@ export interface HabilitacaoItem {
   categoria_label?: string;
   exigencia: string;
   criticidade: 'eliminatoria' | 'pontuavel' | 'comum' | string;
+  /** false = a análise não classificou a criticidade; o `comum` acima é
+   *  default do backend, não leitura do edital. Sem isto a tela afirmava
+   *  "(0 eliminatória(s))" em verde sobre exigências nunca classificadas. */
+  criticidade_informada?: boolean;
   trecho?: string;
   dica?: string;
 }
@@ -310,6 +353,10 @@ export interface RedFlagItem {
   acao_sugerida?: 'impugnar' | 'esclarecer' | 'monitorar' | string;
   /** Súmula do TCU (262/263/272) quando o padrão detectado bate com a jurisprudência consolidada. */
   sumula_tcu?: { referencia: string; texto: string };
+  /** true = a `descricao` acima foi REMONTADA pelo backend a partir do tipo,
+   *  porque a análise sinalizou o indício sem redigir a explicação. Antes o
+   *  achado era descartado em silêncio e a tela dizia "nenhum indício". */
+  descricao_ausente?: boolean;
 }
 
 export interface ScoreFactorItem {
@@ -478,9 +525,18 @@ export interface AnalysisResult {
   avaliacao_parametros?: Array<{
     nome: string;
     peso: 'alto' | 'medio' | 'baixo';
-    status: 'ok' | 'alerta' | 'bloqueio';
-    score: number;
+    /** `nao_verificado` = a IA não devolveu um status reconhecível. Antes esse
+     *  caso não era bloqueio nem alerta, então a contagem por subtração
+     *  (`total - bloqueios - alertas`) o somava aos que "atendem". */
+    status: 'ok' | 'alerta' | 'bloqueio' | 'nao_verificado' | string;
+    /** null quando a IA não devolveu score — não é zero nem dez. */
+    score: number | null;
     trecho_citado: string;
+    /** false = "atende" sem uma linha do edital que sustente. O prompt permite
+     *  `trecho_citado: ""`, e a tela não distinguia isso de um confirmado. */
+    comprovado?: boolean;
+    /** false = peso ausente/inválido; o `medio` exibido é default, não escolha. */
+    peso_informado?: boolean;
     avaliacao: string;
   }>;
 }

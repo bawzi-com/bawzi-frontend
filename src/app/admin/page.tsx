@@ -39,7 +39,85 @@ import {
   Coins,
   Layers,
   ExternalLink,
+  Info,
+  Building2,
+  CalendarDays,
+  X,
+  Activity,
+  UserCircle,
+  ShieldCheck,
 } from 'lucide-react';
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATAS
+// ══════════════════════════════════════════════════════════════════════════
+/** ISO → `23/08/2026`. Devolve `—` para nulo em vez de "Invalid Date".
+ *
+ * ⚠️ EXISTE PORQUE `new Date(null)` É 01/01/1970, NÃO É ERRO. Espalhar
+ * `new Date(x).toLocaleDateString()` pela tabela faria toda conta sem data
+ * carimbada aparecer como janeiro de 1970 — uma data plausível o suficiente
+ * para ninguém desconfiar, e errada.
+ */
+function fmtData(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('pt-BR');
+}
+
+/** ISO → `23/08/2026 14:32`. Para moderação, onde a HORA importa: saber que a
+ *  conta foi banida "hoje" não ajuda quem investiga uma reclamação de agora. */
+function fmtDataHora(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+/** "há 3 meses" — o número que responde "é conta nova?" sem fazer conta de cabeça. */
+function tempoDesde(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (dias < 0) return '';
+  if (dias === 0) return 'hoje';
+  if (dias === 1) return 'ontem';
+  if (dias < 30) return `há ${dias} dias`;
+  const meses = Math.floor(dias / 30);
+  if (meses < 12) return `há ${meses} ${meses === 1 ? 'mês' : 'meses'}`;
+  const anos = Math.floor(dias / 365);
+  return `há ${anos} ${anos === 1 ? 'ano' : 'anos'}`;
+}
+
+/** Consumo do ciclo → barra. A cor é o AVISO, e por isso ela vira em 80%: o
+ *  admin varre a coluna com o olho, não lê os números um por um. Vermelho aqui
+ *  significa "esta conta vai bater no portão nos próximos dias", que é a única
+ *  razão de a barra existir. */
+/** USD → `US$ 4,18`. Abaixo de um centavo vira `< US$ 0,01`, e não `US$ 0,00`:
+ *  arredondar para zero faz uma conta que JÁ custou parecer de graça, e é
+ *  exatamente sobre custo que esta coluna existe para não mentir. */
+function fmtUsd(v?: number | null): string {
+  const n = Number(v || 0);
+  if (!isFinite(n) || n <= 0) return 'US$ 0,00';
+  if (n < 0.01) return '< US$ 0,01';
+  return `US$ ${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function corDoConsumo(pct: number): string {
+  if (pct >= 100) return 'bg-red-500';
+  if (pct >= 80) return 'bg-amber-500';
+  if (pct >= 50) return 'bg-blue-500';
+  return 'bg-emerald-500';
+}
+
+/** CNPJ só de dígitos → `00.000.000/0000-00`. Devolve como veio se não tiver 14. */
+function fmtCnpj(cnpj?: string): string {
+  const n = (cnpj || '').replace(/\D/g, '');
+  if (n.length !== 14) return cnpj || '—';
+  return `${n.slice(0, 2)}.${n.slice(2, 5)}.${n.slice(5, 8)}/${n.slice(8, 12)}-${n.slice(12)}`;
+}
 
 
 /** Os jobs que o scheduler REGISTA, na ordem em que a madrugada acontece.
@@ -412,6 +490,15 @@ export default function AdminDashboard() {
     chave: string; valor: unknown; padrao: unknown; descricao: string;
     env: string | null; origem: string;
   }>>([]);
+  // ⚠️ BOOLEANO DETECTADO PELO TIPO, NÃO POR LISTA DE NOMES. Havia duas listas
+  // com `['llm_cache_edital', 'refutacao_ativa']` escritas à mão — uma no
+  // salvar, outra no render — e `regua_por_custo`, criado depois, não entrou em
+  // nenhuma das duas. Consequência: o campo ia no PUT como a string "false", o
+  // backend exige bool e devolve 422, e como o formulário manda TODOS os campos
+  // juntos, um campo assim derruba o salvar da aba inteira. Foi o próprio
+  // `verificar_coerencia.py` que apontou. O backend já manda `padrao` com o
+  // tipo certo — usar ele faz o próximo campo booleano funcionar sozinho.
+  const ehBooleano = (c: { padrao: unknown }) => typeof c.padrao === 'boolean';
   const [billingEdit, setBillingEdit] = useState<Record<string, string>>({});
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingSaving, setBillingSaving] = useState(false);
@@ -452,11 +539,20 @@ export default function AdminDashboard() {
   const [billingSim, setBillingSim] = useState<{
     credito_usd: number;
     nota: string;
+    piso_credito_brl?: number;
+    piso_plano?: string;
+    avisos?: string[];
+    regua_ativa?: 'fixa' | 'custo';
+    regua_nota?: string;
     planos: Array<{
       tier: number; nome: string; cota: number; receita_usd: number;
       exposicao_usd: number; exposicao_pct_receita: number | null;
-      linhas: Array<{ chars: number; usd_rapida: number; creditos_rapida: number;
-                      usd_profunda: number; creditos_profunda: number }>;
+      exposicao_usd_alternativa: number; exposicao_pct_alternativa: number | null;
+      brl_por_credito: number | null;
+      linhas: Array<{ chars: number;
+                      usd_rapida: number; usd_profunda: number;
+                      cr_rapida_fixa: number; cr_profunda_fixa: number;
+                      cr_rapida_custo: number; cr_profunda_custo: number }>;
     }>;
   } | null>(null);
   const [simLoading, setSimLoading] = useState(false);
@@ -469,7 +565,7 @@ export default function AdminDashboard() {
         const bruto = billingEdit[c.chave] ?? '';
         if (c.chave === 'precos_llm') {
           try { payload[c.chave] = bruto.trim() ? JSON.parse(bruto) : {}; } catch { /* ignora no preview */ }
-        } else if (c.chave === 'llm_cache_edital') payload[c.chave] = bruto === 'true';
+        } else if (ehBooleano(c)) payload[c.chave] = bruto === 'true';
         else if (bruto !== '' && !Number.isNaN(Number(bruto))) payload[c.chave] = Number(bruto);
         else payload[c.chave] = bruto;
       }
@@ -492,8 +588,7 @@ export default function AdminDashboard() {
         const bruto = billingEdit[c.chave] ?? '';
         if (c.chave === 'cortesia_fator') payload[c.chave] = parseFloat(bruto);
         else if (c.chave === 'pacote_creditos_qtd') payload[c.chave] = parseInt(bruto, 10);
-        else if (c.chave === 'llm_cache_edital' || c.chave === 'refutacao_ativa')
-          payload[c.chave] = bruto === 'true';
+        else if (ehBooleano(c)) payload[c.chave] = bruto === 'true';
         else if (c.chave === 'precos_llm') {
           try { payload[c.chave] = bruto.trim() ? JSON.parse(bruto) : {}; }
           catch { throw new Error('A tabela de preços não é um JSON válido.'); }
@@ -605,6 +700,12 @@ export default function AdminDashboard() {
     banReason: string;
   } | null>(null);
   const [moderationLoading, setModerationLoading] = useState(false);
+
+  // Ficha completa de uma conta (empresa, workspace, uso, moderação)
+  const [detailsUser, setDetailsUser] = useState<{ id: string; email: string } | null>(null);
+  const [detailsData, setDetailsData] = useState<any>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
 
   // Sessão expirada → derruba e redireciona imediatamente para login
   useEffect(() => {
@@ -763,6 +864,30 @@ export default function AdminDashboard() {
     }
   };
 
+  /** Abre a ficha da conta. O modal aparece na hora, com o e-mail já no
+   *  cabeçalho, e o conteúdo entra quando chega — abrir só depois da resposta
+   *  faz o clique parecer que não funcionou. */
+  const openUserDetails = async (userId: string, email: string) => {
+    setDetailsUser({ id: userId, email });
+    setDetailsData(null);
+    setDetailsError('');
+    setDetailsLoading(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/users/${userId}/details`);
+      if (res.ok) {
+        setDetailsData(await res.json());
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setDetailsError(mensagemDeErro(err.detail, 'Não foi possível carregar os detalhes.'));
+      }
+    } catch (e) {
+      if (e instanceof SessionExpiredError) return;
+      setDetailsError('Erro de comunicação com o servidor.');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   const executeModerationAction = async () => {
     if (!moderationModal) return;
     const { userId, email, action, banReason } = moderationModal;
@@ -788,18 +913,29 @@ export default function AdminDashboard() {
       }
 
       if (res.ok) {
+        // O carimbo local é o MESMO instante que o backend acabou de gravar
+        // (a diferença é a latência da chamada). Sem ele a linha volta a
+        // mostrar "BLOQUEADO" sem data até alguém recarregar a página — e uma
+        // data em branco logo depois da ação parece defeito.
+        const agora = new Date().toISOString();
         if (action === 'delete') {
           setUsers(prev => prev.filter(u => u.id !== userId));
         } else if (action === 'block') {
-          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: true } : u));
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: true, blocked_at: agora } : u));
         } else if (action === 'unblock') {
-          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: false } : u));
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, blocked: false, blocked_at: null, blocked_by: '' } : u));
         } else if (action === 'ban') {
-          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: true, blocked: true, ban_reason: banReason } : u));
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: true, blocked: true, ban_reason: banReason, banned_at: agora, blocked_at: agora } : u));
         } else if (action === 'unban') {
-          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: false, blocked: false, ban_reason: '' } : u));
+          setUsers(prev => prev.map(u => u.id === userId ? { ...u, banned: false, blocked: false, ban_reason: '', banned_at: null, banned_by: '', blocked_at: null, blocked_by: '' } : u));
         }
         setModerationModal(null);
+        // A ficha aberta ficaria mostrando o estado ANTERIOR à ação que o
+        // operador acabou de confirmar. Recarrega do servidor.
+        if (detailsUser?.id === userId) {
+          if (action === 'delete') setDetailsUser(null);
+          else openUserDetails(userId, email);
+        }
       } else {
         const err = await res.json().catch(() => ({}));
         alert(`Erro: ${mensagemDeErro(err.detail, 'Tente novamente.')}`);
@@ -1891,19 +2027,21 @@ export default function AdminDashboard() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+            <table className="w-full text-left border-collapse min-w-[980px]">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase tracking-widest">
                   <th className="pb-4 pl-4 font-black"><div className="flex items-center gap-2"><Mail size={14}/> E-mail da Conta</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><Briefcase size={14}/> Workspace</div></th>
+                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><CalendarDays size={14}/> Cadastro</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><ShieldAlert size={14}/> Nível Atual</div></th>
+                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><Activity size={14}/> Consumo</div></th>
                   <th className="pb-4 pr-4 font-black text-right">Ação Administrativa</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-10 text-center text-slate-500 font-medium">
+                    <td colSpan={6} className="py-10 text-center text-slate-500 font-medium">
                       Nenhum usuário encontrado com este e-mail.
                     </td>
                   </tr>
@@ -1933,28 +2071,126 @@ export default function AdminDashboard() {
                               <Edit2 size={14} />
                             </button>
                             {isBanned && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-black bg-red-500/20 text-red-400 border border-red-500/30">
-                                BANIDO
+                              <span
+                                className="px-2 py-0.5 rounded-full text-xs font-black bg-red-500/20 text-red-400 border border-red-500/30"
+                                title={`Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` por ${user.banned_by}` : ''}`}
+                              >
+                                BANIDO {user.banned_at ? `· ${fmtData(user.banned_at)}` : ''}
                               </span>
                             )}
                             {isBlocked && (
-                              <span className="px-2 py-0.5 rounded-full text-xs font-black bg-orange-500/20 text-orange-400 border border-orange-500/30">
-                                BLOQUEADO
+                              <span
+                                className="px-2 py-0.5 rounded-full text-xs font-black bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                                title={`Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` por ${user.blocked_by}` : ''}`}
+                              >
+                                BLOQUEADO {user.blocked_at ? `· ${fmtData(user.blocked_at)}` : ''}
                               </span>
                             )}
                           </div>
                           {isBanned && user.ban_reason && (
                             <p className="text-xs text-red-400/60 mt-1 pl-0.5">Motivo: {user.ban_reason}</p>
                           )}
+                          {(isBanned || isBlocked) && (
+                            <p className="text-[11px] text-slate-500 mt-1 pl-0.5">
+                              {isBanned
+                                ? `Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` · por ${user.banned_by}` : ''}`
+                                : `Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` · por ${user.blocked_by}` : ''}`}
+                            </p>
+                          )}
                         </td>
                         <td className="py-5 text-slate-400 text-sm">{user.workspace_name}</td>
+                        <td className="py-5">
+                          <span className="text-slate-300 text-sm font-medium">{fmtData(user.created_at)}</span>
+                          <span className="block text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5">
+                            {tempoDesde(user.created_at)}
+                          </span>
+                        </td>
                         <td className="py-5">
                           <span className={`px-3 py-1.5 rounded-full text-xs font-black border tracking-wider ${tierColor}`}>
                             TIER {currentTier}
                           </span>
                         </td>
+                        {(() => {
+                          // ⚠️ TRÊS ESTADOS, E ELES NÃO PODEM SE PARECER.
+                          //   `undefined` → o backend não mandou o campo (API
+                          //      antiga rodando: reinicie o uvicorn);
+                          //   `.erro`     → a agregação falhou lá dentro;
+                          //   saldo 0     → a conta realmente não tem cota.
+                          // Os três desenhavam a MESMA coisa antes ("sem cota,
+                          // 0 análises"), que é o formato de uma conta nova
+                          // legítima. Um bug que se disfarça de dado válido
+                          // custa uma tarde de investigação; um travessão com
+                          // o motivo no `title` custa zero.
+                          const c = user.consumo;
+                          if (!c || c.erro) {
+                            return (
+                              <td className="py-5 pr-4 min-w-[170px]">
+                                <span
+                                  className="text-xs font-bold text-amber-500/80"
+                                  title={c?.erro || 'A API não enviou o campo `consumo` — provavelmente o backend não foi reiniciado após a atualização.'}
+                                >
+                                  — indisponível
+                                </span>
+                              </td>
+                            );
+                          }
+                          const usado = Number(c.usado_ciclo || 0);
+                          const saldo = Number(c.saldo_ciclo || 0);
+                          const total = Number(c.total_analises || 0);
+                          const pct = saldo > 0 ? Math.round((usado / saldo) * 100) : 0;
+                          return (
+                            <td className="py-5 pr-4 min-w-[170px]">
+                              {c.ilimitado ? (
+                                <span className="text-xs font-black text-amber-400 tracking-wider">ILIMITADO</span>
+                              ) : saldo > 0 ? (
+                                <>
+                                  <div className="h-1.5 w-32 bg-slate-800 rounded-full overflow-hidden">
+                                    {/* `min(pct,100)` só na LARGURA. O número ao
+                                        lado continua o real: uma conta em 118%
+                                        rodou em cortesia, e esconder isso apaga
+                                        justamente o caso que se quer ver. */}
+                                    <div
+                                      className={`h-full rounded-full transition-all ${corDoConsumo(pct)}`}
+                                      style={{ width: `${Math.min(pct, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="block text-xs font-bold text-slate-300 mt-1.5">
+                                    {usado}/{saldo}{' '}
+                                    <span className="text-slate-600 font-medium">créditos</span>
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="text-xs text-slate-600 font-medium">sem cota</span>
+                              )}
+                              <span
+                                className="block text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5"
+                                title={c.ultima_analise ? `Última análise: ${fmtDataHora(c.ultima_analise)}` : 'Nunca rodou uma análise'}
+                              >
+                                {total} {total === 1 ? 'análise' : 'análises'}
+                                {c.ultima_analise ? ` · ${tempoDesde(c.ultima_analise)}` : ' · nunca usou'}
+                              </span>
+                              {/* Custo em linha própria e em âmbar: é a única
+                                  informação da coluna que sai do bolso da
+                                  empresa, e ela some se ficar espremida junto
+                                  da contagem. */}
+                              <span
+                                className="block text-[10px] font-black text-amber-500/70 tracking-wider mt-0.5"
+                                title="Custo estimado de IA desta conta em todo o histórico — mesma precificação da aba Uso por IA. Análises sem token gravado entram pela média real da base."
+                              >
+                                {fmtUsd(c.custo_usd)}
+                              </span>
+                            </td>
+                          );
+                        })()}
                         <td className="py-5 pr-4 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
+                            <button
+                              onClick={() => openUserDetails(user.id, user.email)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-blue-500"
+                              title="Ver ficha completa da conta"
+                            >
+                              <Info size={12} /> Detalhes
+                            </button>
                             <button
                               onClick={() => handleTierChange(user.id, user.email, currentTier)}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-violet-600 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-violet-500"
@@ -2905,7 +3141,7 @@ export default function AdminDashboard() {
                         o formulário manda todos os campos juntos, então um campo
                         assim derruba o salvar inteiro. Foi o que `refutacao_ativa`
                         fez desde que foi criado. */}
-                    {(c.chave === 'llm_cache_edital' || c.chave === 'refutacao_ativa') ? (
+                    {ehBooleano(c) ? (
                       <select
                         value={billingEdit[c.chave] ?? 'false'}
                         onChange={(e) => setBillingEdit({ ...billingEdit, [c.chave]: e.target.value })}
@@ -3001,22 +3237,66 @@ export default function AdminDashboard() {
 
                   {!billingSim && <p className="text-[12px] text-slate-500">Sem simulação ainda.</p>}
 
+                  {/* Qual régua está cobrando, antes de qualquer número. O card
+                      mostrava créditos sem dizer de onde saíam, e saíam da
+                      régua por custo mesmo com `regua_por_custo` desligada. */}
+                  {billingSim?.regua_ativa && (
+                    <div className={`mb-4 rounded-xl border p-3 ${
+                      billingSim.regua_ativa === 'custo'
+                        ? 'border-violet-500/30 bg-violet-500/5'
+                        : 'border-slate-700 bg-slate-900/40'
+                    }`}>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">
+                        Régua que cobra: {billingSim.regua_ativa === 'custo' ? 'por custo (dinâmica)' : 'fixa'}
+                      </p>
+                      {billingSim.regua_nota && (
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{billingSim.regua_nota}</p>
+                      )}
+                    </div>
+                  )}
+
                   {billingSim && billingSim.planos.map((pl) => (
                     <div key={pl.tier} className="mt-4 first:mt-0">
                       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1.5">
                         <span className="text-[12px] font-black text-slate-200">{pl.nome}</span>
                         <span className="text-[10px] text-slate-500">
                           cota {pl.cota} cr · receita US$ {pl.receita_usd.toFixed(2)}/mês
+                          {pl.brl_por_credito !== null && (
+                            <> · <span className="text-slate-400">R$ {pl.brl_por_credito.toFixed(3)}/cr</span></>
+                          )}
                         </span>
-                        {pl.exposicao_pct_receita !== null && (
+                        {/* ⚠️ O GATE ERA `exposicao_pct_receita !== null`, E ISSO
+                            APAGAVA O PLANO GRATUITO INTEIRO. Sem receita não há
+                            percentual, e o selo sumia junto com o valor ABSOLUTO
+                            — que no gratuito é o único número que existe e o
+                            mais importante da tela: é o custo de cada conta
+                            criada de graça, o teto do que uma fazenda de
+                            cadastros consegue queimar por conta. O plano sem
+                            receita era justamente o que ficava invisível. */}
+                        {pl.exposicao_usd > 0 && (
                           <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
-                            pl.exposicao_pct_receita > 100
-                              ? 'bg-red-500/15 text-red-300 border border-red-500/30'
-                              : pl.exposicao_pct_receita > 50
-                                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                                : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                            pl.exposicao_pct_receita === null
+                              ? 'bg-slate-500/15 text-slate-300 border border-slate-500/30'
+                              : pl.exposicao_pct_receita > 100
+                                ? 'bg-red-500/15 text-red-300 border border-red-500/30'
+                                : pl.exposicao_pct_receita > 50
+                                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                  : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
                           }`}>
-                            exposição US$ {pl.exposicao_usd.toFixed(2)} = {pl.exposicao_pct_receita}% da receita
+                            exposição US$ {pl.exposicao_usd.toFixed(2)}
+                            {pl.exposicao_pct_receita === null
+                              ? ' por conta · sem receita'
+                              : ` = ${pl.exposicao_pct_receita}% da receita`}
+                          </span>
+                        )}
+                        {/* O que a exposição viraria ao trocar de régua. É o
+                            número que falta para decidir sobre `regua_por_custo`
+                            — sem ele a chave é ligada no escuro. */}
+                        {pl.exposicao_usd_alternativa > 0
+                          && pl.exposicao_usd_alternativa !== pl.exposicao_usd && (
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">
+                            {billingSim.regua_ativa === 'custo' ? 'régua fixa' : 'por custo'}: US$ {pl.exposicao_usd_alternativa.toFixed(2)}
+                            {pl.exposicao_pct_alternativa !== null && ` = ${pl.exposicao_pct_alternativa}%`}
                           </span>
                         )}
                       </div>
@@ -3030,22 +3310,66 @@ export default function AdminDashboard() {
                             </tr>
                           </thead>
                           <tbody className="text-slate-300 font-medium">
-                            {pl.linhas.map((l) => (
-                              <tr key={l.chars} className="border-t border-slate-800/60">
-                                <td className="py-1 pr-4 tabular-nums">{l.chars.toLocaleString('pt-BR')}</td>
-                                <td className="py-1 pr-4 tabular-nums">
-                                  {l.creditos_rapida} cr <span className="text-slate-500">· ${l.usd_rapida.toFixed(4)}</span>
-                                </td>
-                                <td className="py-1 pr-4 tabular-nums">
-                                  {l.creditos_profunda} cr <span className="text-slate-500">· ${l.usd_profunda.toFixed(4)}</span>
-                                </td>
-                              </tr>
-                            ))}
+                            {pl.linhas.map((l) => {
+                              // O número EM DESTAQUE é sempre o da régua que
+                              // cobra hoje. O da outra régua aparece atrás, em
+                              // cinza, e SÓ quando difere — repetir o mesmo
+                              // valor duas vezes treinaria o olho a ignorar a
+                              // anotação justamente nas linhas em que ela
+                              // importa.
+                              const porCusto = billingSim.regua_ativa === 'custo';
+                              const crR = porCusto ? l.cr_rapida_custo : l.cr_rapida_fixa;
+                              const crP = porCusto ? l.cr_profunda_custo : l.cr_profunda_fixa;
+                              const altR = porCusto ? l.cr_rapida_fixa : l.cr_rapida_custo;
+                              const altP = porCusto ? l.cr_profunda_fixa : l.cr_profunda_custo;
+                              const rotuloAlt = porCusto ? 'fixa' : 'por custo';
+                              return (
+                                <tr key={l.chars} className="border-t border-slate-800/60">
+                                  <td className="py-1 pr-4 tabular-nums">{l.chars.toLocaleString('pt-BR')}</td>
+                                  <td className="py-1 pr-4 tabular-nums">
+                                    {crR} cr <span className="text-slate-500">· ${l.usd_rapida.toFixed(4)}</span>
+                                    {altR !== crR && (
+                                      <span className="text-slate-600"> · {rotuloAlt}: {altR} cr</span>
+                                    )}
+                                  </td>
+                                  <td className="py-1 pr-4 tabular-nums">
+                                    {crP} cr <span className="text-slate-500">· ${l.usd_profunda.toFixed(4)}</span>
+                                    {altP !== crP && (
+                                      <span className="text-slate-600"> · {rotuloAlt}: {altP} cr</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
                     </div>
                   ))}
+
+                  {/* O piso do crédito avulso é calculado, não escrito: preço e
+                      cota são editáveis nesta mesma tela, então qualquer número
+                      fixo numa descrição envelhece na primeira alteração. */}
+                  {billingSim && !!billingSim.piso_credito_brl && (
+                    <p className="mt-4 text-[11px] text-slate-400">
+                      <span className="font-black text-slate-300">
+                        Piso do crédito avulso: R$ {billingSim.piso_credito_brl.toFixed(3)}
+                      </span>
+                      {billingSim.piso_plano && (
+                        <span className="text-slate-500"> — definido pelo {billingSim.piso_plano},
+                        que é o plano com o crédito mais CARO (menor mensalidade ÷ menor cota).
+                        Abaixo desse valor, comprar avulso rende mais que assinar.</span>
+                      )}
+                    </p>
+                  )}
+
+                  {billingSim && !!billingSim.avisos?.length && (
+                    <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/5 p-3">
+                      {billingSim.avisos.map((a, i) => (
+                        <p key={i} className="text-[11px] leading-relaxed text-red-300 font-medium">⚠️ {a}</p>
+                      ))}
+                    </div>
+                  )}
 
                   {billingSim && (
                     <p className="mt-4 text-[10px] leading-relaxed text-slate-500">
@@ -5298,6 +5622,238 @@ export default function AdminDashboard() {
       )}
 
       {/* ========================================== */}
+      {/* MODAL: FICHA DA CONTA                      */}
+      {/* ========================================== */}
+      {detailsUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setDetailsUser(null)}
+          />
+
+          <div className="relative z-10 bg-slate-900 border border-slate-700 rounded-[2rem] w-full max-w-3xl shadow-2xl max-h-[88vh] flex flex-col">
+            {/* Cabeçalho */}
+            <div className="flex items-start justify-between gap-4 p-8 pb-6 border-b border-slate-800">
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <UserCircle size={26} className="text-blue-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-xl font-black text-white truncate">
+                    {detailsData?.identidade?.name || detailsUser.email}
+                  </h3>
+                  <p className="text-slate-500 text-sm break-all">{detailsUser.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailsUser(null)}
+                className="p-2 rounded-xl text-slate-500 hover:text-white hover:bg-slate-800 transition-all shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Corpo */}
+            <div className="overflow-y-auto p-8 pt-6 space-y-8">
+              {detailsLoading && (
+                <div className="flex items-center justify-center gap-3 py-16 text-slate-500">
+                  <Loader2 size={18} className="animate-spin" />
+                  <span className="text-sm font-bold">A carregar ficha…</span>
+                </div>
+              )}
+
+              {!detailsLoading && detailsError && (
+                <div className="flex items-start gap-3 p-5 rounded-2xl bg-red-500/10 border border-red-500/20">
+                  <AlertCircle size={18} className="text-red-400 mt-0.5 shrink-0" />
+                  <p className="text-sm text-red-300">{detailsError}</p>
+                </div>
+              )}
+
+              {!detailsLoading && !detailsError && detailsData && (
+                <>
+                  {/* ── Linha do tempo da conta ───────────────────────── */}
+                  <section>
+                    <SecaoTitulo icon={<CalendarDays size={15} className="text-blue-400" />} texto="Linha do tempo" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <CampoFicha
+                        rotulo="Cadastro"
+                        valor={fmtDataHora(detailsData.datas?.cadastro)}
+                        nota={tempoDesde(detailsData.datas?.cadastro)}
+                      />
+                      <CampoFicha
+                        rotulo="Última análise"
+                        valor={fmtDataHora(detailsData.datas?.ultima_atividade)}
+                        nota={tempoDesde(detailsData.datas?.ultima_atividade) || 'nunca analisou'}
+                      />
+                      <CampoFicha
+                        rotulo="Bloqueio"
+                        valor={fmtDataHora(detailsData.moderacao?.blocked_at)}
+                        nota={detailsData.moderacao?.blocked_by ? `por ${detailsData.moderacao.blocked_by}` : ''}
+                        destaque={detailsData.moderacao?.blocked ? 'orange' : undefined}
+                      />
+                      <CampoFicha
+                        rotulo="Banimento"
+                        valor={fmtDataHora(detailsData.moderacao?.banned_at)}
+                        nota={detailsData.moderacao?.banned_by ? `por ${detailsData.moderacao.banned_by}` : ''}
+                        destaque={detailsData.moderacao?.banned ? 'red' : undefined}
+                      />
+                    </div>
+                    {detailsData.moderacao?.banned && detailsData.moderacao?.ban_reason && (
+                      <p className="text-xs text-red-400/70 mt-3">
+                        Motivo do banimento: {detailsData.moderacao.ban_reason}
+                      </p>
+                    )}
+                  </section>
+
+                  {/* ── Empresa vinculada ─────────────────────────────── */}
+                  <section>
+                    <SecaoTitulo icon={<Building2 size={15} className="text-emerald-400" />} texto="Empresa vinculada" />
+                    {(() => {
+                      // A empresa do cadastro tem prioridade; as do workspace
+                      // entram em seguida, sem repetir a mesma por CNPJ.
+                      const lista: any[] = [];
+                      if (detailsData.empresa) lista.push(detailsData.empresa);
+                      for (const e of detailsData.empresas_workspace || []) {
+                        const jaTem = lista.some(
+                          x => (x.cnpj && x.cnpj === e.cnpj) ||
+                               (!x.cnpj && !e.cnpj && x.razao_social === e.razao_social)
+                        );
+                        if (!jaTem) lista.push(e);
+                      }
+                      if (lista.length === 0) {
+                        return (
+                          <p className="text-sm text-slate-500 bg-slate-950/60 border border-slate-800 rounded-2xl p-5">
+                            Nenhuma empresa informada no cadastro nem no workspace.
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="space-y-3">
+                          {lista.map((e: any, i: number) => (
+                            <div key={i} className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5">
+                              <p className="font-bold text-slate-200">{e.razao_social || e.nome_fantasia || 'Sem razão social'}</p>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+                                <CampoFicha rotulo="CNPJ" valor={fmtCnpj(e.cnpj)} />
+                                <CampoFicha rotulo="Domínio" valor={e.domain || '—'} />
+                                <CampoFicha rotulo="Vinculada em" valor={fmtData(e.vinculada_em)} />
+                              </div>
+                              {e.website && (
+                                <a
+                                  href={e.website}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-blue-400 hover:text-blue-300"
+                                >
+                                  <ExternalLink size={12} /> {e.website}
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </section>
+
+                  {/* ── Acesso e workspace ────────────────────────────── */}
+                  <section>
+                    <SecaoTitulo icon={<Briefcase size={15} className="text-violet-400" />} texto="Acesso e workspace" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <CampoFicha rotulo="Tier do workspace" valor={`TIER ${detailsData.acesso?.tier_workspace ?? '—'}`} />
+                      <CampoFicha rotulo="Plano" valor={detailsData.acesso?.plano || '—'} />
+                      <CampoFicha rotulo="Créditos extras" valor={String(detailsData.acesso?.creditos_extras ?? 0)} />
+                      <CampoFicha
+                        rotulo="Promo"
+                        valor={detailsData.acesso?.promo_ativo ? 'Ativa' : '—'}
+                        nota={detailsData.datas?.promo_expires_at ? `até ${fmtData(detailsData.datas.promo_expires_at)}` : ''}
+                        destaque={detailsData.acesso?.promo_ativo ? 'amber' : undefined}
+                      />
+                    </div>
+                    {detailsData.workspace && (
+                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-5 mt-3">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <p className="font-bold text-slate-200">{detailsData.workspace.name}</p>
+                          <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400">
+                            {detailsData.workspace.is_owner ? 'Proprietário' : 'Membro'}
+                            {detailsData.workspace.type ? ` · ${detailsData.workspace.type}` : ''}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Criado em {fmtData(detailsData.workspace.criado_em)} ·{' '}
+                          {detailsData.workspace.membros?.length || 0} membro(s)
+                        </p>
+                        {(detailsData.workspace.membros?.length || 0) > 1 && (
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {detailsData.workspace.membros.map((m: any) => (
+                              <span
+                                key={m.id}
+                                className={`text-[11px] px-2.5 py-1 rounded-lg border ${
+                                  m.is_self
+                                    ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                                    : 'bg-slate-900 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                {m.email}{m.is_owner ? ' 👑' : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── Uso ───────────────────────────────────────────── */}
+                  <section>
+                    <SecaoTitulo icon={<Activity size={15} className="text-amber-400" />} texto="Uso" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                      <CampoFicha rotulo="Análises totais" valor={String(detailsData.uso?.analises_total ?? 0)} />
+                      <CampoFicha rotulo="Login" valor={detailsData.identidade?.auth_provider || '—'} />
+                      <CampoFicha rotulo="Tier do usuário" valor={`TIER ${detailsData.acesso?.tier_usuario ?? 0}`} />
+                      <CampoFicha rotulo="Cliente Stripe" valor={detailsData.acesso?.stripe_customer_id ? 'Sim' : '—'} />
+                    </div>
+                    {(detailsData.uso?.ultimas_analises?.length || 0) > 0 && (
+                      <div className="bg-slate-950/60 border border-slate-800 rounded-2xl divide-y divide-slate-800/70">
+                        {detailsData.uso.ultimas_analises.map((a: any) => (
+                          <div key={a.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                            <span className="text-sm text-slate-300 truncate">{a.objeto}</span>
+                            <span className="text-[11px] text-slate-500 shrink-0 font-bold">{fmtData(a.created_at)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── LGPD ──────────────────────────────────────────── */}
+                  <section>
+                    <SecaoTitulo icon={<ShieldCheck size={15} className="text-teal-400" />} texto="LGPD" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <CampoFicha rotulo="Consentimento" valor={fmtDataHora(detailsData.lgpd?.consent_at)} />
+                      <CampoFicha rotulo="Versão" valor={detailsData.lgpd?.consent_version || '—'} />
+                      <CampoFicha rotulo="IP do aceite" valor={detailsData.lgpd?.consent_ip || '—'} />
+                      <CampoFicha
+                        rotulo="Revogado em"
+                        valor={fmtDataHora(detailsData.lgpd?.revoked_at)}
+                        destaque={detailsData.lgpd?.revoked_at ? 'red' : undefined}
+                      />
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
+
+            {/* Rodapé */}
+            <div className="p-6 border-t border-slate-800 flex justify-end">
+              <button
+                onClick={() => setDetailsUser(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold transition-all border border-slate-700"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
       {/* MODAL DE MODERAÇÃO                         */}
       {/* ========================================== */}
       {moderationModal && (
@@ -5409,6 +5965,38 @@ export default function AdminDashboard() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+/** Título de seção da ficha da conta. */
+function SecaoTitulo({ icon, texto }: { icon: React.ReactNode; texto: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      {icon}
+      <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">{texto}</h4>
+    </div>
+  );
+}
+
+/** Um dado da ficha: rótulo em cima, valor embaixo, nota opcional.
+ *
+ *  `destaque` só é usado quando o campo diz algo que MUDA a leitura da conta
+ *  (está banida, tem promo ativa, revogou LGPD). Colorir tudo faria a cor
+ *  parar de significar qualquer coisa. */
+function CampoFicha({
+  rotulo, valor, nota, destaque,
+}: { rotulo: string; valor: string; nota?: string; destaque?: 'red' | 'orange' | 'amber' }) {
+  const cor =
+    destaque === 'red' ? 'text-red-400' :
+    destaque === 'orange' ? 'text-orange-400' :
+    destaque === 'amber' ? 'text-amber-400' :
+    'text-slate-200';
+  return (
+    <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-4 py-3">
+      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-600">{rotulo}</p>
+      <p className={`text-sm font-bold mt-1 break-words ${cor}`}>{valor}</p>
+      {nota ? <p className="text-[10px] text-slate-600 mt-0.5">{nota}</p> : null}
     </div>
   );
 }

@@ -13,7 +13,40 @@
  * O backend é falso de propósito. O que está em teste é a tradução do estado
  * do scheduler para a tela, não o scheduler.
  */
-import { chromium } from '/home/claude/.npm-global/lib/node_modules/playwright/index.mjs';
+// ⚠️ O caminho do Playwright era fixo, e era o de outra máquina
+// (/home/claude/...): estes testes morriam com ERR_MODULE_NOT_FOUND antes da
+// primeira asserção em qualquer Mac. Um teste que não roda onde é preciso não
+// é cobertura, é decoração.
+//
+// ⚠️ TUDO DENTRO DE UMA IIFE, sem import no topo. A primeira versão deste
+// bloco importava `execSync` no escopo do módulo e colidia com o import que
+// `verifica_avatar.mjs` já tinha — SyntaxError por binding duplicado, num
+// arquivo que antes funcionava. Nada aqui pode criar nome no topo além de
+// `chromium`.
+const { chromium } = await (async () => {
+  const { execSync } = await import('node:child_process');
+  const { existsSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const raiz = dirname(dirname(fileURLToPath(import.meta.url)));
+  const candidatos = [
+    join(raiz, 'node_modules', 'playwright', 'index.mjs'),
+    join(process.cwd(), 'node_modules', 'playwright', 'index.mjs'),
+  ];
+  try {
+    const g = execSync('npm root -g', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (g) candidatos.push(join(g, 'playwright', 'index.mjs'));
+  } catch { /* npm ausente */ }
+  candidatos.push('/home/claude/.npm-global/lib/node_modules/playwright/index.mjs');
+  const achado = candidatos.find((c) => existsSync(c));
+  if (!achado) {
+    // Código 2: PULADO. Não é 0, porque "não rodou" não pode virar "passou".
+    console.log('⏭  PULADO — Playwright não instalado (isto NÃO é aprovação).');
+    console.log('   npm i -D playwright && npx playwright install chromium');
+    process.exit(2);
+  }
+  return import(achado);
+})();
 
 const BASE = process.env.BASE_URL || 'http://127.0.0.1:3100';
 let ok = true;

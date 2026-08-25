@@ -30,11 +30,18 @@ import type {
   DecisionEvidence,
   DecisionVerdict,
 } from './analysis-types';
-import { getScoreColor, getScoreBg, textoDoItem, citacaoDoItem } from './analysis-types';
+import { getScoreColor, getScoreBg, textoDoItem, citacaoDoItem, estadoDaCitacao } from './analysis-types';
 // Construtor ÚNICO do plano de execução, compartilhado com o painel Gestão.
 // Ver o comentário longo em `lib/decisionQueue` sobre por que isto não pode
 // voltar a ser duas funções.
 import { buildDecisionQueueTasks } from '@/lib/decisionQueue';
+import {
+  formatarDataCritica,
+  dataCriticaExpirada,
+  dataCriticaUrgente,
+  venceHoje,
+} from '@/lib/datasCriticas';
+import { contarCriterios, todosOsCriteriosAtendidos } from '@/lib/criteriosDaEmpresa';
 import type { SavedAnalysis } from '@/lib/types';
 import TacticalSimulator from './TacticalSimulator';
 import PremiumLock from './PremiumLock';
@@ -449,6 +456,12 @@ export default function AnalysisResults({
           />
         )}
 
+        {/* ⚠️ FORA DO `key={activeStep}` DE PROPÓSITO: o aviso vale para o
+            laudo inteiro, não para uma etapa. Ele é a rede de segurança da
+            rede de segurança — se ele sumir, some junto o único sinal de que
+            NENHUMA trava determinística rodou. */}
+        <QaFalhouBanner result={liveResult} />
+
         {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
 
@@ -585,7 +598,11 @@ export default function AnalysisResults({
                       <RedFlagsSection result={liveResult} />
                       <RisksSection result={liveResult} />
                       <MatrizRiscoFormalSection result={liveResult} />
-                      <HabilitacaoSection result={liveResult} />
+                      <HabilitacaoSection
+                        result={liveResult}
+                        analysisId={analysisId}
+                        onAnalysisPatch={(patch) => setLiveResult((atual) => ({ ...atual, ...patch }))}
+                      />
                     </section>
                   </StepHeadline>
                 );
@@ -1114,7 +1131,13 @@ function DecisionSnapshot({
               </div>
               <div className="shrink-0 rounded-xl border border-white/70 bg-white/75 px-3 py-2 text-right">
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Match CNAE</p>
-                <p className={`mt-1 text-lg font-black leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
+                {businessFit.score == null ? (
+                  <p className="mt-1 text-[11px] font-black uppercase leading-none tracking-wide text-slate-400">
+                    não medido
+                  </p>
+                ) : (
+                  <p className={`mt-1 text-lg font-black leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
+                )}
               </div>
             </div>
             {(businessFit.cnae || businessFit.object) && (
@@ -2096,11 +2119,18 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+type CriterioAvaliado = NonNullable<AnalysisResult['avaliacao_parametros']>[number];
+
 function normalizeBusinessFit(result: AnalysisResult) {
   const fit = result.aderencia_negocio;
   if (!fit) return null;
 
-  const score = clampPercent(fit.score ?? 50);
+  // ⚠️ `?? 50` TRANSFORMAVA AUSÊNCIA EM MEDIÇÃO. Quando o backend não tinha o
+  // que medir (`status: "nao_avaliado"`, `score: null`), este `??` fabricava 50
+  // e a tela imprimia "Match CNAE — 50/100" em três lugares, com a mesma
+  // tipografia de um número apurado. `null` aqui significa "não há medida", e
+  // cada ponto de render decide como dizer isso — nunca como número.
+  const score = fit.score == null ? null : clampPercent(fit.score);
   const status = String(fit.status || 'indeterminado');
   const cnae = [
     fit.cnae_principal,
@@ -2148,6 +2178,16 @@ function normalizeBusinessFit(result: AnalysisResult) {
       text: 'text-slate-700',
       icon: 'text-slate-500',
       fallback: 'Cadastre o CNAE da empresa para ativar o match de negócio.',
+    },
+    // ⚠️ NÃO É `indeterminado`. Ali houve comparação e ela ficou no meio; aqui
+    // não houve comparação nenhuma. O rótulo precisa ser uma constatação sobre
+    // a análise ("não foi avaliada"), não sobre o edital.
+    nao_avaliado: {
+      label: 'Aderência ao negócio não avaliada.',
+      shell: 'border-slate-200 bg-slate-50',
+      text: 'text-slate-700',
+      icon: 'text-slate-500',
+      fallback: 'Esta análise não comparou o objeto do edital com o CNAE/atividade da empresa. Confira o encaixe manualmente antes de decidir.',
     },
   };
 
@@ -2320,8 +2360,14 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
     GO_CONDICIONADO: 'A oportunidade pode valer a pena, mas só deve avançar depois de resolver as condições críticas de preço, prazo, documentação ou risco.',
     NO_GO: 'A recomendação é não participar agora: os riscos ou impeditivos detectados superam o retorno provável.',
   };
+  // ⚠️ A LACUNA SÓ APARECIA QUANDO O BLOCO FALTAVA POR INTEIRO. Um bloco
+  // presente com `status: "nao_avaliado"` calava a lacuna: a tela deixava de
+  // avisar que a aderência não foi medida justamente no caso em que ela não foi.
+  const _fitStatus = String(result.aderencia_negocio?.status || '');
+  const _semAderenciaMedida = !result.aderencia_negocio
+    || ['nao_avaliado', 'sem_cnae'].includes(_fitStatus);
   const fallbackLacunas = toDecisionTextList([
-    !result.aderencia_negocio ? 'Perfil/CNAE da empresa não disponível para medir aderência ao negócio.' : '',
+    _semAderenciaMedida ? 'Perfil/CNAE da empresa não disponível para medir aderência ao negócio.' : '',
     !result.pricing_intelligence?.financial_verdict ? 'Preço e margem ainda precisam de validação financeira antes da proposta.' : '',
     !result.concorrentes_provaveis?.length && !result.concorrentes_regionais?.length
       ? 'Sem histórico concorrencial suficiente para calibrar ameaça de mercado.'
@@ -2370,7 +2416,12 @@ function normalizeDecisionEvidences(
 ): DecisionEvidenceUi[] {
   const rawItems = Array.isArray(raw) ? raw : [];
   const fallbackItems: DecisionEvidence[] = [
-    result.aderencia_negocio ? {
+    // ⚠️ "Evidência" pressupõe que algo foi apurado. Com `nao_avaliado`/`sem_cnae`
+    // o card entrava na lista de "Evidências que sustentam a decisão" carregando
+    // a justificativa de que nada foi comparado — uma não-medição contada como
+    // prova a favor.
+    (result.aderencia_negocio
+      && !['nao_avaliado', 'sem_cnae'].includes(String(result.aderencia_negocio.status || ''))) ? {
       categoria: 'Aderência',
       titulo: 'Match com o negócio',
       detalhe: result.aderencia_negocio.justificativa,
@@ -2451,6 +2502,13 @@ function normalizeDecisionConfidenceFactors(
   const hasRiskSignal = semaforoValues.some((signal) => signal?.status === 'risco');
   const hasAlertSignal = semaforoValues.some((signal) => signal?.status === 'alerta');
   const businessStatus = String(result.aderencia_negocio?.status || '');
+  // ⚠️ EXISTIR O OBJETO NÃO É TER MEDIDO. `result.aderencia_negocio ? 'parcial'`
+  // dava crédito parcial de confiança a um bloco cujo status é justamente
+  // "nao_avaliado"/"sem_cnae" — ou seja, o vazio contava como meia confirmação e
+  // subia a barra de confiança. Ausência de leitura entra como 'ausente'.
+  const aderenciaMedida = Boolean(
+    result.aderencia_negocio && !['nao_avaliado', 'sem_cnae'].includes(businessStatus)
+  );
   const fallbackItems: DecisionConfidenceFactor[] = [
     {
       criterio: 'Aderência ao negócio',
@@ -2458,7 +2516,7 @@ function normalizeDecisionConfidenceFactors(
         ? 'confirmado'
         : businessStatus === 'sem_match'
           ? 'risco'
-          : result.aderencia_negocio
+          : aderenciaMedida
             ? 'parcial'
             : 'ausente',
       detalhe: result.aderencia_negocio?.justificativa || 'CNAE/perfil da empresa usado para medir match com o edital.',
@@ -2778,8 +2836,8 @@ function buildJourneySummary(result: AnalysisResult, userTier: number): JourneyS
   };
 
   const params = result.avaliacao_parametros || [];
-  const bloqueios = params.filter(p => p.status === 'bloqueio');
-  const alertasParam = params.filter(p => p.status === 'alerta');
+  const contagem = contarCriterios(params);
+  const { bloqueios, alertas: alertasParam, semStatus, semTrecho } = contagem;
   const criterios: JourneySummaryItem =
     params.length === 0
       ? { key: 'criterios', status: 'pendente', headline: 'Nenhum critério personalizado avaliado nesta análise.' }
@@ -2787,7 +2845,17 @@ function buildJourneySummary(result: AnalysisResult, userTier: number): JourneyS
         ? { key: 'criterios', status: 'alerta', headline: `${bloqueios.length} critério(s) não atende(m) — ${bloqueios[0].nome}.` }
         : alertasParam.length > 0
           ? { key: 'criterios', status: 'atencao', headline: `${alertasParam.length} critério(s) em atenção — ${alertasParam[0].nome}.` }
-          : { key: 'criterios', status: 'ok', headline: 'Todos os critérios configurados são atendidos.' };
+          // ⚠️ ANTES ESTE ERA O `else` FINAL: qualquer critério que não fosse
+          // bloqueio nem alerta caía aqui e virava "Todos … são atendidos".
+          // Status irreconhecível e "atende sem citação do edital" entravam
+          // na frase como se tivessem sido conferidos.
+          : semStatus.length > 0
+            ? { key: 'criterios', status: 'atencao', headline: `${semStatus.length} critério(s) sem avaliação legível — ${semStatus[0].nome}.` }
+            : semTrecho.length > 0
+              ? { key: 'criterios', status: 'atencao', headline: `Critérios atendidos, mas ${semTrecho.length} sem trecho do edital que comprove.` }
+              : todosOsCriteriosAtendidos(contagem)
+                ? { key: 'criterios', status: 'ok', headline: 'Todos os critérios configurados são atendidos.' }
+                : { key: 'criterios', status: 'pendente', headline: 'Critérios configurados sem resultado legível nesta análise.' };
 
   const riscos = result.risks || [];
   const riscosAltos = riscos.filter(r => r.impacto === 'alto');
@@ -2947,16 +3015,30 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
 
   // 4. Critérios personalizados
   const params = result.avaliacao_parametros || [];
-  const bloqueios = params.filter((p) => p.status === 'bloqueio').length;
-  const alertasParam = params.filter((p) => p.status === 'alerta').length;
+  // ⚠️ `params.length - bloqueios - alertasParam` era a conta de "atende(m)".
+  // Todo status que a IA não devolvesse direito entrava aí como atendido.
+  const cnt = contarCriterios(params);
+  const partesContagem = [
+    `${cnt.atende.length} atende(m)`,
+    `${cnt.alertas.length} em atenção`,
+    `${cnt.bloqueios.length} bloqueiam`,
+    ...(cnt.semStatus.length ? [`${cnt.semStatus.length} sem avaliação legível`] : []),
+    ...(cnt.semTrecho.length ? [`${cnt.semTrecho.length} sem trecho do edital`] : []),
+  ];
   rows.push({
     key: 'criterios',
     Icon: SlidersHorizontal,
     label: 'Critérios Personalizados',
-    status: params.length === 0 ? 'pendente' : bloqueios > 0 ? 'alerta' : alertasParam > 0 ? 'atencao' : 'ok',
+    status: params.length === 0
+      ? 'pendente'
+      : cnt.bloqueios.length > 0
+        ? 'alerta'
+        : (cnt.alertas.length > 0 || cnt.semStatus.length > 0 || cnt.semTrecho.length > 0)
+          ? 'atencao'
+          : 'ok',
     headline: params.length === 0
       ? 'Nenhum critério personalizado configurado (ative em Parametrização, no menu).'
-      : `${params.length} critério(s) avaliado(s) — ${params.length - bloqueios - alertasParam} atende(m), ${alertasParam} em atenção, ${bloqueios} bloqueiam.`,
+      : `${params.length} critério(s) avaliado(s) — ${partesContagem.join(', ')}.`,
     stepKey: 'criterios',
   });
 
@@ -3012,14 +3094,24 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
   // 8. Checklist de habilitação
   const habilitacao = result.habilitacao_checklist;
   const eliminatorias = (habilitacao || []).filter((h) => h.criticidade === 'eliminatoria').length;
+  // ⚠️ "(0 eliminatória(s))" em verde era uma AFIRMAÇÃO sobre exigências que
+  // ninguém classificou: `criticidade` ausente virava "comum" no backend. Só
+  // dizemos "nenhuma eliminatória" quando todas foram de fato classificadas.
+  const semCriticidade = (habilitacao || []).filter(
+    (h) => h.criticidade_informada === false,
+  ).length;
   rows.push({
     key: 'habilitacao',
     Icon: ListChecks,
     label: 'Checklist de Habilitação',
-    status: !habilitacao || habilitacao.length === 0 ? 'pendente' : eliminatorias > 0 ? 'atencao' : 'ok',
+    status: !habilitacao || habilitacao.length === 0
+      ? 'pendente'
+      : (eliminatorias > 0 || semCriticidade > 0) ? 'atencao' : 'ok',
     headline: !habilitacao || habilitacao.length === 0
       ? 'Exigências de habilitação não identificadas de forma legível no material.'
-      : `${habilitacao.length} exigência(s) mapeada(s) por categoria (${eliminatorias} eliminatória(s)).`,
+      : semCriticidade > 0
+        ? `${habilitacao.length} exigência(s) mapeada(s) — ${eliminatorias} eliminatória(s) e ${semCriticidade} sem criticidade classificada.`
+        : `${habilitacao.length} exigência(s) mapeada(s) por categoria (${eliminatorias} eliminatória(s)).`,
     stepKey: 'analise',
   });
 
@@ -3077,11 +3169,19 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     const partes: string[] = [];
     if (result.orgao_risk) partes.push(`CAPAG ${result.orgao_risk.classificacao}`);
     if (result.programa_integridade_obrigatorio?.exigido) partes.push('Programa de integridade exigido');
+    // ⚠️ `status: 'ok'` ERA LITERAL. `SCOPE_STATUS_CFG.ok` pinta bolinha verde
+    // com o rótulo "Sem pendência" — então "CAPAG D" (risco fiscal alto, órgão
+    // que pode atrasar pagamento) aparecia como linha verde "Sem pendência",
+    // ao lado do card vermelho que diz exatamente o contrário.
+    const _capag = String(result.orgao_risk?.classificacao || '').trim().toUpperCase();
+    const _capagRuim = _capag === 'C' || _capag === 'D';
     rows.push({
       key: 'orgao',
       Icon: Landmark,
       label: 'Contexto do Órgão Comprador',
-      status: 'ok',
+      status: _capagRuim
+        ? 'alerta'
+        : result.programa_integridade_obrigatorio?.exigido ? 'atencao' : 'ok',
       headline: `${partes.join(' · ')}.`,
       stepKey: 'veredito',
     });
@@ -3228,7 +3328,7 @@ function PersistentSummaryBar({ result }: { result: AnalysisResult }) {
         <>
           <div className="hidden h-4 w-px bg-slate-300 sm:block" />
           <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${businessFit.shell} ${businessFit.text}`}>
-            Match CNAE {businessFit.score}/100
+            {businessFit.score == null ? 'Match CNAE não medido' : `Match CNAE ${businessFit.score}/100`}
           </span>
         </>
       )}
@@ -3535,7 +3635,10 @@ function getDataExpirada(result: AnalysisResult) {
     const labelLower = dc.label.toLowerCase();
     const isChave = LABELS_CHAVE_EXPIRACAO.some(k => labelLower.includes(k));
     const isExcluido = LABELS_EXCLUIDOS_EXPIRACAO.some(k => labelLower.includes(k));
-    return isChave && !isExcluido && new Date(dc.data_iso) < agora;
+    // ⚠️ `new Date(iso) < agora` acendia o banner "Edital encerrado" às 21h do
+    // dia ANTERIOR ao prazo (T00:00:00Z lido no fuso de Brasília). Um prazo
+    // sem hora só vence no fim do dia — ver `instanteLimite`.
+    return isChave && !isExcluido && dataCriticaExpirada(dc.data_iso, agora);
   }) ?? null;
 }
 
@@ -3544,7 +3647,7 @@ function getDataExpirada(result: AnalysisResult) {
 function ExpiredBanner({ result }: { result: AnalysisResult }) {
   const dataExpirada = getDataExpirada(result);
   if (!dataExpirada) return null;
-  const formatted = new Date(dataExpirada.data_iso!).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const formatted = formatarDataCritica(dataExpirada.data_iso, 'longo') ?? '—';
   return (
     <div className="flex items-center gap-4 bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3.5">
       <CalendarX size={20} className="shrink-0 text-slate-400" />
@@ -3563,6 +3666,45 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
 }
 
 // ─── Impeditivo: exclusividade ME/EPP × porte da empresa (LC 123/2006) ───────
+
+/**
+ * A camada de QA falhou — e o laudo saiu do jeito que o LLM escreveu.
+ *
+ * ⚠️ ESTE AVISO EXISTIA NO BACKEND E NÃO ERA RENDERIZADO POR NINGUÉM.
+ * `analysis_quality.py` termina com um `except` que grava
+ * `{qa_executado: false, qa_erro, aviso}` — e o texto do `aviso` é exato:
+ * "Score, veredito e ficha técnica não foram validados — trate este laudo como
+ * preliminar." Nenhum componente lia esses campos.
+ *
+ * O efeito é o pior caso da tese inteira: quando a rede de segurança cai, o
+ * laudo sai com score e veredito CRUS do modelo, sem nenhuma trava de
+ * congruência — e visualmente IDÊNTICO a um laudo validado. A ausência de toda
+ * a validação era a ausência mais invisível do produto.
+ */
+function QaFalhouBanner({ result }: { result: AnalysisResult }) {
+  const qa = result.qualidade_extracao;
+  // `undefined` é laudo antigo/rápido, não falha — só `false` é falha.
+  if (!qa || qa.qa_executado !== false) return null;
+  return (
+    <div className="mb-8 flex items-start gap-4 rounded-2xl border-2 border-amber-400 bg-amber-50 px-5 py-4">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+        <AlertTriangle size={18} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+          Laudo preliminar · validação automática não executada
+        </span>
+        <p className="mt-0.5 text-sm font-medium leading-snug text-amber-900">
+          {qa.aviso
+            || 'A camada determinística de qualidade não pôde ser aplicada nesta análise. Score, veredito e ficha técnica não foram validados — trate este laudo como preliminar.'}
+        </p>
+        <p className="mt-1.5 text-xs font-semibold text-amber-800">
+          Reprocesse a análise antes de decidir com base neste laudo.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function MeEppImpeditivoBanner({ result }: { result: AnalysisResult }) {
   const elegibilidade = result.elegibilidade_me_epp;
@@ -3666,15 +3808,17 @@ function DatasBlock({ result, isExpired = false }: { result: AnalysisResult; isE
     return (
       <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
         {visible.map((dc, i) => {
-          const date = dc.data_iso ? new Date(dc.data_iso) : null;
-          const fmt = date ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : dc.data_iso;
-          const isPast = date ? date < new Date() : false;
+          const fmt = formatarDataCritica(dc.data_iso, 'curto') ?? dc.data_iso;
+          const isPast = dataCriticaExpirada(dc.data_iso);
+          // `dc.urgente` é congelado no instante da análise — na véspera da
+          // sessão ele ainda diz `false`. Recomputado ao vivo.
+          const urgenteAgora = !isPast && dataCriticaUrgente(dc.data_iso);
           return (
             <div key={i}>
               <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
                 {isPast
                   ? <CalendarX size={10} className="text-slate-400" />
-                  : dc.urgente ? <Zap size={10} className="text-red-500" /> : null
+                  : urgenteAgora ? <Zap size={10} className="text-red-500" /> : null
                 }
                 {dc.label}
               </span>
@@ -3786,6 +3930,15 @@ function OrgaoContextoSection({ result }: { result: AnalysisResult }) {
           </div>
           <p className={`mt-2 text-2xl font-black ${tom.txt}`}>{capag.classificacao}</p>
           <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{capag.descricao}</p>
+          {/* A flag existia no backend e NENHUM componente a lia — a nota do
+              estado era exibida como se fosse a da prefeitura compradora. */}
+          {capag.substituicao_municipio && (
+            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-relaxed text-amber-800">
+              Esta é a nota do <strong>estado</strong>, não da prefeitura compradora — o município
+              não consta na tabela do Tesouro. A capacidade de pagamento de quem vai pagar
+              permanece desconhecida.
+            </p>
+          )}
           <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{capag.fonte}</p>
         </div>
       )}
@@ -3813,7 +3966,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
   // (edital encerrado — não há nenhuma ação pendente para o usuário)
   if (Array.isArray(result.datas_criticas) && result.datas_criticas.length > 0) {
     const temDataFutura = result.datas_criticas.some(
-      (dc) => dc.data_iso && new Date(dc.data_iso) >= agora,
+      (dc) => dc.data_iso && !dataCriticaExpirada(dc.data_iso, agora),
     );
     if (!temDataFutura) return null;
   }
@@ -3842,12 +3995,14 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
           <div className="absolute left-5 top-0 bottom-0 w-px bg-slate-200" />
           <div className="space-y-4">
             {result.datas_criticas.map((dc, i) => {
-              const date = dc.data_iso ? new Date(dc.data_iso) : null;
-              const expirado = date ? date < agora : false;
-              const urgenteFuturo = date ? (!expirado && dc.urgente) : false;
-              const formatted = date
-                ? date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
-                : 'Data não informada no edital';
+              const formatted = formatarDataCritica(dc.data_iso, 'curto');
+              const date = formatted ? dc.data_iso : null;
+              const expirado = dataCriticaExpirada(dc.data_iso, agora);
+              // ⚠️ `dc.urgente` vem CONGELADO do backend, calculado no dia da
+              // análise. Um laudo gerado com 20 dias de antecedência guardava
+              // `false` para sempre e o selo URGENTE nunca chegava a acender.
+              const urgenteFuturo = !expirado && dataCriticaUrgente(dc.data_iso, agora);
+              const hoje = venceHoje(dc.data_iso, agora);
               return (
                 <div key={i} className="relative flex items-start gap-4 pl-12">
                   <div className={`absolute left-0 w-10 h-10 rounded-full flex items-center justify-center text-sm shrink-0 z-10 border-2 ${
@@ -3871,12 +4026,13 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
                         urgenteFuturo? 'text-red-600' : 'text-slate-500'
                       }`}>{dc.label}</p>
                       {expirado    && <span className="text-[9px] font-black uppercase tracking-widest bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">EXPIRADO</span>}
-                      {urgenteFuturo && <span className="text-[9px] font-black uppercase tracking-widest bg-red-500 text-white px-2 py-0.5 rounded-full">URGENTE</span>}
+                      {hoje        && <span className="text-[9px] font-black uppercase tracking-widest bg-red-600 text-white px-2 py-0.5 rounded-full">VENCE HOJE</span>}
+                      {urgenteFuturo && !hoje && <span className="text-[9px] font-black uppercase tracking-widest bg-red-500 text-white px-2 py-0.5 rounded-full">URGENTE</span>}
                     </div>
                     <p className={`text-sm font-bold mt-0.5 ${
                       !date    ? 'text-slate-400 italic' :
                       expirado ? 'text-slate-400 line-through' : 'text-slate-900'
-                    }`}>{formatted}</p>
+                    }`}>{formatted ?? 'Data não informada no edital'}</p>
                   </div>
                 </div>
               );
@@ -4290,8 +4446,83 @@ const HABILITACAO_LABELS: Record<string, string> = {
   economico_financeira: 'Qualificação Econômico-Financeira',
 };
 
-function HabilitacaoSection({ result }: { result: AnalysisResult }) {
+/**
+ * Checklist de habilitação — com o botão que nunca existiu.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A TRAVA MAIS DURA DO MOTOR NUNCA DISPAROU
+ * ═══════════════════════════════════════════════════════════════════════════
+ * O backend está inteiro, e é bom:
+ *
+ *   · `analysis_quality.py` → `habilitacao_bloqueios()` lê `status_atendimento`;
+ *   · uma exigência ELIMINATÓRIA marcada `nao_atendido` trava o score em 40 e
+ *     força veredito NO-GO (o comentário lá chama isso de "a trava mais dura
+ *     do motor" — e é: não vem de inferência da IA, vem de uma confirmação do
+ *     usuário, o bloqueio mais objetivo que o laudo tem);
+ *   · `PATCH /analyses/{id}/habilitacao` recebe a marcação, recalcula score,
+ *     congruência e veredito, e grava.
+ *
+ * E a tela renderizava `exigencia` / `criticidade` / `dica` / `trecho` — sem
+ * um único controle. `status_atendimento` não era lido por componente nenhum,
+ * o endpoint não era chamado de lugar nenhum. Logo `habilitacao_bloqueios()`
+ * devolvia sempre `[]`, o teto de 40 jamais era atingido, e TODO score saía
+ * calculado como se a empresa cumprisse todas as exigências eliminatórias.
+ *
+ * A tela mostrava "3 eliminatórias" e não dava onde dizer "não tenho nenhuma
+ * delas". É a versão mais cara da tese: aqui o dado que faltava não era da IA
+ * nem de uma fonte externa — era do próprio usuário, e o produto não perguntava.
+ */
+const HABILITACAO_STATUS_CFG: Record<string, { label: string; anel: string; ativo: string }> = {
+  atendido:     { label: 'Atendemos',     anel: 'border-emerald-300 text-emerald-700 hover:bg-emerald-50', ativo: 'bg-emerald-600 border-emerald-600 text-white' },
+  nao_atendido: { label: 'Não atendemos', anel: 'border-red-300 text-red-700 hover:bg-red-50',             ativo: 'bg-red-600 border-red-600 text-white' },
+  nao_avaliado: { label: 'A verificar',   anel: 'border-slate-300 text-slate-500 hover:bg-slate-50',        ativo: 'bg-slate-600 border-slate-600 text-white' },
+};
+
+function HabilitacaoSection({
+  result,
+  analysisId,
+  onAnalysisPatch,
+}: {
+  result: AnalysisResult;
+  analysisId?: string | null;
+  onAnalysisPatch?: (patch: Partial<AnalysisResult>) => void;
+}) {
   const itens = result.habilitacao_checklist;
+  const [salvando, setSalvando] = useState<string | null>(null);
+  const [erroSalvar, setErroSalvar] = useState<string | null>(null);
+
+  const marcar = async (itemId: string, status: string) => {
+    if (!analysisId || !itemId || salvando) return;
+    setSalvando(itemId);
+    setErroSalvar(null);
+    try {
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysisId}/habilitacao`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_id: itemId, status }),
+      });
+      // ⚠️ `res.ok` PRECISA SER CHECADO. Um 4xx/5xx com corpo JSON passaria
+      // adiante e o `onAnalysisPatch` sobrescreveria o laudo com o payload de
+      // erro — a marcação pareceria salva sem ter sido.
+      if (!res.ok) throw new Error(String(res.status));
+      const dados = await res.json();
+      // O endpoint devolve score, classificação, breakdown e decisão
+      // recalculados: sem propagá-los, a tela mostraria o item vermelho e o
+      // score antigo verde lado a lado.
+      onAnalysisPatch?.({
+        habilitacao_checklist: dados.habilitacao_checklist,
+        score: dados.score,
+        classification: dados.classification,
+        score_breakdown: dados.score_breakdown,
+        decisao: dados.decisao,
+      });
+    } catch {
+      setErroSalvar('Não foi possível salvar a marcação. Tente de novo.');
+    } finally {
+      setSalvando(null);
+    }
+  };
+
   if (itens === undefined) return null;
 
   if (itens.length === 0) {
@@ -4315,6 +4546,9 @@ function HabilitacaoSection({ result }: { result: AnalysisResult }) {
     .map(cat => ({ cat, label: HABILITACAO_LABELS[cat], lista: itens.filter(i => i.categoria === cat) }))
     .filter(g => g.lista.length > 0);
   const eliminatorias = itens.filter(i => i.criticidade === 'eliminatoria').length;
+  const naoAtendidas = itens.filter(i => i.status_atendimento === 'nao_atendido').length;
+  const aVerificar = itens.filter(i => (i.status_atendimento || 'nao_avaliado') === 'nao_avaliado').length;
+  const podeMarcar = Boolean(analysisId) && itens.some(i => i.id);
 
   return (
     <div className="relative border border-slate-200 rounded-2xl p-8">
@@ -4328,7 +4562,32 @@ function HabilitacaoSection({ result }: { result: AnalysisResult }) {
       </div>
       <p className="text-xs text-slate-500 font-medium mt-1 mb-4">
         Exigências extraídas do edital por categoria — itens eliminatórios desclassificam a proposta se falharem.
+        {podeMarcar && ' Marque o que a empresa atende: o score e o veredito são recalculados na hora.'}
       </p>
+      {/* ⚠️ ENQUANTO NINGUÉM MARCA, O SCORE ASSUME QUE A EMPRESA ATENDE A
+          TUDO. Esse era o estado permanente e invisível do produto. Agora ele
+          é dito na cara, e some conforme o usuário responde. */}
+      {podeMarcar && aVerificar > 0 && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
+          <p className="text-xs font-semibold leading-relaxed text-amber-900">
+            {aVerificar} de {itens.length} exigência(s) ainda sem resposta. Até você marcar, o score
+            é calculado <strong>assumindo que a empresa atende a todas</strong> — inclusive as eliminatórias.
+          </p>
+        </div>
+      )}
+      {naoAtendidas > 0 && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <ShieldAlert size={14} className="mt-0.5 shrink-0 text-red-600" />
+          <p className="text-xs font-semibold leading-relaxed text-red-900">
+            {naoAtendidas} exigência(s) marcada(s) como não atendida(s). Se alguma for eliminatória,
+            a empresa seria inabilitada no certame — o veredito já reflete isso.
+          </p>
+        </div>
+      )}
+      {erroSalvar && (
+        <p className="mb-4 text-xs font-bold text-red-600">{erroSalvar}</p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
         {grupos.map(({ cat, label, lista }) => (
           <div key={cat}>
@@ -4337,18 +4596,57 @@ function HabilitacaoSection({ result }: { result: AnalysisResult }) {
             </h4>
             <Timeline
               dense
-              items={lista.map((item, i) => ({
-                key: i,
-                tone: (item.criticidade === 'eliminatoria' ? 'red' : 'slate') as TimelineTone,
-                badge: item.criticidade === 'eliminatoria' ? { label: 'Eliminatória', tone: 'red' as TimelineTone } : undefined,
-                title: item.exigencia,
-                description: (item.dica || item.trecho) ? (
-                  <>
-                    {item.dica && <span className="block"><strong className="font-black text-slate-600">Dica:</strong> {item.dica}</span>}
-                    {item.trecho && <span className="mt-1 block italic text-slate-400">"{item.trecho}"</span>}
-                  </>
-                ) : undefined,
-              }))}
+              items={lista.map((item, i) => {
+                const st = item.status_atendimento || 'nao_avaliado';
+                // Eliminatória NÃO ATENDIDA é o pior estado do laudo inteiro:
+                // vermelho vence a cor da criticidade.
+                const tone: TimelineTone =
+                  st === 'nao_atendido' ? 'red'
+                  : st === 'atendido' ? 'emerald'
+                  : item.criticidade === 'eliminatoria' ? 'red'
+                  : 'slate';
+                return {
+                  key: i,
+                  tone,
+                  badge: item.criticidade === 'eliminatoria'
+                    ? { label: 'Eliminatória', tone: 'red' as TimelineTone }
+                    : item.criticidade_informada === false
+                      ? { label: 'Criticidade não classificada', tone: 'slate' as TimelineTone }
+                      : undefined,
+                  title: item.exigencia,
+                  description: (
+                    <>
+                      {item.dica && <span className="block"><strong className="font-black text-slate-600">Dica:</strong> {item.dica}</span>}
+                      {item.trecho && <span className="mt-1 block italic text-slate-400">&ldquo;{item.trecho}&rdquo;</span>}
+                      {podeMarcar && item.id && (
+                        <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                          {(['atendido', 'nao_atendido', 'nao_avaliado'] as const).map((opcao) => {
+                            const cfg = HABILITACAO_STATUS_CFG[opcao];
+                            const ativo = st === opcao;
+                            return (
+                              <button
+                                key={opcao}
+                                type="button"
+                                disabled={salvando === item.id}
+                                onClick={() => marcar(item.id!, opcao)}
+                                aria-pressed={ativo}
+                                className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors disabled:opacity-50 ${
+                                  ativo ? cfg.ativo : `bg-white ${cfg.anel}`
+                                }`}
+                              >
+                                {cfg.label}
+                              </button>
+                            );
+                          })}
+                          {salvando === item.id && (
+                            <span className="text-[10px] font-bold text-slate-400">salvando…</span>
+                          )}
+                        </span>
+                      )}
+                    </>
+                  ),
+                };
+              })}
             />
           </div>
         ))}
@@ -5044,13 +5342,40 @@ function SwotSection({ result }: { result: AnalysisResult }) {
               key: i,
               tone: 'slate' as TimelineTone,
               title: textoDoItem(e),
-              // A citação vem da auditoria e já foi conferida caractere a
-              // caractere. Exibi-la é o que separa "confie em nós" de "veja".
-              description: citacaoDoItem(e) ? (
-                <blockquote className="mt-1 rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-1.5 text-[11px] italic text-slate-600">
-                  &ldquo;{citacaoDoItem(e)}&rdquo;
-                </blockquote>
-              ) : undefined,
+              // ⚠️ ESTE COMENTÁRIO DIZIA "a citação vem da auditoria e já foi
+              // conferida caractere a caractere" — verdade só num dos três
+              // desfechos. `citacao_conferida: false` (trecho curto demais,
+              // devolvido sem busca) e `trecho_nao_conferido` (citação que não
+              // existe no edital) apareciam com a MESMA aspa e a mesma borda de
+              // uma citação verificada. Ver `estadoDaCitacao`.
+              description: (() => {
+                const estado = estadoDaCitacao(e);
+                if (estado === 'removida') {
+                  const original = typeof e === 'string' ? '' : e.trecho_nao_conferido;
+                  return (
+                    <div className="mt-1 rounded-lg border-l-4 border-red-300 bg-red-50 px-3 py-1.5 text-[11px] text-red-800">
+                      <span className="font-black uppercase tracking-wide">Citação não localizada no edital</span>
+                      {original && <span className="mt-0.5 block italic opacity-70">&ldquo;{original}&rdquo;</span>}
+                    </div>
+                  );
+                }
+                if (!citacaoDoItem(e)) return undefined;
+                const naoConferida = estado === 'nao_conferida';
+                return (
+                  <blockquote className={`mt-1 rounded-lg border-l-4 px-3 py-1.5 text-[11px] italic ${
+                    naoConferida
+                      ? 'border-amber-300 bg-amber-50 text-amber-900'
+                      : 'border-slate-300 bg-slate-50 text-slate-600'
+                  }`}>
+                    &ldquo;{citacaoDoItem(e)}&rdquo;
+                    {naoConferida && (
+                      <span className="mt-1 block text-[10px] font-black uppercase not-italic tracking-wide text-amber-700">
+                        Trecho curto demais para conferir contra o documento
+                      </span>
+                    )}
+                  </blockquote>
+                );
+              })(),
             }))} />
           </div>
         )}
@@ -5106,11 +5431,15 @@ function RisksSection({ result }: { result: AnalysisResult }) {
               })
               .map((risk, idx) => {
                 const tone: TimelineTone = risk.impacto === 'alto' ? 'red' : risk.impacto === 'baixo' ? 'slate' : 'amber';
+                // ⚠️ `impacto ?? 'medio'` estampava "MÉDIO" num risco que a
+                // análise se RECUSOU a graduar — e o backend, que só conta
+                // `impacto == "alto"`, não cobrava nada por ele. O selo dizia
+                // que alguém mediu; ninguém mediu.
                 const impactoLabel: Record<string, string> = { alto: 'ALTO', medio: 'MÉDIO', baixo: 'BAIXO' };
                 return {
                   key: idx,
                   tone,
-                  badge: { label: impactoLabel[risk.impacto ?? 'medio'] ?? (risk.impacto || '—'), tone },
+                  badge: { label: impactoLabel[String(risk.impacto || '')] ?? 'NÃO GRADUADO', tone },
                   title: risk.titulo,
                   description: risk.descricao,
                 };
@@ -5275,19 +5604,20 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
 
 // ─── Avaliação por Parâmetros ─────────────────────────────────────────────────
 
-interface AvaliacaoParametro {
-  nome: string;
-  peso: 'alto' | 'medio' | 'baixo';
-  status: 'ok' | 'alerta' | 'bloqueio';
-  score: number;
-  trecho_citado: string;
-  avaliacao: string;
-}
+// ⚠️ Era uma SEGUNDA declaração da mesma coisa, divergindo de
+// `AnalysisResult['avaliacao_parametros']`: aqui `status` era um union de três
+// valores e `score` um número obrigatório, quando o backend pode mandar (e
+// manda) status irreconhecível e score ausente. Duas verdades sobre o mesmo
+// campo é como o "atende por omissão" passou pelo compilador. Agora é um alias.
+type AvaliacaoParametro = CriterioAvaliado;
 
-const PARAM_STATUS_CFG = {
+const PARAM_STATUS_CFG: Record<string, { label: string; bg: string; text: string; border: string; dot: string }> = {
   ok:       { label: 'Atende',        bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
   alerta:   { label: 'Atenção',       bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200',   dot: 'bg-amber-400'  },
   bloqueio: { label: 'Não atende',    bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-red-200',     dot: 'bg-red-500'    },
+  // Quarto estado, criado porque o terceiro não existia e a ausência caía no
+  // primeiro. Cinza de propósito: não é uma nota, é a falta de uma.
+  nao_verificado: { label: 'Não verificado', bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-200', dot: 'bg-slate-400' },
 };
 
 const PARAM_PESO_CFG = {
@@ -5325,8 +5655,10 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
   const ok        = params.filter(p => p.status === 'ok').length;
 
   const sorted = [...params].sort((a, b) => {
-    const order = { bloqueio: 0, alerta: 1, ok: 2 };
-    return (order[a.status] ?? 1) - (order[b.status] ?? 1);
+    // O que não foi verificado vem logo abaixo dos bloqueios: é pendência de
+    // conferência, não item resolvido. Antes caía no `?? 1` junto com "alerta".
+    const order: Record<string, number> = { bloqueio: 0, nao_verificado: 1, alerta: 2, ok: 3 };
+    return (order[String(a.status)] ?? 2) - (order[String(b.status)] ?? 2);
   });
 
   return (
@@ -5388,23 +5720,37 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
         <div className="border-t border-slate-200 px-6 py-6">
         <Timeline
           items={sorted.map((p, i) => {
-            const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.alerta;
+            const st   = PARAM_STATUS_CFG[p.status] ?? PARAM_STATUS_CFG.nao_verificado;
             const peso = PARAM_PESO_CFG[p.peso]     ?? PARAM_PESO_CFG.medio;
-            const tone: TimelineTone = p.status === 'bloqueio' ? 'red' : p.status === 'ok' ? 'emerald' : 'amber';
+            const comprovado = p.comprovado ?? Boolean(String(p.trecho_citado || '').trim());
+            const tone: TimelineTone =
+              p.status === 'bloqueio' ? 'red'
+              : p.status === 'ok' ? (comprovado ? 'emerald' : 'amber')
+              : p.status === 'alerta' ? 'amber'
+              : 'slate';
             return {
               key: i,
               tone,
               badge: { label: st.label, tone },
-              meta: <span className="tabular-nums">{p.score}/10</span>,
+              // `{p.score}/10` sem guarda imprimia "/10" sozinho quando o
+              // score não vinha. Sem nota, não se desenha nota.
+              meta: <span className="tabular-nums">{p.score == null ? '—' : `${p.score}/10`}</span>,
               eyebrow: peso.label,
               title: p.nome,
               description: (
                 <>
                   {p.avaliacao && <span className="block">{p.avaliacao}</span>}
-                  {p.trecho_citado && (
+                  {p.trecho_citado ? (
                     <blockquote className="mt-2 rounded-lg border-l-4 border-slate-200 bg-slate-50 px-3 py-2 text-[11px] italic text-slate-500">
                       "{p.trecho_citado}"
                     </blockquote>
+                  ) : (
+                    // ⚠️ ANTES A CITAÇÃO VAZIA SUMIA EM SILÊNCIO: "Atende ✅"
+                    // com base no edital e "Atende ✅" sem base nenhuma ficavam
+                    // pixel a pixel idênticos.
+                    <span className="mt-2 block text-[11px] font-semibold text-amber-700">
+                      Sem trecho do edital que comprove esta avaliação — confira manualmente.
+                    </span>
                   )}
                 </>
               ),
@@ -5547,6 +5893,42 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
         </p>
       </div>
 
+      {/* ⚠️ IMPEDITIVOS FALTAVAM NO IMPRESSO. `MeEppImpeditivoBanner` e
+          `ExpiredBanner` só existiam no caminho interativo — a versão impressa
+          do laudo, que é a que circula assinada, saía sem o aviso de que a
+          empresa pode estar VEDADA por porte ou de que o edital já encerrou.
+          Vão antes do veredito: impeditivo antecede recomendação. */}
+      {(() => {
+        const meEpp = result.elegibilidade_me_epp;
+        const encerrada = getDataExpirada(result);
+        if (!meEpp && !encerrada) return null;
+        return (
+          <div className="mb-6 space-y-2">
+            {meEpp && !meEpp.elegivel && (
+              <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Possível impeditivo · ME/EPP</p>
+                <p className="text-xs text-rose-900">{meEpp.mensagem}</p>
+              </div>
+            )}
+            {meEpp?.elegivel && meEpp.cota_reservada && (
+              <div className="border-l-4 border-sky-600 bg-sky-50 px-4 py-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Cota reservada · ME/EPP</p>
+                <p className="text-xs text-sky-900">{meEpp.mensagem}</p>
+              </div>
+            )}
+            {encerrada && (
+              <div className="border-l-4 border-slate-900 bg-slate-100 px-4 py-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Edital encerrado</p>
+                <p className="text-xs text-slate-800">
+                  A {encerrada.label} ocorreu em {formatarDataCritica(encerrada.data_iso, 'longo') ?? '—'}.
+                  {' '}Laudo válido apenas como referência e estudo de mercado.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div className="space-y-6">
 
         {/* 01 · Veredito */}
@@ -5558,7 +5940,10 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
 
         {businessFit && (
           <Secao title="Aderência ao Negócio (CNAE)">
-            <p>{businessFit.label} — Match: <strong>{businessFit.score}/100</strong></p>
+            <p>
+              {businessFit.label}
+              {businessFit.score == null ? ' — Match: não medido' : <> — Match: <strong>{businessFit.score}/100</strong></>}
+            </p>
             {businessFit.cnae && <p>CNAE: {businessFit.cnae}</p>}
             <p className="text-slate-600">{businessFit.description}</p>
           </Secao>
@@ -5625,8 +6010,10 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
             <ul className="list-disc pl-5 space-y-1 text-xs">
               {result.datas_criticas.map((dc, i) => (
                 <li key={i}>
-                  {dc.label}: {dc.data_iso ? new Date(dc.data_iso).toLocaleDateString('pt-BR') : 'não informado'}
-                  {dc.urgente ? ' (urgente)' : ''}
+                  {dc.label}: {formatarDataCritica(dc.data_iso, 'numerico') ?? 'não informado'}
+                  {dataCriticaExpirada(dc.data_iso)
+                    ? ' · ENCERRADO'
+                    : dataCriticaUrgente(dc.data_iso) ? ' · URGENTE' : ''}
                 </li>
               ))}
             </ul>
@@ -5672,6 +6059,8 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
               <p className="mb-1">
                 <strong>CAPAG do órgão ({result.orgao_risk.escopo === 'municipio' ? 'município' : 'estado'}):</strong>{' '}
                 {result.orgao_risk.classificacao} — {result.orgao_risk.descricao}
+                {result.orgao_risk.substituicao_municipio
+                  && ' (nota do ESTADO — o município comprador não consta na tabela do Tesouro)'}
               </p>
             )}
             {result.programa_integridade_obrigatorio?.exigido && (
@@ -5722,7 +6111,7 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
           <Secao title="Matriz de Riscos">
             <ul className="list-disc pl-5 space-y-1 text-xs">
               {riscos.map((r, i) => (
-                <li key={i}><strong>[{(r.impacto || 'medio').toUpperCase()}]</strong> {r.titulo} — {r.descricao}</li>
+                <li key={i}><strong>[{(r.impacto || 'não graduado').toUpperCase()}]</strong> {r.titulo} — {r.descricao}</li>
               ))}
             </ul>
           </Secao>
