@@ -298,7 +298,24 @@ export default function EditaisFeed() {
   const [ufInput, setUfInput]                     = useState('');
   const [cidadeInput, setCidadeInput]             = useState('');
   const [municipioResults, setMunicipioResults]   = useState<Array<{ municipio_id: string; municipio_nome: string }>>([]);
-  const [loadingMun, setLoadingMun]               = useState(false);
+  // ⚠️ CINCO ESTADOS, PELO MESMO MOTIVO DO `estado` DO FEED LOGO ACIMA.
+  // Antes existiam dois — "carregando" e "tem resultado" — e as outras três
+  // situações caíam todas na MESMA tela vazia: nenhuma cidade com esse nome,
+  // o 429 do limite de requisições, e o backend fora do ar. O usuário digitava
+  // a cidade certa, não via nada, e concluía que o produto não cobre a região
+  // dele — a pior das três leituras possíveis, servida como se fosse a única.
+  type EstadoMun = 'inativo' | 'buscando' | 'ok' | 'vazio' | 'falhou';
+  const [estadoMun, setEstadoMun] = useState<EstadoMun>('inativo');
+
+  // ⚠️ DEBOUNCE. Sem ele, cada tecla vira uma requisição: digitar "goiania"
+  // dispara seis. Com 280 ms — o mesmo valor de MunicipioAutocomplete.tsx:105,
+  // que já fazia certo — vira uma. Esta é a página PÚBLICA, então o limite do
+  // servidor conta por IP: um escritório inteiro atrás do mesmo NAT dividia o
+  // teto entre todos.
+  const debounceMunRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (debounceMunRef.current) clearTimeout(debounceMunRef.current);
+  }, []);
   const cidadeInputRef                            = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -353,12 +370,21 @@ export default function EditaisFeed() {
   }, [fetchEditais]);
 
   const buscarMunicipios = useCallback(async (q: string, ufQ: string) => {
-    if (q.length < 2 || !ufQ) { setMunicipioResults([]); return; }
-    setLoadingMun(true);
+    if (q.length < 2 || !ufQ) { setMunicipioResults([]); setEstadoMun('inativo'); return; }
+    setEstadoMun('buscando');
     try {
       const res = await fetch(`${API_URL}/api/pncp/municipios?q=${encodeURIComponent(q)}&uf=${ufQ}&limit=6`);
-      if (res.ok) setMunicipioResults(await res.json());
-    } catch { /* silent */ } finally { setLoadingMun(false); }
+      // 429, 500, 503: o servidor respondeu, e a resposta é "não agora".
+      if (!res.ok) { setMunicipioResults([]); setEstadoMun('falhou'); return; }
+      const dados = await res.json();
+      setMunicipioResults(dados);
+      setEstadoMun(dados.length ? 'ok' : 'vazio');
+    } catch {
+      // Rede caída, CORS, backend fora. É "não consegui perguntar", não
+      // "não existe" — e a diferença é o que o usuário conclui sobre o produto.
+      setMunicipioResults([]);
+      setEstadoMun('falhou');
+    }
   }, []);
 
   const aplicarUF = (novaUF: string) => {
@@ -481,17 +507,39 @@ export default function EditaisFeed() {
                   placeholder={ufInput ? `Cidade em ${ufInput}…` : 'Selecione o estado primeiro'}
                   disabled={!ufInput}
                   value={cidadeInput}
-                  onChange={e => { setCidadeInput(e.target.value); buscarMunicipios(e.target.value, ufInput); }}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setCidadeInput(val);
+                    if (debounceMunRef.current) clearTimeout(debounceMunRef.current);
+                    debounceMunRef.current = setTimeout(() => buscarMunicipios(val, ufInput), 280);
+                  }}
                   className={`w-full rounded-lg border px-2 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none transition-colors ${
                     ufInput
                       ? 'border-emerald-300 bg-white focus:border-emerald-500 ring-1 ring-emerald-100'
                       : 'border-slate-200 bg-slate-50 cursor-not-allowed'
                   }`}
                 />
-                {loadingMun && (
+                {estadoMun === 'buscando' && (
                   <span className="absolute right-2 top-1/2 -translate-y-1/2">
                     <RefreshCw size={9} className="animate-spin text-slate-400" />
                   </span>
+                )}
+                {estadoMun === 'vazio' && (
+                  <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 shadow-lg">
+                    Nenhuma cidade com esse nome em {ufInput}.
+                  </div>
+                )}
+                {estadoMun === 'falhou' && (
+                  <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 shadow-lg">
+                    Não consegui consultar as cidades agora.{' '}
+                    <button
+                      type="button"
+                      onMouseDown={() => buscarMunicipios(cidadeInput, ufInput)}
+                      className="font-semibold underline underline-offset-2"
+                    >
+                      tentar de novo
+                    </button>
+                  </div>
                 )}
                 {municipioResults.length > 0 && (
                   <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
