@@ -11,6 +11,7 @@
  *   · Escape não fechava: quem abria pelo teclado ficava preso.
  * Ler o componente mostraria markup plausível nos três casos.
  */
+import { opcoesDoChromium } from './_navegador.mjs';
 // ⚠️ O caminho do Playwright era fixo, e era o de outra máquina
 // (/home/claude/...): estes testes morriam com ERR_MODULE_NOT_FOUND antes da
 // primeira asserção em qualquer Mac. Um teste que não roda onde é preciso não
@@ -40,7 +41,8 @@ const { chromium } = await (async () => {
   if (!achado) {
     // Código 2: PULADO. Não é 0, porque "não rodou" não pode virar "passou".
     console.log('⏭  PULADO — Playwright não instalado (isto NÃO é aprovação).');
-    console.log('   npm i -D playwright && npx playwright install chromium');
+    console.log('   npm i -g playwright && npx playwright install chromium');
+    console.log('   (global de proposito — ver tests/_navegador.mjs)');
     process.exit(2);
   }
   return import(achado);
@@ -69,7 +71,7 @@ const R = {
   '/api/admin/promo-banner/public': { active: false },
   '/api/billing/invoices': [], '/api/billing/subscription-details': { status: 'inactive' },
 };
-const nav = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+const nav = await chromium.launch({ ...opcoesDoChromium, args: ['--no-sandbox'] });
 const pg = await nav.newPage({ viewport: { width: W, height: 900 }, deviceScaleFactor: 2 });
 const errosJs = [];
 pg.on('pageerror', (e) => errosJs.push(String(e).slice(0, 160)));

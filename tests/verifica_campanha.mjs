@@ -13,6 +13,7 @@
  * Só um navegador de verdade prova isso: é preciso navegar, perder a query
  * string e ver o código continuar lá.
  */
+import { opcoesDoChromium } from './_navegador.mjs';
 // ⚠️ O caminho do Playwright era fixo, e era o de outra máquina
 // (/home/claude/...): estes testes morriam com ERR_MODULE_NOT_FOUND antes da
 // primeira asserção em qualquer Mac. Um teste que não roda onde é preciso não
@@ -42,7 +43,8 @@ const { chromium } = await (async () => {
   if (!achado) {
     // Código 2: PULADO. Não é 0, porque "não rodou" não pode virar "passou".
     console.log('⏭  PULADO — Playwright não instalado (isto NÃO é aprovação).');
-    console.log('   npm i -D playwright && npx playwright install chromium');
+    console.log('   npm i -g playwright && npx playwright install chromium');
+    console.log('   (global de proposito — ver tests/_navegador.mjs)');
     process.exit(2);
   }
   return import(achado);
@@ -77,7 +79,7 @@ const RESPOSTAS = {
 };
 
 const navegador = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  ...opcoesDoChromium,
   args: ['--no-sandbox'],
 });
 const pagina = await navegador.newPage({ viewport: { width: 1400, height: 950 } });

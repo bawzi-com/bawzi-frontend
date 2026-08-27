@@ -17,6 +17,7 @@
  *   · a armadilha de foco e o travamento da rolagem são posição e evento, não
  *     marcação.
  */
+import { opcoesDoChromium } from './_navegador.mjs';
 // ⚠️ O caminho do Playwright era fixo, e era o de outra máquina
 // (/home/claude/...): estes testes morriam com ERR_MODULE_NOT_FOUND antes da
 // primeira asserção em qualquer Mac. Um teste que não roda onde é preciso não
@@ -46,7 +47,8 @@ const { chromium } = await (async () => {
   if (!achado) {
     // Código 2: PULADO. Não é 0, porque "não rodou" não pode virar "passou".
     console.log('⏭  PULADO — Playwright não instalado (isto NÃO é aprovação).');
-    console.log('   npm i -D playwright && npx playwright install chromium');
+    console.log('   npm i -g playwright && npx playwright install chromium');
+    console.log('   (global de proposito — ver tests/_navegador.mjs)');
     process.exit(2);
   }
   return import(achado);
@@ -79,7 +81,7 @@ const CUPOM = {
 };
 
 const nav = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] });
+  ...opcoesDoChromium, args: ['--no-sandbox'] });
 
 /**
  * Um contexto de navegador = UM ACESSO. É esta linha que dá sentido ao teste:
