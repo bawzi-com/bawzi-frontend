@@ -130,7 +130,13 @@ await pg.route((u) => u.pathname.startsWith('/api/'), async (r, q) => {
   if (p === '/api/users/avatar') {
     enviados.push(q.method());
     if (q.method() === 'POST') {
-      usuario = { ...usuario, avatar_url: '/uploads/avatars/u1-Ab3xQz9Kd.webp' };
+      // ⚠️ URL ABSOLUTA, que é o que o servidor devolve desde 27/08/2026: quem
+      // grava o arquivo é quem sabe dizer o endereço, e é isso que permite
+      // trocar disco por S3 mexendo numa variável. A forma relativa antiga
+      // continua suportada (`urlDoAvatar` em lib/apiClient.ts) porque vive no
+      // localStorage de quem já usou o app — coberta em
+      // `tests/verifica_url_avatar.mjs`, que exercita as duas.
+      usuario = { ...usuario, avatar_url: 'https://api.bawzi.com/uploads/avatars/u1-Ab3xQz9Kd.webp' };
       return r.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ message: 'Avatar atualizado!', avatar_url: usuario.avatar_url }) });
     }

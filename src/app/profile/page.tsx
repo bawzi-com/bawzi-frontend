@@ -41,7 +41,7 @@ import {
   type ActiveContextEventDetail,
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro } from '@/lib/apiClient';
+import { apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro, urlDoAvatar } from '@/lib/apiClient';
 import ChangePlanModal from '@/components/ChangePlanModal';
 import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
 import { detalhesDeCreditos, corDoDetalhe, ajudasDaCarteira, Numero, BOTAO_SECUNDARIO } from '@/components/ResumoCreditos';
@@ -769,7 +769,7 @@ function ProfileContent() {
             <div className="flex items-start gap-4">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-emerald-600 to-sky-600 text-xl font-black text-white shadow-sm">
                 {userData?.avatar_url
-                  ? <img src={`${API_URL}${userData.avatar_url}`} alt="" className="h-full w-full object-cover" />
+                  ? <img src={urlDoAvatar(userData.avatar_url)} alt="" className="h-full w-full object-cover" />
                   : initial}
               </div>
               <div className="min-w-0 flex-1">

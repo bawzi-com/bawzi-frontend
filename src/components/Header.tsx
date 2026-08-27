@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { LogOut, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
-import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, initSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, initSession, urlDoAvatar } from '@/lib/apiClient';
 import { useTierConfig } from '@/Contexts/TierContext';
 import type { BawziUpdateEvent } from '@/lib/types';
 import PromoBanner from './PromoBanner';
@@ -323,7 +323,7 @@ export default function Header() {
                   className={`h-10 w-10 overflow-hidden rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 flex items-center justify-center text-white font-bold shadow-md transition-all duration-200 ${menuOpen ? 'ring-4 ring-emerald-500/20' : 'hover:ring-4 hover:ring-emerald-500/15'}`}
                 >
                   {userData?.avatar_url
-                    ? <img src={`${API_URL}${userData.avatar_url}`} alt="" className="h-full w-full object-cover" />
+                    ? <img src={urlDoAvatar(userData.avatar_url)} alt="" className="h-full w-full object-cover" />
                     : (userData?.name ? userData.name.charAt(0).toUpperCase() : 'B')}
                 </button>
 
@@ -349,7 +349,7 @@ export default function Header() {
                       <div className="flex items-start gap-3 px-4 pb-3 pt-4">
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 text-sm font-black text-white">
                           {userData?.avatar_url
-                            ? <img src={`${API_URL}${userData.avatar_url}`} alt="" className="h-full w-full object-cover" />
+                            ? <img src={urlDoAvatar(userData.avatar_url)} alt="" className="h-full w-full object-cover" />
                             : (userData?.name ? userData.name.charAt(0).toUpperCase() : 'B')}
                         </div>
                         <div className="min-w-0 flex-1">

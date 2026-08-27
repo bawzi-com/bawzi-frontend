@@ -20,7 +20,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2, Trash2, Upload, X } from 'lucide-react';
-import { apiFetch, SessionExpiredError, clearSession, API_URL } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, API_URL, urlDoAvatar } from '@/lib/apiClient';
 
 /** Espelha `_AVATAR_MAX_BYTES` do backend.
  *
@@ -59,9 +59,12 @@ export default function AvatarUpload({ nome, avatarUrl, onUpdate }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const inicial = (nome || 'B').charAt(0).toUpperCase();
-  // `avatar_url` vem com `?v=` do servidor — é o que faz a troca aparecer em
-  // vez de o navegador continuar mostrando a foto antiga do cache.
-  const atual = avatarUrl ? `${API_URL}${avatarUrl}` : null;
+  // ⚠️ ESTE COMENTÁRIO DIZIA QUE A URL VINHA COM `?v=` PARA FURAR O CACHE. Não
+  // vem mais, e não vinha havia semanas: a query quebrava o apagamento do
+  // arquivo no servidor e foi trocada por um sufixo aleatório NO NOME, que
+  // muda a cada envio e fura o cache do mesmo jeito. Quem lesse a linha antiga
+  // acreditaria estar olhando para um mecanismo que não existe.
+  const atual = urlDoAvatar(avatarUrl);
 
   // Object URLs vazam se não forem revogados; um por escolha de arquivo.
   useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);

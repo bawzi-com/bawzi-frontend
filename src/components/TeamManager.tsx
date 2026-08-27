@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Link2, Save, ShieldCheck, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
-import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { apiFetch, SessionExpiredError, clearSession, urlDoAvatar } from '@/lib/apiClient';
 
 interface TeamMember {
   id: string;
@@ -444,7 +444,7 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, w
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-tr from-emerald-600 to-sky-600 text-sm font-black text-white shadow-sm">
                 {member.avatar_url ? (
-                  <img src={`${API_URL}${member.avatar_url}`} alt={member.name} className="w-full h-full object-cover" />
+                  <img src={urlDoAvatar(member.avatar_url)} alt={member.name} className="w-full h-full object-cover" />
                 ) : (
                   member.name.charAt(0).toUpperCase()
                 )}

@@ -53,6 +53,42 @@ function resolveApiUrl(rawUrl: string): string {
 
 export const API_URL = resolveApiUrl(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
+/**
+ * O endereço da foto de perfil — venha ela na forma que vier.
+ *
+ * ⚠️ EXISTEM DUAS FORMAS DE `avatar_url` NO MUNDO, E NÃO DÁ PARA ESCOLHER UMA.
+ * Desde 27/08/2026 o backend devolve a URL ABSOLUTA (`https://api.bawzi.com/
+ * uploads/avatars/x.webp`): quem grava o arquivo é quem sabe dizer onde ele
+ * está, e é isso que torna a migração para S3 uma variável de ambiente em vez
+ * de cinco telas mudando no mesmo dia. Mas a forma antiga, relativa
+ * (`/uploads/avatars/x.webp`), continua viva em dois lugares:
+ *
+ *   · nos documentos de `users` gravados antes daquela data — a migração do
+ *     banco cobre os que existem hoje, não os de um backup restaurado amanhã;
+ *   · no `localStorage` de quem já usou o app. `user_avatar` é lido na
+ *     montagem do cabeçalho, ANTES de qualquer chamada ao servidor, e nenhuma
+ *     migração de banco alcança o navegador de ninguém.
+ *
+ * Concatenar `API_URL` numa URL absoluta produz `https://api.bawzi.comhttps://…`
+ * — uma imagem quebrada, sem erro em lugar nenhum. Não concatenar na relativa
+ * produz a mesma imagem quebrada pelo motivo oposto. Por isso a decisão é
+ * tomada olhando o FORMATO DA STRING, e não a data do deploy nem a origem dela.
+ */
+export function urlDoAvatar(bruto: string): string;
+export function urlDoAvatar(bruto: string | null | undefined): string | null;
+export function urlDoAvatar(bruto?: string | null): string | null {
+  if (!bruto) return null;
+  // ⚠️ ABSOLUTO É O QUE TEM ESQUEMA — `//host/x` NÃO CONTA, de propósito.
+  // A primeira versão aceitava `//` como "protocolo herdado", e o teste pegou
+  // no mesmo dia: `//uploads/avatars/x.webp` (uma barra a mais, coisa que um
+  // registro velho de banco tem de sobra) casava com aquela regra e voltava
+  // intacto — o navegador então lê `uploads` como NOME DE HOST e vai buscar a
+  // foto num domínio que não existe. Nada nesta base emite `//host`; barra é
+  // sempre caminho. A regra mais estreita é a que não tem esse buraco.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(bruto)) return bruto;
+  return `${API_URL}/${bruto.replace(/^\/+/, '')}`;
+}
+
 // ─── fetch com timeout ────────────────────────────────────────────────────────
 // `fetch()` nativo não tem timeout: se a aba fica aberta por horas (ex: notebook
 // suspenso/durmiu com a aba em background), a conexão TCP fica "morta" sem que o
