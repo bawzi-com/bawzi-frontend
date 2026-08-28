@@ -27,8 +27,8 @@
  * reserva aqui seria o defeito de novo, só que mais escondido.
  */
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/apiClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface PrecoDoPlano {
   nome: string | null;

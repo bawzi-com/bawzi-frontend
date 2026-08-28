@@ -121,6 +121,39 @@ function gravarDuracaoReal(perfil: string, segundos: number) {
   } catch { /* localStorage indisponível */ }
 }
 
+// ─── Cota do convidado (mesma chave da landing) ───────────────────────────────
+//
+// ⚠️ Uma chave, uma contabilidade. A landing (`app/page.tsx`) lê e escreve
+// `bawzi_guest_quota` como CONTAGEM; aqui dentro o gravador escrevia `used: 1`
+// literal — o mesmo defeito que a landing já tinha corrigido, vivo do outro
+// lado. Com limite 1 os dois coincidiam por acidente; com limite 5 o convidado
+// gastava 3 na landing, rodava uma aqui e o contador voltava para 1.
+//
+// Estas duas funções são a única forma de tocar na chave neste arquivo, e
+// `lerUsoConvidadoHoje` é exportada para o `analysis-app.tsx` ler o MESMO
+// número em vez de manter um booleano paralelo.
+const GUEST_QUOTA_KEY = 'bawzi_guest_quota';
+
+const hojeISO = () => new Date().toISOString().split('T')[0];
+
+/** Análises que o convidado já gastou HOJE. Registro de outro dia conta 0
+ *  (o reset é diário) e navegador sem storage conta 0 — o servidor conta por
+ *  IP e é a autoridade; isto aqui é conveniência de tela. */
+export function lerUsoConvidadoHoje(): number {
+  try {
+    const raw = localStorage.getItem(GUEST_QUOTA_KEY);
+    if (!raw) return 0;
+    const { date, used } = JSON.parse(raw);
+    return date === hojeISO() ? (Number(used) || 0) : 0;
+  } catch { return 0; }
+}
+
+function gravarUsoConvidado(n: number) {
+  try {
+    localStorage.setItem(GUEST_QUOTA_KEY, JSON.stringify({ date: hojeISO(), used: n }));
+  } catch { /* navegador sem storage: a contagem do servidor continua valendo */ }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useAnalysis({
@@ -380,6 +413,32 @@ export function useAnalysis({
         if (codigo === 'LIMIT_REACHED') {
           // Teto do plano: aqui o upsell faz sentido.
           onUpsellNeeded({ title: detalhe.titulo, desc: detalhe.mensagem });
+        } else if (codigo === 'GUEST_DAILY_LIMIT') {
+          // O convidado gastou a cota do dia. Aqui vinha uma faixa VERMELHA de
+          // erro com a mensagem do servidor dentro — a landing tem uma tela
+          // inteira de convite para este mesmo instante, e o workspace, que é
+          // onde a pessoa chega com o edital já colado, respondia com um erro.
+          //
+          // `onUpgradeNeeded` sem token cai no `handleUpgrade` do
+          // analysis-app.tsx, que abre o modal de CADASTRO (`authMode:
+          // 'register'`) e nem chega perto do checkout. É esse o convite.
+          //
+          // Alinha o contador local pelo servidor ANTES de avisar: ele conta
+          // por IP e tem a palavra final; se ele disse que acabou, o storage
+          // está atrasado (outra aba, outro navegador, cota já gasta na
+          // landing). Sem isso a barra de cota seguiria anunciando análise
+          // restante logo abaixo do convite para criar conta.
+          gravarUsoConvidado(
+            typeof detalhe?.limite === 'number' ? detalhe.limite : lerUsoConvidadoHoje() + 1,
+          );
+          onFreeTrialUsed();
+          if (!token) {
+            onUpgradeNeeded(1);
+          } else {
+            // Não deveria acontecer — este código é do portão de convidado.
+            // Se acontecer, quem tem conta não pode receber o modal de cadastro.
+            setError(mensagemDeErro(detalhe, 'Limite diário atingido.'));
+          }
         } else if (codigo === 'MODE_LIMIT_REACHED') {
           // Teto de UM dos modos. Nada de upsell: quem esbarra no limite da
           // auditoria profunda já está no plano que a inclui, e o outro modo
@@ -438,9 +497,11 @@ export function useAnalysis({
       }, 100);
 
       if (!token) {
-        // Persiste uso com a data de hoje para reset diário automático
-        const today = new Date().toISOString().split('T')[0];
-        localStorage.setItem('bawzi_guest_quota', JSON.stringify({ date: today, used: 1 }));
+        // ⚠️ INCREMENTO lido do storage, não `used: 1` cravado. É a mesma
+        // correção que a landing já fez no `registrarUso(usadas + 1)`: com a
+        // gravação fixa, toda análise feita aqui zerava o que a landing tinha
+        // contado. O reset diário continua vindo da data gravada junto.
+        gravarUsoConvidado(lerUsoConvidadoHoje() + 1);
         onFreeTrialUsed();
       }
 

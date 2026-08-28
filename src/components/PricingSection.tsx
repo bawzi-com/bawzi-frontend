@@ -6,9 +6,9 @@ import { useState, useEffect } from 'react';
 import { Lock, Check, RefreshCw, Sparkles, CalendarClock, ChevronRight } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 import { useTier } from '@/hooks/useTier';
-import { getAuthToken, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, getAuthToken, mensagemDeErro } from '@/lib/apiClient';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 interface PricingSectionProps {
   onRegister?: () => void;
@@ -111,7 +111,14 @@ const tiers = [
     features: [
       'Parecer jurídico no laudo — terceiro agente',
       'Alertas do PNCP (e-mail + sino)',
-      'Fôlego financeiro e capital de execução',
+      // ⚠️ ESTE ITEM VENDIA UMA TELA QUE NÃO EXISTE.
+      // `LAUNCH_FLAGS.capital` está em `false`, e a flag não esconde só um
+      // botão: sem ela a aba Capital não entra na sidebar, não é renderizada
+      // e o deeplink `?tab=capital` não abre nada. O card cobrava R$ 197 por
+      // um recurso sem porta de entrada. Amarrado à flag em vez de apagado
+      // para que o texto volte junto com o módulo, no mesmo commit de 1 linha
+      // que troca `capital` para `true` — e não fique um item órfão a menos.
+      ...(LAUNCH_FLAGS.capital ? ['Fôlego financeiro e capital de execução'] : []),
       '100 dossiês por dia · 2 empresas',
     ],
     limites: ['Editais até 180.000 caracteres', 'PDF até 20 MB'],
@@ -1147,9 +1154,14 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ⚠️ Sem `onRegister` o destino tem de ser o CADASTRO, não o login.
+  //    Esse ramo não é exceção: /plans monta este componente sem props
+  //    nenhuma, então na página pública de preços ele é o caminho único.
+  //    Antes ia para '/login' seco — o botão prometia criar conta e entregava
+  //    e-mail e senha de uma conta que a pessoa ainda não tem.
   const handleRegisterClick = () => {
     if (onRegister) onRegister();
-    else router.push('/login');
+    else router.push('/login?view=register');
   };
 
   const handleManageSubscription = () => {
@@ -1162,7 +1174,17 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
     if (onUpgrade) { onUpgrade(tier); return; }
 
     const token = getAuthToken();
-    if (!token) { router.push('/login'); return; }
+    // ⚠️ Visitante deslogado que escolheu um plano pago: cadastro primeiro,
+    //    com o tier carregado no redirect. O workspace lê `?upgrade=N`
+    //    (analysis-app.tsx) e abre o checkout desse plano assim que a conta
+    //    existe. Antes era router.push('/login'): além do formulário errado, o
+    //    `tier` era descartado e quem clicou "Assinar Profissional" tinha de
+    //    reencontrar a oferta sozinho depois de se cadastrar. Mesmo formato de
+    //    URL usado pelos botões de plano da landing.
+    if (!token) {
+      router.push(`/login?view=register&redirect=${encodeURIComponent(`/workspace?upgrade=${tier}`)}`);
+      return;
+    }
 
     setSelectedTier(tier);
     setIsCheckoutLoading(true);

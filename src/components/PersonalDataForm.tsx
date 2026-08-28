@@ -2,11 +2,10 @@
 
 import { useState, useEffect} from 'react';
 import { Save, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
 
 export default function PersonalDataForm({ userData, token, onUpdate }: any) {
   // 🟢 Proteção da URL
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);

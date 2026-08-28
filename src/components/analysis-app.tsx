@@ -24,7 +24,7 @@ import { Lock, Sparkles, Coins, X, ChevronLeft, ChevronRight } from 'lucide-reac
 import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
-import { useAnalysis, LOADING_MESSAGES } from '@/hooks/useAnalysis';
+import { useAnalysis, LOADING_MESSAGES, lerUsoConvidadoHoje } from '@/hooks/useAnalysis';
 import { exportPdf } from '@/lib/exportPdf';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 import { useRouter } from 'next/navigation';
@@ -172,17 +172,30 @@ export default function AnalysisApp() {
   // caminho alternativo — segurar a barra até ler o storage — trocaria esse
   // pisca por um salto de layout em toda visita, inclusive a de quem chega
   // pela primeira vez e não tem nada gravado.
-  const [hasUsedFreeTrial, setHasUsedFreeTrial] = useState(false);
+  //
+  // ⚠️ E é CONTAGEM, não booleano. Como booleano ("já usou alguma vez hoje"),
+  // a primeira análise do dia bloqueava o convidado mesmo com o limite em 5.
+  // O número sai de `lerUsoConvidadoHoje()`, a mesma função que o useAnalysis
+  // usa para gravar — uma chave, uma leitura, nenhuma contabilidade paralela.
+  const [guestUsadas, setGuestUsadas] = useState(0);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('bawzi_guest_quota');
-      if (!raw) return;
-      const { date, used } = JSON.parse(raw);
-      const today = new Date().toISOString().split('T')[0];
-      if (date === today && used > 0) setHasUsedFreeTrial(true);
-    } catch { /* navegador sem storage: o servidor conta por IP e decide */ }
+    setGuestUsadas(lerUsoConvidadoHoje());
   }, []);
+
+  // Quantas análises o convidado tem por dia. Sai da MESMA configuração que o
+  // portão do backend aplica (`LIMIT_TIER_MINUS_1`, sobrescrevível pelo Admin),
+  // pela rota pública que a landing também consulta. Se a chamada falhar, fica
+  // o `1` inicial: mede a menos, nunca a mais.
+  const [guestLimit, setGuestLimit] = useState(1);
+  useEffect(() => {
+    if (token) return; // quem tem conta é medido pela cota do plano, não por esta
+    fetch(`${API_URL}/api/tiers/guest-limit`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.daily_limit > 0) setGuestLimit(d.daily_limit); })
+      .catch(() => { /* fica o valor inicial */ });
+  }, [token]);
+
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
@@ -298,7 +311,7 @@ export default function AnalysisApp() {
     apiUrl: API_URL,
     onUpgradeNeeded: (tier) => handleUpgrade(tier),
     onUpsellNeeded: (data) => { setUpsellData(data); setShowUpsell(true); },
-    onFreeTrialUsed: () => setHasUsedFreeTrial(true),
+    onFreeTrialUsed: () => setGuestUsadas(lerUsoConvidadoHoje()),
   });
 
   // ─── Retomada do taster da landing ──────────────────────────────────────────
@@ -471,19 +484,26 @@ export default function AnalysisApp() {
   const isOverTextLimit     = text.length > currentCharLimit;
   const isOverFileLimit     = totalFileSize > currentFileLimitBytes;
   const isOverLimit         = isOverTextLimit || isOverFileLimit;
-  const requiresAuth        = !token && hasUsedFreeTrial;
+  const requiresAuth        = !token && guestUsadas >= guestLimit;
 
-  // Quota para usuários não logados (tier -1): 1 análise gratuita por dia (reset meia-noite UTC)
-  const GUEST_LIMIT = 1;
+  // Quota para usuários não logados (tier -1): reset à meia-noite UTC.
+  //
+  // ⚠️ O limite vem do servidor, não do código. Aqui havia um `GUEST_LIMIT = 1`
+  // cravado enquanto o número real mora em `LIMIT_TIER_MINUS_1` e pode ser
+  // trocado pelo Admin sem deploy: no dia em que subisse, esta tela passaria a
+  // anunciar 1 e a barrar na primeira análise um convidado que o servidor ainda
+  // liberaria. `1` fica só como valor de partida enquanto a resposta não chega
+  // — é o limite de fábrica e o palpite conservador (nunca promete a mais).
   const guestQuota: QuotaInfo | null = !token ? (() => {
     const now = new Date();
     const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const usado = Math.min(guestUsadas, guestLimit);
     return {
       tier:            -1,
       ilimitado:       false,
-      limite:          GUEST_LIMIT,
-      usado:           hasUsedFreeTrial ? GUEST_LIMIT : 0,
-      restante:        hasUsedFreeTrial ? 0 : GUEST_LIMIT,
+      limite:          guestLimit,
+      usado,
+      restante:        Math.max(guestLimit - usado, 0),
       reseta_em:       tomorrow.toISOString().split('T')[0],
       dias_para_reset: 0, // sempre hoje/amanhã — label tratado no QuotaBar
     };

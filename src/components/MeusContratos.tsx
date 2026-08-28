@@ -39,7 +39,7 @@ import {
   FolderOpen, RefreshCw, Loader2, AlertTriangle, Building2, MapPin,
   CalendarClock, CircleSlash, Search, Download, Users,
 } from 'lucide-react';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 /** ⚠️ `renovar` (91–180 dias) existe porque 90 dias é tarde demais para um
  *  contrato público. Ver `DIAS_ALERTA_RENOVACAO` no backend. */
@@ -672,11 +672,24 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   // dos dois filtros ao mesmo tempo.
   const [filtroOrgao, setFiltroOrgao] = useState<string | null>(null);
 
-  const carregar = useCallback(async () => {
-    setCarregando(true);
-    setErro(null);
+  // ⚠️ RECARREGAR EM SEGUNDO PLANO NÃO PODE APAGAR A TELA.
+  // Enquanto a busca no PNCP roda, o polling chama `carregar()` de 8 em 8
+  // segundos. Como TODO carregamento levantava `carregando`, a lista sumia e o
+  // "Carregando seus contratos…" tomava o lugar dela a cada ciclo — a tela
+  // ficava piscando entre os dois estados pelo minuto inteiro da busca, e quem
+  // estava lendo uma linha a perdia de vista de 8 em 8 segundos.
+  //
+  // O spinner de tela cheia só se justifica quando ainda não há nada para
+  // mostrar: a primeira carga. Das seguintes, o dado novo entra por baixo do
+  // que já está na tela. Quem avisa que a busca está em andamento é o botão
+  // do topo ("Buscando no PNCP…"), que não tira nada do lugar.
+  const carregar = useCallback(async (opts?: { silencioso?: boolean }) => {
+    const silencioso = opts?.silencioso === true;
+    if (!silencioso) {
+      setCarregando(true);
+      setErro(null);
+    }
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const url = `${API_URL}/api/pncp/meus-contratos${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`;
       const res = await apiFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -698,18 +711,23 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       setEscopo(json.escopo || null);
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
+      // ⚠️ FALHA EM SEGUNDO PLANO NÃO DERRUBA O QUE JÁ ESTÁ NA TELA. O bloco
+      // de erro substitui a lista inteira; exibi-lo porque um refresh
+      // automático falhou tiraria da pessoa a carteira que ela estava lendo,
+      // por um problema que a próxima tentativa provavelmente resolve. Na
+      // primeira carga não há nada a preservar — e aí o erro aparece.
+      if (silencioso) return;
       // ⚠️ MENSAGEM DE ERRO COM SAÍDA. "Falha ao carregar" sem botão deixa a
       // pessoa recarregando a página inteira para tentar de novo.
       setErro('Não foi possível carregar seus contratos agora.');
     } finally {
-      setCarregando(false);
+      if (!silencioso) setCarregando(false);
     }
   }, [activeCnpj]);
 
   const carregarArena = useCallback(async () => {
     setArenaFalhou(false);
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const url = `${API_URL}/api/pncp/meus-contratos/concorrentes${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`;
       const res = await apiFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -757,7 +775,8 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
     if (tentativas >= 30) return;              // 30 × 8s = 4 minutos
     const t = setTimeout(() => {
       setTentativas((n) => n + 1);
-      carregar();
+      // ⚠️ SILÊNCIOSO: ver `carregar`. Este é o chamador que fazia a tela piscar.
+      carregar({ silencioso: true });
       carregarArena();
     }, 8000);
     return () => clearTimeout(t);
@@ -765,7 +784,6 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
 
   const sincronizar = useCallback(async () => {
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       await apiFetch(
         `${API_URL}/api/pncp/meus-contratos/sincronizar${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`,
         { method: 'POST' },
@@ -773,7 +791,9 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       // Marca "atualizando" na hora, sem esperar o próximo carregamento: é o
       // que faz o botão responder ao clique em vez de parecer travado.
       setSinc((s) => (s ? { ...s, atualizando: true } : s));
-      carregar();
+      // Sem spinner de tela cheia: a lista atual continua válida até a busca
+      // trazer outra, e o próprio botão já diz que está buscando.
+      carregar({ silencioso: true });
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
       setErro('Não foi possível iniciar a atualização agora.');
@@ -784,7 +804,6 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   const incluirFilial = useCallback(async (cnpj: string) => {
     setIncluindo(cnpj);
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const res = await apiFetch(`${API_URL}/api/pncp/meus-contratos/incluir-filial`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -795,7 +814,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       // ~70s montando a carteira dela; deixar o cartão no lugar durante esse
       // tempo faria a pessoa clicar de novo achando que não funcionou.
       setFiliais((fs) => fs.filter((f) => f.cnpj !== cnpj));
-      carregar();
+      carregar({ silencioso: true });
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
       setErro('Não foi possível incluir este estabelecimento agora.');
@@ -1032,7 +1051,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
           <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4">
             <AlertTriangle size={18} className="shrink-0 text-red-600" />
             <p className="flex-1 text-sm font-semibold text-red-800">{erro}</p>
-            <button onClick={carregar}
+            <button onClick={() => carregar()}
               className="rounded-xl bg-red-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white hover:bg-red-700">
               Tentar novamente
             </button>

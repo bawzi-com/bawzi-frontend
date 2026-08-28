@@ -27,7 +27,8 @@ import {
   SearchCheck,
   UsersRound,
 } from 'lucide-react';
-import { getAuthToken } from '@/lib/apiClient';
+import { API_URL, getAuthToken } from '@/lib/apiClient';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 const DECISION_SIGNALS = [
   {
@@ -123,7 +124,19 @@ const PLANOS = [
     nivel: 'Nível 3',
     cor: 'from-emerald-500 to-teal-500',
     destaque: true,
-    itens: ['Sugestões por CNAE', 'Alertas do PNCP', 'Fôlego financeiro da disputa', '4 agentes de IA em paralelo'],
+    // ⚠️ DOIS ITENS DESTE CARD NÃO EXISTIAM COMO ANUNCIADOS.
+    // 1) "Fôlego financeiro da disputa" é a aba Capital, e
+    //    `LAUNCH_FLAGS.capital` está em `false`: sem item na sidebar, sem
+    //    render e sem o deeplink `?tab=capital`. Fica atrelado à flag para
+    //    voltar sozinho quando ela for religada.
+    // 2) Eram "4 agentes de IA em paralelo" para um teto real de 3:
+    //    `tier_config.py` define `agent_count: 3` nos níveis 3 e 4, e
+    //    `router_analyses.py` fecha em `max(agent_count, 3)` para tier >= 3.
+    //    O card de preços (PricingSection) já dizia "terceiro agente" — eram
+    //    duas contagens da mesma coisa, e esta era a errada.
+    itens: ['Sugestões por CNAE', 'Alertas do PNCP',
+            ...(LAUNCH_FLAGS.capital ? ['Fôlego financeiro da disputa'] : []),
+            '3 agentes de IA em paralelo'],
   },
   {
     nome: 'Avançado',
@@ -156,7 +169,6 @@ export default function LandingPage() {
   }, [router]);
 
   useEffect(() => {
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
     fetch(`${API_URL}/api/tiers/guest-limit`)
       .then(r => r.json())
       .then(data => { if (data?.daily_limit > 0) setHeroGuestLimit(data.daily_limit); })
@@ -724,7 +736,6 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
       </section>
     );
 
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [text, setText]       = useState('');
   const [loading, setLoading] = useState(false);
@@ -811,6 +822,18 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
         if (detail?.codigo === 'GUEST_DAILY_LIMIT') {
           // O servidor tem a palavra final: ele conta por IP. Se ele disse que
           // acabou, o contador local está atrasado — alinha nele, não o contrário.
+          //
+          // ⚠️ Alinha também o LIMITE, e é o que faz a tela de esgotado
+          // aparecer. `exhausted` exige `guestLimit !== null`, e `guestLimit` só
+          // chega pelo fetch de /api/tiers/guest-limit lá em cima — que pode ter
+          // falhado ou devolvido 0. Quando falhava, o clique em "Analisar
+          // gratuitamente" rodava o spinner, parava e devolvia a tela igual:
+          // sem erro, sem convite, sem explicação. Este 403 traz o número que o
+          // servidor está aplicando; usar ele fecha o buraco sem uma segunda
+          // tentativa de rede.
+          if (typeof detail?.limite === 'number' && detail.limite > 0) {
+            setGuestLimit(detail.limite);
+          }
           registrarUso(detail?.limite ?? guestLimit ?? 1);
           return;
         }
@@ -1211,7 +1234,7 @@ function ProvaReal() {
   } | null>(null);
 
   useEffect(() => {
-    const API = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
+    const API = API_URL;
     fetch(`${API}/api/estatisticas-publicas`)
       .then(r => r.json())
       .then(setDados)

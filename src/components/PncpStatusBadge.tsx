@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // Os únicos estados que existem. Precisa ser um valor em tempo de execução, e
 // não só um tipo, porque a validação acontece contra JSON — e JSON não tem tipo.
@@ -36,7 +36,6 @@ export default function PncpStatusBadge() {
 
   const checkStatus = async () => {
     try {
-      const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
       const res = await apiFetch(`${API_URL}/api/pncp/status`);
       if (!res.ok) throw new Error("Falha na API");
       const data = await res.json();

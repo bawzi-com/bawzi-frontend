@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -48,7 +48,6 @@ interface NotificationPanelProps {
   onCountChange?: (count: number) => void;
 }
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // ─────────────────────────────────────────────
 // Helpers

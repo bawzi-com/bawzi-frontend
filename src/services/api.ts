@@ -1,7 +1,6 @@
 // src/services/api.ts
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export async function fetchUserProfile() {
   // 🟢 Adicionada a barra "/" entre o URL e a rota

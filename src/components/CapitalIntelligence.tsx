@@ -7,9 +7,8 @@ import {
   Minus, Star, BarChart3, FileCheck, AlertCircle,
 } from 'lucide-react';
 
-import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 

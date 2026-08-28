@@ -41,7 +41,7 @@ import {
   type ActiveContextEventDetail,
 } from '@/lib/activeContext';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro, urlDoAvatar } from '@/lib/apiClient';
+import { API_URL, apiFetch, getAuthToken, initSession, clearSession, encerrarSessao, SessionExpiredError, mensagemDeErro, urlDoAvatar } from '@/lib/apiClient';
 import ChangePlanModal from '@/components/ChangePlanModal';
 import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
 import { detalhesDeCreditos, corDoDetalhe, ajudasDaCarteira, Numero, BOTAO_SECUNDARIO } from '@/components/ResumoCreditos';
@@ -346,7 +346,6 @@ function ProfileContent() {
   }, [authToken]);
 
 
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const fetchData = async (isRetry = false) => {
     // Após navegação full-page, _accessToken está nulo e bawzi_token foi limpo

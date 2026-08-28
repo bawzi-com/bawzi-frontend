@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { apiFetch } from '@/lib/apiClient';
+import { API_URL, apiFetch } from '@/lib/apiClient';
 import { usePrecos, precoPorCiclo } from '@/lib/precos';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 /* ⚠️ ESTE ARQUIVO MENTIA SOBRE A CAPACIDADE COMPRADA, na tela de pagamento.
  *

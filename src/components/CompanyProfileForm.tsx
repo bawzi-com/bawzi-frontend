@@ -5,12 +5,11 @@ import CguCompliancePanel from './CompliancePanel';
 import { useRouter } from 'next/navigation';
 import { Building2, Search, Landmark, Zap, CheckCircle2, AlertTriangle, ShieldCheck, Plus, Trash2, Edit3, Activity } from 'lucide-react';
 import { setActiveCompanyContext } from '@/lib/activeContext';
-import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import CompanyLookup, { isSituacaoAtiva, type CompanyLookupResult } from './CompanyLookup';
 
 export default function CompanyProfileForm({ companyData, userTier, token, onUpdate, onCnpjDetected }: any) {
   const router = useRouter();
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSearchingCnpj, setIsSearchingCnpj] = useState(false);

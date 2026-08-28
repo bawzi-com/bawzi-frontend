@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { loadStripe, Stripe } from '@stripe/stripe-js';
+import { API_URL } from '@/lib/apiClient';
 import {
   Elements,
   PaymentElement,
@@ -9,7 +10,6 @@ import {
   useElements,
 } from '@stripe/react-stripe-js';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // ── Ícones de bandeiras de cartão ─────────────────────────────────────────────
 function VisaIcon() {

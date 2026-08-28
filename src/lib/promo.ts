@@ -187,8 +187,17 @@ export function ofertaDaCampanha(d: DadosPromo): Oferta | null {
  * criar conta nova são coisas diferentes e ela sai do workspace se escolher
  * errado. Recuperar senha é o mesmo tipo de momento: ninguém está avaliando
  * uma oferta, está tentando voltar para dentro.
+ *
+ * ⚠️ `/login` ENTROU PORQUE A PRÓPRIA CAMPANHA PASSOU A MANDAR PARA LÁ. O CTA
+ * do banner apontava para `/?campanha=X`, que caía na landing e não abria
+ * cadastro nenhum; agora aponta para `/login?view=register&campanha=X` (ver
+ * `router_admin.py`, montagem do `link_url`). Sem esta linha, quem clica em
+ * "Criar conta e resgatar" chega ao formulário e recebe o pop-up DA MESMA
+ * CAMPANHA por cima dele — o `PromoModal` é `z-[1000]` e o `AuthModal` é
+ * `z-[500]`. A oferta taparia o único lugar onde ela pode ser aceita.
  */
 export const ROTAS_SEM_POPUP = [
+  '/login',
   '/convite',
   '/reset-password',
   '/forgot-password',

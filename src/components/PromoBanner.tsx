@@ -37,7 +37,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { X, Copy, Check, ArrowRight, Tag } from 'lucide-react';
 import { campanhaAtual } from '@/lib/campanha';
-import { getAuthToken, initSession } from '@/lib/apiClient';
+import { API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 import { type DadosPromo, paletaPromo, rotaAceitaPopup } from '@/lib/promo';
 import PromoModal from './PromoModal';
 
@@ -106,7 +106,6 @@ export default function PromoBanner() {
     // senão o cadastro não sabe de onde a pessoa veio.
     campanhaAtual();
 
-    const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
     fetch(`${API_URL}/api/admin/promo-banner/public`)
       .then(r => r.ok ? r.json() : null)
       .then((data: DadosPromo | null) => {

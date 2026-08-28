@@ -11,7 +11,7 @@ import OrgaoAutocomplete from './OrgaoAutocomplete';
 import Tooltip from './Tooltip';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
 import CnaeMismatchModal from './CnaeMismatchModal';
-import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import { checarAderenciaObjetoEmpresa } from '@/lib/cnaeMatch';
 import { resolveActiveCompany, getCompanyDisplayName } from '@/lib/activeContext';
 import type { Empresa } from '@/lib/types';
@@ -217,7 +217,6 @@ const UFS: readonly { sigla: string; nome: string }[] = [
   { sigla: 'TO', nome: 'Tocantins' },
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   useEffect(() => {
     setMounted(true);

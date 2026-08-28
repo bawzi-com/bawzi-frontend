@@ -32,7 +32,7 @@ import {
   Bell, Plus, Trash2, ToggleLeft, ToggleRight, MapPin, Search,
   AlertTriangle, Clock, Loader2, Info,
 } from 'lucide-react';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 interface Alerta {
   id: string;
@@ -71,7 +71,6 @@ const UFS = [
   'RJ','RN','RS','RO','RR','SC','SP','SE','TO',
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Props {
   token: string;

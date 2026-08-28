@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "_comment_dev_turbo": "Arranque do dev com Turbopack em vez de webpack: compila o primeiro ecra em segundos em vez de dezenas. Ainda nao e o padrao aqui porque `next.config.ts` pode ter configuracao especifica de webpack, que o Turbopack ignora — teste com este script e, se as paginas carregarem todas, promova-o a `dev`.",
+    "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

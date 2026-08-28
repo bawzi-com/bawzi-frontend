@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { API_URL } from '@/lib/apiClient';
 
 // A forma dos nossos dados globais
 interface TierContextProps {
@@ -91,7 +92,6 @@ export function TierProvider({ children }: { children: ReactNode }) {
     const carregarConfiguracoes = async () => {
       try {
         // 🟢 INJETA A URL DO BACKEND AQUI
-        const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
         
         // 🟢 FAZ O FETCH NA ROTA CERTA DO FASTAPI (/api/tiers/config)
         const response = await fetch(`${API_URL}/api/tiers/config`);

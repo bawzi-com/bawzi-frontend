@@ -23,9 +23,8 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AlertCircle, ArrowRight, CheckCircle2, Loader2, UsersRound } from 'lucide-react';
-import { apiFetch, getAuthToken } from '@/lib/apiClient';
+import { API_URL, apiFetch, getAuthToken } from '@/lib/apiClient';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 type Estado = 'carregando' | 'pronto' | 'entrou' | 'ja_era' | 'erro';
 
@@ -155,9 +154,13 @@ function ConviteConteudo() {
               <>
                 {/* Sem conta é o caso NORMAL aqui, não a exceção: é justamente
                     para ele que o link existe. Por isso "criar conta" vem
-                    primeiro, e os dois caminhos voltam para esta página. */}
+                    primeiro, e os dois caminhos voltam para esta página.
+                    ⚠️ O parâmetro é `view=register`: é o único que /login lê.
+                    Antes era `cadastro=1`, que ninguém consumia — o botão dizia
+                    "Criar conta e entrar" e abria o formulário de login para
+                    quem, por definição, ainda não tem conta. */}
                 <Link
-                  href={`/login?redirect=${encodeURIComponent(voltarPraCa)}&cadastro=1`}
+                  href={`/login?redirect=${encodeURIComponent(voltarPraCa)}&view=register`}
                   className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-black text-white transition hover:bg-emerald-700"
                 >
                   Criar conta e entrar

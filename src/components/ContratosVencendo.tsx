@@ -7,7 +7,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 // produto vendido a analista lê como protótipo.
 import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe, FileSearch } from 'lucide-react';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -71,7 +71,6 @@ interface ContratosVencendoProps {
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 /**
  * Converte o numeroControlePNCP para a URL pública do portal PNCP.

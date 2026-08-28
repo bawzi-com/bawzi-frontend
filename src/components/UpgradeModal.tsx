@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { usePrecos, precoPorCiclo } from '@/lib/precos';
+import { API_URL } from '@/lib/apiClient';
 import {
   EmbeddedCheckoutProvider,
   EmbeddedCheckout
 } from '@stripe/react-stripe-js';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // Classes completas são necessárias para o Tailwind JIT não purgá-las.
 // ⚠️ O PREÇO SAIU DAQUI. Era a terceira cópia do mesmo literal no app (das

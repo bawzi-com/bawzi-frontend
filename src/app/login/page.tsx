@@ -9,7 +9,15 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const [open, setOpen] = useState(true);
 
-  const view = searchParams.get('view') === 'register' ? 'register' : 'login';
+  // ⚠️ `cadastro=1` é aceito de propósito como sinônimo de `view=register`.
+  //    Os convites de equipe já foram enviados por e-mail com esse formato
+  //    antigo e continuam circulando na caixa de entrada das pessoas. Corrigir
+  //    só a origem (app/convite) deixaria quem recebeu o convite ontem caindo
+  //    no formulário de login. Remover só quando os convites antigos expirarem.
+  const view =
+    searchParams.get('view') === 'register' || searchParams.get('cadastro') === '1'
+      ? 'register'
+      : 'login';
   const redirect = searchParams.get('redirect') || '/';
 
   const handleSuccess = () => {

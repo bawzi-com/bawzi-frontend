@@ -18,7 +18,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, AlertCircle } from 'lucide-react';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 // ─── tipos ────────────────────────────────────────────────────────────────────
 
@@ -107,7 +107,6 @@ export default function CnaePriceTrendChart({
   const [erro, setErro] = useState<string | null>(null);
   const [janelaAtiva, setJanelaAtiva] = useState<number>(meses);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   const buscar = useCallback(async (janela: number) => {
     if (!token || !cnae) return;

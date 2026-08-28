@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Sparkles, CheckCircle2, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
-import { getAuthToken } from '@/lib/apiClient';
+import { API_URL, getAuthToken } from '@/lib/apiClient';
+import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 type Status = 'loading' | 'activated' | 'pending_registration' | 'error' | 'already_used';
 
@@ -16,7 +17,6 @@ function PromoActivateContent() {
   const [status, setStatus]   = useState<Status>('loading');
   const [dias, setDias]       = useState(3);
   const [message, setMessage] = useState('');
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   useEffect(() => {
     if (!token) { setStatus('error'); setMessage('Link inválido.'); return; }
@@ -105,8 +105,24 @@ function PromoActivateContent() {
               Todos os recursos do plano <strong className="text-violet-400">Avançado</strong> estão
               disponíveis agora. Aproveite ao máximo!
             </p>
+            {/* ⚠️ ESTA LISTA PROMETIA TRÊS COISAS QUE O ACESSO PROMO NÃO DÁ.
+                1) "Análise ilimitada": o promo entrega tier 4, e tier 4 é
+                   `LIMIT_TIER_4 = 650` (config.py). Ilimitado, no código, é
+                   `limite == 0` (router_tiers.py) — nenhum plano tem isso. O
+                   650 abaixo é TEXTO DE RESERVA, igual ao card do Avançado em
+                   PricingSection: quem manda é a cota do servidor.
+                2) "4 Agentes IA": o teto real é 3 — `agent_count: 3` nos tiers
+                   3 e 4 (tier_config.py) e `max(agent_count, 3)` em
+                   router_analyses.py.
+                3) "Fôlego financeiro da disputa" é a aba Capital, desligada em
+                   `LAUNCH_FLAGS.capital`: sem sidebar, sem render, sem
+                   deeplink. Atrelada à flag para voltar junto com o módulo. */}
             <div className="space-y-2 text-left mb-7">
-              {['Análise ilimitada com 4 Agentes IA', 'Radar de concorrentes e war room', 'Sugestões por CNAE', 'Alertas do PNCP e contratos vencendo', 'Fôlego financeiro da disputa'].map(f => (
+              {['650 créditos por mês, com 3 agentes de IA',
+                'Radar de concorrentes e war room',
+                'Sugestões por CNAE',
+                'Alertas do PNCP e contratos vencendo',
+                ...(LAUNCH_FLAGS.capital ? ['Fôlego financeiro da disputa'] : [])].map(f => (
                 <div key={f} className="flex items-center gap-2 text-sm text-slate-300">
                   <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
                   {f}

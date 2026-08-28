@@ -6,6 +6,7 @@ import {
   Landmark, Briefcase, Building, CheckCircle2, XCircle, RotateCw, Bot, ExternalLink,
   Lock, Crown,
 } from 'lucide-react';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 interface CompliancePanelProps {
   cnpj: string;
@@ -57,7 +58,6 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
   const [cndTst, setCndTst] = useState<CertidaoStatus | null>(memoryCache.tst[cnpj.replace(/\D/g, '')] || null);
   const [certFgts, setCertFgts] = useState<CertidaoStatus | null>(memoryCache.fgts[cnpj.replace(/\D/g, '')] || null);
 
-  const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
   // ====================================================================
   // 1. BUSCA: CGU COM CACHE (Bloqueado se isLocked)
@@ -111,14 +111,44 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
       statusForcado: 'processando', icone, engine: 'Fila Bawzi'
     });
 
+    // ⚠️ ESTAS DUAS CHAMADAS IAM SEM TOKEN, E O BACKEND ACEITAVA.
+    // `/api/certidoes/enfileirar` e `/api/certidoes/status/...` eram as únicas
+    // rotas do produto abertas à internet: `fetch` cru daqui, router sem
+    // `dependencies` lá. Agora o router exige `get_current_user`, então o
+    // `fetch` cru passaria a levar 401 em toda tentativa — as duas pontas
+    // tinham de mudar juntas.
+    // `apiFetch` anexa o Bearer, renova o token quando está para vencer,
+    // repete uma vez no 401 do servidor e — o que mais importa aqui — impõe
+    // timeout de 20s. Sem ele, uma conexão morta (aba esquecida aberta,
+    // notebook que dormiu) nunca resolve nem rejeita, e o cartão fica girando
+    // em "Na Fila / Extraindo..." para sempre, sem erro nenhum no console.
     try {
-      await fetch(`${API_URL}/api/certidoes/enfileirar`, {
+      const res = await apiFetch(`${API_URL}/api/certidoes/enfileirar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cnpjs: [cnpjLimpo], tipo })
       });
+      if (!res.ok) {
+        // Nada foi enfileirado: o radar nunca veria `finalizado` e o cartão
+        // giraria até a pessoa trocar de tela. 429 é o teto de 6/min do
+        // backend (um clique = 3 chamadas, então são 2 cliques por minuto).
+        console.error(`Falha ao enfileirar ${tipo}: HTTP ${res.status}`);
+        setter((prev: any) => prev ? {
+          ...prev,
+          statusForcado: 'indisponivel',
+          engine: res.status === 429 ? 'Muitas tentativas seguidas' : 'Falha ao enfileirar',
+        } : null);
+      }
     } catch (err) {
+      // Sessão expirada: o `apiFetch` já limpou a sessão e disparou
+      // `bawzi_session_expired`, e quem trata isso é o Header/analysis-app.
+      // Aqui só se para o giro do cartão.
+      if (err instanceof SessionExpiredError) {
+        setter(null);
+        return;
+      }
       console.error(`Falha ao enfileirar ${tipo}`, err);
+      setter((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Falha de rede' } : null);
     }
   }, [cnpj, API_URL, isLocked]);
 
@@ -132,7 +162,7 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
 
     const verificarStatus = async (tipo: 'federal' | 'trabalhista' | 'fgts', setCert: Function, cacheLocal: any) => {
       try {
-        const res = await fetch(`${API_URL}/api/certidoes/status/${tipo}/${cnpjLimpo}`);
+        const res = await apiFetch(`${API_URL}/api/certidoes/status/${tipo}/${cnpjLimpo}`);
         if (!res.ok) return;
         const data = await res.json();
 
@@ -169,6 +199,16 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
           setCert((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Erro no Agente' } : null);
         }
       } catch (e) {
+        // ⚠️ SESSÃO EXPIRADA PRECISA PARAR O RADAR, NÃO SÓ SER IGNORADA.
+        // Este bloco roda de 4 em 4 segundos enquanto `statusForcado` for
+        // 'processando'. Um `return` seco deixaria o intervalo tentando (e
+        // falhando) para sempre com o cartão girando. Marcar o cartão encerra
+        // o polling; o redirecionamento para o login quem faz é o listener de
+        // `bawzi_session_expired`, que o `apiFetch` já disparou.
+        if (e instanceof SessionExpiredError) {
+          setCert((prev: any) => prev ? { ...prev, statusForcado: 'indisponivel', engine: 'Sessão expirada' } : null);
+          return;
+        }
         console.error(`Erro no radar ${tipo}:`, e);
       }
     };

@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { resolveEffectiveTier } from '@/lib/tier';
-import { getAuthToken, initSession } from '@/lib/apiClient';
+import { API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 export interface TierState {
   tier: number;

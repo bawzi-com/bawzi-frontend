@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { Target, FileSearch, Award, SearchX, ArrowLeft, Crosshair, AlertTriangle, ListFilter, Clipboard, Eye, Building2, ExternalLink, ShieldAlert, ShieldCheck, Activity, Scale, Lightbulb, Map, Bot, CalendarDays, DollarSign, Shield, ClipboardList, Zap, RefreshCw } from 'lucide-react';
 import ReverseEngineeringBlock from './ReverseEngineeringBlock';
 import CompliancePanel from './CompliancePanel';
-import { apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 import {
   perfilDoConcorrente,
@@ -454,7 +454,7 @@ export default function CompetitorWarRoom({
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TETO_REAPURACAO_MS);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const baseUrl = API_URL;
       const resp = await apiFetch(
         `${baseUrl.replace(/\/$/, '')}/api/analyses/${analysisId}/concorrentes`,
         { method: 'POST', signal: ctrl.signal }
@@ -1025,7 +1025,7 @@ export default function CompetitorWarRoom({
     if (!confirm("Deseja apagar o histórico e forçar varredura OSINT deste CNPJ?")) return;
     setIsAnalyzing(true);
     try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const baseUrl = API_URL;
         await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/history/${safeAnalysisId}/${target!.cleanCnpj}`, {
             method: 'DELETE',
         });
@@ -1058,7 +1058,7 @@ export default function CompetitorWarRoom({
     };
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const baseUrl = API_URL;
       const response = await apiFetch(`${baseUrl.replace(/\/$/, '')}/api/competitor/offensive-intel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Target, Calendar, Timer, PlayCircle, RefreshCw, Building2, Briefcase, MapPin, Globe, Info } from 'lucide-react';
 import CnaePriceTrendChart from './CnaePriceTrendChart';
-import { apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 
 interface CnaeOportunidadesProps {
   token: string | null;
@@ -119,7 +119,6 @@ export default function CnaeOportunidades({
   const [delta, setDelta] = useState<{ novos: number; sairam: number } | null>(null);
   const prevUidsRef = useRef<Set<string> | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   useEffect(() => { setMounted(true); }, []);
 

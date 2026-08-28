@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, Link2, Save, ShieldCheck, Trash2, UserPlus, UsersRound, X } from 'lucide-react';
-import { apiFetch, SessionExpiredError, clearSession, urlDoAvatar } from '@/lib/apiClient';
+import { API_URL, apiFetch, SessionExpiredError, clearSession, urlDoAvatar } from '@/lib/apiClient';
 
 interface TeamMember {
   id: string;
@@ -54,7 +54,6 @@ export default function TeamManager({ userToken, tier, members = [], is_admin, w
   const [conviteOcupado, setConviteOcupado] = useState(false);
   const [copiado, setCopiado] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const maxUsers = vagasTotais ?? WORKSPACE_LIMITS[tier] ?? 1;
   const currentUsers = members.length;
   const lotado = currentUsers >= maxUsers;

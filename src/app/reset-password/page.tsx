@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, mensagemDeErro } from '@/lib/apiClient';
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -37,7 +37,7 @@ function ResetPasswordContent() {
 
     setLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const baseUrl = API_URL;
       const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
