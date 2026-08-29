@@ -678,11 +678,20 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
               </div>
             )}
 
+            {/* ⚠️ O CAMPO PROMETIA UM VÍNCULO QUE O PLANO GRATUITO NÃO ENTREGA.
+                O cadastro grava mesmo `companies: [empresa]` no workspace pessoal
+                (router_auth.py), mas o tier 1 tem `TIER_COMPANY_LIMITS = 0`, e a
+                leitura do workspace (router_workspaces.py) recalcula e devolve a
+                empresa `suspended`. Resultado: a pessoa preenchia o CNPJ achando
+                que estava configurando a conta e chegava sem match de CNAE, sem
+                Sugestões e sem Próximas disputas — os três exigem empresa ativa.
+                O campo fica (quem já vai assinar economiza um passo), mas o texto
+                agora diz a partir de quando o vínculo vale. */}
             {view === 'register' && (
               <CompanyLookup
                 compact
                 label="Sua empresa (opcional)"
-                helperText="Vincule sua conta a uma empresa. O workspace já vem com nome e CNPJ preenchidos — ideal para emitir relatórios e identificar contratos. Se for uso pessoal, pode pular."
+                helperText="Guardamos nome e CNPJ no seu workspace desde já, mas o vínculo só passa a valer no plano Essencial — no Gratuito a empresa entra suspensa, sem match de CNAE nem sugestões de editais. Se for uso pessoal, pode pular."
                 placeholder={email.includes('@') ? `Ex.: ${email.split('@')[1]}` : 'Nome, CNPJ ou domínio'}
                 selected={selectedCompany}
                 onSelect={setSelectedCompany}

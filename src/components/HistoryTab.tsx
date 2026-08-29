@@ -41,6 +41,7 @@ export default function HistoryTab({
   sidebarHidden,
   onToggleSidebar,
   onAbrirNaGestao,
+  onNovaAnalise,
 }: {
   token: string;
   userTier?: number;
@@ -68,6 +69,11 @@ export default function HistoryTab({
    *  tela redefine para alternar analise/concorrentes — clicar não fazia nada.
    *  Mesmo componente, duas portas, e só uma levava a algum lugar. */
   onAbrirNaGestao?: (analysisId: string, taskId?: string) => void;
+  /** Leva para a aba de análise (mesmo mecanismo do `onRedoAnalysis`:
+   *  quem troca de aba é o orquestrador, não esta tela). Usado só pelo
+   *  estado vazio de quem ainda não tem nenhum laudo — sem isto, a
+   *  primeira visita às Decisões é um beco sem saída. */
+  onNovaAnalise?: () => void;
 }) {
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -833,14 +839,42 @@ export default function HistoryTab({
         </div>
       </div>
 
-      {paginatedAnalyses.length === 0 ? (
+      {/* ⚠️ HAVIA UM SÓ ESTADO VAZIO, E ELE CULPAVA UM FILTRO QUE NINGUÉM TINHA
+          USADO. Quem acabou de criar conta abre "Decisões" — costuma ser o
+          segundo clique — e lia "Nenhuma análise encontrada para o filtro
+          selecionado" com a barra de filtros intocada acima e nenhuma saída.
+          São duas situações diferentes: `analyses.length === 0` é "você ainda
+          não analisou nada" (precisa de um caminho para a primeira análise);
+          `paginatedAnalyses.length === 0` com laudos salvos é "o filtro não
+          achou" (precisa de um caminho para limpar o filtro). */}
+      {analyses.length === 0 ? (
+        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <ScanSearch size={24} />
+          </div>
+          <h3 className="text-lg font-black text-slate-800">Seu primeiro laudo ainda não saiu</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-relaxed text-slate-500">
+            Cole um edital ou escolha um no Radar PNCP. O veredito — Go, condicionado ou No-Go — fica guardado aqui, com as evidências ao lado.
+          </p>
+          {onNovaAnalise && (
+            <button
+              type="button"
+              onClick={onNovaAnalise}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-md shadow-emerald-200/60 transition-all hover:bg-emerald-700 active:scale-[0.98]"
+            >
+              Analisar meu primeiro edital
+              <ArrowRight size={15} />
+            </button>
+          )}
+        </div>
+      ) : paginatedAnalyses.length === 0 ? (
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
             <Search size={24} />
           </div>
-          <h3 className="text-lg font-black text-slate-800">Nada por aqui ainda</h3>
+          <h3 className="text-lg font-black text-slate-800">Nada com esse filtro</h3>
           <p className="mt-2 text-sm font-medium text-slate-500">
-            Nenhuma análise encontrada para o filtro selecionado.
+            Nenhum dos seus {totalAnalyses} laudos bate com o filtro selecionado.
           </p>
         </div>
       ) : (

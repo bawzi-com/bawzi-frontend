@@ -198,6 +198,19 @@ export default function AnalysisApp() {
 
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  // ⚠️ O TOUR DE ONBOARDING COBRIA O EDITAL QUE A PESSOA ACABOU DE COLAR.
+  // Quem vem do taster pelo CTA (/login?view=register&redirect=/workspace?from=taster)
+  // cai com as DUAS condições verdadeiras ao mesmo tempo: há handoff a
+  // retomar e não há empresa. O modal é z-[900] e nascia por cima do
+  // formulário já preenchido — e o toast que explica a retomada expirava
+  // atrás do overlay. Esta é justamente a pessoa que menos precisa do tour:
+  // ela já viu o produto funcionar antes de criar conta.
+  // Ref, não state: o efeito do taster roda na montagem (está declarado
+  // acima) e o `setShowOnboarding` só acontece depois do fetch de
+  // /me + /workspace resolver, então a marca já está posta a tempo. E o
+  // efeito do taster consome a chave do localStorage na hora, portanto
+  // relê-la mais tarde não funcionaria.
+  const retomandoTasterRef = useRef(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   // Permite ganhar os 350px do menu lateral — usado tanto pelo laudo aberto
   // pela Gestão (DecisionManagementTab) quanto pelo painel de resultados
@@ -330,6 +343,9 @@ export default function AnalysisApp() {
       const { text: handoffText, ts } = JSON.parse(raw) as { text?: string; ts?: number };
       if (typeof handoffText !== 'string' || handoffText.trim().length < 80) return;
       if (Date.now() - Number(ts || 0) > 48 * 60 * 60 * 1000) return;
+      // Só a partir daqui a retomada é real (handoff válido e no prazo): é
+      // esta marca que segura o onboarding lá embaixo.
+      retomandoTasterRef.current = true;
       setText(prev => prev || handoffText);
       setActiveTab('workspace');
       showSuccess('Retomamos o edital da sua análise de demonstração — ele já está no formulário. Rode a análise completa quando quiser.', 12000);
@@ -690,8 +706,13 @@ export default function AnalysisApp() {
               localStorage.removeItem('bawzi_promo');
             }
 
-            // Onboarding: exibir se o usuário não completou e ainda não tem empresa
-            if (!localStorage.getItem('bawzi_onboarding_done')) {
+            // Onboarding: exibir se o usuário não completou, ainda não tem empresa
+            // e não há edital do taster sendo retomado nesta mesma visita.
+            // NÃO gravamos `bawzi_onboarding_done` ao pular — essa chave só é
+            // escrita pelo próprio OnboardingModal quando a pessoa o fecha
+            // (OnboardingModal.tsx). Pulado aqui, o tour continua pendente e
+            // aparece na próxima visita, quando não houver edital na tela.
+            if (!localStorage.getItem('bawzi_onboarding_done') && !retomandoTasterRef.current) {
               const semEmpresa = !((wData.companies ?? []).length > 0 || uData.company?.cnpj);
               if (semEmpresa) setShowOnboarding(true);
             }
@@ -1633,6 +1654,15 @@ export default function AnalysisApp() {
                         }, 100);
                       }}
                       onAbrirComparar={() => setActiveTab('comparar')}
+                      // Saída do estado vazio de quem ainda não tem laudo
+                      // nenhum: mesmo caminho do "refazer análise" logo acima,
+                      // sem texto pré-preenchido.
+                      onNovaAnalise={() => {
+                        setActiveTab('workspace');
+                        setTimeout(() => {
+                          document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }, 100);
+                      }}
                       onAprofundar={handleAprofundarDoHistorico}
                       pesoProfunda={quota?.peso_profunda ?? null}
                     />

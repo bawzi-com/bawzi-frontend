@@ -5,3 +5,10 @@ dist
 .env
 .env.local
 .DS_Store
+# Mesma limpeza do backend: backup versionado e cache de compilação do
+# TypeScript não pertencem ao repositório.
+_backup_pre_fix/
+_to_delete/
+archive/
+*.tsbuildinfo
+*.db

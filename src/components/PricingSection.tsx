@@ -7,6 +7,7 @@ import { Lock, Check, RefreshCw, Sparkles, CalendarClock, ChevronRight } from 'l
 import UpgradeModal from './UpgradeModal';
 import { useTier } from '@/hooks/useTier';
 import { API_URL, getAuthToken, mensagemDeErro } from '@/lib/apiClient';
+import { usePrecos, type PrecoDoPlano } from '@/lib/precos';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 
@@ -37,6 +38,15 @@ interface PricingSectionProps {
 //
 // As frases qualitativas continuam aqui de propósito: são descrição de
 // funcionalidade, não configuração, e não têm como divergir sozinhas.
+//
+// ⚠️ O `price` TAMBÉM É RESERVA AGORA — ele mora no Stripe.
+// `lib/precos.ts` diz que o literal saiu de cinco arquivos; saiu de três. Esta
+// tela e a landing, as duas PÚBLICAS, ficaram lendo o literal — ou seja, mudar
+// o preço no Stripe mudava a fatura e não mudava a vitrine, que é o mesmo
+// defeito que rendeu "R$ 4.970,00" no cabeçalho e "R$ 497/mês" no cartão do
+// MESMO plano. Agora vem de `/api/tiers/precos-publicos`, e o literal só
+// aparece enquanto a resposta não chega ou se ela falhar: uma página de preços
+// vazia custa mais caro que um preço com meio segundo de atraso.
 const tiers = [
   {
     name: 'Teste', badge: 'NÍVEL 0', price: 'Grátis', period: '',
@@ -84,7 +94,7 @@ const tiers = [
     buttonText: 'Criar conta', tierLevel: 1, popular: false, label: null,
   },
   {
-    name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',
+    name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 1,
     quantidade: '90 créditos por mês',   // reserva; espelha LIMIT_TIER_2 — o servidor manda
     // ⚠️ NADA DE QUANTIDADE DERIVADA DE CONFIGURAÇÃO AQUI.
@@ -105,7 +115,7 @@ const tiers = [
     buttonText: 'Assinar Essencial', tierLevel: 2, popular: false, label: null,
   },
   {
-    name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',
+    name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 2,
     quantidade: '250 créditos por mês',   // reserva; espelha LIMIT_TIER_3 — o servidor manda
     features: [
@@ -126,7 +136,7 @@ const tiers = [
     buttonText: 'Assinar Profissional', tierLevel: 3, popular: true, label: 'Mais popular',
   },
   {
-    name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',
+    name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 3,
     quantidade: '650 créditos por mês',   // reserva; espelha LIMIT_TIER_4 e a âncora do billing_config (R$ 497 ÷ 650)
     // O tamanho do edital saiu daqui: a linha de limites, montada pelo
@@ -291,6 +301,10 @@ function SimuladorDePlano({
   const [profundas, setProfundas] = useState(2);
   const [faixaChave, setFaixaChave] = useState('comum');
   const faixa = FAIXAS_TAMANHO.find((f) => f.chave === faixaChave) ?? FAIXAS_TAMANHO[1];
+  // Hook em cada componente que mostra preço, e não prop descendo do topo:
+  // `buscarPrecos` guarda a promessa e o resultado no módulo, então simulador,
+  // tabela, cartões e o modal de upgrade montados juntos fazem UMA requisição.
+  const precos = usePrecos();
 
   const profundasReais = Math.min(profundas, editais);
   const rapidas = Math.max(0, editais - profundasReais);
@@ -334,7 +348,9 @@ function SimuladorDePlano({
     else if (!semCota && cMax > cota) veredito = 'limite';
     else veredito = 'folga';
 
-    return { nivel, meta, lim, cota, maxChars, cMin, cMax, veredito, unidade, cortaEdital };
+    const preco = precoDoCartao(meta, precos?.[String(nivel)]);
+
+    return { nivel, meta, preco, lim, cota, maxChars, cMin, cMax, veredito, unidade, cortaEdital };
   });
 
   // O recomendado é o MAIS BARATO que atende com folga — o que agora exige
@@ -452,7 +468,7 @@ function SimuladorDePlano({
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-2 text-sm font-black text-slate-900">
                         {p.meta?.name}
-                        <span className="text-xs font-bold text-slate-400">{p.meta?.price}{p.meta?.period}</span>
+                        <span className="text-xs font-bold text-slate-400">{p.preco.valor}{p.preco.sufixo}</span>
                         {ehRecomendado && (
                           <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-white">
                             Recomendado
@@ -623,6 +639,24 @@ function linhasLimites(
     `Editais até ${numeroBr(lim.max_chars)} caracteres`,
     `PDF até ${numeroBr(lim.max_mb)} MB${tier.mbSufixo}`,
   ];
+}
+
+/** O preço do cartão: o do Stripe quando ele responde, o literal enquanto não.
+ *
+ *  Mesma forma de `linhaQuantidade` e `linhasLimites` — servidor manda, texto
+ *  de reserva enquanto ele cala. A diferença é que aqui a reserva é obrigatória:
+ *  cota faltando esconde uma linha, preço faltando esvazia a vitrine.
+ *
+ *  ⚠️ O "/mês" DO SERVIDOR, NUNCA O NOSSO. Quando o Stripe responde, o sufixo é
+ *  o `por` dele; se vier vazio, não vai sufixo nenhum. Colar o "/mês" do
+ *  literal num valor anual é literalmente o defeito "R$ 4.970,00 /MÊS ANUAL"
+ *  que `lib/precos.ts` documenta. O par do literal só vale inteiro. */
+function precoDoCartao(
+  tier: { price: string; period: string } | undefined,
+  p: PrecoDoPlano | undefined,
+): { valor: string; sufixo: string } {
+  if (!p?.valor) return { valor: tier?.price ?? '', sufixo: tier?.period ?? '' };
+  return { valor: p.valor, sufixo: p.por ? `/${p.por}` : '' };
 }
 
 // Paleta visual por tier
@@ -833,6 +867,9 @@ function TabelaComparativa({
 }) {
   const [aberta, setAberta] = useState(false);
   const recursos = mapaDeRecursos();
+  // Mesma fonte do cartão. O cabeçalho da coluna e o cartão do mesmo plano
+  // ficam a uma rolagem um do outro: divergir aqui é o defeito visível.
+  const precos = usePrecos();
 
   const linhasDeLimite = [
     {
@@ -930,6 +967,7 @@ function TabelaComparativa({
                   </th>
                   {NIVEIS_TABELA.map((n) => {
                     const t = tiers.find((x) => x.tierLevel === n);
+                    const preco = precoDoCartao(t, precos?.[String(n)]);
                     const ehRecomendado = recomendado === n;
                     return (
                       <th
@@ -943,8 +981,8 @@ function TabelaComparativa({
                           {t?.name}
                         </span>
                         <span className="mt-0.5 block text-[11px] font-bold text-slate-400">
-                          {t?.price}
-                          {t?.period}
+                          {preco.valor}
+                          {preco.sufixo}
                         </span>
                         {activeTier === n && (
                           <span className="mt-1 inline-block rounded-full border border-slate-300 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-slate-500">
@@ -1112,6 +1150,9 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
   // destaque precisa alcançar os cartões e a tabela — irmãos, não filhos, do
   // simulador.
   const [nivelSugerido, setNivelSugerido] = useState<number | null>(null);
+  // Preço do Stripe. `null` = ainda não chegou; cada cartão usa o literal de
+  // reserva até lá, porque a grade de planos não pode pintar sem preço.
+  const precos = usePrecos();
 
   useEffect(() => {
     fetch(`${API_URL}/api/tiers/limites-publicos`)
@@ -1267,6 +1308,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           const isActivePaid = !isPromo && tier.tierLevel === activeTier;
           const isPromoActive= isPromo  && tier.tierLevel === activeTier;
           const isOtherPaid  = !isPromo && activeTier > 1 && tier.tierLevel > 1 && tier.tierLevel !== activeTier;
+          const preco        = precoDoCartao(tier, precos?.[String(tier.tierLevel)]);
 
           return (
             <div
@@ -1295,9 +1337,9 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
                 </div>
                 <h3 className={`text-[18px] font-black leading-tight ${s.name}`}>{tier.name}</h3>
                 <div className="flex items-baseline gap-0.5 mt-2">
-                  <span className={`text-[24px] font-black leading-none ${s.price}`}>{tier.price}</span>
-                  {tier.period && (
-                    <span className={`text-[12px] font-medium ${s.period}`}>{tier.period}</span>
+                  <span className={`text-[24px] font-black leading-none ${s.price}`}>{preco.valor}</span>
+                  {preco.sufixo && (
+                    <span className={`text-[12px] font-medium ${s.period}`}>{preco.sufixo}</span>
                   )}
                 </div>
               </div>

@@ -28,6 +28,7 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { API_URL, getAuthToken } from '@/lib/apiClient';
+import { usePrecos, type TabelaDePrecos } from '@/lib/precos';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
 const DECISION_SIGNALS = [
@@ -91,6 +92,12 @@ const FLOW = [
 ];
 
 
+// ⚠️ OS `preco` AQUI SÃO TEXTO DE RESERVA. O valor cobrado mora no Stripe e
+// chega por `/api/tiers/precos-publicos` (ver `lib/precos.ts`). O literal ficou
+// para trás nesta tela e na PricingSection — as duas públicas — enquanto as
+// telas de dentro já liam o servidor: mudar o preço no Stripe mudava a fatura
+// e não mudava a vitrine. O literal segue aqui porque a seção de planos não
+// pode pintar sem preço enquanto a resposta não chega, nem se ela falhar.
 const PLANOS = [
   {
     // ⚠️ Faltava. Os cards começavam em "Nível 2" — e o herói promete análises
@@ -149,15 +156,31 @@ const PLANOS = [
   },
 ];
 
+/** Preço do card: o do Stripe quando ele responde, o literal enquanto não.
+ *
+ *  ⚠️ O SUFIXO SÓ É "/mês" NA RESERVA. Quando o servidor responde, o sufixo é
+ *  o `por` dele — cravar "/mês" ao lado de um valor anual foi o defeito que
+ *  escreveu "R$ 4.970,00 /MÊS ANUAL" na tela da assinatura. */
+function precoDoCard(
+  plano: { preco: string; nivel: string },
+  precos: TabelaDePrecos | null,
+): { valor: string; sufixo: string } {
+  const p = precos?.[plano.nivel.replace(/\D/g, '')];
+  if (!p?.valor) return { valor: plano.preco, sufixo: '/mês' };
+  return { valor: p.valor, sufixo: p.por ? `/${p.por}` : '' };
+}
+
 export default function LandingPage() {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
-  // Mesmo limite exibido na seção de degustação lá embaixo — buscado aqui
-  // também para o selo do hero mostrar o número real sem duplicar estado.
-  // `null` até o servidor responder. O padrão de 1 fazia o herói anunciar
-  // "1 análise grátis por dia" enquanto o taster, na mesma página, dizia 10 —
-  // duas cópias do mesmo número, só uma corrigida.
-  const [heroGuestLimit, setHeroGuestLimit] = useState<number | null>(null);
+  // `heroGuestLimit` e o fetch de `/api/tiers/guest-limit` que o alimentava
+  // saíram daqui: o estado era gravado e nunca lido em lugar nenhum do arquivo.
+  // O selo que ele servia mudou de casa e hoje mora no TasterSection, que busca
+  // o próprio limite. Sobrava uma requisição por visita à home para preencher
+  // uma variável morta — e um segundo lugar guardando o mesmo número, que é
+  // como as duas cópias divergem.
+  // Preço dos cards: vem do Stripe, com o literal de PLANOS como reserva.
+  const precos = usePrecos();
 
   useEffect(() => {
     const token = getAuthToken();
@@ -167,13 +190,6 @@ export default function LandingPage() {
       setChecked(true);
     }
   }, [router]);
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/tiers/guest-limit`)
-      .then(r => r.json())
-      .then(data => { if (data?.daily_limit > 0) setHeroGuestLimit(data.daily_limit); })
-      .catch(() => {});
-  }, []);
 
   if (!checked) {
     return (
@@ -521,7 +537,9 @@ export default function LandingPage() {
           {/* Quatro colunas agora: com o gratuito, a grade de três deixava
               o Avançado sozinho numa segunda fila. */}
           <div className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {PLANOS.map(({ nome, publico, preco, nivel, cor, destaque, itens }) => (
+            {PLANOS.map(({ nome, publico, preco, nivel, cor, destaque, itens }) => {
+              const p = precoDoCard({ preco, nivel }, precos);
+              return (
               <div key={nome} className={`relative flex flex-col overflow-hidden rounded-[1.5rem] border bg-white p-5 ${destaque ? 'border-emerald-300 shadow-xl shadow-emerald-100 ring-2 ring-emerald-300' : 'border-slate-200 shadow-sm'}`}>
                 <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${cor}`} />
                 <div className="mb-4 flex items-center justify-between gap-3">
@@ -534,8 +552,10 @@ export default function LandingPage() {
                 <h3 className="text-xl font-black text-slate-950">{nome}</h3>
                 <p className="mt-1 text-sm font-bold text-slate-500">{publico}</p>
                 <div className="my-5">
-                  <span className="text-3xl font-black text-slate-950">{preco}</span>
-                  <span className="text-sm font-medium text-slate-400">/mês</span>
+                  <span className="text-3xl font-black text-slate-950">{p.valor}</span>
+                  {p.sufixo && (
+                    <span className="text-sm font-medium text-slate-400">{p.sufixo}</span>
+                  )}
                 </div>
                 <ul className="mb-6 flex-1 space-y-3">
                   {itens.map(item => (
@@ -561,7 +581,8 @@ export default function LandingPage() {
                   Escolher {nome}
                 </Link>
               </div>
-            ))}
+              );
+            })}
           </div>
           <p className="mt-8 text-center text-sm text-slate-400">
             Precisa comparar todos os limites?{' '}
