@@ -543,15 +543,20 @@ export interface AnalysisResult {
 
 // ─── Funções utilitárias ──────────────────────────────────────────────────────
 
-export const getScoreColor = (score: number) =>
-  score >= 70
-    ? 'text-emerald-600 border-emerald-500'
-    : score >= 45
-    ? 'text-amber-500 border-amber-400'
-    : 'text-red-600 border-red-500';
-
-export const getScoreBg = (score: number) =>
-  score >= 70 ? 'bg-emerald-50' : score >= 45 ? 'bg-amber-50' : 'bg-red-50';
+/* ⚠️ `getScoreColor` e `getScoreBg` FORAM REMOVIDAS, e a remoção é a correção.
+ *
+ * Elas pintavam a tela a partir do SCORE (cortes em 70/45) e ignoravam
+ * `decisao.veredito`, que é quem de facto decide. Com score 62 e veredito
+ * NO_GO — caso real e frequente — a barra do topo, o donut e a classificação
+ * saíam âmbar enquanto a pílula, o ícone e o número saíam vermelhos: cinco
+ * elementos, duas cores contraditórias, sobre o mesmo facto.
+ *
+ * Passa a existir UMA regra: a cor vem de `decisao.veredito`, através de
+ * `decisionUi` em `AnalysisResults.tsx`. O score é um número e é sempre
+ * NEUTRO, porque ele não é a decisão — é uma das entradas dela. Se voltar a
+ * ser preciso colorir por número, o sítio é `decisionUi`, não uma segunda
+ * função ao lado.
+ */
 
 export const formatMB = (bytes: number) => (bytes / (1024 * 1024)).toFixed(2);
 

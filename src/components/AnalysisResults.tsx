@@ -15,13 +15,12 @@ import {
   Gauge, Settings2, Banknote, Scale, FolderOpen,
   CalendarDays, AlertTriangle, Shield, BrainCircuit,
   ClipboardList, Pin, ThumbsUp, ThumbsDown, FileText,
-  Lock, Crown, AlertCircle, Clock, CircleHelp, XCircle,
+  Lock, AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
-  RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Quote,
-  Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
-  ListOrdered, LayoutDashboard, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
-  Maximize2, Minimize2, PanelRightClose, PanelRightOpen, ExternalLink,
-  ScanSearch, Plus, PinOff,
+  RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
+  ListOrdered, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
+  Maximize2, Minimize2, ExternalLink,
+  ScanSearch, Plus, PinOff, Gavel,
 } from 'lucide-react';
 import type {
   AnalysisResult,
@@ -30,7 +29,7 @@ import type {
   DecisionEvidence,
   DecisionVerdict,
 } from './analysis-types';
-import { getScoreColor, getScoreBg, textoDoItem, citacaoDoItem, estadoDaCitacao } from './analysis-types';
+import { textoDoItem, citacaoDoItem, estadoDaCitacao } from './analysis-types';
 // Construtor ÚNICO do plano de execução, compartilhado com o painel Gestão.
 // Ver o comentário longo em `lib/decisionQueue` sobre por que isto não pode
 // voltar a ser duas funções.
@@ -152,10 +151,10 @@ export default function AnalysisResults({
   const pncpEditalUrl = useMemo(() => buildPncpEditalUrl(liveResult), [liveResult]);
   const [tracked, setTracked] = useState<boolean>(!!result.tracked_in_gestao);
   const [trackSaving, setTrackSaving] = useState(false);
-  const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('panorama');
+  const [activeAnaliseStep, setActiveAnaliseStep] = useState<string>('decisao');
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   // Derived: concorrentes step is active when that tab is selected
-  const activeStep = activeTab === 'concorrentes' ? 'concorrentes' : activeAnaliseStep;
+  const activeStep = activeTab === 'concorrentes' ? 'disputa' : activeAnaliseStep;
 
   // ── Tela cheia do painel de resultados ──────────────────────────────────
   // Fullscreen real (API do navegador): 100% da largura pra quem quer ler sem
@@ -272,17 +271,21 @@ export default function AnalysisResults({
       className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden relative animate-in fade-in duration-500 font-sans [&:fullscreen]:overflow-y-auto [&:fullscreen]:rounded-none"
       id="area-resultados"
     >
-      <div className={`h-2 ${getScoreBg(result.score)}`}></div>
+      {/* ⚠️ AQUI HAVIA UMA BARRA DECORATIVA DE 8px pintada por `getScoreBg`.
+          Era o primeiro elemento colorido da tela, dizia menos do que qualquer
+          palavra e discordava do veredito sempre que score e decisão não
+          coincidiam. Quem carrega a cor agora é o trilho do veredito, logo
+          abaixo — onde a cor está encostada na frase que ela qualifica. */}
       <div className="p-8 md:p-12">
 
         {/* HEADER DE IMPRESSÃO */}
         <div className="hidden print:flex items-center justify-between border-b border-slate-900 pb-6 mb-8 w-full">
           <div className="flex flex-col">
-            <h1 className="text-xl font-black text-slate-900">BAWZI | Inteligência em Editais</h1>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Relatório Estratégico de Viabilidade</p>
+            <h1 className="text-xl font-semibold text-slate-900">BAWZI | Inteligência em Editais</h1>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.09em]">Relatório Estratégico de Viabilidade</p>
           </div>
           <div className="text-right">
-            <p className="text-[9px] font-black text-slate-400 uppercase">Data da Análise</p>
+            <p className="text-[9px] font-semibold text-slate-400 uppercase">Data da Análise</p>
             <p className="text-xs font-bold text-slate-900">{new Date().toLocaleDateString('pt-BR')}</p>
           </div>
         </div>
@@ -290,54 +293,33 @@ export default function AnalysisResults({
         {/* TÍTULO + BARRA DE IMPRIMIR E PARTILHAR */}
         <div className="flex flex-col gap-4 mb-8 print:hidden">
 
-          {/* Linha: título + botões de ação */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Painel de Decisão</h2>
-                {isCachedResult && (
-                  <span className="text-[9px] font-black uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-full">
-                    Cache
-                  </span>
-                )}
-              </div>
+          {/* ⚠️ ESTA LINHA DIZIA "PAINEL DE DECISÃO" EM text-2xl font-black.
+              Era o maior texto da tela e não identificava nada: todo laudo se
+              chamava igual. Quem abre um laudo já sabe que está num painel de
+              decisão — o que ele precisa de ler primeiro é DE QUE EDITAL se
+              trata, e depois qual é a decisão. A identidade veio para cá e o
+              rótulo genérico desapareceu.
+
+              O botão sólido "+ Nova Análise" também saiu daqui. Era o elemento
+              mais saturado da tela e o seu efeito é TIRAR a pessoa do relatório
+              que ela acabou de abrir; virou um botão de contorno na mesma
+              barra das outras ações. */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="font-mono text-[11px] uppercase leading-relaxed tracking-[0.06em] text-slate-400">
+                {identidadeDoEdital(liveResult) || 'Edital sem identificação no cadastro'}
+                {isCachedResult && <span className="ml-2 normal-case text-slate-400">· recuperado do cache</span>}
+              </p>
+              <h2 className="mt-1 max-w-[62ch] text-base font-medium leading-snug text-slate-700 md:text-[17px]">
+                {liveResult.title}
+              </h2>
               {termoAlvo && (
-                <span className="px-3 py-1 bg-slate-50 text-slate-600 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-slate-200">
-                  {termoAlvo}
-                </span>
+                <p className="mt-1 font-mono text-[11px] text-slate-400">busca: {termoAlvo}</p>
               )}
             </div>
-
-            <div className="flex items-center gap-2 flex-shrink-0">
-              {/* ── Capital de Giro CTA ── */}
-              {onGoToCapital && (
-                <button
-                  onClick={() => {
-                    const raw = result.estimated_value || '';
-                    const num = parseFloat(
-                      raw.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.')
-                    );
-                    onGoToCapital(isNaN(num) ? 0 : num);
-                  }}
-                  className="shrink-0 px-5 py-2.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition-colors text-sm flex items-center gap-2 print:hidden"
-                  title={result.estimated_value ? `Abrir Capital com ${result.estimated_value} pré-preenchido` : 'Abrir Capital de Giro'}
-                >
-                  <Banknote size={15} />
-                  Capital de Giro
-                </button>
-              )}
-
-              <button
-                onClick={onReset}
-                className="shrink-0 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors text-sm flex items-center gap-2 shadow-sm"
-              >
-                + {resetLabel}
-              </button>
-            </div>
-          </div>
 
           {/* Ações discretas: exportar, imprimir, compartilhar — não competem com o veredito */}
-          <div className="flex items-center gap-1 self-end -mt-1">
+          <div className="flex flex-wrap items-center justify-end gap-1 sm:shrink-0">
             <button
               onClick={onExportPDF}
               title="Exportar PDF"
@@ -406,7 +388,41 @@ export default function AnalysisResults({
             >
               {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
+
+            <span className="mx-1 hidden h-4 w-px bg-slate-200 sm:block" />
+
+            {onGoToCapital && (
+              <button
+                onClick={() => {
+                  const raw = result.estimated_value || '';
+                  const num = parseFloat(
+                    raw.replace(/[R$\s]/g, '').replace(/\./g, '').replace(',', '.')
+                  );
+                  onGoToCapital(isNaN(num) ? 0 : num);
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+                title={result.estimated_value ? `Abrir Capital com ${result.estimated_value} pré-preenchido` : 'Abrir Capital de Giro'}
+              >
+                <Banknote size={14} />
+                Capital de Giro
+              </button>
+            )}
+
+            <button
+              onClick={onReset}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+              <Plus size={14} />
+              {resetLabel}
+            </button>
           </div>
+          </div>
+
+          {/* ══ O VEREDITO, ANTES DE QUALQUER OUTRA COISA ══════════════════
+              A tela responde a uma pergunta só — participo deste edital? —
+              e levava uns 500px até dizer. Agora a resposta cabe na dobra,
+              junto do porquê e do número que a sustenta. */}
+          <VereditoTopo result={liveResult} />
 
           </div>
 
@@ -418,241 +434,214 @@ export default function AnalysisResults({
           userTier={userTier}
         />
 
-        {/* Score, veredito e aderência ao CNAE viviam repetidos em ~4 formatos
-            diferentes espalhados pelas etapas. Esta barra é a referência
-            "canônica" nas etapas 02-06 — some em Panorama e Veredito, que já
-            abrem com o veredito em destaque (repeti-lo aqui em cima seria a
-            mesma informação 2x antes de qualquer conteúdo novo). */}
-        {activeStep !== 'panorama' && activeStep !== 'veredito' && (
-          <PersistentSummaryBar result={liveResult} />
-        )}
+        {/* ⚠️ AQUI HAVIA UMA `PersistentSummaryBar` — a TERCEIRA renderização
+            do mesmo veredito, depois de `JourneySummary` e `DecisionSnapshot`.
+            Ela existia porque o veredito não estava no topo: era preciso
+            reimprimi-lo em cada aba para o leitor não o perder. Com
+            `VereditoTopo` fixo acima das abas, repeti-lo aqui seria dizer a
+            mesma coisa duas vezes antes de qualquer conteúdo novo. */}
 
         {/* ── Aprofundar: visível em TODA aba de um laudo rápido ──────────
-            O convite acompanha a leitura: em qualquer etapa que a pessoa
-            esteja, a informação "isto foi uma leitura única e dá para
-            aprofundar pagando só a diferença" está a um olhar de distância.
-            Só em laudo rápido (rodape_leitura), nunca em laudo profundo, e
-            só quando o app passou o callback (sessão ativa + texto ainda
-            carregado para reanalisar). */}
-        {/* Faixa de UMA LINHA — mesma gramática da PersistentSummaryBar logo
-            acima: a informação acompanha o leitor em toda aba sem repetir um
-            cartão de venda inteiro antes do conteúdo, sete vezes. Some na
-            etapa "Análise", onde o banner completo (com a conta) mora logo
-            abaixo do "Como esta análise foi feita".
+            O convite acompanha a leitura: em qualquer aba que a pessoa esteja,
+            a informação "isto foi uma leitura única e dá para aprofundar
+            pagando só a diferença" está a um olhar de distância. Só em laudo
+            rápido (rodape_leitura), nunca em laudo profundo, e só quando o app
+            passou o callback (sessão ativa + texto ainda carregado).
+            Some na aba "Riscos", onde o banner completo (com a conta) mora
+            logo abaixo do "Como esta análise foi feita".
             `creditos` do próprio laudo é a MESMA fonte que o backend abate —
             estimar de novo arriscaria a tela prometer um desconto e o portão
             dar outro. */}
         {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta
-          && activeStep !== 'analise' && (
+          && activeStep !== 'riscos' && (
           <AprofundarFaixa
             onAprofundar={onAprofundar}
             jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
             pesoProfunda={pesoProfunda ?? null}
-            // O saldo viaja junto agora: a faixa expandida mostra a conta
-            // inteira e é dela que a cobrança parte. Sem esta prop, o único
-            // lugar do laudo onde se gasta crédito fora da aba Análise não
-            // diria se o saldo cobre — que é metade da decisão.
             saldo={saldoCreditos ?? null}
           />
         )}
 
         {/* ⚠️ FORA DO `key={activeStep}` DE PROPÓSITO: o aviso vale para o
-            laudo inteiro, não para uma etapa. Ele é a rede de segurança da
-            rede de segurança — se ele sumir, some junto o único sinal de que
+            laudo inteiro, não para uma aba. Ele é a rede de segurança da rede
+            de segurança — se ele sumir, some junto o único sinal de que
             NENHUMA trava determinística rodou. */}
         <QaFalhouBanner result={liveResult} />
 
-        {/* ══ CONTEÚDO DA ETAPA ATIVA ══ */}
+        {/* ══ CONTEÚDO DA ABA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
 
-          {/* ── 00 Panorama ── */}
-          {activeStep === 'panorama' && (
-            <div id="section-panorama" className="scroll-mt-24 space-y-8">
-              <ExpiredBanner result={liveResult} />
-
-              {/* Início-meio-fim antes de qualquer detalhe — quem só quer o
-                  quadro geral não precisa abrir as outras etapas para
-                  entender a história inteira. */}
-              <JourneySummary result={liveResult} userTier={userTier} onStepClick={handleStepClick} />
-
-              {/* Semáforo (o "porquê" por eixo) e Resumo Executivo (o "o quê"
-                  em prosa) viviam dentro de Veredito, mas são leitura panorâmica
-                  por natureza — o usuário tinha que abrir uma etapa a mais só
-                  para ver a foto geral que "Panorama" promete no nome. Vieram
-                  pra cá; Veredito manteve o que é decisão/contexto prático
-                  (score, órgão, cronograma, oportunidades). */}
-              <SemaforoSection result={liveResult} />
-
-              <div className="relative border border-slate-200 rounded-2xl p-8">
-                <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo Executivo" />
-                <div className="text-slate-700 text-sm md:text-base leading-relaxed space-y-4 font-medium whitespace-pre-line mt-2">
-                  {liveResult.summary}
-                </div>
-              </div>
-
-              {/* "Log de trabalho" da IA: todas as frentes avaliadas, o que
-                  sustenta cada uma e o que não precisa de atenção — em um só
-                  lugar, sem precisar reabrir as 6 etapas pra confirmar. */}
-              <EscopoAnaliseSection result={liveResult} userTier={userTier} onStepClick={handleStepClick} />
-            </div>
-          )}
-
-          {/* ── 01 Veredito ── */}
-          {activeStep === 'veredito' && (
+          {/* ── Decisão ─────────────────────────────────────────────────────
+              Absorve o antigo "00 Panorama", que abria com um cartão do
+              veredito, o semáforo e o resumo executivo — e cujo cartão do
+              veredito era literalmente o mesmo dado que a etapa seguinte
+              mostrava por extenso. Sobrou o que Panorama tinha de próprio: o
+              semáforo por eixo, o resumo em prosa e o log de trabalho da IA. */}
+          {activeStep === 'decisao' && (
             <div className="space-y-8">
               <ExpiredBanner result={liveResult} />
               <MeEppImpeditivoBanner result={liveResult} />
 
-              {/* O veredito e o porquê vêm primeiro — é a resposta que o usuário veio buscar.
-                  Cronograma e evidências abaixo sustentam essa resposta. Semáforo e Resumo
-                  Executivo mudaram para Panorama (ver comentário lá). */}
-              <div id="section-score" className="scroll-mt-24">
+              <div id="section-decisao" className="scroll-mt-24">
                 <DecisionSnapshot result={liveResult} learningStats={learningStats} />
               </div>
-              <OrgaoContextoSection result={liveResult} />
-              <CronogramaSection result={liveResult} />
-              <OportunidadesSection result={liveResult} />
+
+              <div className="relative rounded-2xl border border-slate-200 p-8">
+                <SectionLabel icon={<Target size={18} className="text-slate-700" />} label="Resumo executivo" />
+                <div className="mt-2 space-y-4 whitespace-pre-line text-sm font-medium leading-relaxed text-slate-700 md:text-base">
+                  {liveResult.summary}
+                </div>
+              </div>
+
+              <SemaforoSection result={liveResult} />
+
+              {/* "Log de trabalho" da IA: todas as frentes avaliadas, o que
+                  sustenta cada uma e o que não precisa de atenção. */}
+              <EscopoAnaliseSection result={liveResult} userTier={userTier} onStepClick={handleStepClick} />
             </div>
           )}
 
-          {/* ── 02 Critérios ── */}
-          {/* Prova/auditoria da decisão: parâmetros avaliados, ficha técnica e
-              composição do score — tudo o que sustenta o veredito, num só
-              lugar, visível por padrão (antes ficava escondido dentro de
-              "Veredito" atrás de dois cliques em <details>). */}
-          {activeStep === 'criterios' && (
-            <div id="section-criterios" className="scroll-mt-24 space-y-10">
-              {/* 1 · dados brutos extraídos → 2 · critérios aplicados sobre eles →
-                  3 · resultado (score) que sai dessa aplicação. Cada bloco tinha o
-                  mesmo peso visual antes, sem indicar essa relação — o "1 · 2 · 3"
-                  deixa explícito que ficha técnica não é um critério, é a base de
-                  dados que os critérios e o score usam. */}
-              <section className="space-y-4">
-                <ChapterDivider index={1} title="Dados extraídos do edital" />
-                <CollapsibleFichaTecnica result={liveResult} />
-              </section>
-
-              <section className="space-y-4">
-                <ChapterDivider index={2} title="Critérios aplicados" />
-                <ParametrosSection result={liveResult} />
-              </section>
-
-              <section className="space-y-4">
-                <ChapterDivider index={3} title="Como chegamos ao score" />
-                <ScoreHeader result={liveResult} />
-                <CollapsibleScoreBreakdown result={liveResult} />
-              </section>
+          {/* ── Aderência ───────────────────────────────────────────────────
+              Prova da decisão: o que foi extraído do edital, os critérios
+              aplicados sobre isso e o número que sai da aplicação. */}
+          {activeStep === 'aderencia' && (
+            <div id="section-aderencia" className="scroll-mt-24 space-y-10">
+              <Capitulos
+                itens={[
+                  {
+                    titulo: 'Dados extraídos do edital',
+                    quando: Boolean(liveResult.ficha_tecnica?.length),
+                    conteudo: <CollapsibleFichaTecnica result={liveResult} />,
+                  },
+                  {
+                    titulo: 'Critérios aplicados',
+                    conteudo: (
+                      <>
+                        <ParametrosSection result={liveResult} />
+                        {/* ⚠️ CAMPO QUE NUNCA FOI RENDERIZADO.
+                            `criterios_de_julgamento` chega preenchido do backend
+                            (`models.py`) desde sempre e não existia em lado
+                            nenhum da tela — é a regra pela qual o órgão escolhe
+                            o vencedor, ou seja, o que decide se vale a pena
+                            disputar preço. */}
+                        <CriteriosJulgamentoSection result={liveResult} />
+                      </>
+                    ),
+                  },
+                  {
+                    titulo: 'Como chegamos ao score',
+                    conteudo: (
+                      <>
+                        <ScoreHeader result={liveResult} />
+                        <CollapsibleScoreBreakdown result={liveResult} />
+                      </>
+                    ),
+                  },
+                  {
+                    titulo: 'Quem está comprando',
+                    quando: Boolean(liveResult.orgao_risk || liveResult.programa_integridade_obrigatorio?.exigido),
+                    conteudo: <OrgaoContextoSection result={liveResult} />,
+                  },
+                ]}
+              />
             </div>
           )}
 
-          {/* ── 03 SWOT & Riscos ── */}
-          {activeStep === 'analise' && (
-            <div id="section-analise" className="scroll-mt-24">
+          {/* ── Riscos ──────────────────────────────────────────────────────
+              O antigo "03 SWOT & Riscos" empilhava oito blocos sem hierarquia
+              nenhuma, e o "04 Jurídico" era uma aba inteira para uma secção.
+              Cláusula abusiva e risco são a mesma conversa: quem lê um quer
+              ler o outro. Passaram a três capítulos numa aba só. */}
+          {activeStep === 'riscos' && (
+            <div id="section-riscos" className="scroll-mt-24">
               {(() => {
-                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'analise')!;
+                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'riscos')!;
                 const tone: TimelineTone =
                   item.status === 'alerta' ? 'red'
                   : item.status === 'atencao' ? 'amber'
                   : item.status === 'ok' ? 'emerald'
                   : 'slate';
                 return (
-                  <StepHeadline
-                    tone={tone}
-                    eyebrow="SWOT & Riscos"
-                    headline={item.headline}
-                  >
-                    <section className="space-y-4">
-                      <ChapterDivider index={1} title="Forças e fraquezas" />
-                      <SwotSection result={liveResult} />
-                    </section>
-                    <section className="space-y-4">
-                      <ChapterDivider index={2} title="Riscos e conformidade" />
-                      {/* Primeiro da etapa de propósito: contradição no edital
-                          é acionável hoje (pedido de esclarecimento tem prazo)
-                          e some quando não existe, então nunca empurra o resto
-                          para baixo à toa. */}
-                      <ContradicoesSection result={liveResult} />
-                      {/* O delta vem ANTES do método: primeiro o ganho nomeado
-                          ("o que a profunda acrescentou"), depois o como. */}
-                      <AuditoriaDeltaDestaque result={liveResult} />
-                      {/* Método vem LOGO DEPOIS das contradições: quem acabou de
-                          ler um achado da auditoria entende na hora de onde ele
-                          veio — e quem está na rápida lê ali que a busca por
-                          contradição não foi feita, no lugar onde ela apareceria. */}
-                      <ComoFoiFeita result={liveResult} />
-                      {/* Banner COMPLETO (com a conta de créditos) aqui, e só
-                          aqui: é logo abaixo do texto que acabou de listar o
-                          que a leitura única NÃO fez — o ponto do laudo em que
-                          a pergunta "e se eu quiser isso?" de fato nasce. Nas
-                          demais abas o mesmo convite existe como faixa de uma
-                          linha no topo (ver AprofundarFaixa), que não empurra
-                          o conteúdo para baixo em toda tela. */}
-                      {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta && (
-                        <AprofundarBanner
-                          onAprofundar={onAprofundar}
-                          jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
-                          pesoProfunda={pesoProfunda ?? null}
-                          saldo={saldoCreditos ?? null}
-                        />
-                      )}
-                      <RedFlagsSection result={liveResult} />
-                      <RisksSection result={liveResult} />
-                      <MatrizRiscoFormalSection result={liveResult} />
-                      <HabilitacaoSection
-                        result={liveResult}
-                        analysisId={analysisId}
-                        onAnalysisPatch={(patch) => setLiveResult((atual) => ({ ...atual, ...patch }))}
-                      />
-                    </section>
+                  <StepHeadline tone={tone} eyebrow="Riscos" headline={item.headline}>
+                    <Capitulos
+                      itens={[
+                        {
+                          titulo: 'Forças e fraquezas',
+                          quando: Boolean(
+                            liveResult.vantagens?.length
+                            || liveResult.desvantagens?.length
+                            || liveResult.exigencias_criticas?.length
+                            || liveResult.documentos_necessarios?.length,
+                          ),
+                          conteudo: <SwotSection result={liveResult} />,
+                        },
+                        {
+                          titulo: 'Riscos e conformidade',
+                          conteudo: (
+                            <>
+                              {/* Primeiro do capítulo de propósito: contradição
+                                  no edital é acionável hoje (pedido de
+                                  esclarecimento tem prazo) e some quando não
+                                  existe, então nunca empurra o resto para baixo
+                                  à toa. */}
+                              <ContradicoesSection result={liveResult} />
+                              <AuditoriaDeltaDestaque result={liveResult} />
+                              <ComoFoiFeita result={liveResult} />
+                              {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta && (
+                                <AprofundarBanner
+                                  onAprofundar={onAprofundar}
+                                  jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
+                                  pesoProfunda={pesoProfunda ?? null}
+                                  saldo={saldoCreditos ?? null}
+                                />
+                              )}
+                              <RedFlagsSection result={liveResult} />
+                              <RisksSection result={liveResult} />
+                              <MatrizRiscoFormalSection result={liveResult} />
+                              <HabilitacaoSection
+                                result={liveResult}
+                                analysisId={analysisId}
+                                onAnalysisPatch={(patch) => setLiveResult((atual) => ({ ...atual, ...patch }))}
+                              />
+                            </>
+                          ),
+                        },
+                        {
+                          titulo: 'Leitura jurídica',
+                          conteudo: (
+                            <>
+                              <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
+                              <div className="border-t border-slate-100 pt-6 print:hidden">
+                                <h4 className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                                  <BrainCircuit className="h-4 w-4 text-slate-400" strokeWidth={2} />
+                                  Raciocínio estratégico da IA
+                                </h4>
+                                <div className="whitespace-pre-line rounded-xl border border-slate-100 bg-slate-50 p-5 text-sm font-medium leading-relaxed text-slate-700">
+                                  {liveResult.rationale || liveResult.recommendation || 'Sem dados estratégicos.'}
+                                </div>
+                              </div>
+                            </>
+                          ),
+                        },
+                      ]}
+                    />
                   </StepHeadline>
                 );
               })()}
             </div>
           )}
 
-          {/* ── 04 Jurídico ── */}
-          {activeStep === 'juridico' && (
-            <div id="section-juridico" className="scroll-mt-24">
-              {(() => {
-                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'juridico')!;
-                const tone: TimelineTone =
-                  item.status === 'alerta' ? 'red'
-                  : item.status === 'atencao' ? 'amber'
-                  : item.status === 'ok' ? 'emerald'
-                  : 'slate';
-                return (
-                  <StepHeadline
-                    tone={tone}
-                    eyebrow="Jurídico"
-                    headline={item.headline}
-                  >
-                    <PareceSection result={liveResult} userTier={userTier} onUpgradeClick={onUpgradeClick} />
-                    <div className="pt-6 border-t border-slate-100 print:hidden">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <BrainCircuit className="w-4 h-4 text-slate-400" strokeWidth={2} />
-                        Raciocínio Estratégico da IA
-                      </h4>
-                      <div className="text-slate-700 text-sm leading-relaxed font-medium whitespace-pre-line bg-slate-50 p-5 rounded-xl border border-slate-100">
-                        {liveResult.rationale || liveResult.recommendation || 'Sem dados estratégicos.'}
-                      </div>
-                    </div>
-                  </StepHeadline>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* ── 05 Concorrentes ── */}
-          {activeStep === 'concorrentes' && (
+          {/* ── Disputa ── */}
+          {activeStep === 'disputa' && (
             <div className="animate-in fade-in zoom-in-95 duration-300">
               {(() => {
-                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'concorrentes')!;
+                const item = buildJourneySummary(liveResult, userTier).find((i) => i.key === 'disputa')!;
                 const tone: TimelineTone =
                   item.status === 'alerta' ? 'red'
                   : item.status === 'atencao' ? 'amber'
                   : item.status === 'ok' ? 'emerald'
                   : 'slate';
-                return <StepHeadline tone={tone} eyebrow="Concorrentes" headline={item.headline} />;
+                return <StepHeadline tone={tone} eyebrow="Disputa" headline={item.headline} />;
               })()}
               <PremiumLock
                 isLocked={Math.max(getCachedTier(userTier), currentTier) < 2}
@@ -675,8 +664,12 @@ export default function AnalysisResults({
             </div>
           )}
 
-          {/* ── 06 Cockpit ── */}
-          {activeStep === 'cockpit' && (() => {
+          {/* ── Ação ────────────────────────────────────────────────────────
+              Tudo o que se faz DEPOIS de decidir, numa aba só: quando é, o que
+              fazer, com que documentos, por que preço. O cronograma e as
+              oportunidades vieram das abas de veredito e panorama — são
+              consequência da decisão, não parte dela. */}
+          {activeStep === 'acao' && (() => {
             // ⚠️ AQUI HAVIA UM PORTÃO DE NÍVEL 4 QUE O PRODUTO NÃO TEM MAIS.
             //
             // Esta linha era `>= 4`, e o efeito era o pior possível: quem
@@ -705,55 +698,91 @@ export default function AnalysisResults({
               else onSetActiveTab('gestao');
             };
             return (
-            <div className="space-y-6">
-              <DecisionCockpit
-                result={liveResult}
-                analysisId={analysisId}
-                token={token}
-                tracked={tracked}
-                trackSaving={trackSaving}
-                onToggleTracking={toggleTracking}
-                onGoToGestao={onGoToGestao}
+            <div id="section-acao" className="scroll-mt-24 space-y-8">
+              <Capitulos
+                itens={[
+                  {
+                    titulo: 'Quando',
+                    conteudo: (
+                      <>
+                        <CronogramaSection result={liveResult} />
+                        {/* ⚠️ SEGUNDO CAMPO QUE NUNCA FOI RENDERIZADO. `prazos`
+                            chega do backend e não aparecia em lado nenhum — e é,
+                            entre todos os campos do laudo, o mais próximo do que
+                            a pessoa faz depois de decidir participar. */}
+                        <PrazosSection result={liveResult} />
+                        {!liveResult.datas_criticas?.length && !liveResult.prazos?.length && (
+                          <p className="text-sm font-medium text-slate-400">
+                            O material analisado não trouxe datas nem prazos legíveis. Confirme no edital original
+                            antes de montar a agenda.
+                          </p>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    titulo: 'O que fazer',
+                    conteudo: (
+                      <>
+                        <DecisionCockpit
+                          result={liveResult}
+                          analysisId={analysisId}
+                          token={token}
+                          tracked={tracked}
+                          trackSaving={trackSaving}
+                          onToggleTracking={toggleTracking}
+                          onGoToGestao={onGoToGestao}
+                        />
+                        <OportunidadesSection result={liveResult} />
+                      </>
+                    ),
+                  },
+                  {
+                    titulo: 'Por que preço',
+                    quando: Boolean(liveResult.pricing_intelligence),
+                    conteudo: isNoGoVerdict(liveResult) ? (
+                      <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
+                        <Target size={18} className="mt-0.5 shrink-0 text-slate-400" />
+                        <p className="text-sm font-medium leading-relaxed text-slate-500">
+                          <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é Não
+                          participar — não há proposta a precificar. Se o órgão corrigir o edital (documentos,
+                          prazos), reprocesse a análise para reativá-lo.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="print:hidden">
+                        <TacticalSimulator
+                          pricing={liveResult.pricing_intelligence!}
+                          fullResult={liveResult}
+                          userTier={userTier}
+                          onUpgradeClick={onUpgradeClick}
+                        />
+                      </div>
+                    ),
+                  },
+                  {
+                    titulo: 'Acompanhar e exportar',
+                    conteudo: (
+                      <>
+                        <DecisionVersionMonitor
+                          result={liveResult}
+                          analysisId={analysisId}
+                          token={token}
+                          onAnalysisUpdate={(updated) => setLiveResult(updated)}
+                        />
+                        <PremiumLock
+                          isLocked={Math.max(getCachedTier(userTier), currentTier) < 4}
+                          featureTitle="Laudo de Decisão Bawzi (PDF)"
+                          requiredTierName="Nível 4 (Avançado)"
+                          onUpgradeClick={onUpgradeClick}
+                        >
+                          <PdfExportCard onExportPDF={onExportPDF} />
+                        </PremiumLock>
+                      </>
+                    ),
+                  },
+                ]}
               />
-
-              {/* Ferramentas operacionais — precificar a proposta e acompanhar
-                  mudanças no edital ao longo do tempo. Ficam aqui, junto do
-                  resto do que se faz DEPOIS da decisão, não misturadas com o
-                  veredito em si. */}
-              {liveResult.pricing_intelligence && !isNoGoVerdict(liveResult) && (
-                <div className="print:hidden">
-                  <TacticalSimulator
-                    pricing={liveResult.pricing_intelligence}
-                    fullResult={liveResult}
-                    userTier={userTier}
-                    onUpgradeClick={onUpgradeClick}
-                  />
-                </div>
-              )}
-              {liveResult.pricing_intelligence && isNoGoVerdict(liveResult) && (
-                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
-                  <Target size={18} className="mt-0.5 shrink-0 text-slate-400" />
-                  <p className="text-sm font-medium leading-relaxed text-slate-500">
-                    <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é No-Go — não há
-                    proposta a precificar. Se o órgão corrigir o edital (documentos, prazos), reprocesse a análise para reativá-lo.
-                  </p>
-                </div>
-              )}
-              <DecisionVersionMonitor
-                result={liveResult}
-                analysisId={analysisId}
-                token={token}
-                onAnalysisUpdate={(updated) => setLiveResult(updated)}
-              />
-
-              <PremiumLock
-                isLocked={currentTier < 4}
-                featureTitle="Laudo de Decisão Bawzi (PDF)"
-                requiredTierName="Nível 4 (Avançado)"
-                onUpgradeClick={onUpgradeClick}
-              >
-                <PdfExportCard onExportPDF={onExportPDF} />
-              </PremiumLock>
             </div>
             );
           })()}
@@ -767,7 +796,7 @@ export default function AnalysisResults({
             quê — e concluiria que a ferramenta piorou. */}
         {Boolean((liveResult as unknown as Record<string, unknown>)?.motor_gratuito) && (
           <div className="mt-8 rounded-2xl border border-violet-200 bg-violet-50 p-4 print:hidden">
-            <p className="text-[11px] font-black uppercase tracking-widest text-violet-700">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-violet-700">
               Laudo gerado no motor gratuito
             </p>
             <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-violet-900">
@@ -780,7 +809,7 @@ export default function AnalysisResults({
               <button
                 type="button"
                 onClick={onComprarPacote}
-                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-[12px] font-black text-white transition-colors hover:bg-violet-700"
+                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-violet-700"
               >
                 Adicionar créditos e refazer com auditoria completa
               </button>
@@ -795,12 +824,12 @@ export default function AnalysisResults({
         <div className="mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-slate-400 font-medium print:hidden">
           <div className="flex items-center gap-2">
             <span>Gerado por:</span>
-            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-bold uppercase tracking-widest">{modelSource || 'Motor Bawzi IA'}</span>
+            <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md font-semibold uppercase tracking-[0.09em]">{modelSource || 'Motor Bawzi IA'}</span>
           </div>
           {isCachedResult && (
             <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100">
               <Zap size={14} />
-              <span className="font-bold uppercase tracking-widest text-[10px]">Recuperado do Cache</span>
+              <span className="font-semibold uppercase tracking-[0.09em] text-[10px]">Recuperado do Cache</span>
             </div>
           )}
         </div>
@@ -848,7 +877,6 @@ function DecisionSnapshot({
       ? 'profunda'
       : result.rodape_leitura ? 'rapida' : null;
 
-  const { Icon } = verdict;
   const rawBlockers = decision.impeditivos.length > 0
     ? decision.impeditivos
     : ['Nenhum impeditivo fatal foi identificado no bloco de decisão.'];
@@ -870,6 +898,14 @@ function DecisionSnapshot({
     decision.o_que_mudaria_decisao.length ? decision.o_que_mudaria_decisao : conditions,
     _vistosDedup,
   );
+  /* `VereditoTopo` já publicou `impeditivos[0]` como o porquê do veredito.
+     Comparar pelo texto normalizado (e não pelo índice) porque `dedupTextos` e
+     `filterCoveredDecisionItems` podem ter reordenado ou removido itens antes
+     de chegarem aqui. */
+  const _primeiroNoTopo = normalizeDecisionText(decision.impeditivos[0] || '');
+  const blockersRestantes = decision.veredito === 'NO_GO' && _primeiroNoTopo
+    ? blockers.filter((b) => normalizeDecisionText(b) !== _primeiroNoTopo)
+    : blockers;
   const evidenceItems = decision.evidencias.slice(0, 4);
   const gapItems = dedupTextos(decision.lacunas, _vistosDedup);
 
@@ -905,87 +941,53 @@ function DecisionSnapshot({
 
   return (
     <section className="mb-8 overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm print:hidden">
-      <div className={`h-1.5 ${verdict.bar}`} />
-
+      {/* ⚠️ AQUI TAMBÉM HAVIA UMA BARRA DE COR (`verdict.bar`), e ela era a
+          segunda no mesmo ecrã. Saiu pela mesma razão que a do topo: a cor do
+          veredito já está encostada à frase do veredito, cinco centímetros
+          acima. */}
       <div className="p-6 md:p-8">
 
-        {/* ── Cabeçalho: veredito + métricas em linha ───────────────────── */}
+        {/* ── Cabeçalho ──────────────────────────────────────────────────
+            ⚠️ ESTE CABEÇALHO REPETIA O VEREDITO INTEIRO: ícone de polegar,
+            pílula "NO GO", o rótulo em text-3xl e o nome do órgão — tudo
+            aquilo que `VereditoTopo` mostra agora antes das abas, a menos de
+            uma dobra de distância. E o mosaico "62 VIABILIDADE" era a segunda
+            impressão do mesmo número. Ficaram as duas medidas que o topo NÃO
+            dá, e que não são o score: quão segura é esta decisão, e quanto do
+            edital a análise conseguiu ler. */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-start gap-4">
-            <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl shadow-sm ${verdict.iconShell}`}>
-              <Icon size={25} strokeWidth={2.4} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verdict.pill}`}>
-                  {decision.veredito.replace('_', ' ')}
-                </span>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                  Decisão executiva
-                </span>
-                {modoDoLaudo && (
-                  <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${
-                    modoDoLaudo === 'profunda'
-                      ? 'border-sky-200 bg-sky-50 text-sky-700'
-                      : 'border-slate-200 bg-slate-50 text-slate-500'
-                  }`}>
-                    {modoDoLaudo === 'profunda' ? 'Auditoria profunda' : 'Análise rápida'}
-                  </span>
-                )}
-                {/* Colado no selo do modo: quem pagou o modo caro pergunta
-                    "o que isso me deu?" exatamente aqui. O balanço abre no
-                    clique — fechado, custa um chip; aberto, responde com
-                    números do próprio laudo. */}
-                {modoDoLaudo === 'profunda' && <ChipGanhoProfunda result={result} />}
-              </div>
-              <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
-                {decision.rotulo}
-              </h3>
-              {/* Quem está comprando. Some quando o documento não identifica
-                  o órgão — nome de comprador é identidade, e inventar aqui
-                  contaminaria o filtro do histórico. O selo distingue o
-                  cadastro oficial do PNCP da leitura da IA. */}
-              {result.orgao_nome && (
-                <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-slate-600">
-                  <Landmark size={14} className="shrink-0 text-slate-400" />
-                  {result.orgao_nome}
-                  {result.orgao_nome_fonte === 'pncp' && (
-                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-700">
-                      cadastro PNCP
-                    </span>
-                  )}
-                  {result.orgao_nome_fonte === 'ia' && (
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-500"
-                          title="Lido do texto do edital pela IA — confira contra o documento oficial.">
-                      lido do edital
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+              Decisão executiva
+            </span>
+            {modoDoLaudo && (
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.09em] ${
+                modoDoLaudo === 'profunda'
+                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                  : 'border-slate-200 bg-slate-50 text-slate-500'
+              }`}>
+                {modoDoLaudo === 'profunda' ? 'Auditoria profunda' : 'Análise rápida'}
+              </span>
+            )}
+            {/* Colado no selo do modo: quem pagou o modo caro pergunta
+                "o que isso me deu?" exatamente aqui. */}
+            {modoDoLaudo === 'profunda' && <ChipGanhoProfunda result={result} />}
+            {result.orgao_nome_fonte === 'ia' && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500"
+                    title="O nome do comprador foi lido do texto do edital pela IA — confira contra o documento oficial.">
+                órgão lido do edital
+              </span>
+            )}
           </div>
 
-          {/* Indicadores compactos no cabeçalho */}
+          {/* Indicadores compactos: as duas medidas que NÃO são o score */}
           <div className="flex shrink-0 gap-3">
             <div
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
-              title="Bawzi Score: nota de 0 a 100 que resume a recomendação, calculada a partir dos critérios técnicos, financeiros, jurídicos e de documentação avaliados. Quanto maior, mais favorável é participar."
-            >
-              <p className={`text-2xl font-black leading-none ${verdict.text}`}>{result.score}</p>
-              <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-                Viabilidade
-                <CircleHelp size={10} className="shrink-0 opacity-70" />
-              </p>
-              <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
-                <div className={`h-full rounded-full ${verdict.bar}`} style={{ width: `${result.score}%` }} />
-              </div>
-            </div>
-            <div
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
+              className="min-w-[80px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center"
               title="O quanto a IA está segura desta decisão, com base na quantidade e qualidade das evidências encontradas no edital. Cai quando há lacunas ou fatores não confirmados — não é a mesma coisa que viabilidade."
             >
-              <p className="text-2xl font-black leading-none text-slate-700">{decision.confianca}%</p>
-              <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              <p className="text-2xl font-semibold leading-none text-slate-900">{decision.confianca}%</p>
+              <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
                 Confiança
                 <CircleHelp size={10} className="shrink-0 opacity-70" />
               </p>
@@ -1017,7 +1019,7 @@ function DecisionSnapshot({
             </div>
             {typeof result.qualidade_extracao?.cobertura_pct === 'number' && (
               <div
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center min-w-[80px]"
+                className="min-w-[80px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center"
                 title={
                   `Percentual de campos críticos do edital (objeto, valores, prazos, garantias etc.) que a IA conseguiu localizar para basear a análise. ${
                     result.qualidade_extracao.campos_faltantes?.length
@@ -1026,21 +1028,25 @@ function DecisionSnapshot({
                   }`
                 }
               >
-                <p className={`text-2xl font-black leading-none ${
-                  result.qualidade_extracao.cobertura_pct >= 75 ? 'text-emerald-600'
-                  : result.qualidade_extracao.cobertura_pct >= 45 ? 'text-amber-600'
-                  : 'text-red-600'
-                }`}>{result.qualidade_extracao.cobertura_pct}%</p>
-                <p className="mt-1 flex items-center justify-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                {/* ⚠️ ESTE NÚMERO ERA PINTADO POR CORTES PRÓPRIOS (75/45), em
+                    verde, âmbar ou vermelho. Era mais uma régua a colorir o
+                    ecrã por conta própria — e o âmbar dela ficava ao lado do
+                    âmbar de "condicionado", "urgente" e "risco médio", a
+                    significar outra coisa. Cobertura baixa continua sinalizada,
+                    mas onde ela é acionável: na linha de estado do "O Que Esta
+                    Análise Avaliou". */}
+                <p className="text-2xl font-semibold leading-none text-slate-900">
+                  {result.qualidade_extracao.cobertura_pct}%
+                </p>
+                <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
                   Cobertura
                   <CircleHelp size={10} className="shrink-0 opacity-70" />
                 </p>
                 <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200">
-                  <div className={`h-full rounded-full ${
-                    result.qualidade_extracao.cobertura_pct >= 75 ? 'bg-emerald-500'
-                    : result.qualidade_extracao.cobertura_pct >= 45 ? 'bg-amber-500'
-                    : 'bg-red-500'
-                  }`} style={{ width: `${result.qualidade_extracao.cobertura_pct}%` }} />
+                  <div
+                    className="h-full rounded-full bg-slate-500"
+                    style={{ width: `${result.qualidade_extracao.cobertura_pct}%` }}
+                  />
                 </div>
               </div>
             )}
@@ -1052,7 +1058,7 @@ function DecisionSnapshot({
             em celular/tablet — e estas são exatamente as três medidas que o
             leitor precisa distinguir (viabilidade ≠ confiança ≠ cobertura). */}
         <details className="group mt-3">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600 [&::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400 transition-colors hover:text-slate-600 [&::-webkit-details-marker]:hidden">
             <CircleHelp size={11} className="shrink-0" />
             O que significam Viabilidade, Confiança e Cobertura?
             <span className="transition-transform group-open:rotate-180">▾</span>
@@ -1091,13 +1097,20 @@ function DecisionSnapshot({
 
         {/* ── Síntese ───────────────────────────────────────────────────── */}
         <div className={`mt-6 rounded-2xl border px-5 py-4 ${verdict.summary}`}>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Síntese do veredito</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">Síntese do veredito</p>
           <p className="mt-2 text-sm font-semibold leading-relaxed text-slate-700">{summaryText}</p>
-          {decision.veredito === 'NO_GO' && blockers.length > 0 && (
+          {/* ⚠️ O PRIMEIRO IMPEDIMENTO JÁ ESTÁ NO TOPO DA TELA.
+              `VereditoTopo` mostra `impeditivos[0]` como o porquê do veredito,
+              e esta lista começava por ele — a mesma frase, palavra por
+              palavra, duas vezes na mesma dobra. Aqui ficam os RESTANTES; se
+              não houver mais nenhum, o bloco some em vez de repetir. */}
+          {decision.veredito === 'NO_GO' && blockersRestantes.length > 0 && (
             <div className="mt-3 border-t border-red-200/60 pt-3">
-              <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Motivo exato do No-Go</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-red-600">
+                {blockers.length > 1 ? 'Os outros impedimentos' : 'Motivo exato do No-Go'}
+              </p>
               <ul className="mt-1.5 space-y-1.5">
-                {blockers.slice(0, 3).map((item, i) => (
+                {blockersRestantes.slice(0, 3).map((item, i) => (
                   <li key={i} className="flex items-start gap-2 text-xs font-semibold leading-relaxed text-slate-700">
                     <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-red-500" />
                     {item}
@@ -1108,7 +1121,7 @@ function DecisionSnapshot({
                 <button
                   type="button"
                   onClick={() => document.getElementById('veredito-evidencias')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className="mt-3 text-[11px] font-black text-red-700 underline underline-offset-2 hover:text-red-900"
+                  className="mt-3 text-[11px] font-semibold text-red-700 underline underline-offset-2 hover:text-red-900"
                 >
                   Ver o trecho do edital que comprova isso ↓
                 </button>
@@ -1122,21 +1135,21 @@ function DecisionSnapshot({
           <div className={`mt-5 rounded-2xl border px-5 py-4 ${businessFit.shell}`}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
                   <Settings2 size={14} className={businessFit.icon} />
                   Aderência ao negócio
                 </p>
-                <p className="mt-2 text-sm font-black leading-snug text-slate-900">{businessFit.label}</p>
+                <p className="mt-2 text-sm font-semibold leading-snug text-slate-900">{businessFit.label}</p>
                 <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-600">{businessFit.description}</p>
               </div>
               <div className="shrink-0 rounded-xl border border-white/70 bg-white/75 px-3 py-2 text-right">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Match CNAE</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Match CNAE</p>
                 {businessFit.score == null ? (
-                  <p className="mt-1 text-[11px] font-black uppercase leading-none tracking-wide text-slate-400">
+                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] leading-none text-slate-400">
                     não medido
                   </p>
                 ) : (
-                  <p className={`mt-1 text-lg font-black leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
+                  <p className={`mt-1 text-lg font-semibold leading-none ${businessFit.text}`}>{businessFit.score}/100</p>
                 )}
               </div>
             </div>
@@ -1161,7 +1174,7 @@ function DecisionSnapshot({
             )}
             {businessFit.cnaesSecundarios.length > 0 && (
               <details className="mt-3 group">
-                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-700">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500 hover:text-slate-700">
                   <ChevronDown size={12} className="shrink-0 transition-transform group-open:rotate-180" />
                   Ver {businessFit.cnaesSecundarios.length} CNAE(s) secundário(s) da empresa
                 </summary>
@@ -1189,7 +1202,7 @@ function DecisionSnapshot({
              próximas ações (abaixo) já dizem o que fazer. Isso evita que o
              veredito pareça "cheio" antes mesmo do usuário decidir explorar. */}
         <details className="group mt-5" open={decision.veredito === 'NO_GO'}>
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-[11px] font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700">
             <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
             Ver evidências, impedimentos, lacunas e base da confiança
           </summary>
@@ -1197,7 +1210,7 @@ function DecisionSnapshot({
         {/* ── Evidências ────────────────────────────────────────────────── */}
         {evidenceItems.length > 0 && (
           <div id="veredito-evidencias" className="mt-3 scroll-mt-24 rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
-            <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               <Shield size={14} className={verdict.text} />
               Por que a decisão é segura
             </p>
@@ -1205,7 +1218,7 @@ function DecisionSnapshot({
               items={evidenceItems.map((evidence, index) => ({
                 key: `${evidence.titulo}-${index}`,
                 tone: 'slate',
-                icon: <span className="text-[10px] font-black">{index + 1}</span>,
+                icon: <span className="text-[10px] font-semibold">{index + 1}</span>,
                 eyebrow: evidence.categoria || 'Evidência',
                 // Evidência sem referência E sem fonte é afirmação sem lastro
                 // verificável. Antes o badge simplesmente sumia e ela ficava
@@ -1237,7 +1250,7 @@ function DecisionSnapshot({
              ordenada por prioridade, para dar leitura clara de cima a baixo */}
         {decisionColumns.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-5">
-            <p className="mb-4 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="mb-4 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               <ListOrdered size={14} className="text-slate-400" />
               Leitura da decisão, em ordem
             </p>
@@ -1257,7 +1270,7 @@ function DecisionSnapshot({
         {/* ── Lacunas ───────────────────────────────────────────────────── */}
         {gapItems.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               <SearchX size={14} className="text-amber-500" />
               Lacunas da análise
               <span className="font-medium normal-case tracking-normal text-slate-400">· o que ainda não está coberto acima</span>
@@ -1276,7 +1289,7 @@ function DecisionSnapshot({
         {/* ── Base da confiança ──────────────────────────────────────────── */}
         {decision.fatores_confianca.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               <FileText size={14} className="text-slate-400" />
               Base da confiança
             </p>
@@ -1305,7 +1318,7 @@ function DecisionSnapshot({
         {/* ── Próxima ação ──────────────────────────────────────────────── */}
         {decision.proximas_acoes.length > 0 && (
           <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-5 py-4">
-            <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               <ClipboardList size={14} className="text-slate-400" />
               Próximas ações, em ordem
             </p>
@@ -1414,11 +1427,11 @@ function DecisionVersionMonitor({
       <div className="border-b border-slate-100 bg-slate-50 p-5 md:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
               <History size={14} />
               Monitor PNCP e versões
             </p>
-            <h3 className="mt-2 text-xl font-black tracking-tight text-slate-950">Validade contínua da decisão</h3>
+            <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">Validade contínua da decisão</h3>
           </div>
           <div className="flex items-center gap-2">
             {pncpEditalUrl && (
@@ -1426,7 +1439,7 @@ function DecisionVersionMonitor({
                 href={pncpEditalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-700 transition-all hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-50"
               >
                 <ExternalLink size={14} />
                 Ver edital no PNCP
@@ -1436,7 +1449,7 @@ function DecisionVersionMonitor({
               type="button"
               onClick={checkPncp}
               disabled={!hasPncpRef || !token || !analysisId || isChecking}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isChecking ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Verificar PNCP
@@ -1459,7 +1472,7 @@ function DecisionVersionMonitor({
       {(events.length > 0 || reviews.length > 0 || files.length > 0) && (
         <div className="grid gap-4 border-t border-slate-100 p-5 md:grid-cols-[1.15fr_0.85fr] md:p-6">
           <div className="space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Linha do tempo da decisão</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Linha do tempo da decisão</p>
             {reviews.length === 0 && events.length === 0 ? (
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-bold text-slate-500">
                 Nenhuma revisão ou mudança oficial registrada ainda.
@@ -1471,19 +1484,19 @@ function DecisionVersionMonitor({
                   <div key={`${entry.kind}-${entry.index}`} className="rounded-2xl border border-slate-200 bg-white p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-widest ${
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.09em] ${
                           entry.kind === 'event' ? 'bg-sky-50 text-sky-700 ring-1 ring-sky-100' : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
                         }`}>
                           {entry.kind === 'event' ? 'Mudança PNCP' : 'Revisão'}
                         </span>
-                        <p className="mt-2 text-sm font-black leading-snug text-slate-900">
+                        <p className="mt-2 text-sm font-semibold leading-snug text-slate-900">
                           {String(entry.item.titulo || entry.item.title || 'Versão registrada')}
                         </p>
                         <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
                           {String(entry.item.descricao || entry.item.conteudo || entry.item.previous_decision || 'Decisão atualizada.')}
                         </p>
                       </div>
-                      <span className="shrink-0 text-[10px] font-black uppercase text-slate-400">
+                      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
                         {formatVersionDate(entry.item.created_at)}
                       </span>
                     </div>
@@ -1492,7 +1505,7 @@ function DecisionVersionMonitor({
                         type="button"
                         onClick={() => reviewFromEvent(entry.item, entry.index)}
                         disabled={!token || reviewingIndex !== null}
-                        className="mt-3 inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[10px] font-black uppercase text-sky-700 transition-all hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-3 inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700 transition-all hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {reviewingIndex === entry.index ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
                         Revisar com esta mudança
@@ -1504,15 +1517,15 @@ function DecisionVersionMonitor({
           </div>
 
           <div className="space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Snapshot oficial</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Snapshot oficial</p>
             {files.length === 0 ? (
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs font-bold text-slate-500">
                 Nenhum arquivo oficial salvo no snapshot atual.
               </div>
             ) : files.slice(0, 5).map((file, index) => (
               <div key={`${file.link || file.titulo || index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                <p className="line-clamp-2 text-xs font-black leading-snug text-slate-800">{String(file.titulo || 'Arquivo oficial')}</p>
-                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                <p className="line-clamp-2 text-xs font-semibold leading-snug text-slate-800">{String(file.titulo || 'Arquivo oficial')}</p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
                   {String(file.tipo || 'Documento')} {file.data_publicacao ? `· ${file.data_publicacao}` : ''}
                 </p>
               </div>
@@ -1537,9 +1550,9 @@ function VersionMetric({
     <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
       <div className="mb-2 flex items-center gap-2 text-slate-400">
         {icon}
-        <p className="text-[10px] font-black uppercase tracking-widest">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em]">{label}</p>
       </div>
-      <p className="break-words text-sm font-black leading-snug text-slate-900">{value}</p>
+      <p className="break-words text-sm font-semibold leading-snug text-slate-900">{value}</p>
     </div>
   );
 }
@@ -1664,11 +1677,11 @@ function DecisionCockpit({
       <div id="cockpit-pos-veredito" className="scroll-mt-24 border-b border-slate-100 bg-slate-50/60 px-6 py-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
               <ClipboardList size={13} className={verdict.text} />
               {cockpitTitle}
             </p>
-            <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">{cockpitSubtitle}</h3>
+            <h3 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-950">{cockpitSubtitle}</h3>
             <p className="mt-1 text-xs font-semibold text-slate-400">
               {isNoGo
                 ? 'Acompanhe estas condições — quando mudarem, vale reprocessar a análise.'
@@ -1680,7 +1693,7 @@ function DecisionCockpit({
               {pipelineStages.map((stage, i) => (
                 <React.Fragment key={stage.key}>
                   {i > 0 && <ChevronRight size={11} className="flex-shrink-0 text-slate-300" />}
-                  <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-black transition-all ${
+                  <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold transition-all ${
                     stage.done
                       ? 'bg-emerald-100 text-emerald-700'
                       : stage.active
@@ -1706,7 +1719,7 @@ function DecisionCockpit({
                 semDefinicao === 0 ? (
                   <>
                     Em acompanhamento, com responsável e prazo definidos —{' '}
-                    <button type="button" onClick={() => onGoToGestao()} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                    <button type="button" onClick={() => onGoToGestao()} className="font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900">
                       abrir no painel Gestão
                     </button>
                     .
@@ -1717,7 +1730,7 @@ function DecisionCockpit({
                 // ao lado: era "+ Gestão", virou "Acompanhar".
                 <>
                   Toque em <strong className="text-slate-600">Acompanhar</strong> para definir responsável e prazo destes passos no{' '}
-                  <button type="button" onClick={() => onGoToGestao()} className="font-black text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                  <button type="button" onClick={() => onGoToGestao()} className="font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900">
                     painel Gestão
                   </button>
                   .
@@ -1737,13 +1750,13 @@ function DecisionCockpit({
             {/* Big progress number */}
             <div className={`px-5 pt-4 pb-3 text-center ${tracked ? 'bg-emerald-50' : ''}`}>
               <div className="flex items-baseline justify-center gap-1">
-                <span className={`text-[2.5rem] font-black leading-none tabular-nums ${verdict.text}`}>{completed}</span>
-                <span className="text-xl font-black text-slate-200">/{tasks.length}</span>
+                <span className={`text-[2.5rem] font-semibold leading-none tabular-nums ${verdict.text}`}>{completed}</span>
+                <span className="text-xl font-semibold text-slate-200">/{tasks.length}</span>
               </div>
               <div className="mx-auto mt-2.5 h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
                 <div className={`h-full rounded-full transition-all duration-500 ${verdict.bar}`} style={{ width: `${progress}%` }} />
               </div>
-              <p className="mt-1.5 text-[8px] font-black uppercase tracking-[0.15em] text-slate-400">concluídas</p>
+              <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">concluídas</p>
             </div>
 
             {/* ⚠️ O "✓" SAIU, E ISSO É O PRINCIPAL. Um tique verde diz
@@ -1768,7 +1781,7 @@ function DecisionCockpit({
               title={tracked
                 ? 'Está sendo acompanhada em Gestão. Clique para remover do acompanhamento — o que já foi preenchido não se perde.'
                 : 'Adicionar esta análise ao acompanhamento no painel Gestão'}
-              className={`group flex w-full items-center justify-center gap-1.5 border-t px-3 py-2.5 text-center text-[10.5px] font-black leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`group flex w-full items-center justify-center gap-1.5 border-t px-3 py-2.5 text-center text-[10.5px] font-semibold leading-tight transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                 tracked
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600'
                   : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
@@ -1814,7 +1827,7 @@ function DecisionCockpit({
             <div className="flex items-start gap-2.5">
               <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
               <div>
-                <p className="text-xs font-black text-amber-900">
+                <p className="text-xs font-semibold text-amber-900">
                   {semDefinicao === tasks.length
                     ? `Falta definir responsável e prazo — ${tasks.length === 1 ? 'do item abaixo' : `dos ${tasks.length} itens abaixo`}`
                     : `Falta definir responsável e prazo em ${semDefinicao} de ${tasks.length} itens`}
@@ -1828,7 +1841,7 @@ function DecisionCockpit({
             <button
               type="button"
               onClick={() => onGoToGestao()}
-              className="shrink-0 rounded-xl bg-amber-600 px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white shadow-sm transition-colors hover:bg-amber-700 active:scale-[0.98]"
+              className="shrink-0 rounded-xl bg-amber-600 px-3.5 py-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-white shadow-sm transition-colors hover:bg-amber-700 active:scale-[0.98]"
             >
               Definir no painel →
             </button>
@@ -1869,7 +1882,7 @@ function DecisionCockpit({
                     é indicador. Um checkbox que não marca nada seria pior que
                     nenhum — convida ao clique e não faz nada. */}
                 <div className="relative z-10 flex shrink-0 flex-col items-center gap-1.5 rounded-full bg-white pt-0.5">
-                  <span className={`text-[10px] font-black tabular-nums ${isDone ? 'text-emerald-500' : 'text-slate-300'}`}>
+                  <span className={`text-[10px] font-semibold tabular-nums ${isDone ? 'text-emerald-500' : 'text-slate-300'}`}>
                     {String(idx + 1).padStart(2, '0')}
                   </span>
                   <span
@@ -1885,7 +1898,7 @@ function DecisionCockpit({
                 {/* Conteúdo */}
                 <div className="min-w-0 flex-1">
                   <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${
                       task.prioridade === 'Alta'
                         ? 'bg-red-50 text-red-700 ring-1 ring-red-100'
                         : task.prioridade === 'Média'
@@ -1902,7 +1915,7 @@ function DecisionCockpit({
                       title={faltaPrazo
                         ? 'Prazo sugerido pela análise — ainda não confirmado no painel Gestão'
                         : 'Prazo definido no painel Gestão'}
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${
                         faltaPrazo
                           ? 'border-dashed border-slate-300 bg-white text-slate-400'
                           : 'border-slate-200 bg-slate-50 text-slate-600'
@@ -1933,13 +1946,13 @@ function DecisionCockpit({
                     )}
 
                     {!aDefinir && hasCustomData && !isOpen && (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-emerald-600 ring-1 ring-emerald-100">
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-emerald-600 ring-1 ring-emerald-100">
                         ✓ Preenchido
                       </span>
                     )}
                   </div>
 
-                  <p className={`text-sm font-black leading-snug ${isDone ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'}`}>
+                  <p className={`text-sm font-semibold leading-snug ${isDone ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'}`}>
                     {task.acao}
                   </p>
                   <p className="mt-1 text-xs font-semibold leading-relaxed text-slate-500">
@@ -1966,7 +1979,7 @@ function DecisionCockpit({
                   <button
                     type="button"
                     onClick={() => toggleExpanded(task.id)}
-                    className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                    className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
                   >
                     {isOpen ? '↑ Fechar' : '↓ Detalhes'}
                   </button>
@@ -1976,28 +1989,28 @@ function DecisionCockpit({
               {/* Painel de detalhes — LEITURA do que foi preenchido em Gestão */}
               {isOpen && hasCustomData && (
                 <div className="ml-11 mt-3 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 pb-4 pt-3">
-                  <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                  <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
                     Preenchido no painel Gestão
                     <button
                       type="button"
                       onClick={() => onGoToGestao()}
-                      className="font-black text-slate-600 underline underline-offset-2 hover:text-slate-900"
+                      className="font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900"
                     >
                       editar lá →
                     </button>
                   </p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Responsável</span>
                       <p className="text-xs font-bold text-slate-700">{statusMap[task.id]?.responsavel || task.responsavel}</p>
                     </div>
                     <div>
-                      <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Prazo</span>
                       <p className="text-xs font-bold text-slate-700">{statusMap[task.id]?.prazo || task.prazo}</p>
                     </div>
                     {statusMap[task.id]?.nota && (
                       <div className="sm:col-span-2">
-                        <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
+                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">Nota interna</span>
                         <p className="text-xs font-semibold leading-relaxed text-slate-600">{statusMap[task.id]?.nota}</p>
                       </div>
                     )}
@@ -2037,36 +2050,10 @@ function normalizeCockpitStatus(value: AnalysisResult['cockpit_status']): NonNul
   );
 }
 
-function DecisionMetric({
-  label,
-  helper,
-  value,
-  percent,
-  barClass,
-  valueClass,
-}: {
-  label: string;
-  helper: string;
-  value: string;
-  percent: number;
-  barClass: string;
-  valueClass: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</p>
-          <p className="mt-1 text-[11px] font-semibold leading-snug text-slate-500">{helper}</p>
-        </div>
-        <p className={`shrink-0 text-2xl font-black leading-none ${valueClass}`}>{value}</p>
-      </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
-        <div className={`h-full rounded-full ${barClass}`} style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
-      </div>
-    </div>
-  );
-}
+/* ⚠️ `DecisionMetric` FOI REMOVIDA: estava definida, tipada e nunca era
+   renderizada em lado nenhum. Ficava ao lado de `VersionMetric`, que é usada,
+   e a semelhança dos nomes fazia parecer que as duas serviam para alguma
+   coisa. */
 
 function getDecisionSummary(decision: DecisionUiData) {
   return stripDecisionPrefix(decision.resumo_decisao || decision.decisao_executiva, decision.rotulo);
@@ -2252,12 +2239,23 @@ type DecisionConfidenceFactorUi = {
   detalhe: string;
 };
 
+/* ⚠️ ESTA É A ÚNICA FONTE DE COR DO LAUDO.
+ *
+ * A cor sai de `decisao.veredito` e de mais nada. Não havia forma de manter
+ * isto verdadeiro enquanto `getScoreBg`/`getScoreColor` pintavam a partir do
+ * score em paralelo — por isso foram removidas de `analysis-types.ts`. Se
+ * aparecer a necessidade de um novo tom, ele entra AQUI, como campo desta
+ * tabela; uma segunda função que decide cor volta a criar o conflito. */
 const decisionUi: Record<DecisionVerdict, {
   Icon: typeof ThumbsUp;
   shell: string;
   side: string;
   iconShell: string;
   text: string;
+  /** Trilho vertical do veredito no topo do laudo. */
+  rail: string;
+  /** Verbo, não sigla: é o que a pessoa lê primeiro ao abrir o laudo. */
+  rotuloCurto: string;
   bar: string;
   dot: string;
   pill: string;
@@ -2269,6 +2267,8 @@ const decisionUi: Record<DecisionVerdict, {
     side: 'bg-emerald-50',
     iconShell: 'bg-emerald-600 text-white',
     text: 'text-emerald-800',
+    rail: 'border-emerald-600',
+    rotuloCurto: 'Participar',
     bar: 'bg-emerald-500',
     dot: 'bg-emerald-500',
     pill: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
@@ -2280,6 +2280,8 @@ const decisionUi: Record<DecisionVerdict, {
     side: 'bg-amber-50',
     iconShell: 'bg-amber-500 text-white',
     text: 'text-amber-800',
+    rail: 'border-amber-500',
+    rotuloCurto: 'Participar com ressalva',
     bar: 'bg-amber-500',
     dot: 'bg-amber-500',
     pill: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
@@ -2291,6 +2293,8 @@ const decisionUi: Record<DecisionVerdict, {
     side: 'bg-red-50',
     iconShell: 'bg-red-500 text-white',
     text: 'text-red-800',
+    rail: 'border-red-600',
+    rotuloCurto: 'Não participar',
     bar: 'bg-red-500',
     dot: 'bg-red-500',
     pill: 'bg-red-50 text-red-700 ring-1 ring-red-200',
@@ -2691,11 +2695,15 @@ function buildPncpEditalUrl(result: AnalysisResult): string | null {
   return `https://pncp.gov.br/app/editais/${cnpj}/${ano}/${sequencial}`;
 }
 
+/** ⚠️ ESTA FUNÇÃO TINHA UM TERCEIRO CORTE, EM 40.
+ *
+ *  `normalizeDecision` corta em 70/45; `getScoreBg` cortava em 70/45 mas
+ *  ignorando o veredito; e aqui o corte era 40. Um laudo sem `decisao.veredito`
+ *  e com score 42 era GO_CONDICIONADO para a tela toda e NÃO era No-Go para
+ *  esta função — que é quem desliga o simulador tático. Delegar a
+ *  `normalizeDecision` deixa UMA regra a decidir, e ela é a mesma que pinta. */
 function isNoGoVerdict(result: AnalysisResult): boolean {
-  const decisao = (result as unknown as { decisao?: { veredito?: string } }).decisao;
-  const v = String(decisao?.veredito || '').toUpperCase();
-  if (v) return v === 'NO_GO';
-  return (result.score ?? 100) < 40;
+  return normalizeDecision(result).veredito === 'NO_GO';
 }
 
 function semaforoLabel(key: string) {
@@ -2710,69 +2718,60 @@ function semaforoLabel(key: string) {
 
 // ─── Jornada de análise: steps unificados (substitui tab bar) ────────────────
 
+/* ⚠️ ISTO ERAM SETE PASSOS NUMERADOS (00 a 06), E A NUMERAÇÃO ERA FALSA.
+ *
+ * Numerar promete uma sequência, e ninguém percorre um laudo de ponta a ponta:
+ * abre-se para responder uma pergunta e sai-se. A promessa custava caro — a
+ * trilha exigia `min-w-[720px]` com rolagem horizontal, o que por sua vez
+ * recortava o selo de plano superior (ver o comentário longo que morava em
+ * `JourneyStepNav`), e o selo tinha de caber em 7px.
+ *
+ * O que mudou de facto, além do número:
+ *   · "Panorama" só repetia o veredito e o resumo — foi absorvido por Decisão;
+ *   · "Jurídico" era uma etapa própria para uma secção; cláusula abusiva e
+ *     risco são a mesma conversa, e passaram a viver juntos em Riscos;
+ *   · "Cockpit" chamava-se pelo nome interno; para quem usa, é a Ação.
+ */
 const JOURNEY_STEPS = [
   {
-    key: 'panorama',
-    num: '00',
-    label: 'Panorama',
-    sublabel: 'A história em 1 minuto',
-    icon: LayoutDashboard,
-    tab: 'analise' as const,
-    sectionId: 'section-panorama',
-  },
-  {
-    key: 'veredito',
-    num: '01',
-    label: 'Veredito',
-    sublabel: 'Score e decisão',
+    key: 'decisao',
+    label: 'Decisão',
+    sublabel: 'Veredito, motivos e o que mudaria',
     icon: Target,
     tab: 'analise' as const,
-    sectionId: 'section-score',
+    sectionId: 'section-decisao',
   },
   {
-    key: 'criterios',
-    num: '02',
-    label: 'Critérios',
-    sublabel: 'Dados, critérios e score',
+    key: 'aderencia',
+    label: 'Aderência',
+    sublabel: 'Score, critérios e dados extraídos',
     icon: SlidersHorizontal,
     tab: 'analise' as const,
-    sectionId: 'section-criterios',
+    sectionId: 'section-aderencia',
   },
   {
-    key: 'analise',
-    num: '03',
-    label: 'SWOT & Riscos',
-    sublabel: 'Análise estratégica',
+    key: 'riscos',
+    label: 'Riscos',
+    sublabel: 'SWOT, irregularidades e parecer jurídico',
     icon: AlertTriangle,
     tab: 'analise' as const,
-    sectionId: 'section-analise',
+    sectionId: 'section-riscos',
   },
   {
-    key: 'juridico',
-    num: '04',
-    label: 'Jurídico',
-    sublabel: 'Parecer técnico',
-    icon: Scale,
-    tab: 'analise' as const,
-    sectionId: 'section-juridico',
-  },
-  {
-    key: 'concorrentes',
-    num: '05',
-    label: 'Concorrentes',
-    sublabel: 'Radar de mercado',
+    key: 'disputa',
+    label: 'Disputa',
+    sublabel: 'Concorrentes e inteligência de preço',
     icon: Radar,
     tab: 'concorrentes' as const,
     sectionId: null as string | null,
   },
   {
-    key: 'cockpit',
-    num: '06',
-    label: 'Cockpit',
-    sublabel: 'Plano de ação',
+    key: 'acao',
+    label: 'Ação',
+    sublabel: 'Prazos, plano de execução e documentos',
     icon: ClipboardList,
     tab: 'analise' as const,
-    sectionId: 'cockpit-pos-veredito',
+    sectionId: 'section-acao',
   },
 ] as const;
 
@@ -2830,7 +2829,7 @@ function buildJourneySummary(result: AnalysisResult, userTier: number): JourneyS
   const decision = normalizeDecision(result);
 
   const veredito: JourneySummaryItem = {
-    key: 'veredito',
+    key: 'decisao',
     status: decision.veredito === 'GO' ? 'ok' : decision.veredito === 'NO_GO' ? 'alerta' : 'atencao',
     headline: `${decision.rotulo} — score ${result.score}/100.`,
   };
@@ -2840,22 +2839,22 @@ function buildJourneySummary(result: AnalysisResult, userTier: number): JourneyS
   const { bloqueios, alertas: alertasParam, semStatus, semTrecho } = contagem;
   const criterios: JourneySummaryItem =
     params.length === 0
-      ? { key: 'criterios', status: 'pendente', headline: 'Nenhum critério personalizado avaliado nesta análise.' }
+      ? { key: 'aderencia', status: 'pendente', headline: 'Nenhum critério personalizado avaliado nesta análise.' }
       : bloqueios.length > 0
-        ? { key: 'criterios', status: 'alerta', headline: `${bloqueios.length} critério(s) não atende(m) — ${bloqueios[0].nome}.` }
+        ? { key: 'aderencia', status: 'alerta', headline: `${bloqueios.length} critério(s) não atende(m) — ${bloqueios[0].nome}.` }
         : alertasParam.length > 0
-          ? { key: 'criterios', status: 'atencao', headline: `${alertasParam.length} critério(s) em atenção — ${alertasParam[0].nome}.` }
+          ? { key: 'aderencia', status: 'atencao', headline: `${alertasParam.length} critério(s) em atenção — ${alertasParam[0].nome}.` }
           // ⚠️ ANTES ESTE ERA O `else` FINAL: qualquer critério que não fosse
           // bloqueio nem alerta caía aqui e virava "Todos … são atendidos".
           // Status irreconhecível e "atende sem citação do edital" entravam
           // na frase como se tivessem sido conferidos.
           : semStatus.length > 0
-            ? { key: 'criterios', status: 'atencao', headline: `${semStatus.length} critério(s) sem avaliação legível — ${semStatus[0].nome}.` }
+            ? { key: 'aderencia', status: 'atencao', headline: `${semStatus.length} critério(s) sem avaliação legível — ${semStatus[0].nome}.` }
             : semTrecho.length > 0
-              ? { key: 'criterios', status: 'atencao', headline: `Critérios atendidos, mas ${semTrecho.length} sem trecho do edital que comprove.` }
+              ? { key: 'aderencia', status: 'atencao', headline: `Critérios atendidos, mas ${semTrecho.length} sem trecho do edital que comprove.` }
               : todosOsCriteriosAtendidos(contagem)
-                ? { key: 'criterios', status: 'ok', headline: 'Todos os critérios configurados são atendidos.' }
-                : { key: 'criterios', status: 'pendente', headline: 'Critérios configurados sem resultado legível nesta análise.' };
+                ? { key: 'aderencia', status: 'ok', headline: 'Todos os critérios configurados são atendidos.' }
+                : { key: 'aderencia', status: 'pendente', headline: 'Critérios configurados sem resultado legível nesta análise.' };
 
   const riscos = result.risks || [];
   const riscosAltos = riscos.filter(r => r.impacto === 'alto');
@@ -2863,82 +2862,56 @@ function buildJourneySummary(result: AnalysisResult, userTier: number): JourneyS
   const flagsAltas = flags.filter(f => f.gravidade === 'alta');
   const analise: JourneySummaryItem =
     riscosAltos.length > 0
-      ? { key: 'analise', status: 'alerta', headline: `${riscosAltos.length} risco(s) alto(s) — ${riscosAltos[0].titulo}.` }
+      ? { key: 'riscos', status: 'alerta', headline: `${riscosAltos.length} risco(s) alto(s) — ${riscosAltos[0].titulo}.` }
       : flagsAltas.length > 0
-        ? { key: 'analise', status: 'alerta', headline: `${flagsAltas.length} red flag(s) de gravidade alta identificada(s).` }
+        ? { key: 'riscos', status: 'alerta', headline: `${flagsAltas.length} red flag(s) de gravidade alta identificada(s).` }
         : (riscos.length > 0 || flags.length > 0)
-          ? { key: 'analise', status: 'atencao', headline: 'Riscos e pontos de atenção mapeados, nenhum de gravidade alta.' }
-          : { key: 'analise', status: 'ok', headline: 'Nenhum risco relevante identificado.' };
+          ? { key: 'riscos', status: 'atencao', headline: 'Riscos e pontos de atenção mapeados, nenhum de gravidade alta.' }
+          : { key: 'riscos', status: 'ok', headline: 'Nenhum risco relevante identificado.' };
 
+  /* ⚠️ "JURÍDICO" DEIXOU DE SER UMA LINHA À PARTE.
+     Cláusula potencialmente abusiva é um risco, e era esquisito lê-la numa
+     etapa separada da matriz de riscos — a pessoa tinha de juntar as duas
+     metades da mesma conversa. A linha do jurídico passa a somar-se à de
+     riscos, e o pior estado dos dois é o que a aba mostra. */
   const abusivas = flags.filter(f => classifyRedFlag(f).kind === 'abusividade');
   const statusParecer = statusDoParecer(result, userTier);
-  const juridico: JourneySummaryItem =
+  const riscosComJuridico: JourneySummaryItem =
     abusivas.length > 0
-      ? { key: 'juridico', status: 'alerta', headline: `${abusivas.length} cláusula(s) potencialmente abusiva(s) identificada(s).` }
-      : statusParecer === 'presente'
-        ? { key: 'juridico', status: 'ok', headline: 'Parecer jurídico sem apontamentos críticos.' }
-        : statusParecer === 'fora_do_plano'
-          ? { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não está incluído no seu plano.' }
-          : { key: 'juridico', status: 'pendente', headline: 'Parecer jurídico não gerado nesta análise.' };
+      ? { key: 'riscos', status: 'alerta', headline: `${abusivas.length} cláusula(s) potencialmente abusiva(s) — além de ${analise.headline.charAt(0).toLowerCase()}${analise.headline.slice(1)}` }
+      : analise.status === 'alerta' || analise.status === 'atencao'
+        ? analise
+        : statusParecer === 'presente'
+          ? { key: 'riscos', status: analise.status, headline: `${analise.headline} Parecer jurídico sem apontamentos críticos.` }
+          : statusParecer === 'fora_do_plano'
+            ? { key: 'riscos', status: analise.status, headline: `${analise.headline} O parecer jurídico não está incluído no seu plano.` }
+            : { key: 'riscos', status: analise.status, headline: `${analise.headline} Parecer jurídico não gerado nesta análise.` };
 
   const totalConcorrentes = (result.concorrentes_provaveis?.length || 0) + (result.concorrentes_regionais?.length || 0);
   const nivelAmeaca = result.pricing_intelligence?.nivelAmeaca;
   const concorrentes: JourneySummaryItem = nivelAmeaca
     ? {
-        key: 'concorrentes',
+        key: 'disputa',
         status: /alt/i.test(nivelAmeaca) ? 'alerta' : /m[ée]d/i.test(nivelAmeaca) ? 'atencao' : 'ok',
         headline: `Concorrência ${nivelAmeaca.toLowerCase()}${totalConcorrentes ? ` — ${totalConcorrentes} concorrente(s) mapeado(s)` : ''}.`,
       }
     : totalConcorrentes > 0
-      ? { key: 'concorrentes', status: 'atencao', headline: `${totalConcorrentes} concorrente(s) mapeado(s) na região.` }
-      : { key: 'concorrentes', status: 'pendente', headline: 'Nenhum concorrente identificado ainda.' };
+      ? { key: 'disputa', status: 'atencao', headline: `${totalConcorrentes} concorrente(s) mapeado(s) na região.` }
+      : { key: 'disputa', status: 'pendente', headline: 'Nenhum concorrente identificado ainda.' };
 
   const acoes = decision.proximas_acoes;
   const cockpit: JourneySummaryItem =
     acoes.length > 0
-      ? { key: 'cockpit', status: 'pendente', headline: `${acoes.length} tarefa(s) a fazer — próxima: ${acoes[0].acao}.` }
-      : { key: 'cockpit', status: 'pendente', headline: 'Nenhuma ação registrada no plano.' };
+      ? { key: 'acao', status: 'pendente', headline: `${acoes.length} tarefa(s) a fazer — próxima: ${acoes[0].acao}.` }
+      : { key: 'acao', status: 'pendente', headline: 'Nenhuma ação registrada no plano.' };
 
-  return [veredito, criterios, analise, juridico, concorrentes, cockpit];
+  return [veredito, criterios, riscosComJuridico, concorrentes, cockpit];
 }
 
-function JourneySummary({
-  result,
-  userTier,
-  onStepClick,
-}: {
-  result: AnalysisResult;
-  userTier: number;
-  onStepClick: (step: JourneyStepType) => void;
-}) {
-  const decision = normalizeDecision(result);
-  const verdict = decisionUi[decision.veredito];
-  const verdictStep = JOURNEY_STEPS.find((s) => s.key === 'veredito')!;
-
-  // Só o veredito aqui — a lista das outras 5 etapas foi absorvida por
-  // EscopoAnaliseSection (mais abaixo), que cobre o mesmo território já
-  // agrupado por etapa e em mais detalhe. Duas listas de status uma embaixo
-  // da outra repetiam a mesma informação em granularidades diferentes.
-  return (
-    <button
-      type="button"
-      onClick={() => onStepClick(verdictStep)}
-      className={`mb-6 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-5 text-left transition-transform hover:-translate-y-0.5 print:hidden ${verdict.summary}`}
-    >
-      <div className="min-w-0">
-        <p className={`text-[10px] font-black uppercase tracking-widest ${verdict.text}`}>Veredito executivo</p>
-        <p className="mt-1.5 text-xl font-black leading-snug text-slate-950 md:text-2xl">{decision.rotulo}</p>
-      </div>
-      <div className="flex shrink-0 items-center gap-3">
-        <div className="text-right">
-          <p className={`text-3xl font-black leading-none ${verdict.text}`}>{result.score}</p>
-          <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-slate-400">score / 100</p>
-        </div>
-        <ChevronRight size={18} className="text-slate-400" />
-      </div>
-    </button>
-  );
-}
+/* ⚠️ `JourneySummary` FOI REMOVIDA. Era um cartão clicável que repetia o
+   veredito e o score no topo do Panorama — a PRIMEIRA das três renderizações
+   do mesmo dado. Com `VereditoTopo` acima das abas, ela passou a ser a mesma
+   frase duas vezes na mesma dobra. */
 
 // ─── Escopo da análise: "log de trabalho" da IA ──────────────────────────────
 // Todas as frentes que rodaram para chegar ao veredito, com o motivo de cada
@@ -2997,7 +2970,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     detail: result.qualidade_extracao?.campos_faltantes?.length
       ? [`Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`]
       : undefined,
-    stepKey: 'criterios',
+    stepKey: 'aderencia',
   });
 
   // 3. Composição do score
@@ -3010,7 +2983,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     headline: scoreItens.length === 0
       ? `Score de ${result.score}/100 calculado sem detalhamento de fatores nesta análise.`
       : `${scoreItens.length} fator(es) somaram ou subtraíram pontos a partir de 100, chegando a ${result.score}/100.`,
-    stepKey: 'criterios',
+    stepKey: 'aderencia',
   });
 
   // 4. Critérios personalizados
@@ -3039,7 +3012,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     headline: params.length === 0
       ? 'Nenhum critério personalizado configurado (ative em Parametrização, no menu).'
       : `${params.length} critério(s) avaliado(s) — ${partesContagem.join(', ')}.`,
-    stepKey: 'criterios',
+    stepKey: 'aderencia',
   });
 
   // 5. SWOT / carga operacional
@@ -3056,7 +3029,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     headline: hasSwot
       ? `${vantagens.length} vantagem(ns), ${desvantagens.length} barreira(s) e ${oportunidades.length} oportunidade(s) mapeada(s).`
       : 'Não disponível nesta análise.',
-    stepKey: 'analise',
+    stepKey: 'riscos',
   });
 
   // 6. Matriz de riscos
@@ -3072,7 +3045,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
       : risks.length === 0
         ? 'Nenhum risco relevante identificado.'
         : `${risks.length} risco(s) mapeado(s) (${riscosAltos} de impacto alto).`,
-    stepKey: 'analise',
+    stepKey: 'riscos',
   });
 
   // 7. Red flags (varredura de irregularidades)
@@ -3088,7 +3061,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
       : flags.length === 0
         ? 'Varredura concluída — nenhum indício de direcionamento, restrição ou cláusula abusiva.'
         : `${flags.length} achado(s) (${flagsAltas} de gravidade alta) — direcionamento, restrição ou lacunas de informação.`,
-    stepKey: 'analise',
+    stepKey: 'riscos',
   });
 
   // 8. Checklist de habilitação
@@ -3112,7 +3085,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
       : semCriticidade > 0
         ? `${habilitacao.length} exigência(s) mapeada(s) — ${eliminatorias} eliminatória(s) e ${semCriticidade} sem criticidade classificada.`
         : `${habilitacao.length} exigência(s) mapeada(s) por categoria (${eliminatorias} eliminatória(s)).`,
-    stepKey: 'analise',
+    stepKey: 'riscos',
   });
 
   // 9. Matriz de risco formal (condicional — só grande vulto/contratação integrada)
@@ -3123,7 +3096,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
       label: 'Matriz de Risco Formal',
       status: 'ok',
       headline: `${result.matriz_risco_formal.itens.length} risco(s) formalmente alocado(s) entre contratante e contratada (Lei 14.133, art. 6º, XXVII).`,
-      stepKey: 'analise',
+      stepKey: 'riscos',
     });
   }
 
@@ -3144,7 +3117,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
         : statusParecerEscopo === 'fora_do_plano'
           ? 'Não incluído no seu plano — o Agente Jurídico roda a partir do Profissional.'
           : 'Parecer jurídico não gerado nesta análise.',
-    stepKey: 'juridico',
+    stepKey: 'riscos',
   });
 
   // 11. Aderência ao negócio (CNAE)
@@ -3160,7 +3133,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
         : businessFit.status === 'sem_match' ? 'alerta'
         : 'pendente',
       headline: businessFit.label,
-      stepKey: 'veredito',
+      stepKey: 'decisao',
     });
   }
 
@@ -3183,7 +3156,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
         ? 'alerta'
         : result.programa_integridade_obrigatorio?.exigido ? 'atencao' : 'ok',
       headline: `${partes.join(' · ')}.`,
-      stepKey: 'veredito',
+      stepKey: 'decisao',
     });
   }
 
@@ -3200,7 +3173,7 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     headline: totalConcorrentes > 0
       ? `${totalConcorrentes} concorrente(s) mapeado(s)${nivelAmeaca ? ` — ameaça ${nivelAmeaca.toLowerCase()}` : ''}.`
       : 'Nenhum concorrente mapeado ainda (recurso Nível 2+).',
-    stepKey: 'concorrentes',
+    stepKey: 'disputa',
   });
 
   return rows;
@@ -3237,9 +3210,9 @@ function EscopoAnaliseSection({
       <div className="mt-4 space-y-5">
         {grouped.map(({ step, items }) => (
           <div key={step.key}>
-            <p className="mb-2 flex items-center gap-1.5 px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
               <step.icon size={12} />
-              {step.num} · {step.label}
+              {step.label}
             </p>
             <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
               {items.map((row) => {
@@ -3257,7 +3230,7 @@ function EscopoAnaliseSection({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-bold text-slate-800">{row.label}</span>
-                          <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${cfg.text}`}>
+                          <span className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${cfg.text}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
                             {cfg.label}
                           </span>
@@ -3287,7 +3260,7 @@ function EscopoAnaliseSection({
             <button
               type="button"
               onClick={() => onStepClick(step)}
-              className="mt-2 text-[11px] font-black text-slate-700 underline underline-offset-2 hover:text-slate-950"
+              className="mt-2 text-[11px] font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-950"
             >
               Ver {step.label.toLowerCase()} completo →
             </button>
@@ -3298,43 +3271,9 @@ function EscopoAnaliseSection({
   );
 }
 
-// ─── Barra persistente: score, veredito e aderência ao CNAE ──────────────────
-// Único lugar "canônico" para esses 3 dados — antes o score aparecia em até 4
-// formatos diferentes (hero do Panorama, card do Veredito, gauge do
-// ScoreHeader, resumo do CollapsibleScoreBreakdown) e a aderência ao CNAE em
-// pelo menos 2. Fica visível em qualquer etapa, sempre no mesmo lugar.
-function PersistentSummaryBar({ result }: { result: AnalysisResult }) {
-  const decision = normalizeDecision(result);
-  const verdict = decisionUi[decision.veredito];
-  const businessFit = normalizeBusinessFit(result);
-
-  return (
-    <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 print:hidden">
-      <div className="flex items-center gap-2">
-        <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest ${verdict.pill}`}>
-          {decision.veredito.replace('_', ' ')}
-        </span>
-        <span className="hidden text-xs font-bold text-slate-600 sm:inline">{decision.rotulo}</span>
-      </div>
-
-      <div className="hidden h-4 w-px bg-slate-300 sm:block" />
-
-      <div className="flex items-center gap-1.5">
-        <span className={`text-sm font-black leading-none ${verdict.text}`}>{result.score}</span>
-        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Viabilidade</span>
-      </div>
-
-      {businessFit && (
-        <>
-          <div className="hidden h-4 w-px bg-slate-300 sm:block" />
-          <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${businessFit.shell} ${businessFit.text}`}>
-            {businessFit.score == null ? 'Match CNAE não medido' : `Match CNAE ${businessFit.score}/100`}
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
+/* ⚠️ `PersistentSummaryBar` FOI REMOVIDA — ver o comentário no corpo do
+   componente principal. Era a terceira cópia do veredito, e existia só porque
+   o veredito não estava fixo no topo. */
 
 function JourneyStepNav({
   activeStep,
@@ -3348,119 +3287,160 @@ function JourneyStepNav({
   userTier: number;
 }) {
   const isLocked = (step: JourneyStepType) =>
-    step.key === 'concorrentes' && Math.max(getCachedTier(userTier), currentTier) < 2;
+    step.key === 'disputa' && Math.max(getCachedTier(userTier), currentTier) < 2;
 
-  const activeIndex = Math.max(0, JOURNEY_STEPS.findIndex((s) => s.key === activeStep));
-  const progressPct = JOURNEY_STEPS.length > 1 ? (activeIndex / (JOURNEY_STEPS.length - 1)) * 100 : 0;
+  /* ⚠️ O SELO DE PLANO SUPERIOR ERA UMA COROA DE 7px, e o próprio código
+     admitia por escrito ser "mira difícil para o mouse e impossível no toque".
+     Ele media 7px porque tinha de caber pendurado fora de um nó circular
+     dentro de um contentor com rolagem horizontal, que o recortava. Sem a
+     trilha e sem os nós, o aviso pode ser o que sempre devia ter sido: a
+     palavra, legível, dentro do próprio botão. */
+  return (
+    <nav className="mb-8 border-b border-slate-200 print:hidden" aria-label="Secções do laudo">
+      <div className="-mb-px flex flex-wrap items-end gap-x-1">
+        {JOURNEY_STEPS.map((step) => {
+          const Icon = step.icon;
+          const isActive = activeStep === step.key;
+          const locked = isLocked(step);
+
+          return (
+            <button
+              key={step.key}
+              type="button"
+              onClick={() => onStepClick(step)}
+              aria-current={isActive ? 'page' : undefined}
+              title={
+                locked
+                  ? `${step.label}: disponível no plano Essencial ou superior. Faça upgrade para desbloquear o radar de concorrentes.`
+                  : `${step.label} — ${step.sublabel}`
+              }
+              className={`group flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm transition-colors ${
+                isActive
+                  ? 'border-slate-900 font-semibold text-slate-900'
+                  : 'border-transparent font-medium text-slate-500 hover:border-slate-300 hover:text-slate-900'
+              }`}
+            >
+              <Icon
+                size={15}
+                className={isActive ? 'text-slate-900' : 'text-slate-400 group-hover:text-slate-600'}
+              />
+              {step.label}
+              {locked && (
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500 ring-1 ring-slate-200">
+                  Nível 2
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+// ─── Identidade e veredito: os dois primeiros blocos do laudo ───────────────
+
+/** Como este edital se chama para quem o abriu: número no PNCP e órgão
+ *  comprador. Devolve `null` quando o documento não identifica nem um nem
+ *  outro — caso em que a chamada mostra a frase honesta em vez de um vazio. */
+function identidadeDoEdital(result: AnalysisResult): string | null {
+  const partes: string[] = [];
+  const ref = result.pncp_ref;
+  const seq = ref?.sequencial || result.pncp_sequencial;
+  const ano = ref?.ano || result.pncp_ano;
+  if (seq && ano) partes.push(`PNCP ${seq}/${ano}`);
+  if (result.orgao_nome) partes.push(result.orgao_nome);
+  const uf = result.uf || result.estado;
+  if (uf && result.orgao_nome) partes.push(uf);
+  return partes.length ? partes.join(' · ') : null;
+}
+
+/** A resposta, em uma frase, na dobra.
+ *
+ *  ⚠️ Antes o veredito era renderizado em TRÊS sítios com formatos diferentes
+ *  — `JourneySummary` (cartão clicável), `PersistentSummaryBar` (faixa com
+ *  pílula) e `DecisionSnapshot` (bloco completo) — e nenhum deles aparecia
+ *  antes dos 400px. Os dois primeiros deixaram de existir: com o veredito
+ *  fixo no topo de todas as abas, repeti-lo era dizer a mesma coisa três
+ *  vezes antes de qualquer conteúdo novo. */
+function VereditoTopo({ result }: { result: AnalysisResult }) {
+  const decision = normalizeDecision(result);
+  const verdict = decisionUi[decision.veredito];
+
+  // O "porquê" mais afiado depende do veredito: num No-Go é o impeditivo que
+  // fecha a porta; num condicionado é a condição que falta cumprir; num GO é
+  // o motivo que sustenta. Cair no resumo só quando nenhum dos três existe.
+  const porque =
+    (decision.veredito === 'NO_GO' ? decision.impeditivos[0] : '') ||
+    (decision.veredito === 'GO_CONDICIONADO' ? decision.condicoes_para_participar[0] : '') ||
+    decision.motivos[0] ||
+    decision.resumo_decisao ||
+    decision.decisao_executiva ||
+    '';
+
+  const score = typeof result.score === 'number' ? result.score : null;
+  const pct = score == null ? 0 : Math.max(0, Math.min(100, score));
 
   return (
-    <div className="mb-8 print:hidden">
-      {/* Header */}
-      <div className="mb-5 flex items-center gap-3 px-1">
-        <span className="shrink-0 text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-          Jornada de análise
-        </span>
-        <div className="h-px flex-1 bg-gradient-to-r from-slate-200 to-transparent" />
-        <span className="text-[9px] font-medium text-slate-400">
-          Passo {activeIndex + 1} de {JOURNEY_STEPS.length}
-        </span>
+    <div className={`flex flex-wrap items-start gap-x-8 gap-y-4 border-l-4 pl-5 ${verdict.rail}`}>
+      <div className="min-w-0 flex-1">
+        <p className={`text-[28px] font-semibold leading-[1.05] tracking-tight md:text-[34px] ${verdict.text}`}>
+          {verdict.rotuloCurto}
+        </p>
+        {porque && (
+          <p className="mt-2 max-w-[52ch] text-sm font-medium leading-relaxed text-slate-700">
+            {porque}
+          </p>
+        )}
       </div>
 
-      {/* Trilha: nós conectados por uma linha — só a etapa ativa ganha cor,
-          as demais ficam neutras para não competir com o veredito abaixo.
-
-          ⚠️ pt-3 / px-1 aqui NÃO são estética — são o conserto do selo de
-          bloqueio aparecendo cortado.
-          A coroa do tier superior fica em `-top-1.5 -right-1.5`, ou seja, para
-          FORA do nó. Este contêiner tinha apenas `overflow-x-auto`, e pela
-          especificação do CSS, quando um eixo é `auto` e o outro fica
-          `visible`, o `visible` passa a computar como `auto` — o transbordo
-          vertical vira recorte. Resultado: a coroa era decepada pela borda
-          superior da área de rolagem, e no último passo também pela direita.
-          Não adianta forçar `overflow-y: visible` (o navegador ignora); a saída
-          é dar folga interna para o selo caber dentro da caixa. */}
-      <div className="overflow-x-auto px-1 pb-2 pt-3">
-        <div className="relative min-w-[720px] px-4">
-          <div className="pointer-events-none absolute left-9 right-9 top-6 h-0.5 bg-slate-200" />
-          <div
-            className="pointer-events-none absolute left-9 top-6 h-0.5 bg-slate-900 transition-all duration-500"
-            style={{ width: `calc((100% - 2.25rem) * ${progressPct / 100})` }}
-          />
-
-          <div className="relative grid grid-cols-7 gap-1">
-            {JOURNEY_STEPS.map((step) => {
-              const Icon = step.icon;
-              const isActive = activeStep === step.key;
-              const locked = isLocked(step);
-
-              return (
-                <button
-                  key={step.key}
-                  type="button"
-                  onClick={() => onStepClick(step)}
-                  // A coroa tem 7px — mira difícil para o mouse e impossível no
-                  // toque. O mesmo aviso vai no botão inteiro para que passar
-                  // sobre qualquer parte da etapa bloqueada já explique o
-                  // cadeado, em vez de exigir acerto no selo.
-                  title={
-                    locked
-                      ? `${step.label}: disponível no plano Essencial ou superior. Faça upgrade para desbloquear o radar de concorrentes.`
-                      : `${step.num} · ${step.label} — ${step.sublabel}`
-                  }
-                  className="group relative flex flex-col items-center gap-2 rounded-xl px-1 py-1 text-center transition-transform hover:-translate-y-0.5"
-                >
-                  {/* Nó */}
-                  <div
-                    className={`relative z-10 flex items-center justify-center rounded-full transition-all ${
-                      isActive
-                        ? 'h-12 w-12 bg-slate-900 shadow-lg shadow-slate-900/20 ring-4 ring-white'
-                        : 'h-10 w-10 border border-slate-200 bg-white text-slate-400 group-hover:border-slate-300 group-hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon size={isActive ? 20 : 16} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'} />
-                    {locked && (
-                      <span
-                        // ⚠️ `title` nativo em vez de tooltip estilizado, e a
-                        // razão é a mesma que cortava a coroa: este nó vive
-                        // dentro de um contêiner com overflow-x-auto, que
-                        // recorta o transbordo vertical. Um balão posicionado
-                        // acima do selo seria decepado igual, e resolver isso
-                        // exigiria portal ou posicionamento fixo — complexidade
-                        // desproporcional para um rótulo de uma linha. O title
-                        // é renderizado pelo navegador fora do fluxo, nunca é
-                        // recortado, funciona com teclado e leitor de tela, e é
-                        // o mesmo padrão já usado nos botões do Radar.
-                        title={`${step.label}: disponível no plano Essencial ou superior. Faça upgrade para desbloquear o radar de concorrentes.`}
-                        aria-label="Recurso de plano superior"
-                        className="absolute -right-1.5 -top-1.5 flex cursor-help items-center gap-0.5 rounded-full bg-amber-400 px-1.5 py-0.5 text-[7px] font-black text-white shadow-sm"
-                      >
-                        <Crown size={7} />
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Texto */}
-                  <div className="flex flex-col gap-0.5">
-                    <span className={`whitespace-nowrap text-[11px] leading-tight ${
-                      isActive ? 'font-black text-slate-900' : 'font-bold text-slate-500 group-hover:text-slate-700'
-                    }`}>
-                      {step.num} · {step.label}
-                    </span>
-                    <span className={`whitespace-nowrap text-[9px] font-medium leading-tight transition-opacity ${
-                      isActive ? 'text-slate-400 opacity-100' : 'text-slate-300 opacity-0 group-hover:opacity-100'
-                    }`}>
-                      {step.sublabel}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+      {/* ⚠️ O NÚMERO É NEUTRO DE PROPÓSITO. Ele já teve cor própria, calculada
+          por `getScoreColor` a partir de cortes que não eram os do veredito —
+          era exatamente daí que vinha o laudo âmbar com pílula vermelha. */}
+      {score != null && (
+        <div className="shrink-0">
+          <p className="text-2xl font-semibold leading-none tabular-nums text-slate-900">
+            {score}
+            <span className="text-sm font-medium text-slate-400">/100</span>
+          </p>
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+            Viabilidade
+          </p>
+          <div className="mt-2 h-1 w-24 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-slate-900" style={{ width: `${pct}%` }} />
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
+/* ─── HIERARQUIA TIPOGRÁFICA: TRÊS NÍVEIS, E SÓ TRÊS ──────────────────────
+ *
+ * ⚠️ ESTE FICHEIRO TINHA 113 ETIQUETAS ESCRITAS
+ *     `text-[10px] font-black uppercase tracking-widest`
+ * — o mesmo peso, o mesmo tamanho e a mesma caixa alta para tudo. Dentro do
+ * `DecisionSnapshot` chegavam a aparecer nove iguais em sequência. Quando
+ * tudo grita no mesmo tom não existe nível baixo, e o olho não sabe onde
+ * parar; foi por isso que três mosaicos numéricos do mesmo tamanho (Score,
+ * Confiança, Cobertura) precisaram de um `<details>` a explicar a confusão
+ * que o próprio layout criava.
+ *
+ *   NÍVEL 1 · título de secção
+ *       text-[15px] font-semibold tracking-tight text-slate-900
+ *       Sem caixa alta. É `SectionLabel` e os títulos de `ChapterDivider`.
+ *
+ *   NÍVEL 2 · etiqueta de campo — O ÚNICO NÍVEL EM CAIXA ALTA
+ *       text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500
+ *
+ *   NÍVEL 3 · procedência, citação, nota de rodapé
+ *       text-[11px] font-medium text-slate-400  (ou `font-mono` quando é
+ *       referência ao edital: "item 9.4.1, fl. 12")
+ *
+ * REGRA QUE IMPEDE A RECAÍDA: nunca dois rótulos de nível 2 adjacentes. Se
+ * dois campos precisam de etiqueta lado a lado, ou viram uma linha de dados
+ * (chave à esquerda, valor à direita) ou um deles não precisava de etiqueta.
+ */
 
 // ─── Label de secção reutilizável ─────────────────────────────────────────────
 
@@ -3468,7 +3448,7 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
   return (
     <div className="absolute top-0 left-6 -translate-y-1/2 bg-white px-3 flex items-center gap-2">
       {icon}
-      <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">{label}</h3>
+      <h3 className="text-[15px] font-semibold tracking-tight text-slate-900">{label}</h3>
     </div>
   );
 }
@@ -3479,11 +3459,38 @@ function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string })
 function ChapterDivider({ index, title }: { index: number; title: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-        {index} · {title}
+      <span className="shrink-0 text-[13px] font-semibold tracking-tight text-slate-700">
+        <span className="tabular-nums text-slate-400">{index}</span> {title}
       </span>
       <div className="h-px flex-1 bg-slate-200" />
     </div>
+  );
+}
+
+/* ─── Capítulos de uma aba ────────────────────────────────────────────────
+ *
+ * ⚠️ NUMERAR À MÃO QUEBRA A NUMERAÇÃO. Os capítulos eram escritos com
+ * `index={1}`, `index={2}`, `index={3}` fixos, mas cada um só aparece se o
+ * laudo trouxer o dado — e um laudo sem ficha técnica exibia "2 · Critérios
+ * aplicados" logo abaixo das abas, sem 1 nenhum. O leitor lê isso como
+ * "faltou carregar alguma coisa".
+ *
+ * Aqui a aba declara os capítulos que PODE ter, cada um com a condição de
+ * existir, e a numeração é atribuída depois da filtragem. Nunca há buraco.
+ */
+type Capitulo = { titulo: string; quando?: boolean; conteudo: React.ReactNode };
+
+function Capitulos({ itens }: { itens: Capitulo[] }) {
+  const vivos = itens.filter((c) => c.quando !== false);
+  return (
+    <>
+      {vivos.map((c, i) => (
+        <section key={c.titulo} className="space-y-4">
+          <ChapterDivider index={i + 1} title={c.titulo} />
+          {c.conteudo}
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -3543,14 +3550,14 @@ function Timeline({ items, dense }: { items: TimelineItemData[]; dense?: boolean
               <div className="min-w-0 flex-1 pb-0.5">
                 <div className="flex flex-wrap items-center gap-2">
                   {item.eyebrow && (
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{item.eyebrow}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">{item.eyebrow}</span>
                   )}
                   {item.badge && (
-                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${TIMELINE_BADGE_TONE[item.badge.tone]}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${TIMELINE_BADGE_TONE[item.badge.tone]}`}>
                       {item.badge.label}
                     </span>
                   )}
-                  {item.meta && <span className="ml-auto shrink-0 text-xs font-black text-slate-700">{item.meta}</span>}
+                  {item.meta && <span className="ml-auto shrink-0 text-xs font-semibold text-slate-700">{item.meta}</span>}
                 </div>
                 <p className="text-sm font-semibold leading-relaxed text-slate-800">{item.title}</p>
                 {item.description && (
@@ -3597,8 +3604,8 @@ function StepHeadline({
   return (
     <div className="mb-8">
       <div className={`rounded-2xl border px-5 py-5 ${HEADLINE_SHELL_TONE[tone]}`}>
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{eyebrow}</p>
-        <p className="mt-1.5 text-base font-black leading-snug text-slate-900">{headline}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">{eyebrow}</p>
+        <p className="mt-1.5 text-base font-semibold leading-snug text-slate-900">{headline}</p>
         {sub && <p className="mt-1.5 text-sm font-semibold text-slate-600">{sub}</p>}
       </div>
       {/* Entrar nesta etapa já É pedir o detalhe — antes o conteúdo ficava
@@ -3652,13 +3659,13 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
     <div className="flex items-center gap-4 bg-slate-900 border border-slate-700 rounded-2xl px-5 py-3.5">
       <CalendarX size={20} className="shrink-0 text-slate-400" />
       <div className="flex-1 min-w-0">
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Edital encerrado</span>
+        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.09em]">Edital encerrado</span>
         <p className="text-sm font-medium text-slate-300 leading-snug mt-0.5">
           A <strong className="text-white">{dataExpirada.label}</strong> ocorreu em <strong className="text-white">{formatted}</strong>.{' '}
           <span className="text-slate-400">Análise disponível apenas para referência e estudo de mercado.</span>
         </p>
       </div>
-      <span className="shrink-0 text-[9px] font-black uppercase tracking-widest bg-slate-800 border border-slate-700 text-slate-400 px-2.5 py-1 rounded-full">
+      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] bg-slate-800 border border-slate-700 text-slate-400 px-2.5 py-1 rounded-full">
         Histórico
       </span>
     </div>
@@ -3691,7 +3698,7 @@ function QaFalhouBanner({ result }: { result: AnalysisResult }) {
         <AlertTriangle size={18} />
       </div>
       <div className="min-w-0 flex-1">
-        <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700">
           Laudo preliminar · validação automática não executada
         </span>
         <p className="mt-0.5 text-sm font-medium leading-snug text-amber-900">
@@ -3718,7 +3725,7 @@ function MeEppImpeditivoBanner({ result }: { result: AnalysisResult }) {
           <ShieldAlert size={18} />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Possível impeditivo · ME/EPP</span>
+          <span className="text-[10px] font-semibold text-rose-500 uppercase tracking-[0.09em]">Possível impeditivo · ME/EPP</span>
           <p className="text-sm font-medium text-rose-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
         </div>
       </div>
@@ -3733,7 +3740,7 @@ function MeEppImpeditivoBanner({ result }: { result: AnalysisResult }) {
           <ShieldAlert size={18} />
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] font-black text-sky-600 uppercase tracking-widest">Cota reservada · ME/EPP</span>
+          <span className="text-[10px] font-semibold text-sky-600 uppercase tracking-[0.09em]">Cota reservada · ME/EPP</span>
           <p className="text-sm font-medium text-sky-900 leading-snug mt-0.5">{elegibilidade.mensagem}</p>
         </div>
       </div>
@@ -3757,22 +3764,24 @@ function ScoreHeader({ result }: { result: AnalysisResult }) {
             <circle cx="50" cy="50" r="42" className="stroke-slate-200" strokeWidth="6" fill="none" />
             <circle
               cx="50" cy="50" r="42"
-              className={`transition-all duration-1000 ease-out ${isExpired ? 'stroke-slate-400' : result.score >= 70 ? 'stroke-emerald-500' : result.score >= 45 ? 'stroke-amber-500' : 'stroke-red-500'}`}
+              // Neutro de propósito: o score é uma das entradas da decisão,
+              // não a decisão. Quem carrega a cor é o veredito, no topo.
+              className={`transition-all duration-1000 ease-out ${isExpired ? 'stroke-slate-300' : 'stroke-slate-900'}`}
               strokeWidth="6" fill="none" strokeLinecap="round"
               style={{ strokeDasharray: 264, strokeDashoffset: 264 - (264 * result.score) / 100 }}
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={`text-4xl font-black tracking-tighter leading-none ${isExpired ? 'text-slate-400' : 'text-slate-900'}`}>
+            <span className={`text-4xl font-semibold tracking-tighter leading-none ${isExpired ? 'text-slate-400' : 'text-slate-900'}`}>
               {result.score}
             </span>
           </div>
         </div>
         <div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Bawzi Score</p>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.09em] mb-1">Bawzi Score</p>
           {isExpired ? (
             <>
-              <h3 className="text-lg font-black uppercase tracking-widest text-slate-400">
+              <h3 className="text-lg font-semibold uppercase tracking-[0.09em] text-slate-400">
                 Referência histórica
               </h3>
               <p className="text-xs font-medium text-slate-400 mt-1 max-w-sm">
@@ -3781,7 +3790,7 @@ function ScoreHeader({ result }: { result: AnalysisResult }) {
             </>
           ) : (
             <>
-              <h3 className={`text-lg font-black uppercase tracking-widest ${getScoreColor(result.score)}`}>
+              <h3 className="text-lg font-semibold tracking-tight text-slate-900">
                 {result.classification}
               </h3>
               {result.pricing_intelligence?.financial_verdict && (
@@ -3815,7 +3824,7 @@ function DatasBlock({ result, isExpired = false }: { result: AnalysisResult; isE
           const urgenteAgora = !isPast && dataCriticaUrgente(dc.data_iso);
           return (
             <div key={i}>
-              <span className="block text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1">
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400 flex items-center gap-1">
                 {isPast
                   ? <CalendarX size={10} className="text-slate-400" />
                   : urgenteAgora ? <Zap size={10} className="text-red-500" /> : null
@@ -3844,8 +3853,8 @@ function DatasBlock({ result, isExpired = false }: { result: AnalysisResult; isE
   if (!propValida && !impValida) return null;
   return (
     <div className="flex flex-col gap-3 pl-0 md:pl-8 border-t md:border-t-0 md:border-l border-slate-200 w-full md:w-auto pt-6 md:pt-0">
-      {propValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Prazo de Propostas</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><CalendarDays size={14} className="text-slate-400 shrink-0" /> {propValida}</span></div>}
-      {impValida && <div><span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Limite Impugnação</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><AlertCircle size={14} className={isExpired ? 'text-slate-400' : 'text-red-500'} /> {impValida}</span></div>}
+      {propValida && <div><span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-[0.09em]">Prazo de Propostas</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><CalendarDays size={14} className="text-slate-400 shrink-0" /> {propValida}</span></div>}
+      {impValida && <div><span className="block text-[10px] font-semibold text-slate-400 uppercase tracking-[0.09em]">Limite Impugnação</span><span className={`text-sm font-bold flex items-center gap-1 ${isExpired ? 'text-slate-400 line-through' : 'text-slate-900'}`}><AlertCircle size={14} className={isExpired ? 'text-slate-400' : 'text-red-500'} /> {impValida}</span></div>}
     </div>
   );
 }
@@ -3876,12 +3885,12 @@ function SemaforoSection({ result }: { result: AnalysisResult }) {
               <div key={key} className={`${s.bg} ${s.border} border rounded-xl p-4 flex flex-col gap-2`}>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600">{icon}</span>
-                  <span className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest ${s.txt}`}>
+                  <span className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${s.txt}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
                     {s.lbl}
                   </span>
                 </div>
-                <p className="text-[10px] font-black text-slate-700 uppercase tracking-wider">{label}</p>
+                <p className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">{label}</p>
                 <p className="text-xs text-slate-600 font-medium leading-snug">{sinal.motivo}</p>
               </div>
             );
@@ -3891,7 +3900,7 @@ function SemaforoSection({ result }: { result: AnalysisResult }) {
         <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
           <Sparkles size={28} className="shrink-0 text-slate-400" />
           <div>
-            <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
+            <p className="text-sm font-semibold text-slate-700">Nova análise necessária</p>
             <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ativar o Semáforo de Viabilidade — avaliação automática nos eixos <strong>Técnica · Financeira · Jurídica · Documentação</strong>.</p>
           </div>
         </div>
@@ -3924,11 +3933,11 @@ function OrgaoContextoSection({ result }: { result: AnalysisResult }) {
         <div className={`rounded-2xl border ${tom.border} ${tom.bg} p-5`}>
           <div className="flex items-center gap-2">
             <Landmark size={16} className={tom.txt} />
-            <p className={`text-[10px] font-black uppercase tracking-widest ${tom.txt}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.09em] ${tom.txt}`}>
               CAPAG do órgão {capag.escopo === 'municipio' ? '(município)' : '(estado)'}
             </p>
           </div>
-          <p className={`mt-2 text-2xl font-black ${tom.txt}`}>{capag.classificacao}</p>
+          <p className={`mt-2 text-2xl font-semibold ${tom.txt}`}>{capag.classificacao}</p>
           <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{capag.descricao}</p>
           {/* A flag existia no backend e NENHUM componente a lia — a nota do
               estado era exibida como se fosse a da prefeitura compradora. */}
@@ -3946,9 +3955,9 @@ function OrgaoContextoSection({ result }: { result: AnalysisResult }) {
         <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
           <div className="flex items-center gap-2">
             <ShieldCheck size={16} className="text-sky-700" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Programa de integridade</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">Programa de integridade</p>
           </div>
-          <p className="mt-2 text-sm font-black text-sky-800">Exigido pela Lei 14.133/2021</p>
+          <p className="mt-2 text-sm font-semibold text-sky-800">Exigido pela Lei 14.133/2021</p>
           <p className="mt-1 text-xs font-medium leading-relaxed text-slate-600">{integridade.mensagem}</p>
           <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-sky-600">Prazo: {integridade.prazo}</p>
         </div>
@@ -3978,7 +3987,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
         <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
           <CalendarX size={28} className="shrink-0 text-slate-500" />
           <div>
-            <p className="text-sm font-black text-slate-700">Análise desatualizada</p>
+            <p className="text-sm font-semibold text-slate-700">Análise desatualizada</p>
             <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Esta análise foi gerada antes da atualização do cronograma. Execute uma nova análise para ativar os alertas de prazo automáticos.</p>
           </div>
         </div>
@@ -3986,7 +3995,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
         <div className="mt-4 flex items-center gap-4 bg-amber-50 border border-dashed border-amber-200 rounded-xl p-5">
           <SearchX size={28} className="shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-black text-amber-800">Datas não identificadas</p>
+            <p className="text-sm font-semibold text-amber-800">Datas não identificadas</p>
             <p className="text-xs text-amber-700 font-medium mt-0.5 leading-relaxed">O documento não continha datas de prazo explícitas. Consulte diretamente o edital para verificar os prazos de proposta e impugnação.</p>
           </div>
         </div>
@@ -4020,14 +4029,14 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
                                    'bg-slate-50 border-slate-100'
                   }`}>
                     <div className="flex items-center justify-between gap-2">
-                      <p className={`text-[10px] font-black uppercase tracking-widest ${
+                      <p className={`text-[11px] font-semibold uppercase tracking-[0.09em] ${
                         !date        ? 'text-slate-400' :
                         expirado     ? 'text-slate-400 line-through' :
                         urgenteFuturo? 'text-red-600' : 'text-slate-500'
                       }`}>{dc.label}</p>
-                      {expirado    && <span className="text-[9px] font-black uppercase tracking-widest bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">EXPIRADO</span>}
-                      {hoje        && <span className="text-[9px] font-black uppercase tracking-widest bg-red-600 text-white px-2 py-0.5 rounded-full">VENCE HOJE</span>}
-                      {urgenteFuturo && !hoje && <span className="text-[9px] font-black uppercase tracking-widest bg-red-500 text-white px-2 py-0.5 rounded-full">URGENTE</span>}
+                      {expirado    && <span className="text-[11px] font-semibold uppercase tracking-[0.09em] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">EXPIRADO</span>}
+                      {hoje        && <span className="text-[11px] font-semibold uppercase tracking-[0.09em] bg-red-600 text-white px-2 py-0.5 rounded-full">VENCE HOJE</span>}
+                      {urgenteFuturo && !hoje && <span className="text-[11px] font-semibold uppercase tracking-[0.09em] bg-red-500 text-white px-2 py-0.5 rounded-full">URGENTE</span>}
                     </div>
                     <p className={`text-sm font-bold mt-0.5 ${
                       !date    ? 'text-slate-400 italic' :
@@ -4048,7 +4057,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
         }`}>
           <Scale size={14} className={`mt-0.5 shrink-0 ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-600' : 'text-slate-500'}`} />
           <div>
-            <p className={`text-[10px] font-black uppercase tracking-widest ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-700' : 'text-slate-500'}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.09em] ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-700' : 'text-slate-500'}`}>
               Prazo de impugnação calculado (art. 164, I)
             </p>
             <p className={`text-xs font-medium leading-relaxed mt-0.5 ${result.prazo_impugnacao_calculado.origem === 'divergente' ? 'text-amber-900/90' : 'text-slate-600'}`}>
@@ -4065,7 +4074,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
         }`}>
           <Scale size={14} className={`mt-0.5 shrink-0 ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-600' : 'text-slate-500'}`} />
           <div>
-            <p className={`text-[10px] font-black uppercase tracking-widest ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-700' : 'text-slate-500'}`}>
+            <p className={`text-[11px] font-semibold uppercase tracking-[0.09em] ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-700' : 'text-slate-500'}`}>
               Validade da proposta (art. 90, §3º)
             </p>
             <p className={`text-xs font-medium leading-relaxed mt-0.5 ${result.validade_proposta_calculada.origem === 'nao_informado' ? 'text-amber-900/90' : 'text-slate-600'}`}>
@@ -4078,7 +4087,7 @@ function CronogramaSection({ result }: { result: AnalysisResult }) {
         <div className="mt-4 flex items-start gap-3 rounded-xl border px-4 py-3 bg-slate-50 border-slate-200">
           <Scale size={14} className="mt-0.5 shrink-0 text-slate-500" />
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
               Prazo de recurso pós-julgamento (art. 165, §1º, I)
             </p>
             <p className="text-xs font-medium leading-relaxed mt-0.5 text-slate-600">
@@ -4103,9 +4112,9 @@ function ScoreBreakdownSection({ result }: { result: AnalysisResult }) {
         Nota auditável: partimos de <strong>100</strong> e cada fator soma ou subtrai pontos com justificativa e evidência.
       </p>
       <div className="flex items-center gap-3 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 mb-2">
-        <span className="text-xs font-black uppercase tracking-widest text-slate-500">Base de partida</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">Base de partida</span>
         <div className="flex-1 border-t border-dashed border-slate-200" />
-        <span className="text-sm font-black text-slate-900">100</span>
+        <span className="text-sm font-semibold text-slate-900">100</span>
       </div>
       <Timeline
         dense
@@ -4140,9 +4149,9 @@ function ScoreBreakdownSection({ result }: { result: AnalysisResult }) {
         })}
       />
       <div className="mt-3 flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3.5">
-        <span className="text-xs font-black uppercase tracking-widest text-slate-300">Bawzi Score final</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-300">Bawzi Score final</span>
         <div className="flex-1 border-t border-dashed border-slate-700" />
-        <span className={`text-2xl font-black leading-none tabular-nums ${result.score >= 70 ? 'text-emerald-400' : result.score >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
+        <span className={`text-2xl font-semibold leading-none tabular-nums ${result.score >= 70 ? 'text-emerald-400' : result.score >= 45 ? 'text-amber-400' : 'text-red-400'}`}>
           {result.score}
         </span>
       </div>
@@ -4164,7 +4173,7 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
     <div className="relative border border-slate-200 rounded-2xl p-8">
       <div className="flex items-start justify-between gap-4">
         <SectionLabel icon={<FileSearch size={18} className="text-slate-700" />} label="Ficha Técnica do Edital" />
-        <span className="shrink-0 text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
+        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
           {localizados}/{ficha.length} localizados
         </span>
       </div>
@@ -4183,9 +4192,9 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-tight">{item.campo}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400 leading-tight">{item.campo}</p>
                 {!ausente && item.fonte === 'verificado_texto' && (
-                  <span className="flex items-center gap-0.5 shrink-0 text-[8px] font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                  <span className="flex items-center gap-0.5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
                     <Check size={8} strokeWidth={3.5} /> Texto
                   </span>
                 )}
@@ -4199,7 +4208,7 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
       </div>
       {divergencias.length > 0 && (
         <div className="mt-4 rounded-xl bg-sky-50/70 border border-sky-100 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-sky-600 mb-2 flex items-center gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-600 mb-2 flex items-center gap-1.5">
             <RefreshCw size={11} /> Reconciliação automática IA × texto do edital
           </p>
           <div className="space-y-1.5">
@@ -4211,13 +4220,13 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
       )}
       {(result.garantias_alerta?.length ?? 0) > 0 && (
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-2 flex items-center gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700 mb-2 flex items-center gap-1.5">
             <AlertTriangle size={11} /> Garantia acima do teto legal
           </p>
           <div className="space-y-2">
             {result.garantias_alerta!.map((g, i) => (
               <p key={i} className="text-xs font-medium leading-relaxed text-amber-900/90">
-                <strong className="font-black">{g.campo}:</strong> {g.mensagem}
+                <strong className="font-semibold">{g.campo}:</strong> {g.mensagem}
               </p>
             ))}
           </div>
@@ -4225,10 +4234,10 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
       )}
       {result.valor_total_com_prorrogacao && (
         <div className="mt-4 rounded-xl bg-sky-50 border border-sky-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-sky-700 mb-1.5 flex items-center gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700 mb-1.5 flex items-center gap-1.5">
             <TrendingUp size={11} /> Valor total estimado com prorrogação
           </p>
-          <p className="text-sm font-black text-sky-900">
+          <p className="text-sm font-semibold text-sky-900">
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(result.valor_total_com_prorrogacao.valor_total_estimado)}
             <span className="ml-1.5 text-[10px] font-bold text-sky-600 uppercase tracking-wide">
               ({result.valor_total_com_prorrogacao.multiplicador.toFixed(1)}x o valor inicial)
@@ -4239,7 +4248,7 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
       )}
       {result.alerta_prazo_entrega && (
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1.5 flex items-center gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700 mb-1.5 flex items-center gap-1.5">
             <AlertTriangle size={11} /> Prazo de entrega/execução apertado
           </p>
           <p className="text-xs font-medium leading-relaxed text-amber-900/90">{result.alerta_prazo_entrega.mensagem}</p>
@@ -4247,7 +4256,7 @@ function FichaTecnicaSection({ result }: { result: AnalysisResult }) {
       )}
       {result.alerta_indice_reajuste && (
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 mb-1.5 flex items-center gap-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700 mb-1.5 flex items-center gap-1.5">
             <AlertTriangle size={11} /> Índice de reajuste não especificado
           </p>
           <p className="text-xs font-medium leading-relaxed text-amber-900/90">{result.alerta_indice_reajuste.mensagem}</p>
@@ -4269,7 +4278,7 @@ function CollapsibleScoreBreakdown({ result }: { result: AnalysisResult }) {
     // entrar aqui já deve mostrar o conteúdo, sem clique extra.
     <details open className="group rounded-2xl border border-slate-200 overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
-        <span className="flex items-center gap-2 text-sm font-black text-slate-700">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <Calculator size={16} className="text-slate-400" />
           Como chegamos ao score {result.score}
         </span>
@@ -4292,10 +4301,10 @@ function CollapsibleFichaTecnica({ result }: { result: AnalysisResult }) {
     // Aberto por padrão — mesmo raciocínio do bloco de score acima.
     <details open className="group rounded-2xl border border-slate-200 overflow-hidden">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-slate-50">
-        <span className="flex items-center gap-2 text-sm font-black text-slate-700">
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <FileSearch size={16} className="text-slate-400" />
           Ficha técnica do edital
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
             {localizados}/{ficha.length} localizados
           </span>
         </span>
@@ -4360,7 +4369,7 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
         <div className="mt-2 flex items-center gap-4 bg-emerald-50 border border-emerald-100 rounded-xl p-5">
           <CheckCircle2 size={28} className="shrink-0 text-emerald-500" />
           <div>
-            <p className="text-sm font-black text-emerald-800">Varredura concluída sem indícios</p>
+            <p className="text-sm font-semibold text-emerald-800">Varredura concluída sem indícios</p>
             <p className="text-xs text-emerald-700 font-medium mt-0.5 leading-relaxed">
               Nenhum indício concreto de direcionamento, restrição de competitividade ou cláusula abusiva foi detectado no material analisado.
             </p>
@@ -4423,7 +4432,7 @@ function RedFlagsSection({ result }: { result: AnalysisResult }) {
                   <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-sky-50 border border-sky-100 px-2.5 py-1.5">
                     <Landmark size={11} className="mt-0.5 shrink-0 text-sky-600" />
                     <p className="text-[11px] font-medium leading-relaxed text-sky-700">
-                      <strong className="font-black">{flag.sumula_tcu.referencia}:</strong> {flag.sumula_tcu.texto}
+                      <strong className="font-semibold">{flag.sumula_tcu.referencia}:</strong> {flag.sumula_tcu.texto}
                     </p>
                   </div>
                 )}
@@ -4532,7 +4541,7 @@ function HabilitacaoSection({
         <div className="mt-2 flex items-center gap-4 bg-amber-50 border border-dashed border-amber-200 rounded-xl p-5">
           <SearchX size={28} className="shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-black text-amber-800">Exigências não identificadas</p>
+            <p className="text-sm font-semibold text-amber-800">Exigências não identificadas</p>
             <p className="text-xs text-amber-700 font-medium mt-0.5 leading-relaxed">
               O material analisado não trouxe as exigências de habilitação de forma legível. Confirme os anexos do edital antes de montar a proposta.
             </p>
@@ -4555,7 +4564,7 @@ function HabilitacaoSection({
       <div className="flex items-start justify-between gap-4">
         <SectionLabel icon={<ListChecks size={18} className="text-slate-700" />} label="Checklist de Habilitação" />
         {eliminatorias > 0 && (
-          <span className="shrink-0 text-[10px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-full">
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.09em] bg-red-50 text-red-600 border border-red-200 px-2.5 py-1 rounded-full">
             {eliminatorias} eliminatória{eliminatorias > 1 ? 's' : ''}
           </span>
         )}
@@ -4591,7 +4600,7 @@ function HabilitacaoSection({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
         {grupos.map(({ cat, label, lista }) => (
           <div key={cat}>
-            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 pb-2 border-b border-slate-100">
+            <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.09em] mb-3 pb-2 border-b border-slate-100">
               {label} <span className="text-slate-300">· {lista.length}</span>
             </h4>
             <Timeline
@@ -4616,7 +4625,7 @@ function HabilitacaoSection({
                   title: item.exigencia,
                   description: (
                     <>
-                      {item.dica && <span className="block"><strong className="font-black text-slate-600">Dica:</strong> {item.dica}</span>}
+                      {item.dica && <span className="block"><strong className="font-semibold text-slate-600">Dica:</strong> {item.dica}</span>}
                       {item.trecho && <span className="mt-1 block italic text-slate-400">&ldquo;{item.trecho}&rdquo;</span>}
                       {podeMarcar && item.id && (
                         <span className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -4630,7 +4639,7 @@ function HabilitacaoSection({
                                 disabled={salvando === item.id}
                                 onClick={() => marcar(item.id!, opcao)}
                                 aria-pressed={ativo}
-                                className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition-colors disabled:opacity-50 ${
+                                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.09em] transition-colors disabled:opacity-50 ${
                                   ativo ? cfg.ativo : `bg-white ${cfg.anel}`
                                 }`}
                               >
@@ -4656,6 +4665,70 @@ function HabilitacaoSection({
 }
 
 // ─── Oportunidades Estratégicas (QA Engine) ──────────────────────────────────
+
+/* ─── Critérios de julgamento e prazos ────────────────────────────────────
+ *
+ * ⚠️ OS DOIS CAMPOS ABAIXO CHEGAVAM DO BACKEND E NÃO ERAM RENDERIZADOS EM
+ * LADO NENHUM. `criterios_de_julgamento` e `prazos` estão em
+ * `AnalysisResult` (`models.py`) desde que o modelo existe, vinham
+ * preenchidos em toda análise, e a tela simplesmente não os lia.
+ *
+ * São, entre todos os campos do laudo, dois dos mais próximos da acção: o
+ * critério de julgamento é a regra pela qual o órgão escolhe o vencedor
+ * (menor preço, técnica e preço, maior desconto) — ou seja, decide se vale a
+ * pena disputar preço; e os prazos são o que a pessoa faz na agenda depois
+ * de decidir participar.
+ */
+
+function CriteriosJulgamentoSection({ result }: { result: AnalysisResult }) {
+  const itens = (result.criterios_de_julgamento || []).filter((c) => String(c || '').trim());
+  if (itens.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 p-6">
+      <h4 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+        Critérios de julgamento
+      </h4>
+      <p className="mt-1 text-[12px] font-medium leading-relaxed text-slate-400">
+        Como o órgão escolhe o vencedor. É o que define se a disputa é de preço, de técnica, ou das duas.
+      </p>
+      <ul className="mt-4 space-y-2.5">
+        {itens.map((criterio, i) => (
+          <li key={i} className="flex items-start gap-2.5 text-sm font-medium leading-relaxed text-slate-700">
+            <Gavel size={15} className="mt-0.5 shrink-0 text-slate-400" />
+            {criterio}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PrazosSection({ result }: { result: AnalysisResult }) {
+  const itens = (result.prazos || []).filter((c) => String(c || '').trim());
+  if (itens.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 p-6">
+      <h4 className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+        Prazos declarados no edital
+      </h4>
+      <p className="mt-1 text-[12px] font-medium leading-relaxed text-slate-400">
+        Em texto, como o edital os escreve. O Cronograma traz as datas que a análise conseguiu converter em
+        calendário; estes são os que ficam de fora dele, incluindo os relativos (&ldquo;15 dias após o
+        empenho&rdquo;).
+      </p>
+      <ul className="mt-4 space-y-2.5">
+        {itens.map((prazo, i) => (
+          <li key={i} className="flex items-start gap-2.5 text-sm font-medium leading-relaxed text-slate-700">
+            <Clock size={15} className="mt-0.5 shrink-0 text-slate-400" />
+            {prazo}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function OportunidadesSection({ result }: { result: AnalysisResult }) {
   const oportunidades = result.oportunidades || [];
@@ -4802,8 +4875,8 @@ function ContaAprofundar({ cheio, pago, diferenca }: {
         </div>
       )}
       <div className="mt-2 flex items-baseline justify-between gap-3 border-t border-slate-100 pt-2">
-        <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">Você paga</span>
-        <span className="text-lg font-black tabular-nums text-sky-700">{creditosLabel(diferenca)}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">Você paga</span>
+        <span className="text-lg font-semibold tabular-nums text-sky-700">{creditosLabel(diferenca)}</span>
       </div>
     </div>
   );
@@ -4813,7 +4886,7 @@ function BotaoAprofundar({ onAprofundar }: { onAprofundar: () => void }) {
   return (
     <button
       onClick={onAprofundar}
-      className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3.5 text-sm font-black text-white shadow-md shadow-sky-200/70 transition-colors hover:bg-sky-700"
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 py-3.5 text-sm font-semibold text-white shadow-md shadow-sky-200/70 transition-colors hover:bg-sky-700"
     >
       <ShieldCheck size={16} className="shrink-0" />
       Fazer auditoria profunda
@@ -4889,7 +4962,7 @@ function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <ScanSearch size={14} className="shrink-0 text-sky-600" />
-            <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-sky-700">
+            <span className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">
               Leitura única
             </span>
             <span className="hidden h-4 w-px shrink-0 bg-sky-200 @min-[44rem]:block" />
@@ -4900,7 +4973,7 @@ function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
           {/* Rótulo do gatilho: o preço fica visível FECHADO — esconder o
               número atrás do clique transformaria a tira num teaser. A seta
               para baixo é o que diz que abre, em vez de executar. */}
-          <span className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-300 bg-white px-3.5 py-2 text-[11px] font-black text-sky-700 @min-[22rem]:ml-auto @min-[22rem]:w-auto">
+          <span className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-sky-300 bg-white px-3.5 py-2 text-[11px] font-semibold text-sky-700 @min-[22rem]:ml-auto @min-[22rem]:w-auto">
             {aberto
               ? 'Ver menos'
               : `Aprofundar${diferenca !== null ? ` por ${creditosLabel(diferenca)}` : ''}`}
@@ -4921,7 +4994,7 @@ function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
           >
             <div className="flex flex-col gap-5 @min-[38rem]:flex-row @min-[38rem]:items-center @min-[38rem]:justify-between">
               <div className="min-w-0 flex-1">
-                <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-sky-700">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">
                   Análise rápida · leitura única
                 </p>
                 <TextoAprofundar />
@@ -4975,7 +5048,7 @@ function AprofundarBanner({ onAprofundar, jaPago, pesoProfunda, saldo }: {
       <div className="flex flex-col gap-5 p-5 @min-[38rem]:flex-row @min-[38rem]:items-center @min-[38rem]:justify-between">
         {/* Lado esquerdo: o que este laudo é e o que falta nele */}
         <div className="min-w-0 flex-1">
-          <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-sky-700">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">
             Análise rápida · leitura única
           </p>
           <TextoAprofundar />
@@ -5057,7 +5130,7 @@ function ChipGanhoProfunda({ result }: { result: AnalysisResult }) {
         onClick={() => setAberto((v) => !v)}
         aria-expanded={aberto}
         title="Ver o que a auditoria profunda acrescentou e quanto custou"
-        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-widest transition-colors ${
+        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.09em] transition-colors ${
           aberto
             ? 'border-sky-300 bg-sky-600 text-white'
             : 'border-sky-200 bg-white text-sky-700 hover:bg-sky-50'
@@ -5070,7 +5143,7 @@ function ChipGanhoProfunda({ result }: { result: AnalysisResult }) {
 
       {aberto && (
         <div className="mt-3 w-full rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
-          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-sky-700">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">
             O que a auditoria profunda entregou
           </p>
 
@@ -5078,7 +5151,7 @@ function ChipGanhoProfunda({ result }: { result: AnalysisResult }) {
             <ul className="space-y-1.5">
               {resumo.ganhos.map((g) => (
                 <li key={g.texto} className="flex items-start gap-2 text-[13px] font-medium leading-relaxed text-slate-700">
-                  <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-black tabular-nums text-white">
+                  <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-semibold tabular-nums text-white">
                     {g.n}
                   </span>
                   {g.texto}
@@ -5157,7 +5230,7 @@ function AuditoriaDeltaDestaque({ result }: { result: AnalysisResult }) {
 
   return (
     <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50/70 p-5">
-      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-sky-700">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">
         O que a auditoria profunda acrescentou
       </p>
 
@@ -5165,7 +5238,7 @@ function AuditoriaDeltaDestaque({ result }: { result: AnalysisResult }) {
         <ul className="space-y-1.5">
           {resumo.ganhos.map((g) => (
             <li key={g.texto} className="flex items-start gap-2 text-[13px] font-medium leading-relaxed text-slate-700">
-              <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-black tabular-nums text-white">
+              <span className="mt-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-sky-600 px-1 text-[11px] font-semibold tabular-nums text-white">
                 {g.n}
               </span>
               {g.texto}
@@ -5320,19 +5393,19 @@ function SwotSection({ result }: { result: AnalysisResult }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 mt-2">
         {result.vantagens && result.vantagens.length > 0 && (
           <div>
-            <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsUp size={11} /> Vantagens (Por que avançar?)</h4>
+            <h4 className="text-[10px] font-semibold text-emerald-600 uppercase tracking-[0.09em] mb-4 flex items-center gap-1"><ThumbsUp size={11} /> Vantagens (Por que avançar?)</h4>
             <Timeline dense items={result.vantagens.map((v, i) => ({ key: i, tone: 'emerald' as TimelineTone, title: v }))} />
           </div>
         )}
         {result.desvantagens && result.desvantagens.length > 0 && (
           <div>
-            <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4 flex items-center gap-1"><ThumbsDown size={11} /> Barreiras (Por que recuar?)</h4>
+            <h4 className="text-[10px] font-semibold text-orange-600 uppercase tracking-[0.09em] mb-4 flex items-center gap-1"><ThumbsDown size={11} /> Barreiras (Por que recuar?)</h4>
             <Timeline dense items={result.desvantagens.map((d, i) => ({ key: i, tone: 'amber' as TimelineTone, title: d }))} />
           </div>
         )}
         {result.exigencias_criticas && result.exigencias_criticas.length > 0 && (
           <div>
-            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><Pin size={11} /> Exigências Críticas</h4>
+            <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.09em] mb-4 flex items-center gap-1"><Pin size={11} /> Exigências Críticas</h4>
             {/* `textoDoItem`: a auditoria acrescenta exigências como OBJETO
                 (com a citação conferida junto), o investigador as escreve como
                 string. Passar o item cru para `title` renderizava um objeto
@@ -5354,7 +5427,7 @@ function SwotSection({ result }: { result: AnalysisResult }) {
                   const original = typeof e === 'string' ? '' : e.trecho_nao_conferido;
                   return (
                     <div className="mt-1 rounded-lg border-l-4 border-red-300 bg-red-50 px-3 py-1.5 text-[11px] text-red-800">
-                      <span className="font-black uppercase tracking-wide">Citação não localizada no edital</span>
+                      <span className="font-semibold uppercase tracking-[0.09em]">Citação não localizada no edital</span>
                       {original && <span className="mt-0.5 block italic opacity-70">&ldquo;{original}&rdquo;</span>}
                     </div>
                   );
@@ -5369,7 +5442,7 @@ function SwotSection({ result }: { result: AnalysisResult }) {
                   }`}>
                     &ldquo;{citacaoDoItem(e)}&rdquo;
                     {naoConferida && (
-                      <span className="mt-1 block text-[10px] font-black uppercase not-italic tracking-wide text-amber-700">
+                      <span className="mt-1 block text-[11px] font-semibold uppercase tracking-[0.09em] not-italic text-amber-700">
                         Trecho curto demais para conferir contra o documento
                       </span>
                     )}
@@ -5381,7 +5454,7 @@ function SwotSection({ result }: { result: AnalysisResult }) {
         )}
         {result.documentos_necessarios && result.documentos_necessarios.length > 0 && (
           <div>
-            <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-1"><FolderOpen size={11} /> Documentação Necessária</h4>
+            <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-[0.09em] mb-4 flex items-center gap-1"><FolderOpen size={11} /> Documentação Necessária</h4>
             <Timeline dense items={result.documentos_necessarios.map((doc, i) => ({
               key: i, tone: 'blue' as TimelineTone, title: textoDoItem(doc),
             }))} />
@@ -5407,7 +5480,7 @@ function RisksSection({ result }: { result: AnalysisResult }) {
         <div className="mt-2 flex items-center gap-4 bg-emerald-50 border border-emerald-100 rounded-xl p-5">
           <CheckCircle2 size={28} className="shrink-0 text-emerald-500" />
           <div>
-            <p className="text-sm font-black text-emerald-800">Nenhum risco relevante identificado</p>
+            <p className="text-sm font-semibold text-emerald-800">Nenhum risco relevante identificado</p>
             <p className="text-xs text-emerald-700 font-medium mt-0.5 leading-relaxed">
               A análise avaliou o edital e não encontrou riscos de impacto alto, médio ou baixo dignos de nota.
             </p>
@@ -5450,7 +5523,7 @@ function RisksSection({ result }: { result: AnalysisResult }) {
         <div className="mt-4 flex items-center gap-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl p-5">
           <Shield size={28} className="shrink-0 text-slate-400" />
           <div>
-            <p className="text-sm font-black text-slate-700">Nova análise necessária</p>
+            <p className="text-sm font-semibold text-slate-700">Nova análise necessária</p>
             <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">Execute uma nova análise para ver a matriz de riscos ranqueada por impacto — <strong>Alto · Médio · Baixo</strong> com fundamentação jurídica.</p>
           </div>
         </div>
@@ -5481,8 +5554,8 @@ function MatrizRiscoFormalSection({ result }: { result: AnalysisResult }) {
           return (
             <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-black text-slate-800">{item.risco}</p>
-                <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${cfg.cls}`}>
+                <p className="text-sm font-semibold text-slate-800">{item.risco}</p>
+                <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] ${cfg.cls}`}>
                   {cfg.label}
                 </span>
               </div>
@@ -5515,7 +5588,7 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
         <h3 className="text-white font-bold flex items-center gap-2 text-sm">
           <Scale size={18} /> PARECER TÉCNICO-JURÍDICO BAWZI
         </h3>
-        <span className="text-[10px] uppercase tracking-widest text-amber-400 font-black px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
+        <span className="text-[11px] uppercase tracking-[0.09em] text-amber-400 font-semibold px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
           Agente IA Especialista
         </span>
       </div>
@@ -5540,7 +5613,7 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
               <div className="w-12 h-12 bg-amber-400/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-400/20">
                 <Lock size={24} />
               </div>
-              <h4 className="font-black text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
+              <h4 className="font-semibold text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
               {/* "Nível N (Nome)" é a MESMA gramática do PremiumLock, que
                   bloqueia o Radar e o PDF duas abas ao lado. Este cartão dizia
                   "membros Profissionais e Avançados" — correto, mas num
@@ -5558,7 +5631,7 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
               </p>
               <button
                 onClick={onUpgradeClick}
-                className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md active:scale-95 border border-slate-200"
+                className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 rounded-xl text-[11px] font-semibold uppercase tracking-[0.09em] transition-all shadow-md active:scale-95 border border-slate-200"
               >
                 Fazer Upgrade Agora
               </button>
@@ -5621,7 +5694,7 @@ const PARAM_STATUS_CFG: Record<string, { label: string; bg: string; text: string
 };
 
 const PARAM_PESO_CFG = {
-  alto:  { label: 'Crítico',    color: 'text-red-600 font-black' },
+  alto:  { label: 'Crítico',    color: 'text-red-600 font-semibold' },
   medio: { label: 'Importante', color: 'text-amber-600 font-bold' },
   baixo: { label: 'Desejável',  color: 'text-slate-500' },
 };
@@ -5667,11 +5740,11 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
       <div className="border-b border-slate-200 bg-slate-50 px-6 py-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+            <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
               <SlidersHorizontal size={13} />
               Critérios configurados
             </p>
-            <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950">
+            <h3 className="mt-1.5 text-xl font-semibold tracking-tight text-slate-950">
               Avaliação por Critérios
             </h3>
             <p className="mt-0.5 text-sm font-semibold text-slate-500">
@@ -5681,20 +5754,20 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
           <div className="flex gap-2">
             {ok > 0 && (
               <div className="flex flex-col items-center rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-2 text-center min-w-[60px]">
-                <span className="text-xl font-black text-emerald-600">{ok}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">Atende</span>
+                <span className="text-xl font-semibold text-emerald-600">{ok}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-emerald-500">Atende</span>
               </div>
             )}
             {alertas > 0 && (
               <div className="flex flex-col items-center rounded-2xl border border-amber-100 bg-amber-50 px-4 py-2 text-center min-w-[60px]">
-                <span className="text-xl font-black text-amber-600">{alertas}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-amber-500">Atenção</span>
+                <span className="text-xl font-semibold text-amber-600">{alertas}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-500">Atenção</span>
               </div>
             )}
             {bloqueios > 0 && (
               <div className="flex flex-col items-center rounded-2xl border border-red-100 bg-red-50 px-4 py-2 text-center min-w-[60px]">
-                <span className="text-xl font-black text-red-600">{bloqueios}</span>
-                <span className="text-[9px] font-black uppercase tracking-widest text-red-500">Bloqueio{bloqueios > 1 ? 's' : ''}</span>
+                <span className="text-xl font-semibold text-red-600">{bloqueios}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-red-500">Bloqueio{bloqueios > 1 ? 's' : ''}</span>
               </div>
             )}
           </div>
@@ -5713,7 +5786,7 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
       {/* O cabeçalho acima já é a manchete (contagem + alerta de bloqueio).
           O detalhe critério a critério fica atrás de um toggle. */}
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 transition-colors hover:bg-slate-50">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500 transition-colors hover:bg-slate-50">
           <ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" />
           Ver avaliação completa dos {params.length} critérios
         </summary>
@@ -5765,35 +5838,9 @@ function ParametrosSection({ result }: { result: AnalysisResult }) {
 
 // ─── Checklist / Roadmap ──────────────────────────────────────────────────────
 
-function ChecklistSection({ result }: { result: AnalysisResult }) {
-  return (
-    <div className="relative border border-slate-200 rounded-2xl p-8 mt-12 print:hidden">
-      <SectionLabel icon={<CheckCircle2 size={18} className="text-slate-700" />} label="Roadmap de Execução" />
-      <div className="space-y-3 mt-2">
-        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-        {result.checklist!.map((item: any, idx: number) => {
-          const tarefa = item.tarefa || item.descricao || item;
-          const fase = item.fase || 'Preparação';
-          const impacto = item.impacto || 'Importante';
-          return (
-            <label key={idx} className="group flex items-start gap-4 p-4 rounded-xl border border-slate-100 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer">
-              <input type="checkbox" className="mt-0.5 appearance-none w-5 h-5 border-2 border-slate-300 rounded focus:ring-0 checked:bg-slate-800 checked:border-slate-800 cursor-pointer flex items-center justify-center shrink-0 before:content-['✓'] before:text-white before:text-xs before:hidden checked:before:block" />
-              <div className="flex-1">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{fase}</span>
-                  <span className="text-[9px] font-black text-slate-500 uppercase px-2 py-0.5 bg-slate-100 rounded-md">Impacto: {impacto}</span>
-                </div>
-                <p className="text-sm font-bold text-slate-700 group-hover:text-slate-900 transition-colors">{tarefa}</p>
-              </div>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Card de exportação PDF ───────────────────────────────────────────────────
+/* ⚠️ `ChecklistSection` FOI REMOVIDA: definida, nunca renderizada. O
+   checklist que a tela mostra de facto é o `habilitacao_checklist`, através de
+   `HabilitacaoSection`. */
 
 function PdfExportCard({ onExportPDF }: { onExportPDF: () => void }) {
   return (
@@ -5805,26 +5852,26 @@ function PdfExportCard({ onExportPDF }: { onExportPDF: () => void }) {
         </div>
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">Exclusivo Avançado</span>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md">Exclusivo Avançado</span>
           </div>
-          <h3 className="font-black text-white text-xl tracking-tight mb-2 leading-tight">Laudo de Decisão Bawzi</h3>
+          <h3 className="font-semibold text-white text-xl tracking-tight mb-2 leading-tight">Laudo de Decisão Bawzi</h3>
           <p className="text-sm font-medium text-slate-400 leading-relaxed mb-4 max-w-lg">
             Documento executivo com veredito Go/No-Go, evidências, lacunas, confiança, próximos responsáveis e base para decisão interna.
           </p>
           <div className="flex flex-wrap gap-2 mb-4">
             {['Veredito Executivo', 'Evidências', 'Base da Confiança', 'Lacunas', 'Cockpit de Execução'].map(item => (
-              <span key={item} className="text-[9px] font-black text-slate-400 uppercase tracking-widest bg-white/5 border border-white/10 px-2 py-1 rounded-lg">✓ {item}</span>
+              <span key={item} className="text-[9px] font-semibold text-slate-400 uppercase tracking-[0.09em] bg-white/5 border border-white/10 px-2 py-1 rounded-lg">✓ {item}</span>
             ))}
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
             <AlertTriangle size={14} className="text-amber-400" />
-            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Apoio à decisão — requer validação responsável</span>
+            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-[0.09em]">Apoio à decisão — requer validação responsável</span>
           </div>
         </div>
       </div>
       <button
         onClick={onExportPDF}
-        className="relative z-10 w-full md:w-auto px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
+        className="relative z-10 w-full md:w-auto px-8 py-4 bg-white hover:bg-slate-100 text-slate-900 font-semibold text-[11px] uppercase tracking-[0.09em] rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-3 shrink-0"
       >
         <FileText size={16} /> Gerar Laudo (PDF)
       </button>
@@ -5884,7 +5931,7 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
   return (
     <div className="hidden print:block bg-white p-10 font-serif text-slate-900 leading-relaxed text-sm">
       <div className="border-b-2 border-slate-900 pb-4 mb-6">
-        <h1 className="text-2xl font-black uppercase">Bawzi Intelligence</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Bawzi Intelligence</h1>
         <p className="font-bold text-slate-500 uppercase">Laudo de Decisão — Go / No-Go de Licitação</p>
       </div>
       <div className="bg-slate-100 p-4 mb-6 border-l-4 border-slate-900">
@@ -5906,19 +5953,19 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
           <div className="mb-6 space-y-2">
             {meEpp && !meEpp.elegivel && (
               <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Possível impeditivo · ME/EPP</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-rose-700">Possível impeditivo · ME/EPP</p>
                 <p className="text-xs text-rose-900">{meEpp.mensagem}</p>
               </div>
             )}
             {meEpp?.elegivel && meEpp.cota_reservada && (
               <div className="border-l-4 border-sky-600 bg-sky-50 px-4 py-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-sky-700">Cota reservada · ME/EPP</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-sky-700">Cota reservada · ME/EPP</p>
                 <p className="text-xs text-sky-900">{meEpp.mensagem}</p>
               </div>
             )}
             {encerrada && (
               <div className="border-l-4 border-slate-900 bg-slate-100 px-4 py-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-700">Edital encerrado</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-700">Edital encerrado</p>
                 <p className="text-xs text-slate-800">
                   A {encerrada.label} ocorreu em {formatarDataCritica(encerrada.data_iso, 'longo') ?? '—'}.
                   {' '}Laudo válido apenas como referência e estudo de mercado.
