@@ -15,15 +15,92 @@
  * restantes (contador atômico, não texto digitado) e o prazo. Sem escassez
  * verdadeira, o modal seria só ruído com um X.
  *
- * ⚠️ E POR ISSO ELE NÃO É PARA QUEM JÁ TEM CONTA. A campanha dá bônus no
+ * ⚠️ E POR PADRÃO ELE NÃO É PARA QUEM JÁ TEM CONTA. A campanha dá bônus no
  * CADASTRO. Um modal no meio da tela oferecendo a alguém logado uma coisa que
- * ela não pode resgatar é interrupção pura. Quem decide isso é o `PromoBanner`,
- * que conhece a sessão; aqui só se desenha o que já foi decidido.
+ * ela não pode resgatar é interrupção pura — por isso `exibir_para` nasce
+ * `deslogado`. O admin pode virar para `logado` ou `ambos`, para campanha que
+ * não dependa de conta nova. Quem lê a sessão e decide continua sendo o
+ * `PromoBanner`; aqui só se desenha o que já foi decidido.
+ *
+ * ⚠️ AS FUNÇÕES EXPORTADAS AQUI EMBAIXO SÃO DA BARRA TAMBÉM. `publicoDaPromo`,
+ * `ctaDaPromo` e `urlDeLogin` moram neste arquivo porque `PromoBanner` importa
+ * `PromoModal` — o contrário seria ciclo, o mesmo motivo que tirou a paleta
+ * de dentro do banner. O lugar natural delas é `lib/promo.ts`, ao lado de
+ * `paletaPromo`; mover quando aquele arquivo puder ser tocado.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Copy, Sparkles, X } from 'lucide-react';
 import { type DadosPromo, ofertaDaCampanha, paletaPromo } from '@/lib/promo';
+
+/** Quem vê a promoção — barra e pop-up. Default do backend: `deslogado`. */
+export type ExibirPara = 'deslogado' | 'logado' | 'ambos';
+/** O que o botão oferece. Default do backend: `cadastro`. */
+export type ExibirCta = 'cadastro' | 'login' | 'ambos';
+
+// Normaliza o valor que veio da rede. Campo ausente, tipo inesperado ou texto
+// com espaço/caixa diferente viram string vazia, e quem chama cai no default —
+// nunca em "não renderiza botão nenhum". Mesmo tratamento que `modo` e
+// `tipo_valor` recebem em `ofertaDaCampanha`.
+function bruto(d: DadosPromo, campo: 'exibir_para' | 'exibir_cta'): string {
+  const v = d[campo];
+  return typeof v === 'string' ? v.trim().toLowerCase() : '';
+}
+
+/**
+ * Quem vê esta promoção.
+ *
+ * ⚠️ O CUPOM NÃO TEM PÚBLICO CONFIGURÁVEL E NÃO PODE HERDAR O DEFAULT DA
+ * CAMPANHA. O endpoint devolve o documento do cupom cru, sem `exibir_para`
+ * (ver `/api/admin/promo-banner/public`, ramo 2). Aplicar `deslogado` ali
+ * esconderia o desconto exatamente de quem compra crédito — o cliente logado
+ * —, que é o oposto do que o cupom existe para fazer. A barra do cupom
+ * continua para todo mundo, como sempre foi.
+ */
+export function publicoDaPromo(d: DadosPromo): ExibirPara {
+  if (d.origem !== 'campanha') return 'ambos';
+  const v = bruto(d, 'exibir_para');
+  return v === 'logado' || v === 'ambos' ? v : 'deslogado';
+}
+
+/** O que o botão oferece. Cupom nunca teve escolha: é o link dele e só. */
+export function ctaDaPromo(d: DadosPromo): ExibirCta {
+  if (d.origem !== 'campanha') return 'cadastro';
+  const v = bruto(d, 'exibir_cta');
+  return v === 'login' || v === 'ambos' ? v : 'cadastro';
+}
+
+/**
+ * A URL de entrar, DERIVADA da de cadastro — nunca montada do zero.
+ *
+ * ⚠️ O `?campanha=` TEM DE SOBREVIVER AO BOTÃO DE LOGIN. Quem entra hoje
+ * pode criar conta no mesmo navegador depois, e é esse código que diz de onde
+ * a pessoa veio: `lib/campanha.ts` captura da query e guarda em `localStorage`
+ * no layout raiz. Montar `/login` do nada perderia o código — e em janela
+ * anônima, onde o `localStorage` está bloqueado, a URL é a única cópia.
+ *
+ * Do link de cadastro saem só os dois parâmetros que abrem o formulário de
+ * criação — `view=register` e o sinônimo antigo `cadastro=1`, ambos lidos em
+ * `app/login/page.tsx`. O resto passa inteiro, inclusive um `redirect` que o
+ * admin tenha posto no `cta_url`. O caminho é sempre o nosso `/login`: se o
+ * `cta_url` apontar para fora, só a query dele nos interessa.
+ */
+export function urlDeLogin(d: DadosPromo): string {
+  const base = typeof window === 'undefined' ? 'https://bawzi.com' : window.location.origin;
+  let q: URLSearchParams;
+  try {
+    q = new URL(d.link_url || '/login', base).searchParams;
+  } catch {
+    q = new URLSearchParams();
+  }
+  q.delete('view');
+  q.delete('cadastro');
+  // Rede de segurança: campanha cujo `cta_url` foi escrito à mão pode não ter
+  // o código na query. `coupon_code` é o código da campanha (ver o backend).
+  if (!q.get('campanha') && d.coupon_code) q.set('campanha', d.coupon_code);
+  const query = q.toString();
+  return query ? `/login?${query}` : '/login';
+}
 
 interface Props {
   dados: DadosPromo;
@@ -41,6 +118,12 @@ export default function PromoModal({ dados, countdown, onClose }: Props) {
 
   const c = paletaPromo(dados.color);
   const oferta = ofertaDaCampanha(dados);
+
+  const cta = ctaDaPromo(dados);
+  // Em `login` o link de cadastro nem existe; em `cadastro`/`ambos` ele só
+  // existe se o backend mandou URL.
+  const linkCadastro = cta === 'login' ? null : dados.link_url || null;
+  const mostraLogin = cta === 'login' || cta === 'ambos';
 
   const total = Number(dados.vagas_total) || 0;
   const restantes = typeof dados.vagas_restantes === 'number' ? dados.vagas_restantes : null;
@@ -197,15 +280,38 @@ export default function PromoModal({ dados, countdown, onClose }: Props) {
 
           {/* ── Ação ────────────────────────────────────────────────────────
               O link já leva o código na URL; copiar é o caminho secundário,
-              para quem prefere colar no cadastro. */}
+              para quem prefere colar no cadastro.
+
+              ⚠️ QUAIS BOTÕES APARECEM É DO ADMIN (`exibir_cta`), NÃO DAQUI. E
+              em `ambos` a hierarquia é fixa: criar conta é o botão cheio de
+              cor, entrar é contorno. Dois botões de mesmo peso obrigariam a
+              pessoa a parar e escolher — e o bônus da campanha só acontece no
+              cadastro, então empatar as duas ações trabalharia contra ela.
+
+              ⚠️ O RÓTULO DE ENTRAR NÃO USA `link_text`. Esse texto é o do
+              cadastro ("Criar conta e resgatar") e o backend o preenche
+              sozinho quando o admin não escreve nada — não dá para saber se
+              foi escrito pensando neste botão. Um "Criar conta" que leva ao
+              login é pior que um rótulo genérico. */}
           <div className="mt-4 flex flex-col gap-2">
-            {dados.link_url && (
+            {linkCadastro && (
               <a
-                href={dados.link_url}
+                href={linkCadastro}
                 onClick={onClose}
                 className={`flex h-11 items-center justify-center rounded-xl px-4 text-sm font-black text-white transition-colors ${c.forte}`}
               >
                 {dados.link_text || 'Criar conta e resgatar'}
+              </a>
+            )}
+            {mostraLogin && (
+              <a
+                href={urlDeLogin(dados)}
+                onClick={onClose}
+                className={linkCadastro
+                  ? 'flex h-11 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50'
+                  : `flex h-11 items-center justify-center rounded-xl px-4 text-sm font-black text-white transition-colors ${c.forte}`}
+              >
+                {linkCadastro ? 'Já tenho conta, entrar' : 'Entrar na minha conta'}
               </a>
             )}
             <button

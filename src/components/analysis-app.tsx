@@ -1908,12 +1908,24 @@ export default function AnalysisApp() {
         </div>
       )}
 
+      {/* ⚠️ O TEXTO DO SERVIDOR VENCE O TEXTO CRAVADO.
+          `upsellData` chega do 403 (`onUpsellNeeded`, em useAnalysis) com o
+          motivo REAL do bloqueio e os números reais — quanto foi usado, de
+          quanto. Isso era montado, guardado em estado e descartado aqui: todo
+          mundo lia a mesma frase, e ela nomeava o Nível 4 mesmo para quem
+          esbarrou na cota do próprio plano e só precisava de créditos.
+          O cravado virou FALLBACK, para quando o modal for aberto por um
+          caminho que não veio de um 403 (aí não há mensagem do servidor).
+          As features seguem a mesma regra: `avancadoFeatures` fala de raio-X
+          de concorrente, que não tem nada a ver com ter acabado a cota —
+          quando o servidor explicou o bloqueio, deixa o modal usar os
+          benefícios de crédito dele (`defaultFeatures`). */}
       <UpsellModal
         isOpen={showUpsell}
         onClose={() => setShowUpsell(false)}
-        title="Desbloqueie o plano Avançado (Nível 4)"
-        description="Antecipe movimentos do mercado, acompanhe concorrentes e tenha inteligência operacional para disputar com mais segurança."
-        features={avancadoFeatures}
+        title={upsellData.title || "Desbloqueie o plano Avançado (Nível 4)"}
+        description={upsellData.desc || "Antecipe movimentos do mercado, acompanhe concorrentes e tenha inteligência operacional para disputar com mais segurança."}
+        features={upsellData.title || upsellData.desc ? undefined : avancadoFeatures}
       />
 
       {/* ── BOTÃO MOBILE SIDEBAR ── */}

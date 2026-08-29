@@ -77,14 +77,32 @@ export default function CguCompliancePanel({ cnpj, companyName, userTier, onUpgr
     else setLoadingCgu(true);
     
     setCguError(false);
+    // ⚠️ ESTA CHAMADA IA SEM TOKEN, E O BACKEND ACEITAVA.
+    // Era a última sobra do dia em que as duas chamadas de certidão abaixo
+    // foram fechadas: `fetch` cru aqui, router sem `dependencies` lá. Agora o
+    // `router_cgu` exige `get_current_user`, então o `fetch` cru passaria a
+    // levar 401 em toda tentativa — as duas pontas tinham de mudar juntas.
+    // `apiFetch` anexa o Bearer, renova o token quando está para vencer,
+    // repete uma vez no 401 do servidor e impõe timeout de 20s. Sem ele, uma
+    // conexão morta (aba esquecida aberta, notebook que dormiu) nunca resolve
+    // nem rejeita e o painel fica em "carregando" para sempre.
     try {
-      const res = await fetch(`${API_URL}/api/cgu/compliance/${cnpjLimpo}`);
+      const res = await apiFetch(`${API_URL}/api/cgu/compliance/${cnpjLimpo}`);
       if (!res.ok) throw new Error('Falha ao consultar CGU');
       
       const data = await res.json();
       setCguData(data);
       memoryCache.cgu[cnpjLimpo] = data; 
     } catch (err) {
+      // Sessão expirada: o `apiFetch` já limpou a sessão e disparou
+      // `bawzi_session_expired`, e quem trata isso é o Header/analysis-app.
+      // Aqui só se marca o erro — o `finally` encerra o "carregando", e o
+      // painel cai no estado de falha em vez de mostrar dado velho como bom.
+      if (err instanceof SessionExpiredError) {
+        setCguError(true);
+        return;
+      }
+      console.error('Falha ao consultar compliance CGU', err);
       setCguError(true);
     } finally {
       if (isManualRefresh) setIsRefreshingCgu(false);

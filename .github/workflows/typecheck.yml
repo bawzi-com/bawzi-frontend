@@ -1,0 +1,43 @@
+name: Typecheck do frontend
+
+# ⚠️ ATÉ 29/08/2026 O FRONTEND NÃO TINHA REDE NENHUMA NA CI.
+# Ele não tem um único teste automatizado, e o workflow que existia vivia na
+# pasta-pai — fora deste repositório — então nunca rodou. Na auditoria daquele
+# dia, 40 arquivos mudaram de uma vez (a varredura que tirou o
+# `process.env.NEXT_PUBLIC_API_URL` de 32 deles) e o `tsc --noEmit` foi a ÚNICA
+# coisa que separou "compila" de "quebra na cara do cliente" — rodado à mão,
+# porque nada o rodava sozinho.
+#
+# Typecheck não substitui teste. Mas pega a classe de erro que mais aparece
+# numa refatoração ampla: import que sumiu, prop que mudou de nome, tipo que
+# mudou de forma. É o mínimo que devia estar de pé.
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["main", "develop"]
+
+jobs:
+  typecheck:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # `tsconfig.ci.json` e não o principal: aquele inclui `.next/types/**`,
+      # que só existe depois de um `next build`. Num checkout limpo o tsc
+      # despejaria dezenas de TS6053 antes de olhar uma linha do nosso código.
+      # Ver o comentário dentro do arquivo.
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.ci.json

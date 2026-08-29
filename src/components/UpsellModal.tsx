@@ -5,6 +5,7 @@ import {
   Zap, CheckCircle2, Rocket, X, ShieldCheck, Cpu 
 } from 'lucide-react';
 import { useRouter } from 'next/navigation'; // Adicionado para navegação suave
+import { getAuthToken } from '@/lib/apiClient';
 
 interface UpsellModalProps {
   isOpen: boolean;
@@ -44,10 +45,21 @@ export default function UpsellModal({
 
   const displayFeatures = features || defaultFeatures;
 
+  // ⚠️ /profile É ROTA FECHADA — sem token ela devolve o visitante para `/`
+  // (app/profile/page.tsx: `if (!token) { router.push('/') }`). Este botão
+  // mandava TODO MUNDO para lá, então para quem ainda não tem conta o único
+  // CTA do modal era um pulo para a home, sem plano nenhum na frente.
+  // Quem tem sessão continua indo para a seção de assinatura do perfil, que
+  // é onde mora a troca de plano completa; quem não tem vai para /plans, que
+  // é pública e mostra os mesmos planos.
   const handleUpgradeClick = () => {
     onClose();
-    sessionStorage.setItem('goto_section', 'sec-assinatura');
-    router.push('/profile');
+    if (getAuthToken()) {
+      sessionStorage.setItem('goto_section', 'sec-assinatura');
+      router.push('/profile');
+      return;
+    }
+    router.push('/plans');
   };
 
   return (

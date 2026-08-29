@@ -1,0 +1,7 @@
+{
+  "//": "⚠️ EXISTE PORQUE O tsconfig.json PRINCIPAL NÃO RODA SEM UM BUILD. Ele inclui `.next/types/**/*.ts`, que o `next build` gera — num checkout limpo da CI esses arquivos não existem e o tsc despeja dezenas de TS6053 antes de olhar uma linha do nosso código. Este recorte confere o que escrevemos (src/) e ignora o que a ferramenta gera, então roda em segundos, sem build e sem variável de ambiente. É o mesmo comando que pegou os erros reais durante a auditoria de 29/08, num dia em que 40 arquivos do frontend mudaram e o typecheck foi a única rede embaixo deles.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", ".next"]
+}

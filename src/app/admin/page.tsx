@@ -1001,6 +1001,12 @@ export default function AdminDashboard() {
           cta_texto: campanhaEdit.cta_texto || null,
           cta_url: campanhaEdit.cta_url || null,
           dismissible: campanhaEdit.dismissible !== false,
+          // ⚠️ DEFAULT EXPLÍCITO, e não o valor cru do state. Campanha gravada
+          // antes destes dois campos volta do GET sem nenhum deles; mandar
+          // `undefined` no PUT é o mesmo que apagar a escolha. `deslogado` e
+          // `cadastro` reproduzem exatamente o que essas campanhas já faziam.
+          exibir_para: campanhaEdit.exibir_para || 'deslogado',
+          exibir_cta: campanhaEdit.exibir_cta || 'cadastro',
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -4255,6 +4261,7 @@ export default function AdminDashboard() {
                   validade_dias: 30, duracao_meses: 12,
                   max_resgates: 200, ativa: false, cor: 'amber', label_desconto: '',
                   cta_texto: '', cta_url: '', inicia_em: '', expira_em: '', dismissible: true,
+                  exibir_para: 'deslogado', exibir_cta: 'cadastro',
                 })}
                 className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-black transition-all"
               >
@@ -4294,6 +4301,12 @@ export default function AdminDashboard() {
                             ...c,
                             inicia_em: c.inicia_em ? String(c.inicia_em).slice(0, 10) : '',
                             expira_em: c.expira_em ? String(c.expira_em).slice(0, 10) : '',
+                            // Campanha antiga não tem estes campos. Sem o
+                            // default aqui o cartão abriria sem nada marcado e
+                            // o operador leria "não configurado" onde o
+                            // comportamento real é o de sempre.
+                            exibir_para: c.exibir_para || 'deslogado',
+                            exibir_cta: c.exibir_cta || 'cadastro',
                           })}
                           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-bold transition-all"
                         >
@@ -4551,6 +4564,106 @@ export default function AdminDashboard() {
                     </p>
                   );
                 })()}
+
+                {/* Onde o banner aparece e o que o botão oferece.
+
+                    ⚠️ DUAS OPÇÕES ESTÃO DESABILITADAS PORQUE NÃO CREDITAM
+                    NINGUÉM. O bônus desta campanha é concedido no cadastro: o
+                    router_auth aplica o código no instante em que a conta
+                    nasce, e não existe caminho para conceder a uma conta que já
+                    existe. Logo "apenas área logada" anuncia para quem não tem
+                    o que resgatar, e um CTA "somente login" não cria conta
+                    nenhuma. O backend devolve 422 nos dois casos — travar aqui
+                    é para a pessoa não descobrir isso depois de preencher o
+                    formulário inteiro. O motivo fica escrito no próprio cartão:
+                    opção desabilitada sem explicação é pior que erro no submit. */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {[
+                    {
+                      campo: 'exibir_para',
+                      rotulo: 'Exibir para',
+                      padrao: 'deslogado',
+                      opcoes: [
+                        { valor: 'deslogado', titulo: 'Apenas área não logada',
+                          ajuda: 'Landing, login e cadastro — onde o visitante ainda pode criar conta.', motivo: '' },
+                        { valor: 'logado', titulo: 'Apenas área logada', ajuda: '',
+                          motivo: 'O crédito é concedido no cadastro: quem veria já tem conta e não tem o que resgatar.' },
+                        { valor: 'ambos', titulo: 'Ambos',
+                          ajuda: 'Aparece também dentro do app. Quem já é cliente vê o anúncio, mas quem resgata é o cadastro novo.', motivo: '' },
+                      ],
+                    },
+                    {
+                      campo: 'exibir_cta',
+                      rotulo: 'Exibir',
+                      padrao: 'cadastro',
+                      opcoes: [
+                        { valor: 'ambos', titulo: 'Criar conta + Login',
+                          ajuda: 'Dois botões. O de login atende quem voltou; o bônus continua saindo do cadastro.', motivo: '' },
+                        { valor: 'login', titulo: 'Somente login', ajuda: '',
+                          motivo: 'Sem botão de cadastro não há caminho para criar conta — e é a criação que concede o crédito.' },
+                        { valor: 'cadastro', titulo: 'Somente cadastrar',
+                          ajuda: 'Um botão só, para o cadastro: o único caminho que concede o bônus.', motivo: '' },
+                      ],
+                    },
+                  ].map(grupo => {
+                    // `|| padrao` pelo mesmo motivo do payload: campanha antiga
+                    // chega sem o campo e precisa abrir no comportamento que já tinha.
+                    const atual = (campanhaEdit as any)[grupo.campo] || grupo.padrao;
+                    const travadaEmUso = grupo.opcoes.some(o => !!o.motivo && o.valor === atual);
+                    return (
+                      <div key={grupo.campo}>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5 block">
+                          {grupo.rotulo}
+                        </label>
+                        <div className="space-y-2">
+                          {grupo.opcoes.map(o => {
+                            const sel = atual === o.valor;
+                            const travada = !!o.motivo;
+                            return (
+                              <button
+                                key={o.valor}
+                                type="button"
+                                disabled={travada}
+                                title={o.motivo || undefined}
+                                onClick={() => setCampanhaEdit((p: any) => ({ ...p, [grupo.campo]: o.valor }))}
+                                className={`w-full text-left rounded-xl border px-3 py-2.5 transition-all ${
+                                  travada
+                                    ? 'border-slate-800 bg-slate-900/40 cursor-not-allowed'
+                                    : sel
+                                      ? 'border-amber-500/60 bg-amber-500/10'
+                                      : 'border-slate-700 bg-slate-800/40 hover:border-slate-600'
+                                }`}
+                              >
+                                <span className={`block text-xs font-black ${
+                                  travada ? 'text-slate-600' : sel ? 'text-amber-300' : 'text-slate-300'
+                                }`}>
+                                  {o.titulo}
+                                  {travada && (
+                                    <span className="ml-2 text-[9px] font-black text-rose-400/80 uppercase tracking-widest">
+                                      não credita
+                                    </span>
+                                  )}
+                                </span>
+                                <span className={`block text-[10px] mt-0.5 ${travada ? 'text-rose-300/60' : 'text-slate-500'}`}>
+                                  {o.motivo || o.ajuda}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* Só aparece se a campanha já estiver gravada numa
+                            opção travada (veio da API, não desta tela). Sem
+                            isto o formulário mostraria um grupo sem nada
+                            marcado e o Salvar voltaria 422 sem explicação. */}
+                        {travadaEmUso && (
+                          <p className="text-[10px] text-rose-300 mt-1.5">
+                            A campanha está gravada nessa opção e o servidor recusa o salvamento assim. Escolha outra.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>

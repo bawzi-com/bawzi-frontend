@@ -10,15 +10,21 @@
  * — ver `/api/admin/promo-banner/public`). Este componente decide COMO ela
  * entra na tela:
  *
- *   campanha + visitante deslogado  →  pop-up uma vez por acesso, depois barra
- *   campanha + pessoa logada        →  só a barra
- *   cupom                           →  só a barra, como sempre foi
+ *   campanha, público bate com a sessão  →  pop-up uma vez por acesso, depois barra
+ *   campanha, público não bate           →  nada: nem pop-up, nem barra
+ *   cupom                                →  só a barra, para todo mundo, como sempre foi
  *
- * ⚠️ O POP-UP É SÓ DA CAMPANHA, E SÓ PARA DESLOGADO. O bônus é concedido no
- * CADASTRO: para quem já tem conta não há nada a resgatar, e um modal no meio
- * da tela oferecendo o inatingível é interrupção pura. O cupom fica de fora
- * por outro motivo — ele é texto livre de um Promotion Code que nada valida,
- * então não há escassez real que justifique tomar a tela.
+ * ⚠️ QUEM VÊ É `exibir_para`, E ELE MANDA NA BARRA TAMBÉM — ISSO É NOVO. Antes
+ * só o pop-up olhava a sessão e a barra aparecia para todo mundo: uma faixa de
+ * "crie sua conta e ganhe créditos" em cima de quem já é cliente é ruído puro,
+ * porque o bônus é concedido no CADASTRO e não há nada a resgatar ali. O
+ * default do backend é `deslogado`, que é justamente essa correção; `logado` e
+ * `ambos` existem para campanha que não dependa de conta nova. O cupom não tem
+ * esse campo e continua para todo mundo (ver `publicoDaPromo`).
+ *
+ * ⚠️ O POP-UP CONTINUA SENDO SÓ DA CAMPANHA. O cupom fica de fora por outro
+ * motivo — ele é texto livre de um Promotion Code que nada valida, então não
+ * há escassez real que justifique tomar a tela.
  *
  * ═══════════════════════════════════════════════════════════════════════════
  * "TODO NOVO ACESSO DEVE APARECER" — POR QUE `sessionStorage`
@@ -39,7 +45,7 @@ import { X, Copy, Check, ArrowRight, Tag } from 'lucide-react';
 import { campanhaAtual } from '@/lib/campanha';
 import { API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 import { type DadosPromo, paletaPromo, rotaAceitaPopup } from '@/lib/promo';
-import PromoModal from './PromoModal';
+import PromoModal, { ctaDaPromo, publicoDaPromo, urlDeLogin } from './PromoModal';
 
 const CHAVE_CONSENTIMENTO = 'bawzi_consent_accepted';
 
@@ -165,13 +171,32 @@ export default function PromoBanner() {
   // ── 4. A decisão ──────────────────────────────────────────────────────────
   const eCampanha = banner?.origem === 'campanha';
 
+  /**
+   * Esta sessão é do público desta promoção? `null` = ainda não dá para dizer.
+   *
+   * ⚠️ O TERCEIRO ESTADO É DE PROPÓSITO, E AGORA VALE PARA A BARRA. Enquanto
+   * `deslogado` for `null` não sabemos se há sessão; chutar "pode ver" mostra
+   * a barra e a esconde meio segundo depois, na cara de quem nem era o
+   * público. Melhor atrasar do que piscar — regra que o pop-up já seguia.
+   */
+  const podeVer = useMemo<boolean | null>(() => {
+    if (!banner || deslogado === null) return null;
+    const publico = publicoDaPromo(banner);
+    if (publico === 'ambos') return true;
+    return publico === 'logado' ? !deslogado : deslogado;
+  }, [banner, deslogado]);
+
   useEffect(() => {
     if (!banner || !eCampanha) return;
-    if (deslogado !== true || !consentimentoResolvido) return;
+    // ⚠️ `podeVer` ENTRA COMO MAIS UMA CONDIÇÃO, NÃO NO LUGAR DAS OUTRAS. O
+    // público bater não dispensa o consentimento resolvido, a rota que aceita
+    // pop-up nem o "já fechei nesta sessão" — cada uma dessas linhas existe
+    // por um motivo próprio, documentado onde ela mora.
+    if (podeVer !== true || !consentimentoResolvido) return;
     if (!rotaAceitaPopup(pathname)) return;
     if (leu('session', chavePopup)) return;
     setModalAberto(true);
-  }, [banner, eCampanha, deslogado, consentimentoResolvido, pathname, chavePopup]);
+  }, [banner, eCampanha, podeVer, consentimentoResolvido, pathname, chavePopup]);
 
   // A barra some se já tiver sido fechada — por sessão na campanha, para
   // sempre no cupom.
@@ -208,13 +233,22 @@ export default function PromoBanner() {
 
   if (!banner || !banner.active) return null;
 
+  // ⚠️ A BARRA TEM CTA PRÓPRIO, ENTÃO TEM OS TRÊS CASOS DO POP-UP. `cadastro`
+  // é o link que o backend mandou, como sempre foi; `login` troca destino e
+  // rótulo; `ambos` põe os dois, e aí o de entrar vira contorno em vez de um
+  // segundo botão branco competindo com o primeiro.
+  const cta = ctaDaPromo(banner);
+  const linkCadastro =
+    cta !== 'login' && banner.link_url && banner.link_text ? banner.link_url : null;
+  const mostraLogin = cta === 'login' || cta === 'ambos';
+
   return (
     <>
       {modalAberto && (
         <PromoModal dados={banner} countdown={countdown} onClose={fecharModal} />
       )}
 
-      {!dismissed && (
+      {podeVer === true && !dismissed && (
         <div className={`relative w-full ${c.bar} print:hidden`} role="banner" aria-label="Oferta promocional">
           <div className="max-w-[1400px] mx-auto pl-4 pr-11 py-2.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-center">
 
@@ -269,16 +303,36 @@ export default function PromoBanner() {
               </span>
             )}
 
-            {/* CTA */}
-            {banner.link_url && banner.link_text && (
+            {/* CTA — ver `ctaDaPromo` logo acima do return. O rótulo de
+                entrar é fixo: `link_text` é o texto do cadastro e o backend o
+                preenche sozinho, então não serve para um botão que leva ao
+                login. */}
+            {linkCadastro && (
               <a
-                href={banner.link_url}
+                href={linkCadastro}
                 className={`shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[12px] font-black transition-all ${c.btn}`}
               >
                 {banner.link_text}
                 <ArrowRight size={12} />
               </a>
             )}
+
+            {mostraLogin && (linkCadastro ? (
+              <a
+                href={urlDeLogin(banner)}
+                className={`shrink-0 inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-[12px] font-bold transition-all ${c.copy}`}
+              >
+                Já tenho conta
+              </a>
+            ) : (
+              <a
+                href={urlDeLogin(banner)}
+                className={`shrink-0 inline-flex items-center gap-1 rounded-lg px-3 py-1 text-[12px] font-black transition-all ${c.btn}`}
+              >
+                Entrar
+                <ArrowRight size={12} />
+              </a>
+            ))}
           </div>
 
           {/* Botão fechar */}

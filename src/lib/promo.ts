@@ -107,6 +107,21 @@ export interface DadosPromo {
   duracao_meses?: number;
   tipo_valor?: string;
   bonus_percentual?: number;
+  // ── Quem vê, e o que o botão oferece ──────────────────────────────────
+  // Decididos no admin (cartões "Exibir para" e "Exibir"), serializados pelo
+  // `/api/admin/promo-banner/public` e aplicados em `PromoBanner`/`PromoModal`.
+  //
+  // ⚠️ `string`, e não uma união de literais, de propósito. O valor vem da
+  // rede: um `'deslogado' | 'logado' | 'ambos'` aqui seria uma promessa que o
+  // TypeScript não tem como cumprir — ele descreveria o que o backend DEVERIA
+  // mandar, não o que chega. Quem lê já coage e cai no default diante de valor
+  // desconhecido (ver `publicoDaPromo` e `ctaDaPromo` em PromoModal.tsx), que é
+  // o mesmo tratamento que `modo` e `tipo_valor` logo acima recebem.
+  //
+  // Ausentes em campanha gravada antes destes campos, e no banner de cupom —
+  // por isso opcionais, e por isso o default importa mais que o tipo.
+  exibir_para?: string;
+  exibir_cta?: string;
 }
 
 export interface Oferta {
