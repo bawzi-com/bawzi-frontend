@@ -697,19 +697,37 @@ const UFS: readonly { sigla: string; nome: string }[] = [
     setLoadingId(edital.id);
     try {
       const [resTexto, resMedia] = await Promise.all([
-        // `limite` diz ao backend quanto orçamento de anexos ele tem: sem
-        // isso ele usa o conservador de 30k e volta a descartar documentos.
-        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}&limite=${charLimit}`, { signal: controller.signal }),
-        fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`, { signal: controller.signal })
+        // ⚠️ `apiFetch`, NÃO `fetch`. O orçamento de anexos passou a ser
+        // resolvido no SERVIDOR a partir do tier — antes ele vinha daqui, no
+        // parâmetro `limite`, e qualquer um podia pedir 5 milhões. Com `fetch`
+        // puro não vai cabeçalho de sessão, o servidor via um anónimo e
+        // rebaixaria o cliente pagante ao teto de convidado. `apiFetch` sem
+        // token continua funcionando (o convidado é atendido por desenho) —
+        // ele só acrescenta o cabeçalho quando existe sessão.
+        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`, { signal: controller.signal }),
+        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`, { signal: controller.signal })
       ]);
-
-      const dataTexto = await resTexto.json();
-      const dataMedia = await resMedia.json();
 
       if (!resTexto.ok) throw new Error("Falha ao carregar itens detalhados.");
 
+      const dataTexto = await resTexto.json();
       let detalhamentoTecnico = dataTexto.texto || "Detalhes técnicos não fornecidos pela API.";
-      const historicoPrecos = dataMedia.texto || "Sem histórico recente para estabelecer média.";
+
+      // ⚠️ O `.ok` DESTA CHAMADA FALTAVA, E A FRASE IA PARA O PROMPT.
+      // Um 429/500 do endpoint de médias devolve `{"detail": ...}` — JSON
+      // válido, então `.json()` não lança, `dataMedia.texto` fica `undefined`
+      // e o `||` produzia "Sem histórico recente para estabelecer média",
+      // afirmação que entrava no bloco de INTELIGÊNCIA DE MERCADO do prompt.
+      // O laudo dizia ao cliente que não há histórico de preços para aquele
+      // objeto — e ele pagou um crédito por uma indisponibilidade momentânea
+      // travestida de fato de mercado. Agora a fonte que falhou é declarada
+      // como falha, e o modelo é instruído a não concluir ausência a partir
+      // dela — a mesma regra anti-falsa-ausência que o núcleo já aplica.
+      const historicoPrecos = resMedia.ok
+        ? ((await resMedia.json()).texto || "Sem histórico recente para estabelecer média.")
+        : "CONSULTA DE PREÇOS INDISPONÍVEL nesta análise (a fonte não respondeu). "
+          + "Isto NÃO significa que não exista histórico: trate como lacuna de "
+          + "consulta, reduza a confiança e não afirme ausência de referência de preço.";
 
   const termoAlvo = searchTerm.trim()
     ? `"${searchTerm.trim().toUpperCase()}"`

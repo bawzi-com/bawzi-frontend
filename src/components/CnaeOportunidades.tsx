@@ -228,16 +228,24 @@ export default function CnaeOportunidades({
     try {
       const termo = cnaeInfo?.termos[0] || edital.cnae_match || 'licitação';
       const [resTexto, resMedia] = await Promise.all([
-        fetch(`${API_URL}/api/pncp/texto-completo?cnpj=${cnpj}&ano=${ano}&seq=${seq}`),
-        fetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo)}`),
+        // `apiFetch` e não `fetch`: o orçamento de anexos passou a sair do
+        // tier lido no servidor, e sem cabeçalho de sessão o cliente pagante
+        // seria atendido com o teto de convidado. Ver PncpSearch.
+        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${cnpj}&ano=${ano}&seq=${seq}`),
+        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo)}`),
       ]);
 
-      const dataTexto = await resTexto.json();
-      const dataMedia = await resMedia.json();
       if (!resTexto.ok) throw new Error('Falha ao carregar o edital.');
-
+      const dataTexto = await resTexto.json();
       const detalhamento = dataTexto.texto || 'Detalhes técnicos não disponíveis.';
-      const historico = dataMedia.texto || 'Sem histórico recente de preços.';
+
+      // Mesma correção do PncpSearch: sem o `.ok`, um 429 da fonte de preços
+      // virava a frase "sem histórico recente" DENTRO do prompt, e o laudo
+      // afirmava ausência de referência de mercado que ninguém apurou.
+      const historico = resMedia.ok
+        ? ((await resMedia.json()).texto || 'Sem histórico recente de preços.')
+        : 'CONSULTA DE PREÇOS INDISPONÍVEL nesta análise (a fonte não respondeu). '
+          + 'Trate como lacuna de consulta, não como ausência de histórico.';
       const uf = edital.uf || edital.unidadeOrgao?.ufSigla || '';
       const orgao = edital.orgao_nome || edital.orgaoEntidade?.razaoSocial || edital.unidadeOrgao?.nomeUnidade || edital.nomeOrgao || 'Órgão';
       const valor = edital.valor_total_estimado || edital.valorTotalEstimado || edital.valor_global || 0;
