@@ -405,6 +405,19 @@ export interface AnalysisResult {
    *  com o mesmo 35 e a tela desenhava a barra como se fosse medida. */
   score_original?: number;
   score_limitado_por?: 'sem_aderencia_cnae' | string;
+  /** Balanço de documentos: PUBLICADO ≠ LIDO. Antes o laudo só sabia quantos
+   *  arquivos o PNCP lista, e dizia "N arquivos oficiais verificados em tempo
+   *  real" contando a listagem — com nove publicados e dois extraídos. */
+  documentos_oficiais?: {
+    publicados: number;
+    lidos: number;
+    titulos_lidos?: string[];
+    nao_lidos?: string[];
+  };
+  /** Divergências entre a resposta do modelo e `AnalysisResult`. Presente só
+   *  quando houve. Um `risks` que volte como string, por exemplo, produzia um
+   *  laudo com zero riscos sem nenhum sinal. */
+  schema_violacoes?: string[];
   classification: string;
   effort: string;
   estimated_value: string;

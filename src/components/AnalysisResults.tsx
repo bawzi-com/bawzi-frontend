@@ -475,6 +475,7 @@ export default function AnalysisResults({
             de segurança — se ele sumir, some junto o único sinal de que
             NENHUMA trava determinística rodou. */}
         <QaFalhouBanner result={liveResult} />
+        <SchemaVioladoBanner result={liveResult} />
 
         {/* ══ CONTEÚDO DA ABA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
@@ -3220,6 +3221,31 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
   const isFichaAusente = (item: NonNullable<AnalysisResult['ficha_tecnica']>[number]) =>
     !item.valor || item.fonte === 'ausente' || /n[ãa]o\s+localizad/i.test(item.valor);
   const fichaLocalizados = ficha.filter((f) => !isFichaAusente(f)).length;
+  /* ⚠️ ESTA LINHA EXISTE PORQUE "PUBLICADO" E "LIDO" ERAM A MESMA COISA.
+     O laudo dizia "N arquivos oficiais verificados na fonte PNCP em tempo
+     real" contando a LISTAGEM — num edital com nove anexos publicados, quatro
+     são selecionados pelo backend e talvez dois rendam texto. O cliente lia
+     "nove verificados" e decidia com base nisso. */
+  const docs = result.documentos_oficiais;
+  if (docs && typeof docs.publicados === 'number') {
+    const faltam = Math.max(0, docs.publicados - (docs.lidos || 0));
+    rows.push({
+      key: 'documentos',
+      Icon: FolderOpen,
+      label: 'Documentos oficiais lidos',
+      status: docs.lidos === 0 ? 'alerta' : faltam > 0 ? 'atencao' : 'ok',
+      headline: docs.lidos === 0
+        ? `${docs.publicados} arquivo(s) publicado(s) no PNCP, nenhum pôde ser lido — esta análise se apoia apenas nos metadados.`
+        : faltam > 0
+          ? `${docs.lidos} de ${docs.publicados} arquivo(s) publicado(s) foram lidos. O conteúdo dos outros ${faltam} não entrou nesta análise.`
+          : `Todos os ${docs.publicados} arquivo(s) publicados no PNCP foram lidos.`,
+      detail: docs.nao_lidos?.length
+        ? [`Não lidos: ${docs.nao_lidos.join(' · ')}`]
+        : undefined,
+      stepKey: 'decisao',
+    });
+  }
+
   const coberturaPct = result.qualidade_extracao?.cobertura_pct;
   rows.push({
     key: 'ficha',
@@ -3972,6 +3998,45 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
  * congruência — e visualmente IDÊNTICO a um laudo validado. A ausência de toda
  * a validação era a ausência mais invisível do produto.
  */
+/** ⚠️ A RESPOSTA DO MODELO NÃO CONFERE COM O CONTRATO — E ANTES ISSO ERA MUDO.
+ *
+ *  `AnalysisResult` existia em `models.py` e não era importado em lado nenhum:
+ *  o dict cru ia para o banco. Como todo o pipeline lê com
+ *  `x if isinstance(x, list) else []`, um campo com o tipo errado não dava
+ *  erro — dava vazio. Um `risks` que voltasse como string produzia um laudo
+ *  com ZERO riscos, e o cliente lia "nenhum risco identificado".
+ *
+ *  A validação agora roda na fronteira e NÃO bloqueia (recusar o laudo puniria
+ *  quem já pagou a análise). Ela registra, e este aviso é a parte que o leitor
+ *  precisa ver: alguma seção deste laudo pode estar vazia por defeito de
+ *  formato, não por ausência de achado. */
+function SchemaVioladoBanner({ result }: { result: AnalysisResult }) {
+  const violacoes = result.schema_violacoes;
+  if (!violacoes?.length) return null;
+  return (
+    <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 print:hidden">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700">
+        Laudo com campo fora do formato esperado
+      </p>
+      <p className="mt-1.5 max-w-[70ch] text-[13px] font-medium leading-relaxed text-amber-900/90">
+        A resposta do motor divergiu do contrato em {violacoes.length} ponto(s). Seções deste laudo podem aparecer
+        vazias por defeito de formato — e não porque nada foi encontrado. Refazer a análise costuma resolver; se
+        repetir, vale reportar ao suporte.
+      </p>
+      <details className="mt-2 group">
+        <summary className="cursor-pointer list-none text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700 [&::-webkit-details-marker]:hidden">
+          Ver os campos afetados ▾
+        </summary>
+        <ul className="mt-2 space-y-1">
+          {violacoes.slice(0, 8).map((v, i) => (
+            <li key={i} className="font-mono text-[11px] leading-relaxed text-amber-900/80">{v}</li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
 function QaFalhouBanner({ result }: { result: AnalysisResult }) {
   const qa = result.qualidade_extracao;
   // `undefined` é laudo antigo/rápido, não falha — só `false` é falha.
