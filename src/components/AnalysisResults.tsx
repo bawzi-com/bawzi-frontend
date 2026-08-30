@@ -3683,10 +3683,14 @@ function VereditoTopo({ result }: { result: AnalysisResult }) {
               style={{ width: `${pct}%` }}
             />
           </div>
-          {result.score_limitado_por === 'sem_aderencia_cnae' && (
+          {result.score_limitado_por && (
             <p className="mt-1.5 max-w-[13rem] text-[11px] font-medium leading-relaxed text-slate-400">
-              Limitado a 35 por não haver aderência ao seu CNAE
-              {typeof result.score_original === 'number' ? ` — a leitura do edital dava ${result.score_original}` : ''}.
+              {result.score_limitado_por === 'sem_aderencia_cnae'
+                ? 'Limitado por não haver aderência ao seu CNAE'
+                : `Limitado por: ${String(result.score_limitado_por).toLowerCase()}`}
+              {typeof result.score_original === 'number' && result.score_original !== score
+                ? ` — a leitura do edital dava ${result.score_original}.`
+                : '.'}
             </p>
           )}
         </div>
