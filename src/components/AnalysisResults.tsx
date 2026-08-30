@@ -15,7 +15,7 @@ import {
   Gauge, Settings2, Banknote, Scale, FolderOpen,
   CalendarDays, AlertTriangle, Shield, BrainCircuit,
   ClipboardList, Pin, ThumbsUp, ThumbsDown, FileText,
-  Lock, AlertCircle, Clock, CircleHelp, XCircle,
+  AlertCircle, Clock, CircleHelp, XCircle,
   CalendarX, SearchX, Sparkles, Link2, Share2, Download,
   RefreshCw, History, CheckCircle2, SlidersHorizontal, ChevronDown, Check, ChevronRight, Flag, ListChecks, FileSearch, Gem, Calculator, Trophy,
   ListOrdered, Landmark, ShieldCheck, Scale3d, TrendingUp, ShieldAlert,
@@ -5582,106 +5582,85 @@ function PareceSection({ result, userTier, onUpgradeClick }: { result: AnalysisR
   // ser explicada.
   const status = statusDoParecer(result, userTier);
 
-  return (
-    <div className="my-10 bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm relative">
-      <div className="bg-slate-900 p-4 border-b border-slate-800 flex items-center justify-between">
-        <h3 className="text-white font-bold flex items-center gap-2 text-sm">
-          <Scale size={18} /> PARECER TÉCNICO-JURÍDICO BAWZI
-        </h3>
-        <span className="text-[11px] uppercase tracking-[0.09em] text-amber-400 font-semibold px-2 py-1 bg-amber-400/10 rounded-md border border-amber-400/20">
-          Agente IA Especialista
-        </span>
+  /* ⚠️ SAIU A BARRA PRETA "PARECER TÉCNICO-JURÍDICO BAWZI".
+     Ela vinha logo abaixo do divisor de capítulo "Leitura jurídica" — dois
+     títulos empilhados a dizer a mesma coisa, o segundo em caixa alta sobre
+     `bg-slate-900`, mais pesado do que qualquer coisa na aba inclusive o
+     conteúdo do parecer. O capítulo já nomeia a secção; o selo "Agente IA
+     Especialista" que a acompanhava era chrome de venda dentro de um laudo
+     que a pessoa já pagou. O que era informação de verdade — quem escreveu
+     isto, e o que isto não é — desceu para uma nota de procedência. */
+
+  if (status === 'presente') {
+    return (
+      <div className="rounded-2xl border border-slate-200 p-6 md:p-8">
+        <div className="whitespace-pre-wrap font-sans text-sm font-medium leading-relaxed text-slate-700">
+          {result.parecer_especialista}
+        </div>
+        <p className="mt-6 border-t border-slate-100 pt-4 text-[11px] font-medium leading-relaxed text-slate-400">
+          Gerado pelo Agente Jurídico da Bawzi a partir do texto do edital. É apoio à decisão — não substitui
+          parecer de advogado nem dispensa a leitura do documento original.
+        </p>
       </div>
+    );
+  }
 
-      {status === 'presente' && (
-        <div className="p-8 prose prose-slate max-w-none prose-headings:text-slate-900 prose-p:text-slate-700 prose-strong:text-slate-900">
-          <div className="whitespace-pre-wrap font-sans leading-relaxed text-sm">
-            {result.parecer_especialista}
-          </div>
+  /* Plano INCLUI e mesmo assim não veio: é falha, e a tela precisa dizer
+     isso. Antes, este caminho renderizava o cabeçalho preto e mais nada —
+     um cartão vazio com título, que parece bug de layout e não informa nem
+     que houve problema nem o que fazer. */
+  if (status === 'nao_gerado') {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-slate-200 p-6">
+        <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
+        <div>
+          <p className="text-sm font-semibold text-slate-800">
+            O parecer não foi gerado nesta análise.
+          </p>
+          {/* "Refazer cobra de novo" precisa estar escrito. Repetir o mesmo
+              edital normalmente sai de graça — bate no cache e devolve o
+              laudo salvo, sem chamar a IA. Mas quando o parecer falta, o
+              cache é invalidado de propósito (ver router_analyses) para que
+              refazer REPROCESSE — e reprocessar debita. Recomendar a ação
+              sem dizer o preço é a mesma armadilha do "+2 créditos". */}
+          <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
+            Seu plano inclui o Agente Jurídico, então isto é uma falha desta rodada —
+            não um limite da assinatura. Refazer a análise reprocessa o edital do zero
+            (e debita como uma análise nova); se repetir, vale reportar ao suporte.
+          </p>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      {status === 'fora_do_plano' && (
-        <div className="relative p-6">
-          <div className="prose prose-slate max-w-none mb-3 opacity-60">
-            <p className="text-slate-700 text-sm font-medium italic">
-              "Após análise minuciosa das cláusulas de habilitação técnica e financeira, identificamos pontos de atenção..."
-            </p>
-          </div>
-          <div className="absolute inset-0 top-[50px] z-20 flex flex-col items-center justify-center bg-white/50 backdrop-blur-md rounded-b-2xl pb-2">
-            <div className="bg-slate-900 text-white p-5 md:p-6 rounded-2xl shadow-xl max-w-sm text-center border border-slate-700 mx-4">
-              <div className="w-12 h-12 bg-amber-400/10 rounded-full flex items-center justify-center mx-auto mb-3 border border-amber-400/20">
-                <Lock size={24} />
-              </div>
-              <h4 className="font-semibold text-lg mb-1.5 text-white">Análise Jurídica Restrita</h4>
-              {/* "Nível N (Nome)" é a MESMA gramática do PremiumLock, que
-                  bloqueia o Radar e o PDF duas abas ao lado. Este cartão dizia
-                  "membros Profissionais e Avançados" — correto, mas num
-                  vocabulário só dele; dois nomes para o mesmo plano na mesma
-                  tela é como o app chegou a quatro nomes para cinco planos.
-                  Confere com tier_config: 3 Profissional e 4 Avançado têm
-                  agent_count 3; o 2 (Essencial) tem 2.
-                  A segunda frase mata a dúvida que este cadeado provocava — a
-                  de que trocar de modo resolveria. */}
-              <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
-                O Parecer Jurídico detalhado está disponível a partir do <strong className="text-white/80">Nível 3 (Profissional)</strong> e no <strong className="text-amber-400">Nível 4 (Avançado)</strong>.
-                <span className="mt-1.5 block text-slate-500">
-                  Vale para os dois modos — a auditoria profunda não desbloqueia o parecer.
-                </span>
-              </p>
-              <button
-                onClick={onUpgradeClick}
-                className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 rounded-xl text-[11px] font-semibold uppercase tracking-[0.09em] transition-all shadow-md active:scale-95 border border-slate-200"
-              >
-                Fazer Upgrade Agora
-              </button>
-            </div>
-          </div>
-          <div className="space-y-3 blur-[5px] select-none pointer-events-none opacity-20 mt-2 min-h-[220px]">
-            <div className="h-3 w-full bg-slate-300 rounded"></div>
-            <div className="h-3 w-5/6 bg-slate-300 rounded"></div>
-            <div className="h-3 w-4/6 bg-slate-300 rounded"></div>
-            <div className="h-16 w-full bg-slate-100 rounded-xl mt-4"></div>
-          </div>
-        </div>
-      )}
-
-      {/* Plano INCLUI e mesmo assim não veio: é falha, e a tela precisa dizer
-          isso. Antes, este caminho renderizava o cabeçalho preto e mais nada —
-          um cartão vazio com título, que parece bug de layout e não informa
-          nem que houve problema nem o que fazer. */}
-      {status === 'nao_gerado' && (
-        <div className="flex items-start gap-3 p-6">
-          <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-500" />
-          <div>
-            <p className="text-sm font-bold text-slate-800">
-              O parecer não foi gerado nesta análise.
-            </p>
-            {/* "Refazer cobra de novo" precisa estar escrito. Repetir o mesmo
-                edital normalmente sai de graça — bate no cache e devolve o
-                laudo salvo, sem chamar a IA. Mas quando o parecer falta, o
-                cache é invalidado de propósito (ver router_analyses) para que
-                refazer REPROCESSE — e reprocessar debita. Recomendar a ação
-                sem dizer o preço é a mesma armadilha do "+2 créditos". */}
-            <p className="mt-1 text-xs font-medium leading-relaxed text-slate-500">
-              Seu plano inclui o Agente Jurídico, então isto é uma falha desta rodada —
-              não um limite da assinatura. Refazer a análise reprocessa o edital do zero
-              (e debita como uma análise nova); se repetir, vale reportar ao suporte.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
+  /* fora_do_plano — ⚠️ ESTE RAMO ERA O TERCEIRO MECANISMO DE BLOQUEIO DA
+     TELA: um cartão preto próprio, sobreposto a `h-3 bg-slate-300` — barras
+     de esqueleto INVENTADAS, que não são o parecer desfocado, são um desenho
+     de texto. Agora usa o mesmo `PremiumLock` do Radar e do PDF, desfocando
+     uma amostra real da linguagem do parecer.
+     "Nível N (Nome)" é a gramática do PremiumLock; este cartão dizia
+     "membros Profissionais e Avançados" — correto, mas num vocabulário só
+     dele. Confere com tier_config: 3 Profissional e 4 Avançado têm
+     agent_count 3; o 2 (Essencial) tem 2. */
+  return (
+    <PremiumLock
+      isLocked
+      featureTitle="Parecer técnico-jurídico"
+      requiredTierName="Nível 3 (Profissional)"
+      onUpgradeClick={onUpgradeClick}
+      nota="Vale para os dois modos — a auditoria profunda não desbloqueia o parecer."
+    >
+      <div className="rounded-2xl border border-slate-200 p-6 md:p-8">
+        <p className="text-sm font-medium italic leading-relaxed text-slate-600">
+          &ldquo;Após análise minuciosa das cláusulas de habilitação técnica e financeira, identificamos pontos de
+          atenção quanto à exigência de atestado e ao índice de liquidez, cuja redação comporta questionamento nos
+          termos do art. 67 da Lei 14.133/2021…&rdquo;
+        </p>
+      </div>
+    </PremiumLock>
   );
 }
 
-// ─── Avaliação por Parâmetros ─────────────────────────────────────────────────
-
-// ⚠️ Era uma SEGUNDA declaração da mesma coisa, divergindo de
-// `AnalysisResult['avaliacao_parametros']`: aqui `status` era um union de três
-// valores e `score` um número obrigatório, quando o backend pode mandar (e
-// manda) status irreconhecível e score ausente. Duas verdades sobre o mesmo
-// campo é como o "atende por omissão" passou pelo compilador. Agora é um alias.
 type AvaliacaoParametro = CriterioAvaliado;
 
 const PARAM_STATUS_CFG: Record<string, { label: string; bg: string; text: string; border: string; dot: string }> = {
