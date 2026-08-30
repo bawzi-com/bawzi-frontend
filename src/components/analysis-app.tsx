@@ -21,7 +21,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Lock, Sparkles, Coins, X, ChevronLeft, ChevronRight } from 'lucide-react';
-import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro } from '@/lib/apiClient';
+import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro, SessionExpiredError } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
 import { useAnalysis, LOADING_MESSAGES, lerUsoConvidadoHoje } from '@/hooks/useAnalysis';
@@ -844,6 +844,68 @@ export default function AnalysisApp() {
     setShowShareModal(true);
   };
 
+  /* ─── Peça de impugnação ───────────────────────────────────────────────
+   *
+   * ⚠️ ESTA FUNÇÃO NÃO EXISTIA, E A FUNCIONALIDADE INTEIRA ESTAVA MORTA.
+   *
+   * O backend tem `POST /api/gerar-impugnacao` desde sempre, com prompt
+   * jurídico próprio, modelo Sênior forçado e teto diário por workspace
+   * (`_LIMITE_DIARIO_IMPUGNACAO`). O `ImpugnacaoModal` existe, está montado
+   * aqui embaixo, tem botão de copiar. O estado `impugnacaoText` está
+   * declarado no `useAnalysis` e exportado.
+   *
+   * E nada ligava as três coisas: `setShowImpugnacaoModal(true)` não aparecia
+   * em lado nenhum do repositório — só o `false` do `onClose` — e
+   * `setImpugnacaoText` nunca era chamado. Nenhuma requisição partia.
+   *
+   * Enquanto isso, o plano de ação do laudo mandava "protocolar pedido de
+   * esclarecimento ou impugnação" — instruía a fazer à mão exactamente o que
+   * a plataforma sabia redigir, sem oferecer o botão. É o mesmo defeito do
+   * portão de Nível 4 na Gestão: recurso construído, pago, e sem caminho
+   * até ele.
+   */
+  const [gerandoImpugnacao, setGerandoImpugnacao] = useState(false);
+
+  const handleGerarImpugnacao = useCallback(async (
+    riscos: Array<{ titulo: string; descricao: string }>,
+  ) => {
+    // O endpoint exige o texto do edital (`edital_texto`) e recusa com 400 sem
+    // ele. Mesma condição do "Aprofundar": um laudo aberto pelo histórico não
+    // tem o texto carregado. Quem chama já esconde o botão nesse caso — este
+    // guarda é a rede, para o pedido não sair e voltar 400.
+    if (!text.trim() || riscos.length === 0) return;
+    setGerandoImpugnacao(true);
+    try {
+      const res = await apiFetch(`${API_URL}/api/gerar-impugnacao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // ⚠️ `provedor` NÃO viaja daqui. O corpo do pedido aceita esse campo, e
+        // deixar o cliente escolher o provedor de um modelo caro é o defeito
+        // que o teto diário existe para conter. Sem o campo, o backend usa o
+        // seu default.
+        body: JSON.stringify({ edital_texto: text, riscos_identificados: riscos }),
+      });
+      if (!res.ok) {
+        const erro = await res.json().catch(() => null);
+        // O 429 da cota diária traz `{codigo, titulo, mensagem, uso_atual,
+        // limite}` — `mensagemDeErro` já lê `mensagem` de dentro do objeto, e
+        // é ela que diz "o contador zera amanhã", que é o que a pessoa
+        // precisa de saber.
+        throw new Error(mensagemDeErro(erro?.detail, 'Não foi possível gerar a peça de impugnação.'));
+      }
+      const dados = await res.json().catch(() => null);
+      const documento = String(dados?.documento_markdown || '').trim();
+      if (!documento) throw new Error('A peça voltou vazia. Tente novamente em instantes.');
+      setImpugnacaoText(documento);
+      setShowImpugnacaoModal(true);
+    } catch (err: unknown) {
+      if (err instanceof SessionExpiredError) return;
+      showError(err instanceof Error ? err.message : 'Erro ao gerar a peça de impugnação.');
+    } finally {
+      setGerandoImpugnacao(false);
+    }
+  }, [text, setImpugnacaoText, showError]);
+
   const confirmShare = async () => {
     if (!shareEmail || !shareEmail.includes('@')) { showError('Por favor, insira um e-mail válido.'); return; }
     if (!analysisId) { showError('Erro: não foi possível identificar o ID desta análise. Tente novamente.'); return; }
@@ -1469,6 +1531,14 @@ export default function AnalysisApp() {
                       onAprofundar={token && analysisId && text.trim().length >= 80
                         ? () => handleAnalyzeWithAuth('claude', { aprofundarDe: analysisId })
                         : undefined}
+                      // Mesma condição do Aprofundar, e pela mesma razão: a
+                      // peça é redigida sobre o TEXTO do edital, que um laudo
+                      // aberto pelo histórico não tem carregado. Sem a prop, o
+                      // laudo mostra as cláusulas a impugnar e explica por que
+                      // não pode redigir agora — em vez de oferecer um botão
+                      // que volta 400.
+                      onGerarImpugnacao={token && text.trim().length >= 80 ? handleGerarImpugnacao : undefined}
+                      gerandoImpugnacao={gerandoImpugnacao}
                       // Só o MULTIPLICADOR do plano: a conta sai de
                       // `result.creditos × peso` dentro do banner. Estimar
                       // pelo texto da tela subestimava o preço (o backend

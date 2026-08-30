@@ -101,6 +101,12 @@ interface AnalysisResultsProps {
   /** Abre a compra de pacote avulso. O aviso de laudo degradado é o momento
    *  de maior intenção que existe: o cliente acabou de VER o que perdeu. */
   onComprarPacote?: () => void;
+  /** Redige a peça de impugnação sobre as cláusulas marcadas e abre o modal.
+   *  Ausente quando o texto do edital não está carregado (laudo aberto do
+   *  histórico) — é a mesma condição do `onAprofundar`, e pela mesma razão: o
+   *  backend redige SOBRE o texto, não sobre o laudo. */
+  onGerarImpugnacao?: (riscos: Array<{ titulo: string; descricao: string }>) => void;
+  gerandoImpugnacao?: boolean;
 }
 
 type LearningStats = {
@@ -145,6 +151,8 @@ export default function AnalysisResults({
   pesoProfunda,
   saldoCreditos,
   onTrackedChange,
+  onGerarImpugnacao,
+  gerandoImpugnacao,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
@@ -732,6 +740,19 @@ export default function AnalysisResults({
                           trackSaving={trackSaving}
                           onToggleTracking={toggleTracking}
                           onGoToGestao={onGoToGestao}
+                        />
+                        {/* ⚠️ O ENDEREÇO FICA AQUI, NÃO NA ABA DECISÃO.
+                            O `DecisionSnapshot` lista as três primeiras ações
+                            como resumo do plano — é leitura, para quem ainda
+                            está a decidir. Esta aba é onde se faz. Pendurar o
+                            botão que redige a peça no resumo truncado seria pôr
+                            a ferramenta longe do momento em que ela é usada, e
+                            duplicá-la nos dois sítios traria de volta o padrão
+                            que este laudo passou a semana a desfazer. */}
+                        <EnderecoDasAcoes
+                          result={liveResult}
+                          onGerarImpugnacao={onGerarImpugnacao}
+                          gerandoImpugnacao={gerandoImpugnacao}
                         />
                         <OportunidadesSection result={liveResult} />
                       </>
@@ -1324,6 +1345,153 @@ function DecisionSnapshot({
 
       </div>
     </section>
+  );
+}
+
+/* ─── O endereço das ações ────────────────────────────────────────────────
+ *
+ * ⚠️ O PLANO DE AÇÃO DIZIA O QUÊ E NUNCA O ONDE.
+ *
+ * A linha que a IA escreve é do tipo "Protocolar pedido de esclarecimento ou
+ * impugnação sobre anexos, itens, preços unitários, critérios e penalidades"
+ * — cinco categorias, nenhuma nomeada, sem data e sem caminho. Enquanto
+ * isso, duas abas antes, o mesmo laudo já sabe:
+ *
+ *   · QUAIS cláusulas — cada `red_flag` traz `acao_sugerida`
+ *     ('impugnar' | 'esclarecer'), o `trecho` literal do edital, a
+ *     `base_legal` e a `sumula_tcu` quando o padrão bate com a jurisprudência;
+ *   · ATÉ QUANDO — `prazo_impugnacao_calculado` traz a data, a base legal
+ *     (art. 164, I) e se ela DIVERGE da que o edital declara;
+ *   · COMO — o backend redige a peça em `POST /api/gerar-impugnacao`.
+ *
+ * ⚠️ ESTE BLOCO NÃO TENTA ADIVINHAR A QUAL AÇÃO ELE PERTENCE. A tentação era
+ * casar o texto da ação por palavra-chave ("impugna", "esclarec") e pendurar
+ * o endereço na linha certa. Isso seria uma heurística sobre texto livre de
+ * modelo, a errar nos dois sentidos. As cláusulas marcadas para impugnar
+ * estão marcadas independentemente do que a IA escreveu no plano — então elas
+ * viram um bloco próprio, sempre verdadeiro, logo abaixo das ações.
+ */
+function EnderecoDasAcoes({
+  result,
+  onGerarImpugnacao,
+  gerandoImpugnacao,
+}: {
+  result: AnalysisResult;
+  onGerarImpugnacao?: (riscos: Array<{ titulo: string; descricao: string }>) => void;
+  gerandoImpugnacao?: boolean;
+}) {
+  const flags = result.red_flags || [];
+  const aImpugnar = flags.filter((f) => f.acao_sugerida === 'impugnar');
+  const aEsclarecer = flags.filter((f) => f.acao_sugerida === 'esclarecer');
+  const alvos = [...aImpugnar, ...aEsclarecer];
+  if (alvos.length === 0) return null;
+
+  const prazo = result.prazo_impugnacao_calculado;
+  const podeGerar = Boolean(onGerarImpugnacao) && aImpugnar.length > 0;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+        Sobre o que impugnar ou pedir esclarecimento
+      </p>
+      <p className="mt-1 text-[12px] font-medium leading-relaxed text-slate-400">
+        As cláusulas que a varredura marcou, com o trecho do edital que as sustenta.
+      </p>
+
+      <ul className="mt-4 space-y-3.5">
+        {alvos.map((flag, i) => (
+          <li key={i} className="border-l-2 border-slate-200 pl-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.09em] ${
+                flag.acao_sugerida === 'impugnar'
+                  ? 'bg-red-50 text-red-700 ring-1 ring-red-200'
+                  : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+              }`}>
+                {flag.acao_sugerida === 'impugnar' ? 'Impugnar' : 'Esclarecer'}
+              </span>
+              {flag.base_legal && (
+                <span className="font-mono text-[11px] text-slate-400">{flag.base_legal}</span>
+              )}
+            </div>
+            <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-700">{flag.descricao}</p>
+            {flag.trecho && (
+              <p className="mt-1.5 border-l border-slate-200 pl-2.5 font-mono text-[11px] leading-relaxed text-slate-400">
+                &ldquo;{flag.trecho}&rdquo;
+              </p>
+            )}
+            {flag.sumula_tcu?.referencia && (
+              <p className="mt-1.5 font-mono text-[11px] text-slate-400">
+                {flag.sumula_tcu.referencia}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {prazo?.data_iso && (
+        <div className="mt-4 flex items-start gap-2 border-t border-slate-100 pt-3.5">
+          <Clock size={14} className="mt-0.5 shrink-0 text-slate-400" />
+          <p className="text-[12px] font-medium leading-relaxed text-slate-500">
+            <strong className="font-semibold text-slate-700">
+              Protocolar até {formatarDataCritica(prazo.data_iso)}
+            </strong>
+            {prazo.base_legal ? ` · ${prazo.base_legal}` : ''}
+            {/* `origem: 'divergente'` significa que a data calculada por lei NÃO
+                é a que o edital declara. Omitir isso aqui, na linha em que a
+                pessoa vai marcar a agenda, seria esconder o conflito no
+                momento em que ele custa caro. */}
+            {prazo.origem === 'divergente' && (
+              <span className="mt-1 block text-amber-700">
+                Esta data diverge da declarada no edital — {prazo.mensagem}
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+
+      {podeGerar ? (
+        <button
+          type="button"
+          disabled={gerandoImpugnacao}
+          onClick={() =>
+            onGerarImpugnacao!(
+              aImpugnar.map((f) => ({
+                titulo: f.tipo_label || f.tipo || 'Cláusula restritiva',
+                descricao: [f.descricao, f.trecho ? `Trecho do edital: "${f.trecho}"` : '']
+                  .filter(Boolean)
+                  .join(' '),
+              })),
+            )
+          }
+          className="mt-4 flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {gerandoImpugnacao ? (
+            <>
+              <RefreshCw size={14} className="animate-spin" />
+              Redigindo a peça…
+            </>
+          ) : (
+            <>
+              <Scale size={14} />
+              Gerar peça de impugnação
+            </>
+          )}
+        </button>
+      ) : aImpugnar.length > 0 ? (
+        /* Sem o texto do edital carregado não dá para redigir — o endpoint
+           precisa dele. Dizer isso é melhor do que esconder a existência da
+           ferramenta ou oferecer um botão que volta 400. */
+        <p className="mt-4 border-t border-slate-100 pt-3.5 text-[12px] font-medium leading-relaxed text-slate-400">
+          A Bawzi redige a peça de impugnação a partir do texto do edital. Este laudo foi aberto do histórico, sem o
+          texto carregado — abra o edital numa análise nova para gerar a peça.
+        </p>
+      ) : null}
+
+      <p className="mt-3 text-[11px] font-medium leading-relaxed text-slate-400">
+        A peça sai como minuta de trabalho: não é parecer jurídico e deve ser revista por advogado habilitado antes
+        do protocolo.
+      </p>
+    </div>
   );
 }
 
