@@ -389,6 +389,22 @@ export interface QualidadeExtracao {
   aviso?: string;
   /** Quantas citações legais geradas pela IA foram removidas pelo sanitizador. */
   citacoes_legais_sanitizadas?: number;
+  /** A-04 — versão da RÉGUA de cobertura. Laudos sem o campo usaram a v1, que
+   *  media só CAMPOS LOCALIZADOS: 100% era atingível sem abrir um anexo. A v2
+   *  acrescenta um componente proporcional de leitura. Sem esta marca, os dois
+   *  números pareceriam a mesma medida. */
+  cobertura_formula?: 'v2' | string;
+  documentos_publicados?: number;
+  documentos_lidos?: number;
+  documentos_lidos_pct?: number;
+  peso_leitura?: number;
+  peso_leitura_obtido?: number;
+  /** Presente quando o percentual daria "alta" mas a maioria dos documentos
+   *  oficiais não foi lida. "Cobertura alta" é a frase que autoriza alguém a
+   *  decidir sem abrir o edital. */
+  nivel_limitado_por?: string;
+  /** Fatos estabelecidos que não são campos localizáveis (orçamento sigiloso). */
+  campos_legalmente_ausentes?: string[];
 }
 
 export interface AnalysisResult {
@@ -418,6 +434,46 @@ export interface AnalysisResult {
    *  quando houve. Um `risks` que volte como string, por exemplo, produzia um
    *  laudo com zero riscos sem nenhum sinal. */
   schema_violacoes?: string[];
+  /** D-02 — o que se repete e o que não se repete. A camada de qualidade é
+   *  determinística; a LEITURA do edital pelo modelo não é, porque as famílias
+   *  em uso recusam ajuste de temperatura. Sem este campo, um cliente que
+   *  reprocessa e vê o score mudar conclui que o edital mudou. */
+  reprodutibilidade?: {
+    leitura_reproduzivel?: boolean | null;
+    motivos?: string[];
+    nota?: string;
+    camada_qa_deterministica?: boolean;
+  };
+  /** D-05 — aspas e referências internas encontradas na PROSA (`summary`,
+   *  `rationale`, `recommendation`, parecer), conferidas contra o edital. A
+   *  prosa NUNCA é reescrita: o que se mostra é a marca. */
+  citacoes_prosa?: {
+    executado?: boolean;
+    total?: number;
+    confirmadas?: number;
+    nao_localizadas?: number;
+    campos?: Record<string, {
+      aspas_nao_localizadas?: string[];
+      referencias_nao_localizadas?: string[];
+    }>;
+  };
+  conferencia_prosa_falhou?: boolean;
+  /** D-03 — CNPJ de concorrente que não fechou no módulo 11 ou não veio do
+   *  PNCP. O concorrente permanece; só o número sai. */
+  cnpjs_concorrentes_conferidos?: {
+    total?: number;
+    mantidos?: number;
+    removidos_digito?: number;
+    removidos_sem_fonte?: number;
+  };
+  /** D-06 — a análise correu sobre material que o sistema não conseguiu
+   *  entregar por inteiro, e o modelo foi proibido de afirmar ausência. */
+  material_incompleto?: {
+    chars_aparados?: number;
+    chars_enviados?: number;
+    documentos_nao_lidos?: number;
+    trava_anti_falsa_ausencia?: boolean;
+  };
   classification: string;
   effort: string;
   estimated_value: string;

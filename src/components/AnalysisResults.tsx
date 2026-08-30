@@ -476,6 +476,8 @@ export default function AnalysisResults({
             NENHUMA trava determinística rodou. */}
         <QaFalhouBanner result={liveResult} />
         <SchemaVioladoBanner result={liveResult} />
+        <MaterialIncompletoBanner result={liveResult} />
+        <ProsaNaoConferidaBanner result={liveResult} />
 
         {/* ══ CONTEÚDO DA ABA ATIVA ══ */}
         <div key={activeStep} className="animate-in fade-in duration-300">
@@ -1071,7 +1073,7 @@ function DecisionSnapshot({
               <div
                 className="min-w-[80px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center"
                 title={
-                  `Percentual de campos críticos do edital (objeto, valores, prazos, garantias etc.) que a IA conseguiu localizar para basear a análise. ${
+                  `Percentual de campos críticos do edital (objeto, valores, prazos, garantias etc.) que a IA conseguiu localizar, mais quanto dos documentos oficiais foi efetivamente lido. ${
                     result.qualidade_extracao.campos_faltantes?.length
                       ? `Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
                       : 'Todos os campos críticos foram localizados no material.'
@@ -1098,6 +1100,17 @@ function DecisionSnapshot({
                     style={{ width: `${result.qualidade_extracao.cobertura_pct}%` }}
                   />
                 </div>
+                {/* ⚠️ A-04 — O RÓTULO "ALTA" NÃO PODE VIR DE LEITURA PARCIAL.
+                    A régua v1 media só campos localizados, e todos eles são
+                    alcançáveis com os metadados do PNCP: um edital com cinco
+                    anexos, nenhum lido, exibia cobertura alta. Quando o motor
+                    limita o nível por leitura parcial, a razão fica aqui, ao
+                    lado do número — não escondida num tooltip. */}
+                {result.qualidade_extracao.nivel_limitado_por && (
+                  <p className="mt-1.5 text-[10px] font-medium leading-tight text-slate-500">
+                    {result.qualidade_extracao.nivel_limitado_por}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -1132,11 +1145,23 @@ function DecisionSnapshot({
             <p>
               <strong className="text-slate-800">
                 Cobertura{typeof result.qualidade_extracao?.cobertura_pct === 'number' ? ` (${result.qualidade_extracao.cobertura_pct}%)` : ''}
-              </strong> — percentual dos campos críticos do edital (objeto, valores, prazos, garantias…) que foram
-              localizados para basear a análise.
+              </strong> — quanto do edital esta análise de facto usou: os campos críticos (objeto, valores,
+              prazos, garantias…) que foram localizados, mais a proporção dos documentos oficiais que foi lida.
               {result.qualidade_extracao?.campos_faltantes?.length
                 ? <> Não localizados: {result.qualidade_extracao.campos_faltantes.join(', ')}.</>
                 : null}
+              {typeof result.qualidade_extracao?.documentos_lidos === 'number'
+                && typeof result.qualidade_extracao?.documentos_publicados === 'number' && (
+                <> <span className="text-slate-500">Documentos oficiais lidos: <strong>
+                  {result.qualidade_extracao.documentos_lidos} de {result.qualidade_extracao.documentos_publicados}
+                </strong>.</span></>
+              )}
+              {/* Laudos antigos usaram outra régua. Comparar os dois números
+                  como se medissem a mesma coisa é o erro que a marca evita. */}
+              {result.qualidade_extracao && !result.qualidade_extracao.cobertura_formula && (
+                <> <span className="text-slate-500">Este laudo usou a régua anterior, que media apenas
+                campos localizados — não é comparável com a cobertura de análises novas.</span></>
+              )}
             </p>
           </div>
         </details>
@@ -3246,7 +3271,64 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     });
   }
 
+  /* ── D-05 · A PROSA CONFERIDA ────────────────────────────────────────
+     A linha existe mesmo quando nada falhou, e isso é o ponto: "conferido e
+     nada faltou" e "nunca conferido" são estados diferentes, e antes os dois
+     apareciam como ausência de linha. Um laudo antigo (sem o campo) não ganha
+     linha nenhuma — não vamos afirmar retroativamente uma conferência que não
+     houve. */
+  const prosa = result.citacoes_prosa;
+  if (result.conferencia_prosa_falhou) {
+    rows.push({
+      key: 'prosa',
+      Icon: FileSearch,
+      label: 'Citações do texto conferidas',
+      status: 'alerta',
+      headline: 'A conferência das citações do resumo e da fundamentação falhou nesta análise — as aspas do texto não foram verificadas contra o edital.',
+      stepKey: 'decisao',
+    });
+  } else if (prosa?.executado) {
+    const faltam = prosa.nao_localizadas || 0;
+    rows.push({
+      key: 'prosa',
+      Icon: FileSearch,
+      label: 'Citações do texto conferidas',
+      status: faltam > 0 ? 'atencao' : 'ok',
+      headline: (prosa.total || 0) === 0
+        ? 'O resumo e a fundamentação não trazem citação literal nem referência a dispositivo do edital — não havia o que conferir.'
+        : faltam > 0
+          ? `${faltam} de ${prosa.total} citação(ões) do resumo e da fundamentação não foram localizadas no edital. O texto foi mantido; a citação é que não se confirmou.`
+          : `As ${prosa.total} citação(ões) do resumo e da fundamentação foram localizadas no edital.`,
+      stepKey: 'decisao',
+    });
+  }
+
+  /* ── D-02 · O QUE SE REPETE E O QUE NÃO SE REPETE ────────────────────
+     A camada determinística de qualidade dá sempre o mesmo resultado para a
+     mesma leitura. A LEITURA não: as famílias de modelo em uso recusam ajuste
+     de temperatura. Sem esta linha, quem reprocessa e vê o número mudar
+     conclui que o edital mudou, ou que a ferramenta está quebrada. */
+  const repro = result.reprodutibilidade;
+  if (repro?.nota) {
+    rows.push({
+      key: 'reprodutibilidade',
+      Icon: Gauge,
+      label: 'Reprodutibilidade da leitura',
+      status: 'atencao',
+      headline: repro.nota,
+      stepKey: 'decisao',
+    });
+  }
+
   const coberturaPct = result.qualidade_extracao?.cobertura_pct;
+  const detalheFicha = [
+    ...(result.qualidade_extracao?.campos_faltantes?.length
+      ? [`Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`]
+      : []),
+    ...(result.qualidade_extracao?.nivel_limitado_por
+      ? [`Cobertura não classificada como alta: ${result.qualidade_extracao.nivel_limitado_por}.`]
+      : []),
+  ];
   rows.push({
     key: 'ficha',
     Icon: FileSearch,
@@ -3254,16 +3336,21 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     status:
       ficha.length === 0 ? 'pendente'
       : typeof coberturaPct === 'number'
-        ? (coberturaPct >= 75 ? 'ok' : coberturaPct >= 45 ? 'atencao' : 'alerta')
+        // ⚠️ Segue o `nivel` do motor, e não os cortes 75/45 replicados aqui.
+        // Eram DUAS réguas para o mesmo número: com a v2 da cobertura (A-04),
+        // um laudo podia ser rebaixado para "media" por leitura parcial lá
+        // atrás e continuar aparecendo como "ok" nesta linha.
+        ? (result.qualidade_extracao?.nivel === 'alta' ? 'ok'
+           : result.qualidade_extracao?.nivel === 'baixa' ? 'alerta'
+           : result.qualidade_extracao?.nivel === 'media' ? 'atencao'
+           : coberturaPct >= 75 ? 'ok' : coberturaPct >= 45 ? 'atencao' : 'alerta')
         : 'ok',
     headline: ficha.length === 0
       ? 'Extração estruturada não disponível nesta análise.'
       : `${fichaLocalizados}/${ficha.length} campos localizados e cross-checados contra o texto original${
           typeof coberturaPct === 'number' ? ` (${coberturaPct}% de cobertura)` : ''
         }.`,
-    detail: result.qualidade_extracao?.campos_faltantes?.length
-      ? [`Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`]
-      : undefined,
+    detail: detalheFicha.length ? detalheFicha : undefined,
     stepKey: 'aderencia',
   });
 
@@ -3719,6 +3806,23 @@ function VereditoTopo({ result }: { result: AnalysisResult }) {
                 : '.'}
             </p>
           )}
+          {/* ── B-03 · O CORTE DEIXOU DE SER PERMANENTE ────────────────────
+              A catraca: cada re-execução partia do score já cortado, e nenhuma
+              reconstruía a partir da medida. O usuário conseguia o atestado,
+              marcava "atendido", reprocessava — e a tela não mudava. Agora o
+              recálculo parte de `score_original` e reaplica os tetos sobre os
+              sinais atuais; quando a causa some, os pontos voltam.
+
+              E um número que SOBE precisa dizer por quê, ou parece defeito. */}
+          {!result.score_limitado_por
+            && typeof result.score_original === 'number'
+            && score != null
+            && result.score_original === score && (
+            <p className="mt-1.5 max-w-[13rem] text-[11px] font-medium leading-relaxed text-slate-500">
+              Teto anterior removido: a causa do corte não existe mais, e a nota voltou
+              à medida do edital.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -4033,6 +4137,88 @@ function SchemaVioladoBanner({ result }: { result: AnalysisResult }) {
           ))}
         </ul>
       </details>
+    </div>
+  );
+}
+
+/* ── D-05 · O QUE A PROSA AFIRMA E O EDITAL NÃO DIZ ───────────────────────
+   O cliente decide lendo o resumo e a fundamentação. Até agora, as aspas e as
+   referências a "item 7.3" dentro desse texto não passavam por conferência
+   nenhuma — só os campos estruturados passavam.
+
+   Este bloco NÃO corrige a prosa, e isso é deliberado: cortar a frase citada
+   mutila o argumento, e reescrevê-la seria inventar texto para corrigir texto
+   inventado. Ele diz ao leitor qual frase ele não deve levar para uma
+   impugnação sem antes abrir o PDF — que é a decisão que ele precisa tomar. */
+function ProsaNaoConferidaBanner({ result }: { result: AnalysisResult }) {
+  const p = result.citacoes_prosa;
+  if (!p?.executado || !p.nao_localizadas) return null;
+  const rotulos: Record<string, string> = {
+    summary: 'Resumo executivo',
+    rationale: 'Fundamentação',
+    recommendation: 'Recomendação',
+    parecer_especialista: 'Parecer jurídico',
+  };
+  const entradas = Object.entries(p.campos || {});
+  return (
+    <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700">
+        {p.nao_localizadas} citação(ões) do texto não foram localizadas no edital
+      </p>
+      <p className="mt-1.5 max-w-[70ch] text-[13px] font-medium leading-relaxed text-amber-900/90">
+        O texto abaixo foi mantido inteiro — a leitura pode estar certa com a frase parafraseada.
+        O que não se confirmou foi a citação <em>literal</em>. Confira no documento original antes de
+        usar qualquer uma destas passagens como fundamento de impugnação ou recurso.
+        {typeof p.confirmadas === 'number' && p.confirmadas > 0 && (
+          <> Outras <strong>{p.confirmadas}</strong> foram conferidas e batem com o edital.</>
+        )}
+      </p>
+      <div className="mt-3 space-y-2">
+        {entradas.map(([campo, dados]) => (
+          <div key={campo} className="rounded-xl border border-amber-200/70 bg-white/60 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-amber-700">
+              {rotulos[campo] || campo}
+            </p>
+            {dados.aspas_nao_localizadas?.map((t, i) => (
+              <p key={`a${i}`} className="mt-1 text-[12px] italic leading-relaxed text-amber-900/85">
+                &ldquo;{t}&rdquo;
+              </p>
+            ))}
+            {dados.referencias_nao_localizadas?.length ? (
+              <p className="mt-1 text-[12px] font-medium leading-relaxed text-amber-900/85">
+                Dispositivo(s) não encontrado(s) no documento:{' '}
+                <span className="font-mono">{dados.referencias_nao_localizadas.join(', ')}</span>
+              </p>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── D-06 · A ANÁLISE CORREU SOBRE MATERIAL INCOMPLETO ────────────────────
+   Quando o sistema apara texto pelo limite do plano, ou não consegue abrir um
+   anexo, o modelo recebe uma proibição explícita de afirmar ausência. O
+   cliente precisa saber disso pelo mesmo motivo: um campo que não aparece no
+   laudo pode ser um campo que ninguém conseguiu ler. */
+function MaterialIncompletoBanner({ result }: { result: AnalysisResult }) {
+  const m = result.material_incompleto;
+  if (!m?.trava_anti_falsa_ausencia) return null;
+  const partes: string[] = [];
+  if (m.chars_aparados) partes.push(`${m.chars_aparados.toLocaleString('pt-BR')} caracteres foram aparados para caber no limite do seu plano`);
+  if (m.documentos_nao_lidos) partes.push(`${m.documentos_nao_lidos} documento(s) oficial(is) não puderam ser lidos`);
+  return (
+    <div className="mb-6 rounded-2xl border border-slate-300 bg-slate-50 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-600">
+        Análise feita sobre material incompleto
+      </p>
+      <p className="mt-1.5 max-w-[70ch] text-[13px] font-medium leading-relaxed text-slate-700">
+        {partes.join(' e ')}. Por isso o motor foi <strong>proibido</strong> de afirmar que o edital
+        &ldquo;não exige&rdquo; ou &ldquo;é omisso&rdquo; quanto a qualquer ponto, e de reprovar o edital por algo
+        &ldquo;não localizado&rdquo;. Onde este laudo diz <em>&ldquo;não verificável neste recorte&rdquo;</em>, a informação
+        pode existir no material que não coube — não é ausência confirmada.
+      </p>
     </div>
   );
 }

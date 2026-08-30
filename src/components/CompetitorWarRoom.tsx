@@ -48,6 +48,13 @@ export interface ConcorrenteData {
   nome: string;
   cnpj?: string;
   cleanCnpj?: string;
+  /** D-03 — o número que o motor retirou por não fechar no módulo 11 ou por
+   *  não constar dos contratos apurados no PNCP. Um CNPJ deduzido a partir do
+   *  nome identifica uma empresa REAL que não é esta, e ele alimentava o
+   *  painel de compliance e o link de sanções. O concorrente permanece: o
+   *  nome costuma vir do próprio ranking do PNCP. */
+  cnpj_nao_conferido?: string;
+  cnpj_motivo?: string;
   uf?: string;
   uf_disputa?: string;
   uf_contrato?: string;
@@ -1563,7 +1570,11 @@ export default function CompetitorWarRoom({
                               <span className="text-[9px] font-bold text-slate-400">·</span>
                               <span className="text-[9px] font-bold text-slate-400">{getNumeroVitorias(item.vitorias)} vitória{getNumeroVitorias(item.vitorias) === 1 ? '' : 's'}</span>
                               {forcaIcon[item.forca] || <Bot size={14} className="text-slate-400" />}
-                              {item.cnpj && <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>}
+                              {item.cnpj
+                                ? <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">CNPJ: {item.cnpj}</span>
+                                : item.cnpj_nao_conferido
+                                  ? <span className="text-[9px] font-mono text-amber-600 hidden sm:inline">CNPJ não confirmado</span>
+                                  : null}
                             </div>
                             <p className="text-[11px] font-semibold text-slate-600 leading-snug mt-2">
                               <span className="font-black text-slate-800">Por que importa:</span> {explicarConcorrente(item)}
@@ -1685,7 +1696,9 @@ export default function CompetitorWarRoom({
                 <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Concorrente em análise</p>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight">{target.nome}</h2>
                 <div className="flex items-center gap-3 mt-2 text-xs text-slate-400">
-                  <span className="bg-slate-800 px-2 py-0.5 rounded">CNPJ: {target.cnpj || 'N/A'}</span>
+                  <span className="bg-slate-800 px-2 py-0.5 rounded">
+                    CNPJ: {target.cnpj || (target.cnpj_nao_conferido ? 'não confirmado' : 'N/A')}
+                  </span>
                   {perfilAlvo.ultimaVitoria && (
                     <span>última vitória {perfilAlvo.ultimaVitoria.rotulo}</span>
                   )}
@@ -1724,6 +1737,24 @@ export default function CompetitorWarRoom({
             )}
           </div>
 
+          {/* ⚠️ D-03 — SEM CNPJ CONFERIDO, NÃO HÁ PAINEL DE COMPLIANCE.
+              Consultar sanções e certidões com um número deduzido devolveria
+              a ficha de OUTRA empresa, e o cliente a leria como sendo deste
+              concorrente. Dizer que o número não foi confirmado é o resultado
+              honesto, e é acionável: o nome continua ali para a busca manual. */}
+          {target.cnpj_nao_conferido && !target.cleanCnpj && (
+            <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                CNPJ não confirmado
+              </p>
+              <p className="mt-1.5 max-w-[70ch] text-xs font-bold leading-relaxed text-amber-900/90">
+                {target.cnpj_motivo || 'O número não pôde ser confirmado contra os contratos apurados no PNCP.'}{' '}
+                O nome do concorrente foi mantido — ele veio do histórico de contratos —, mas o painel de
+                sanções e certidões fica fora: com um número não confirmado ele mostraria a ficha de outra
+                empresa. Confira o CNPJ no portal antes de usar esta linha para qualquer decisão.
+              </p>
+            </div>
+          )}
           {target.cleanCnpj && target.cleanCnpj.length >= 11 && (
             <div className="bg-white rounded-[2rem] border border-slate-200 p-6 shadow-sm">
               <CompliancePanel cnpj={target.cleanCnpj} companyName={target.nome} userTier={userTier} onUpgradeClick={() => {}} />
