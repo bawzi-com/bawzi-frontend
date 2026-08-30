@@ -42,6 +42,7 @@ import {
   getNextDecisionQueueStage,
   getDecisionQueueStage,
   normalizeDecisionCockpitStatus,
+  scoreOuNulo,
   type DecisionQueueKey,
   type DecisionQueueTask,
 } from '@/lib/decisionQueue';
@@ -1746,8 +1747,11 @@ function DecisionQueueCard({
   onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
   scoreColors: (score: number) => { bar: string; text: string; light: string; border: string; label: string };
 }) {
-  const score = Number(card.analysis.score || 0);
-  const colors = scoreColors(score);
+  // ⚠️ AUSÊNCIA NÃO É ZERO. `Number(x || 0)` desenhava "0 / score" em vermelho
+  // para um laudo que simplesmente não trouxe o número — indistinguível de um
+  // edital que a bawzi reprovou. Ver `scoreOuNulo` em lib/decisionQueue.
+  const score = scoreOuNulo(card.analysis.score);
+  const colors = scoreColors(score ?? 50);
   const createdDate = card.analysis.created_at
     ? new Date(card.analysis.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
     : 'Sem data';
@@ -1779,8 +1783,12 @@ function DecisionQueueCard({
             </h3>
           </div>
           <div className={`shrink-0 rounded-xl border px-2 py-1 text-center ${colors.light} ${colors.border}`}>
-            <p className={`text-lg font-black leading-none ${colors.text}`}>{score}</p>
-            <p className="mt-0.5 text-[8px] font-black uppercase text-slate-400">score</p>
+            <p className={`text-lg font-black leading-none ${score === null ? 'text-slate-400' : colors.text}`}>
+              {score === null ? '—' : score}
+            </p>
+            <p className="mt-0.5 text-[8px] font-black uppercase text-slate-400">
+              {score === null ? 'sem score' : 'score'}
+            </p>
           </div>
         </div>
 
@@ -2185,12 +2193,16 @@ function OperationalSummaryModal({
 }) {
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
   const stage = decisionQueueStages[card.stage];
-  const score = Number(card.analysis.score || 0);
-  const verdictClass = score >= 70
-    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-    : score >= 45
-      ? 'border-amber-100 bg-amber-50 text-amber-700'
-      : 'border-red-100 bg-red-50 text-red-700';
+  const score = scoreOuNulo(card.analysis.score);
+  // Sem score, a pílula fica NEUTRA. Pintá-la de vermelho por ausência é a
+  // mesma afirmação falsa que o cartão da fila fazia.
+  const verdictClass = score === null
+    ? 'border-slate-200 bg-slate-50 text-slate-500'
+    : score >= 70
+      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+      : score >= 45
+        ? 'border-amber-100 bg-amber-50 text-amber-700'
+        : 'border-red-100 bg-red-50 text-red-700';
   const nextResponsible = card.nextTask
     ? card.statusMap[card.nextTask.id]?.responsavel || card.nextTask.responsavel
     : 'Sem responsável pendente';
@@ -2239,7 +2251,7 @@ function OperationalSummaryModal({
                 {operational.urgency.label}
               </span>
               <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${verdictClass}`}>
-                Score {score}
+                {score === null ? 'Score não informado' : `Score ${score}`}
               </span>
             </div>
             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resumo do edital</p>

@@ -137,19 +137,87 @@ export function getNextDecisionQueueStage(stage: DecisionQueueKey): DecisionQueu
   return decisionQueueOrder[index + 1];
 }
 
+/** Score como número, ou `null` quando ele não veio.
+ *
+ * ⚠️ `Number(x || 0)` TRANSFORMA AUSÊNCIA EM ZERO, e zero é uma medida.
+ * `score` é opcional no tipo (`score?: number`) porque de facto pode não vir —
+ * o laudo já trata isso, e este arquivo não tratava.
+ */
+export function scoreOuNulo(valor: unknown): number | null {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
+}
+
+/* ─── Casos que esta função tem de satisfazer ────────────────────────────────
+ *
+ * ⚠️ ESTE PROJETO NÃO TEM RUNNER DE TESTE NO FRONTEND (sem jest, sem vitest).
+ * A tabela abaixo foi executada contra o código real, através do bundler do
+ * Next, e passa 8/8. Ela fica aqui porque é o único lugar onde sobrevive —
+ * quem mexer nesta função tem o comportamento esperado à frente.
+ *
+ *   entrada                                        → esperado
+ *   ────────────────────────────────────────────────────────────
+ *   { decisao: { veredito: 'GO' } }                → GO
+ *   { decisao: { veredito: 'GO' }, score: 80 }     → GO
+ *   { }                                            → GO_CONDICIONADO
+ *   { score: 0 }                                   → NO_GO
+ *   { score: 30 }                                  → NO_GO
+ *   { score: 55 }                                  → GO_CONDICIONADO
+ *   { decisao: { veredito: 'NO_GO' }, score: 90 }  → NO_GO
+ *   { score: null, decisao: { veredito: 'GO' } }   → GO
+ *
+ * O sétimo é o que mais importa: ele FALHAVA antes desta correção, e falhava
+ * já no código antigo. Ver a nota sobre o underscore em
+ * `normalizeDecisionQueueText`. */
 export function inferDecisionVerdict(analysis: SavedAnalysis): 'GO' | 'GO_CONDICIONADO' | 'NO_GO' {
   const decision = asRecord(analysis.decisao);
   const raw = normalizeDecisionQueueText(
     decision.veredito || decision.rotulo || analysis.classification || analysis.recommendation || '',
   );
-  const score = Number(analysis.score || 0);
 
-  if (raw.includes('no-go') || raw.includes('no go') || raw.includes('nao participar') || score < 45) {
-    return 'NO_GO';
-  }
-  if (raw.includes('condicion') || raw.includes('atencao') || (score >= 45 && score < 70)) {
-    return 'GO_CONDICIONADO';
-  }
+  /* ═══════════════════════════════════════════════════════════════════════
+   * ⚠️ `score < 45` NUM **OU** COM O TEXTO DERRUBAVA O VEREDITO DO BACKEND
+   * ═══════════════════════════════════════════════════════════════════════
+   * Era:
+   *     const score = Number(analysis.score || 0);
+   *     if (raw.includes('no-go') || … || score < 45) return 'NO_GO';
+   *
+   * Duas coisas erradas encadeadas. Primeiro, `|| 0` transforma score AUSENTE
+   * em zero — e zero é uma medida, não uma ausência. Depois, esse zero entra
+   * num OU: mesmo que `decisao.veredito` diga GO, o `score < 45` vence e o
+   * edital é reclassificado como No-Go.
+   *
+   * O que o cliente via: cartão vermelho, "0 / score", etiqueta "No-Go", o
+   * plano de execução montado como NO_GO (tudo prioridade Alta, sem checklist
+   * de habilitação), o filtro "Go" escondendo o edital — e, no Comparar, o
+   * texto copiável para a equipe saindo como "score 0/100 (No-Go)". Ninguém
+   * na tela conseguia distinguir "a bawzi deu zero" de "o score não veio".
+   *
+   * É o MESMO defeito que já foi corrigido no laudo (`clampPercent` devolve
+   * `number | null`) e o quarto caso desta auditoria em que a correção ficou
+   * parada no arquivo onde nasceu.
+   *
+   * Agora o score só fala quando existe. E quando NÃO existe nem score nem
+   * texto reconhecível, o veredito é GO_CONDICIONADO — de propósito: é o
+   * único dos três rótulos que não afirma. Ele manda o edital para a fila de
+   * TRIAGEM, que é onde um laudo ilegível deve estar. NO_GO esconderia o
+   * edital; GO o empurraria para proposta. */
+  const score = scoreOuNulo(analysis.score);
+  // A normalização acima já trocou `_` e `-` por espaço, então "NO_GO",
+  // "NO-GO" e "no go" chegam aqui na mesma forma. A ordem dos testes importa:
+  // "no go" CONTÉM "go", e é por isso que o não-go é verificado primeiro.
+  const textoDizNaoGo = raw.includes('no go') || raw.includes('nao participar');
+  const textoDizCondicional = raw.includes('condicion') || raw.includes('atencao');
+  const textoDizGo = raw.includes('go') || raw.includes('participar')
+    || raw.includes('avancar');
+
+  if (textoDizNaoGo) return 'NO_GO';
+  if (score !== null && score < 45) return 'NO_GO';
+  if (textoDizCondicional) return 'GO_CONDICIONADO';
+  if (score !== null && score >= 45 && score < 70) return 'GO_CONDICIONADO';
+  // Sem score E sem texto que se possa ler: não se afirma nem GO nem NO_GO.
+  if (score === null && !textoDizGo) return 'GO_CONDICIONADO';
   return 'GO';
 }
 
@@ -335,6 +403,19 @@ function normalizeDecisionQueueText(value: unknown) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    // ⚠️ `_` E `-` VIRAM ESPAÇO, E ISSO NÃO É COSMÉTICO.
+    // O backend grava `decisao.veredito` como "NO_GO" — com UNDERSCORE. As
+    // três variantes procuradas em `inferDecisionVerdict` eram "no-go",
+    // "no go" e "nao participar": nenhuma delas casa "no_go". O veredito
+    // explícito do backend nunca era reconhecido, e a Gestão só acertava por
+    // acidente, quando o score baixo puxava para NO_GO pelo outro ramo.
+    //
+    // Isso ficou MAIS perigoso depois da correção do núcleo: lá o rótulo e o
+    // número foram deliberadamente desacoplados (quem cede é a classificação,
+    // o score continua sendo a medida do edital). Um laudo NO_GO com score 78
+    // passou a ser um estado normal — e era exatamente o que esta tela lia
+    // como GO.
+    .replace(/[_\-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();

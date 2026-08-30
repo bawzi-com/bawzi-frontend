@@ -83,6 +83,14 @@ export interface PricingIntelligenceData {
   financial_verdict?: string;
   /** null quando não há base histórica suficiente — o campo não deve ser exibido. */
   desagioPreditivoOrgao?: number | null;
+  /** De que população o deságio saiu: `"orgao"` = contratos DESTE comprador;
+   *  `"nacional"` = objeto parecido, qualquer comprador do país. O campo se
+   *  chama "…Orgao" por compatibilidade, mas a amostra nem sempre é dele —
+   *  e o rótulo da tela não pode afirmar o que a amostra não sustenta. */
+  desagioEscopo?: 'orgao' | 'nacional' | null;
+  /** Quantos contratos sustentam o número. "28,9% sobre 2" e "28,9% sobre 30"
+   *  são afirmações de força muito diferente, e eram tipograficamente iguais. */
+  desagioAmostraN?: number | null;
   nivelAmeaca?: string | null;
   perfilVencedor?: string | null;
   /** Motivo textual quando o deságio não pôde ser apurado. */
@@ -1218,7 +1226,11 @@ export default function CompetitorWarRoom({
               <div className={`border rounded-[2rem] p-6 md:p-8 shadow-sm ${nc.bg}`}>
                 <div className="flex items-center gap-2 mb-4">
                   <Lightbulb size={18} className="text-slate-700" />
-                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Inteligência de Preço do Órgão</h3>
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">
+                    {pricing.desagioEscopo === 'orgao'
+                      ? 'Inteligência de Preço do Órgão'
+                      : 'Inteligência de Preço do Segmento'}
+                  </h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Nível de Ameaça */}
@@ -1231,13 +1243,31 @@ export default function CompetitorWarRoom({
                   </div>
                   {/* Deságio Preditivo */}
                   <div className="bg-white/80 rounded-xl p-4 border border-white/60">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Deságio Preditivo do Órgão</p>
+                    {/* ⚠️ O RÓTULO DIZIA "DO ÓRGÃO" E O ÓRGÃO NÃO ENTRAVA NA
+                        CONTA. `orgao_cnpj` era parâmetro morto no backend: a
+                        amostra sempre foi nacional. Agora o backend tenta o
+                        comprador primeiro e declara de onde veio — e o rótulo
+                        segue a declaração em vez de a contradizer. */}
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                      {pricing.desagioEscopo === 'orgao'
+                        ? 'Deságio Preditivo do Órgão'
+                        : 'Deságio Preditivo do Segmento'}
+                    </p>
                     <div>
                       <span className="text-2xl font-black text-slate-900">{desagio > 0 ? `${desagio.toFixed(1)}%` : '—'}</span>
                       {desagio > 0 && (
                         <div className="mt-2 h-2 bg-slate-200 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full transition-all ${desagio > 25 ? 'bg-red-500' : desagio > 15 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, desagio * 2.5)}%` }} />
                         </div>
+                      )}
+                      {desagio > 0 && (
+                        <p className="mt-1.5 text-[10px] font-bold leading-tight text-slate-500">
+                          {pricing.desagioEscopo === 'orgao'
+                            ? 'Contratos anteriores deste comprador'
+                            : 'Objeto parecido, compradores de todo o país — não é o histórico deste órgão'}
+                          {typeof pricing.desagioAmostraN === 'number' && pricing.desagioAmostraN > 0
+                            && ` · ${pricing.desagioAmostraN} contrato${pricing.desagioAmostraN === 1 ? '' : 's'}`}
+                        </p>
                       )}
                     </div>
                   </div>

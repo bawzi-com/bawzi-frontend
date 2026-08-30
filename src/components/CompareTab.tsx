@@ -10,7 +10,7 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts';
 import { API_URL, apiFetch, SessionExpiredError, clearSession } from '@/lib/apiClient';
-import { decisionQueueStages } from '@/lib/decisionQueue';
+import { decisionQueueStages, scoreOuNulo } from '@/lib/decisionQueue';
 import type { SavedAnalysis } from '@/lib/types';
 
 // ─── Tipos locais (extraídos dos campos unknown de SavedAnalysis) ──────────────
@@ -98,19 +98,31 @@ function calcularDuelo(itemA: SavedAnalysis, itemB: SavedAnalysis): {
  *  - scores iguais → desempate pelo placar dimensional; persiste empate → sem vencedor
  */
 function calcularVeredito(itemA: SavedAnalysis, itemB: SavedAnalysis) {
-  const scoreA = itemA.score ?? 0;
-  const scoreB = itemB.score ?? 0;
+  /* ⚠️ `?? 0` FAZIA UM LAUDO SEM SCORE PERDER A COMPARAÇÃO POR DEFINIÇÃO.
+   * O outro edital vencia sozinho, e com os dois sem score a tela afirmava
+   * "ambos receberam veredito NO-GO (scores 0 e 0)" — uma frase sobre dois
+   * editais que ninguém pontuou.
+   *
+   * Agora a ausência é `null` e ela SUSPENDE a comparação: sem os dois
+   * números não há como dizer qual é melhor, e dizer isso é o resultado
+   * honesto. As dimensões continuam sendo mostradas lado a lado — o que sai
+   * é só a afirmação de vencedor. */
+  const scoreA = scoreOuNulo(itemA.score);
+  const scoreB = scoreOuNulo(itemB.score);
   const duelo  = calcularDuelo(itemA, itemB);
+  const comparavel = scoreA !== null && scoreB !== null;
 
-  const ambosNoGo = scoreA < 45 && scoreB < 45;
+  const ambosNoGo = comparavel && scoreA! < 45 && scoreB! < 45;
 
   let vencedor: 'A' | 'B' | null = null;
-  if (scoreA !== scoreB) vencedor = scoreA > scoreB ? 'A' : 'B';
-  else if (duelo.vitoriasA !== duelo.vitoriasB) vencedor = duelo.vitoriasA > duelo.vitoriasB ? 'A' : 'B';
+  if (comparavel && scoreA !== scoreB) vencedor = scoreA! > scoreB! ? 'A' : 'B';
+  else if (comparavel && duelo.vitoriasA !== duelo.vitoriasB) {
+    vencedor = duelo.vitoriasA > duelo.vitoriasB ? 'A' : 'B';
+  }
 
-  const empateTecnico = Math.abs(scoreA - scoreB) <= 5;
+  const empateTecnico = comparavel && Math.abs(scoreA! - scoreB!) <= 5;
 
-  return { scoreA, scoreB, duelo, ambosNoGo, vencedor, empateTecnico };
+  return { scoreA, scoreB, duelo, ambosNoGo, vencedor, empateTecnico, comparavel };
 }
 
 /** Converte string monetária BR ("R$ 197.935,26") em número; null se sigiloso/ausente. */
@@ -171,8 +183,8 @@ function StatusChip({ data, destaque }: { data?: SemaforoItem; destaque: boolean
 // ─── Coluna de uma análise na view de comparação ───────────────────────────────
 
 function CompareColumn({ item, label, isWinner }: { item: SavedAnalysis; label: 'A' | 'B'; isWinner: boolean }) {
-  const score      = item.score ?? 0;
-  const c          = scoreColors(score);
+  const score      = scoreOuNulo(item.score);
+  const c          = scoreColors(score ?? 50);
   const semaforo   = extrairSemaforo(item);
   const risks      = ((item as unknown as { risks?: RiskItem[] }).risks ?? []).slice(0, 3);
   const vantagens  = ((item as unknown as { vantagens?: string[] }).vantagens ?? []).slice(0, 3);
@@ -210,7 +222,9 @@ function CompareColumn({ item, label, isWinner }: { item: SavedAnalysis; label: 
 
       {/* Score */}
       <div className={`rounded-2xl border p-4 text-center ${c.light} ${c.border}`}>
-        <span className={`block text-5xl font-black leading-none ${c.text}`}>{score}</span>
+        <span className={`block text-5xl font-black leading-none ${score === null ? 'text-slate-300' : c.text}`}>
+          {score === null ? '—' : score}
+        </span>
         <span className={`mt-2 inline-block rounded-full bg-white px-3 py-1 text-xs font-black uppercase ${c.text}`}>
           {c.label}
         </span>
@@ -418,15 +432,26 @@ export default function CompareTab({ token }: { token: string }) {
   const copiarResumo = async () => {
     if (!itemA || !itemB) return;
     const v = calcularVeredito(itemA, itemB);
-    const linha = (lbl: string, it: SavedAnalysis) =>
-      `${lbl}) ${it.title || 'Edital'} — score ${it.score ?? 0}/100 (${scoreColors(it.score ?? 0).label})` +
-      `${it.estimated_value ? ` — ${it.estimated_value}` : ''}${(it.uf || it.estado) ? ` — ${it.uf || it.estado}` : ''}`;
+    // ⚠️ ESTE TEXTO SAI DA FERRAMENTA E VAI PARA O WHATSAPP DA EQUIPE.
+    // Com `?? 0`, um laudo sem score era colado como "score 0/100 (No-Go)" —
+    // uma afirmação sobre um edital que ninguém pontuou, lida por gente que
+    // não tem a tela à frente para desconfiar.
+    const linha = (lbl: string, it: SavedAnalysis) => {
+      const sc = scoreOuNulo(it.score);
+      const parteScore = sc === null
+        ? 'score não informado'
+        : `score ${sc}/100 (${scoreColors(sc).label})`;
+      return `${lbl}) ${it.title || 'Edital'} — ${parteScore}` +
+        `${it.estimated_value ? ` — ${it.estimated_value}` : ''}${(it.uf || it.estado) ? ` — ${it.uf || it.estado}` : ''}`;
+    };
 
-    const veredito = v.ambosNoGo
-      ? 'NENHUM vale a disputa (ambos NO-GO).'
-      : v.vencedor
-        ? `Disputar o Edital ${v.vencedor}${v.empateTecnico ? ' (margem estreita)' : ''}.`
-        : 'Empate técnico — decidir por valor, prazo e proximidade.';
+    const veredito = !v.comparavel
+      ? 'SEM COMPARAÇÃO POSSÍVEL — um dos laudos não trouxe o score.'
+      : v.ambosNoGo
+        ? 'NENHUM vale a disputa (ambos NO-GO).'
+        : v.vencedor
+          ? `Disputar o Edital ${v.vencedor}${v.empateTecnico ? ' (margem estreita)' : ''}.`
+          : 'Empate técnico — decidir por valor, prazo e proximidade.';
 
     const duelos = v.duelo.rows
       .map(r => `  • ${r.label}: A ${r.a ? r.a.status.toUpperCase() : '—'} × B ${r.b ? r.b.status.toUpperCase() : '—'}${r.vencedor !== 'empate' ? ` → vence ${r.vencedor}` : ''}`)
@@ -453,8 +478,9 @@ export default function CompareTab({ token }: { token: string }) {
 
   // ── Vista de comparação ──────────────────────────────────────────────────────
   if (comparing && itemA && itemB) {
-    const { scoreA, scoreB, duelo, ambosNoGo, vencedor, empateTecnico } = calcularVeredito(itemA, itemB);
-    const scoreDiff = Math.abs(scoreA - scoreB);
+    const { scoreA, scoreB, duelo, ambosNoGo, vencedor, empateTecnico, comparavel } =
+      calcularVeredito(itemA, itemB);
+    const scoreDiff = comparavel ? Math.abs(scoreA! - scoreB!) : 0;
 
     // Badge "Melhor opção" só quando há vencedor real e a disputa vale a pena
     const badgeA = vencedor === 'A' && !ambosNoGo;
@@ -552,13 +578,29 @@ export default function CompareTab({ token }: { token: string }) {
           ) : (
             <div className="flex items-start gap-3">
               <GitCompare size={22} className="mt-0.5 shrink-0 text-slate-400" />
-              <div>
-                <p className="text-base font-black text-slate-800">Empate técnico</p>
-                <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
-                  Scores e dimensões equivalentes. Desempate por critérios de negócio: valor estimado,
-                  prazo de entrega da proposta e proximidade geográfica.
-                </p>
-              </div>
+              {/* ⚠️ EMPATE E INCOMPARÁVEL NÃO SÃO A MESMA COISA. Antes, um
+                  laudo sem score entrava como zero e caía aqui — ou pior, no
+                  ramo "ambos No-Go", que afirma um veredito que ninguém deu. */}
+              {comparavel ? (
+                <div>
+                  <p className="text-base font-black text-slate-800">Empate técnico</p>
+                  <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                    Scores e dimensões equivalentes. Desempate por critérios de negócio: valor estimado,
+                    prazo de entrega da proposta e proximidade geográfica.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-base font-black text-slate-800">Não dá para comparar pelo score</p>
+                  <p className="mt-1 text-sm font-medium leading-relaxed text-slate-500">
+                    {scoreA === null && scoreB === null
+                      ? 'Nenhum dos dois laudos trouxe o score.'
+                      : `O Edital ${scoreA === null ? 'A' : 'B'} não trouxe o score.`}
+                    {' '}As dimensões abaixo continuam comparáveis lado a lado — o que não dá para
+                    afirmar é qual dos dois vale mais. Reprocessar o laudo sem score resolve.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -651,12 +693,18 @@ export default function CompareTab({ token }: { token: string }) {
           </p>
           <div className="flex items-end gap-6">
             {([itemA, itemB] as const).map((item, idx) => {
-              const score = item.score ?? 0;
-              const c     = scoreColors(score);
-              const h     = Math.max(6, Math.round((Math.min(score, 100) / 100) * 88));
+              // Sem score não há barra a desenhar: a altura viraria a do
+              // pior edital possível, e a coluna afirmaria uma derrota.
+              const score = scoreOuNulo(item.score);
+              const c     = scoreColors(score ?? 50);
+              const h     = score === null
+                ? 0
+                : Math.max(6, Math.round((Math.min(score, 100) / 100) * 88));
               return (
                 <div key={item.id} className="flex flex-1 flex-col items-center gap-2">
-                  <span className={`text-3xl font-black ${c.text}`}>{score}</span>
+                  <span className={`text-3xl font-black ${score === null ? 'text-slate-300' : c.text}`}>
+                    {score === null ? '—' : score}
+                  </span>
                   {/* Trilha 0-100 com marcas das faixas 45 (Atenção) e 70 (Go) */}
                   <div className="relative h-[88px] w-full overflow-hidden rounded-xl bg-slate-100">
                     <div className="absolute inset-x-0 border-t border-dashed border-emerald-300" style={{ bottom: '70%' }} />
@@ -986,8 +1034,8 @@ export default function CompareTab({ token }: { token: string }) {
           </div>
         )}
         {listaVisivel.map(item => {
-          const score      = item.score ?? 0;
-          const c          = scoreColors(score);
+          const score      = scoreOuNulo(item.score);
+          const c          = scoreColors(score ?? 50);
           const isA        = selected[0]?.id === item.id;
           const isB        = selected[1]?.id === item.id;
           const isSelected = isA || isB;
@@ -1008,8 +1056,12 @@ export default function CompareTab({ token }: { token: string }) {
                 {/* Score */}
                 <div className={`flex items-center justify-between rounded-2xl border p-3 md:block md:text-center ${c.light} ${c.border}`}>
                   <div>
-                    <span className={`block text-3xl font-black leading-none ${c.text}`}>{score}</span>
-                    <span className="mt-1 block text-[9px] font-black uppercase text-slate-400">score</span>
+                    <span className={`block text-3xl font-black leading-none ${score === null ? 'text-slate-300' : c.text}`}>
+                      {score === null ? '—' : score}
+                    </span>
+                    <span className="mt-1 block text-[9px] font-black uppercase text-slate-400">
+                      {score === null ? 'sem score' : 'score'}
+                    </span>
                   </div>
                   <span className={`rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase md:mt-3 md:inline-block ${c.text}`}>
                     {c.label}
