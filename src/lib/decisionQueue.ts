@@ -15,11 +15,6 @@ export type DecisionQueueTask = {
   impacto?: string;
   origem: string;
   prioridade: 'Alta' | 'Média' | 'Normal';
-  /** ⚠️ `true` = este passo NÃO saiu da leitura deste edital. É o checklist
-   *  padrão da casa, mostrado para a fila não ficar vazia. Sem esta bandeira
-   *  ele era indistinguível de uma ação que a análise de facto derivou — e
-   *  vinha com `origem: 'Decisão'`, que era falso. */
-  generico?: boolean;
 };
 
 export type DecisionCockpitStatusMap = Record<string, {
@@ -182,47 +177,27 @@ export function inferDecisionVerdict(analysis: SavedAnalysis): 'GO' | 'GO_CONDIC
  * órfãs no documento (não somem, apenas param de ser lidas). Não há caminho
  * sem isso — o estado já estava inconsistente entre as telas. */
 
-/** Checklist padrão da casa, para quando o laudo não trouxe `proximas_acoes`.
+/* ⚠️ AQUI VIVIAM `ACOES_PADRAO` E `ACAO_PADRAO_NO_GO`, E FORAM REMOVIDAS.
  *
- *  ⚠️ ESTES PASSOS NÃO SÃO ANÁLISE DESTE EDITAL, e antes não havia como saber
- *  disso: vinham com `origem: 'Decisão'` e `prazo: 'Hoje'`, entravam na fila
- *  ao lado de ações reais, e o "Prazo crítico" do painel Gestão chegava a
- *  exibir esse 'Hoje' inventado ao lado de datas extraídas do edital.
+ * Eram quatro tarefas escritas à mão ("Conferir requisitos eliminatórios…",
+ * "Calcular preço mínimo viável…", "Validar cláusulas jurídicas…", e a linha
+ * do No-Go) injetadas sempre que o laudo não trouxesse `proximas_acoes`.
+ * Entravam na fila com `origem: 'Decisão'` — falso, não vieram da decisão — e
+ * `prazo: 'Hoje'`, que o painel Gestão chegava a exibir no campo "Prazo
+ * crítico" ao lado de datas extraídas do edital.
  *
- *  Continuam a existir — uma fila vazia deixaria quem depende da Gestão sem
- *  ponto de partida — mas agora carregam `generico: true`, `origem` honesta e
- *  NENHUM prazo. Prazo é compromisso; inventar um é pior do que não ter. */
-const ACOES_PADRAO: ReadonlyArray<Omit<DecisionQueueTask, 'id' | 'origem' | 'prioridade'> & { prioridade: DecisionQueueTask['prioridade'] }> = [
-  {
-    prazo: '',
-    acao: 'Conferir requisitos eliminatórios de habilitação e qualificação técnica.',
-    responsavel: 'Licitações',
-    resultado_esperado: 'Confirmar se há risco de desclassificação.',
-    prioridade: 'Alta',
-  },
-  {
-    prazo: '',
-    acao: 'Calcular preço mínimo viável com impostos, logística, garantias e deságio provável.',
-    responsavel: 'Financeiro',
-    resultado_esperado: 'Definir limite de lance com margem preservada.',
-    prioridade: 'Alta',
-  },
-  {
-    prazo: '',
-    acao: 'Validar cláusulas jurídicas, multas e pontos de impugnação.',
-    responsavel: 'Jurídico',
-    resultado_esperado: 'Fechar o risco contratual antes de assumir compromisso.',
-    prioridade: 'Média',
-  },
-];
-
-const ACAO_PADRAO_NO_GO: Omit<DecisionQueueTask, 'id' | 'origem'> = {
-  prazo: '',
-  acao: 'Reavaliar somente quando o órgão corrigir as informações críticas.',
-  responsavel: 'Licitações',
-  resultado_esperado: 'Evitar esforço de proposta sem segurança técnica, financeira ou jurídica.',
-  prioridade: 'Alta',
-};
+ * Uma versão anterior desta correção apenas marcou-as com `generico: true` e
+ * um selo tracejado. Não basta: a fila da Gestão não é leitura, é ferramenta
+ * de trabalho — cada linha ganha responsável, prazo e um visto de concluída,
+ * e entra na contagem "N de M". Uma tarefa rotulada continua a ser marcada
+ * como feita, e o progresso passa a medir execução de um plano que a análise
+ * nunca escreveu.
+ *
+ * A fila agora reflete o laudo: se ele não produziu ações, ela fica vazia, e
+ * quem consome (`DecisionCockpit`, painel Gestão) diz isso e oferece criar a
+ * primeira tarefa à mão. Vazio verdadeiro é melhor ponto de partida do que
+ * três linhas que ninguém apurou.
+ */
 
 const _PARADAS_PLANO = new Set([
   'para', 'com', 'dos', 'das', 'nos', 'nas', 'pelo', 'pela', 'que', 'por',
@@ -288,20 +263,8 @@ export function buildDecisionQueueTasks(analysis: SavedAnalysis): DecisionQueueT
     });
   });
 
-  // Nenhuma ação veio do laudo → plano mínimo. No NO_GO é uma linha só (não há
-  // proposta a montar); nos demais, os três passos padrão.
-  if (!tasks.length) {
-    const base = veredito === 'NO_GO' ? [ACAO_PADRAO_NO_GO] : ACOES_PADRAO;
-    base.forEach((padrao, index) => {
-      tasks.push({
-        id: `decision-${index}-${normalizeDecisionQueueText(padrao.acao).slice(0, 40)}`,
-        // `origem: 'Decisão'` era mentira: não veio da decisão, veio daqui.
-        origem: 'Checklist padrão Bawzi',
-        generico: true,
-        ...padrao,
-      });
-    });
-  }
+  // Nenhuma ação veio do laudo → a fila fica vazia. Ver o comentário longo
+  // acima sobre por que o plano mínimo deixou de ser injetado aqui.
 
   // Checklist de habilitação só entra em GO / GO_CONDICIONADO: num NO_GO não
   // existe proposta a protocolar, e listar "conferir ANVISA antes de enviar"

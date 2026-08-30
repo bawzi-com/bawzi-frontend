@@ -1833,7 +1833,34 @@ function DecisionCockpit({
     setStatusMap(normalizeCockpitStatus(result.cockpit_status));
   }, [result.cockpit_status, analysisId]);
 
-  if (!tasks.length) return null;
+  /* ⚠️ ISTO ERA `return null` — O COCKPIT SUMIA SEM DIZER NADA.
+     Nunca acontecia na prática, porque a fila era preenchida com o checklist
+     padrão da casa sempre que o laudo não trouxesse ações. Com essa injeção
+     removida (ver `lib/decisionQueue`), o estado vazio passou a ser real e
+     precisa ser dito: sumir em silêncio faria a pessoa procurar um plano que
+     a análise não escreveu. */
+  if (!tasks.length) {
+    return (
+      <section className="mb-8 rounded-[1.5rem] border border-dashed border-slate-200 bg-white p-6 md:p-8 print:hidden">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+          Plano de execução
+        </p>
+        <p className="mt-2 max-w-[60ch] text-sm font-medium leading-relaxed text-slate-500">
+          Esta análise não produziu próximas ações para este edital. A fila fica vazia de propósito — o plano
+          genérico que aparecia aqui não vinha da leitura do documento, e marcá-lo como concluído media execução
+          de um trabalho que ninguém definiu.
+        </p>
+        <button
+          type="button"
+          onClick={() => onGoToGestao()}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+        >
+          <Plus size={14} />
+          Criar a primeira tarefa na Gestão
+        </button>
+      </section>
+    );
+  }
 
   const completed = tasks.filter((task) => statusMap[task.id]?.done).length;
   const progress = Math.round((completed / tasks.length) * 100);
@@ -2159,21 +2186,6 @@ function DecisionCockpit({
                       </span>
                     )}
 
-                    {/* ⚠️ ESTE SELO É A DIFERENÇA ENTRE ANÁLISE E CHECKLIST.
-                        Quando o laudo não devolve `proximas_acoes`, a fila é
-                        preenchida com o checklist padrão da casa (ver
-                        `lib/decisionQueue`). Eles vinham com `origem: 'Decisão'`
-                        e prazo "Hoje", indistinguíveis de passos derivados
-                        DESTE edital — alguém podia protocolar decisão em cima
-                        de uma tarefa que a análise nunca escreveu. */}
-                    {task.generico && (
-                      <span
-                        title="Passo do checklist padrão da Bawzi. Esta análise não devolveu um plano próprio para este edital."
-                        className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400"
-                      >
-                        Checklist padrão
-                      </span>
-                    )}
                   </div>
 
                   <p className={`text-sm font-semibold leading-snug ${isDone ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'}`}>

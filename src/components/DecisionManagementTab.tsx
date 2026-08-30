@@ -2991,11 +2991,10 @@ function getCriticalDeadline(record: Record<string, unknown>, nextTask: Decision
      próxima tarefa — e a próxima tarefa, num laudo sem `proximas_acoes`, era o
      checklist padrão da casa, cujos passos vinham com `prazo: 'Hoje'` fixo.
      Resultado: uma data de agenda fabricada, lado a lado com prazos reais.
-     Os passos genéricos deixaram de ter prazo (ver `decisionQueue`), e aqui o
-     prazo de tarefa genérica é ignorado de propósito. */
-  const prazoDaTarefa = nextTask?.generico ? '' : (nextTask?.prazo || '');
+     O checklist padrão deixou de ser injetado (ver `decisionQueue`), então
+     todo prazo que chega aqui saiu do laudo. */
   return {
-    label: prazoDaTarefa || 'Sem prazo identificado',
+    label: nextTask?.prazo || 'Sem prazo identificado',
     date: null,
   };
 }
