@@ -15,6 +15,11 @@ export type DecisionQueueTask = {
   impacto?: string;
   origem: string;
   prioridade: 'Alta' | 'Média' | 'Normal';
+  /** ⚠️ `true` = este passo NÃO saiu da leitura deste edital. É o checklist
+   *  padrão da casa, mostrado para a fila não ficar vazia. Sem esta bandeira
+   *  ele era indistinguível de uma ação que a análise de facto derivou — e
+   *  vinha com `origem: 'Decisão'`, que era falso. */
+  generico?: boolean;
 };
 
 export type DecisionCockpitStatusMap = Record<string, {
@@ -177,26 +182,33 @@ export function inferDecisionVerdict(analysis: SavedAnalysis): 'GO' | 'GO_CONDIC
  * órfãs no documento (não somem, apenas param de ser lidas). Não há caminho
  * sem isso — o estado já estava inconsistente entre as telas. */
 
-/** Plano mínimo quando o laudo não trouxe `proximas_acoes`. Três passos, não
- *  um: com um só, o cockpit vira um aviso; com três, é um plano que a pessoa
- *  consegue distribuir. Copiado do que o laudo já mostrava. */
+/** Checklist padrão da casa, para quando o laudo não trouxe `proximas_acoes`.
+ *
+ *  ⚠️ ESTES PASSOS NÃO SÃO ANÁLISE DESTE EDITAL, e antes não havia como saber
+ *  disso: vinham com `origem: 'Decisão'` e `prazo: 'Hoje'`, entravam na fila
+ *  ao lado de ações reais, e o "Prazo crítico" do painel Gestão chegava a
+ *  exibir esse 'Hoje' inventado ao lado de datas extraídas do edital.
+ *
+ *  Continuam a existir — uma fila vazia deixaria quem depende da Gestão sem
+ *  ponto de partida — mas agora carregam `generico: true`, `origem` honesta e
+ *  NENHUM prazo. Prazo é compromisso; inventar um é pior do que não ter. */
 const ACOES_PADRAO: ReadonlyArray<Omit<DecisionQueueTask, 'id' | 'origem' | 'prioridade'> & { prioridade: DecisionQueueTask['prioridade'] }> = [
   {
-    prazo: 'Hoje',
+    prazo: '',
     acao: 'Conferir requisitos eliminatórios de habilitação e qualificação técnica.',
     responsavel: 'Licitações',
     resultado_esperado: 'Confirmar se há risco de desclassificação.',
     prioridade: 'Alta',
   },
   {
-    prazo: 'Hoje',
+    prazo: '',
     acao: 'Calcular preço mínimo viável com impostos, logística, garantias e deságio provável.',
     responsavel: 'Financeiro',
     resultado_esperado: 'Definir limite de lance com margem preservada.',
     prioridade: 'Alta',
   },
   {
-    prazo: 'Próximo dia útil',
+    prazo: '',
     acao: 'Validar cláusulas jurídicas, multas e pontos de impugnação.',
     responsavel: 'Jurídico',
     resultado_esperado: 'Fechar o risco contratual antes de assumir compromisso.',
@@ -205,7 +217,7 @@ const ACOES_PADRAO: ReadonlyArray<Omit<DecisionQueueTask, 'id' | 'origem' | 'pri
 ];
 
 const ACAO_PADRAO_NO_GO: Omit<DecisionQueueTask, 'id' | 'origem'> = {
-  prazo: 'Após resposta oficial',
+  prazo: '',
   acao: 'Reavaliar somente quando o órgão corrigir as informações críticas.',
   responsavel: 'Licitações',
   resultado_esperado: 'Evitar esforço de proposta sem segurança técnica, financeira ou jurídica.',
@@ -283,7 +295,9 @@ export function buildDecisionQueueTasks(analysis: SavedAnalysis): DecisionQueueT
     base.forEach((padrao, index) => {
       tasks.push({
         id: `decision-${index}-${normalizeDecisionQueueText(padrao.acao).slice(0, 40)}`,
-        origem: 'Decisão',
+        // `origem: 'Decisão'` era mentira: não veio da decisão, veio daqui.
+        origem: 'Checklist padrão Bawzi',
+        generico: true,
         ...padrao,
       });
     });

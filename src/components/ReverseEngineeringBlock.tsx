@@ -46,19 +46,42 @@ export default function ReverseEngineeringBlock({
   };
 
   const viabilidade = engenhariaData?.viabilidade_financeira;
-  // Prioriza a margem líquida já ajustada pelo regime tributário (Simples Nacional ou não),
-  // calculada no backend por analysis_enrichment.aplicar_viabilidade_financeira. Sem esse
-  // dado (análises antigas ou falha do enriquecimento), cai para a média setorial genérica.
-  const margemSetor = viabilidade?.margem_liquida_estimada_pct ?? engenhariaData?.margem_media_setor_pct ?? 20;
-  const setorNome = engenhariaData?.setor_identificado || 'Item da Licitação';
+  /* ⚠️ AQUI HAVIA `?? 20`, E ELE ERA O NÚMERO MAIS PERIGOSO DESTA TELA.
+   *
+   * Sem margem vinda do backend (análise antiga ou falha do enriquecimento), a
+   * margem virava 20% inventados — e não ficava parada: entrava em
+   * `custoRealGlobal = precoPraticado × (1 − margem/100)` e saía em duas
+   * frases afirmativas, "Mantendo margem líquida estimada de 20%, o custo
+   * máximo recomendado fica em R$ X" e "se o seu custo direto ficar abaixo de
+   * R$ X, a disputa tende a preservar margem". Era um teto de custo para
+   * disputa real, com a mesma tipografia de um número apurado, e o único
+   * bloco que revelaria a base do cálculo (`viabilidade`) é justamente o que
+   * não renderiza nesse caso.
+   *
+   * `null` significa NÃO ESTIMADA. Quem depende dela deixa de ser calculado, e
+   * a tela diz isso — a conta com a margem real da empresa é o que o Simulador
+   * Tático já faz, com o número que a pessoa digita.
+   */
+  const margemSetor: number | null =
+    viabilidade?.margem_liquida_estimada_pct ?? engenhariaData?.margem_media_setor_pct ?? null;
+  // ⚠️ `|| 'Item da Licitação'` também saiu. Além de aparecer sob o ícone de
+  // setor como se fosse um setor detectado, ele era passado pelas duas regex
+  // abaixo — a frase de estratégia escolhia "por unidade de entrega" ou "por
+  // licença" a partir de um placeholder.
+  const setorNome: string | null = engenhariaData?.setor_identificado || null;
 
-  const isServico = /reforma|engenharia|obra|servi[çc]o|constru[çc][ãa]o|repar|loca[çc]|manuten[çc][ãa]o/i.test(setorNome);
-  const isSoftwareOuLicenca = /licen[çc]a|software|sistema|windows|cloud|saas|assinatura|suporte|ti\b|tecnologia/i.test(setorNome);
-  const termoUnidade = isServico
-    ? 'por unidade de entrega/medição'
-    : isSoftwareOuLicenca
-      ? 'por licença/item'
-      : 'por unidade/item';
+  const isServico = !!setorNome && /reforma|engenharia|obra|servi[çc]o|constru[çc][ãa]o|repar|loca[çc]|manuten[çc][ãa]o/i.test(setorNome);
+  const isSoftwareOuLicenca = !!setorNome && /licen[çc]a|software|sistema|windows|cloud|saas|assinatura|suporte|ti\b|tecnologia/i.test(setorNome);
+  // Sem setor identificado não há como saber se a unidade é entrega, licença
+  // ou peça — e "por unidade/item" era um palpite dito com a mesma segurança
+  // dos outros dois. Vazio: a frase fica correta sem ele.
+  const termoUnidade = !setorNome
+    ? ''
+    : isServico
+      ? 'por unidade de entrega/medição'
+      : isSoftwareOuLicenca
+        ? 'por licença/item'
+        : 'por unidade/item';
 
   if (isLocked) {
     return (
@@ -88,10 +111,13 @@ export default function ReverseEngineeringBlock({
 
   // Cálculos baseados na escala correta da quantidade corrigida
   const precoPraticadoGlobal = valorReferencia * (1 - (desagio / 100));
-  const custoRealGlobal = precoPraticadoGlobal * (1 - (margemSetor / 100));
   const tetoUnitario = valorReferencia / qtdSegura;
   const precoPraticadoUnitario = precoPraticadoGlobal / qtdSegura;
-  const custoRealUnitario = custoRealGlobal / qtdSegura;
+  // Só existe teto de custo quando existe margem medida. Sem ela, não há
+  // número para mostrar — e inventar um seria pior do que não mostrar nada.
+  const custoRealUnitario = margemSetor == null
+    ? null
+    : (precoPraticadoGlobal * (1 - (margemSetor / 100))) / qtdSegura;
 
   return (
     <div className="flex flex-col gap-6">
@@ -110,9 +136,11 @@ export default function ReverseEngineeringBlock({
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 block">1. Teto unitário do edital</span>
           <h4 className="text-xl font-black text-slate-800 tracking-tight">{formatMoeda(tetoUnitario)}</h4>
           <p className="text-[9px] font-bold text-slate-400 mt-1">Global: {formatMoeda(valorReferencia)}</p>
-          <p className="text-[10px] font-bold text-slate-500 mt-3 flex items-center gap-1.5 border-t border-slate-200/60 pt-2 truncate">
-            <Activity size={12} className="text-indigo-400 shrink-0" /> {setorNome}
-          </p>
+          {setorNome && (
+            <p className="text-[10px] font-bold text-slate-500 mt-3 flex items-center gap-1.5 border-t border-slate-200/60 pt-2 truncate">
+              <Activity size={12} className="text-indigo-400 shrink-0" /> {setorNome}
+            </p>
+          )}
         </div>
 
         <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-5 relative overflow-hidden">
@@ -136,13 +164,22 @@ export default function ReverseEngineeringBlock({
         </div>
         
         <p className="text-sm text-slate-300 font-medium leading-relaxed relative z-10">
-          Para disputar contra esse padrão de preço, sua proposta precisa suportar algo próximo de <strong>{formatMoeda(precoPraticadoUnitario)}</strong> {termoUnidade}. Mantendo margem líquida estimada de <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded">{margemSetor}%</strong>, o custo máximo recomendado fica em <strong className="text-amber-400 text-base">{formatMoeda(custoRealUnitario)}</strong> {termoUnidade}.
+          Para disputar contra esse padrão de preço, sua proposta precisa suportar algo próximo de <strong>{formatMoeda(precoPraticadoUnitario)}</strong>{termoUnidade ? ` ${termoUnidade}` : ''}.
+          {margemSetor != null && custoRealUnitario != null && (
+            <> Mantendo margem líquida estimada de <strong className="text-white bg-slate-800 px-1.5 py-0.5 rounded">{margemSetor}%</strong>, o custo máximo recomendado fica em <strong className="text-amber-400 text-base">{formatMoeda(custoRealUnitario)}</strong>{termoUnidade ? ` ${termoUnidade}` : ''}.</>
+          )}
         </p>
-        
+
         <div className="mt-4 pt-4 border-t border-slate-800 relative z-10">
-          <p className="text-xs text-slate-400 font-bold">
-            <strong className="text-white">Leitura para sua decisão:</strong> se o seu custo direto para este item ficar abaixo de <span className="text-amber-400">{formatMoeda(custoRealUnitario)}</span>, a disputa tende a preservar margem. Acima desse ponto, vale revisar preço, escopo ou decidir não entrar.
-          </p>
+          {custoRealUnitario != null ? (
+            <p className="text-xs text-slate-400 font-bold">
+              <strong className="text-white">Leitura para sua decisão:</strong> se o seu custo direto para este item ficar abaixo de <span className="text-amber-400">{formatMoeda(custoRealUnitario)}</span>, a disputa tende a preservar margem. Acima desse ponto, vale revisar preço, escopo ou decidir não entrar.
+            </p>
+          ) : (
+            <p className="text-xs font-medium leading-relaxed text-slate-400">
+              <strong className="text-white">Esta análise não estimou a margem do setor</strong>, então não há teto de custo a calcular aqui — o número que apareceria seria arbitrário. Informe o seu custo real no Simulador Tático, na aba Ação: ele parte do mesmo preço provável acima e devolve a margem que sobra.
+            </p>
+          )}
         </div>
       </div>
 

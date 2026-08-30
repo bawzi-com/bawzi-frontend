@@ -252,7 +252,14 @@ export interface DecisionConfidenceFactor {
 export interface DecisionData {
   veredito?: DecisionVerdict | string;
   rotulo?: string;
-  confianca?: number;
+  confianca?: number | null;
+  /** ⚠️ `false` = o número em `confianca` foi DERIVADO do score pelo backend
+   *  (`_calcular_confianca_decisao`), não lido do edital. Sem esta bandeira a
+   *  tela imprimia os dois casos como "Confiança: N%", sob um tooltip que
+   *  afirma que o número vem "da quantidade e qualidade das evidências
+   *  encontradas no edital" — verdade num caso, falso no outro.
+   *  Ausente em laudos gravados antes desta mudança. */
+  confianca_informada?: boolean;
   resumo_decisao?: string;
   motivos?: string[];
   condicoes_para_participar?: string[];
@@ -392,6 +399,12 @@ export interface AnalysisResult {
   title: string;
   summary: string;
   score: number;
+  /** ⚠️ Presente quando `score` foi CORTADO por uma regra determinística, não
+   *  medido. Hoje só `_aplicar_aderencia_no_score` corta (teto 35 sem
+   *  aderência de CNAE). Sem estes dois campos, dois editais diferentes saíam
+   *  com o mesmo 35 e a tela desenhava a barra como se fosse medida. */
+  score_original?: number;
+  score_limitado_por?: 'sem_aderencia_cnae' | string;
   classification: string;
   effort: string;
   estimated_value: string;

@@ -885,15 +885,29 @@ function DecisionSnapshot({
       ? 'profunda'
       : result.rodape_leitura ? 'rapida' : null;
 
-  const rawBlockers = decision.impeditivos.length > 0
-    ? decision.impeditivos
-    : ['Nenhum impeditivo fatal foi identificado no bloco de decisão.'];
-  const rawConditions = decision.condicoes_para_participar.length > 0
-    ? decision.condicoes_para_participar
-    : ['Manter validação final de documentação, preço e prazo antes de protocolar a proposta.'];
-  const rawReasons = decision.motivos.length > 0
-    ? decision.motivos
-    : ['A decisão foi derivada do score, semáforo, riscos e recomendação estratégica disponíveis.'];
+  /* ⚠️ AQUI HAVIA TRÊS FRASES INVENTADAS, E A PRIMEIRA ERA A PIOR DE TODAS.
+   *
+   *   impeditivos vazios  → "Nenhum impeditivo fatal foi identificado no bloco
+   *                          de decisão."
+   *   condições vazias    → "Manter validação final de documentação, preço e
+   *                          prazo antes de protocolar a proposta."
+   *   motivos vazios      → "A decisão foi derivada do score, semáforo, riscos
+   *                          e recomendação estratégica disponíveis."
+   *
+   * "Nenhum impeditivo foi identificado" AFIRMA UMA VERIFICAÇÃO. O que de
+   * facto aconteceu foi a IA não devolver o campo — que é o oposto de ter
+   * procurado e não achado. Num laudo comercial, essa frase é a diferença
+   * entre "conferimos e está limpo" e "não conferimos": a pessoa protocola
+   * proposta em cima dela.
+   *
+   * A única marca que existia era `tone: 'text-slate-400'` — cinza mais
+   * claro. Nada em texto. Agora a lista vazia continua vazia, e a coluna
+   * some (o `.filter(col => col.items.length > 0)` mais abaixo já cuidava
+   * disso); o que falta é dito uma vez, no rodapé do bloco.
+   */
+  const rawBlockers = decision.impeditivos;
+  const rawConditions = decision.condicoes_para_participar;
+  const rawReasons = decision.motivos;
   const conditions = filterCoveredDecisionItems(rawConditions, businessFit, 'conditions');
 
   // ── Deduplicação entre seções: a IA tende a repetir o mesmo fato em
@@ -921,6 +935,15 @@ function DecisionSnapshot({
   const _evidenciaTextos = evidenceItems.map(e => `${e.titulo || ''} ${e.detalhe || ''}`);
   const detalheJaCoberto = (txt?: string) =>
     !!txt && _evidenciaTextos.some(ev => textosSimilares(ev, txt));
+
+  /* O que a leitura não devolveu. Dito uma vez, em nome próprio, em vez de
+     cada campo vazio inventar uma frase afirmativa para se preencher. */
+  const naoDevolvido = [
+    decision.impeditivos.length === 0 ? 'impedimentos' : '',
+    decision.motivos.length === 0 ? 'motivos' : '',
+    decision.condicoes_para_participar.length === 0 ? 'condições para participar' : '',
+    decision.proximas_acoes.length === 0 ? 'próximas ações' : '',
+  ].filter(Boolean);
 
   const decisionColumns = [
     {
@@ -990,13 +1013,30 @@ function DecisionSnapshot({
 
           {/* Indicadores compactos: as duas medidas que NÃO são o score */}
           <div className="flex shrink-0 gap-3">
+            {/* ⚠️ ESTE CARTÃO IMPRIMIA UM NÚMERO QUE PODIA NÃO SER UMA MEDIDA.
+                Havia três caminhos até ele e a tela mostrava os três igual:
+                a IA devolveu a confiança; o backend derivou-a do score; ou
+                não havia número nenhum e o frontend fabricava 60. Agora o
+                terceiro caminho não existe, e o segundo diz o que é. */}
+            {decision.confianca == null ? (
+              <div className="min-w-[80px] rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-center">
+                <p className="text-[13px] font-semibold leading-tight text-slate-400">
+                  não<br />informada
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+                  Confiança
+                </p>
+              </div>
+            ) : (
             <div
               className="min-w-[80px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center"
-              title="O quanto a IA está segura desta decisão, com base na quantidade e qualidade das evidências encontradas no edital. Cai quando há lacunas ou fatores não confirmados — não é a mesma coisa que viabilidade."
+              title={decision.confianca_informada
+                ? 'O quanto a IA está segura desta decisão, com base na quantidade e qualidade das evidências encontradas no edital. Cai quando há lacunas ou fatores não confirmados — não é a mesma coisa que viabilidade.'
+                : 'ESTIMADA: a análise não devolveu um valor de confiança, então ele foi derivado do score e ajustado por lacunas e cobertura. Não é uma leitura das evidências do edital — trate-o como ordem de grandeza, não como medida.'}
             >
               <p className="text-2xl font-semibold leading-none text-slate-900">{decision.confianca}%</p>
               <p className="mt-1 flex items-center justify-center gap-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
-                Confiança
+                {decision.confianca_informada ? 'Confiança' : 'Confiança est.'}
                 <CircleHelp size={10} className="shrink-0 opacity-70" />
               </p>
               {/* ⚠️ A BARRA MOSTRAVA A ESCALA ERRADA. O número vem de
@@ -1020,11 +1060,12 @@ function DecisionSnapshot({
                     className="mt-2 h-1 w-full overflow-hidden rounded-full bg-slate-200"
                     title={`Escala de ${PISO}% a ${TETO}% — ${PISO}% é o mínimo que este indicador expressa.`}
                   >
-                    <div className="h-full rounded-full bg-slate-500" style={{ width: `${preenchido}%` }} />
+                    <div className={`h-full rounded-full ${decision.confianca_informada ? 'bg-slate-500' : 'bg-slate-300'}`} style={{ width: `${preenchido}%` }} />
                   </div>
                 );
               })()}
             </div>
+            )}
             {typeof result.qualidade_extracao?.cobertura_pct === 'number' && (
               <div
                 className="min-w-[80px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-center"
@@ -1078,9 +1119,14 @@ function DecisionSnapshot({
               completa está em &ldquo;Composição do Score&rdquo;.
             </p>
             <p>
-              <strong className="text-slate-800">Confiança ({decision.confianca}%)</strong> — o quanto a IA está
-              segura <em>desta decisão</em>, pela quantidade e qualidade das evidências encontradas. Cai quando há
-              lacunas no material — não é a mesma coisa que viabilidade.
+              <strong className="text-slate-800">
+                Confiança {decision.confianca == null ? '(não informada)' : `(${decision.confianca}%${decision.confianca_informada ? '' : ', estimada'})`}
+              </strong> — o quanto a IA está segura <em>desta decisão</em>, pela quantidade e qualidade das evidências
+              encontradas. Cai quando há lacunas no material — não é a mesma coisa que viabilidade.
+              {decision.confianca != null && !decision.confianca_informada && (
+                <> <span className="text-slate-500">Nesta análise o valor foi <strong>derivado do score</strong> e ajustado
+                por lacunas e cobertura, porque a leitura não devolveu um número próprio.</span></>
+              )}
             </p>
             <p>
               <strong className="text-slate-800">
@@ -1137,6 +1183,13 @@ function DecisionSnapshot({
             </div>
           )}
         </div>
+
+        {naoDevolvido.length > 0 && (
+          <p className="mt-5 border-t border-slate-100 pt-3 text-[11px] font-medium leading-relaxed text-slate-400">
+            Esta leitura não devolveu {naoDevolvido.join(', ')}. Campo em branco aqui significa que a análise não se
+            pronunciou — não que tenha verificado e nada encontrado.
+          </p>
+        )}
 
         {/* ── Aderência ao negócio ──────────────────────────────────────── */}
         {businessFit && (
@@ -2105,6 +2158,22 @@ function DecisionCockpit({
                         ✓ Preenchido
                       </span>
                     )}
+
+                    {/* ⚠️ ESTE SELO É A DIFERENÇA ENTRE ANÁLISE E CHECKLIST.
+                        Quando o laudo não devolve `proximas_acoes`, a fila é
+                        preenchida com o checklist padrão da casa (ver
+                        `lib/decisionQueue`). Eles vinham com `origem: 'Decisão'`
+                        e prazo "Hoje", indistinguíveis de passos derivados
+                        DESTE edital — alguém podia protocolar decisão em cima
+                        de uma tarefa que a análise nunca escreveu. */}
+                    {task.generico && (
+                      <span
+                        title="Passo do checklist padrão da Bawzi. Esta análise não devolveu um plano próprio para este edital."
+                        className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400"
+                      >
+                        Checklist padrão
+                      </span>
+                    )}
                   </div>
 
                   <p className={`text-sm font-semibold leading-snug ${isDone ? 'text-slate-400 line-through decoration-slate-300' : 'text-slate-900'}`}>
@@ -2359,7 +2428,11 @@ function normalizeBusinessFit(result: AnalysisResult) {
 type DecisionUiData = {
   veredito: DecisionVerdict;
   rotulo: string;
-  confianca: number;
+  /** `null` = o laudo não traz confiança. Não existe número a desenhar. */
+  confianca: number | null;
+  /** `false` = o número acima foi derivado do score pelo backend, não lido do
+   *  edital. A tela é obrigada a dizer isso onde o número aparece. */
+  confianca_informada: boolean;
   resumo_decisao: string;
   motivos: string[];
   condicoes_para_participar: string[];
@@ -2514,10 +2587,21 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
     5,
   );
 
+  /* ⚠️ ESTAS FRASES ERAM O PARÁGRAFO PRINCIPAL DO LAUDO, E AFIRMAVAM ACHADOS.
+   *
+   * A do NO_GO dizia "os riscos ou impeditivos detectados superam o retorno
+   * provável" — uma conclusão sobre a relação risco/retorno DESTE edital,
+   * escrita quando a leitura não devolveu resumo nenhum. A do GO prometia que
+   * bastava "validação final de preço, prazo e documentação".
+   *
+   * Ficou só o que é verdade em qualquer caso: a repetição do veredito. A
+   * segunda oração — a que afirmava um achado — saiu, e no lugar entra a
+   * declaração de que não houve síntese. Quem quiser saber por quê tem as
+   * evidências e os impedimentos logo abaixo, quando existirem. */
   const resumoPadrao: Record<DecisionVerdict, string> = {
-    GO: 'A recomendação é participar, mantendo validação final de preço, prazo e documentação antes do protocolo.',
-    GO_CONDICIONADO: 'A oportunidade pode valer a pena, mas só deve avançar depois de resolver as condições críticas de preço, prazo, documentação ou risco.',
-    NO_GO: 'A recomendação é não participar agora: os riscos ou impeditivos detectados superam o retorno provável.',
+    GO: 'A recomendação é participar. Esta leitura não devolveu uma síntese própria do porquê.',
+    GO_CONDICIONADO: 'A recomendação é participar somente após validações. Esta leitura não devolveu uma síntese própria do porquê.',
+    NO_GO: 'A recomendação é não participar agora. Esta leitura não devolveu uma síntese própria do porquê.',
   };
   // ⚠️ A LACUNA SÓ APARECIA QUANDO O BLOCO FALTAVA POR INTEIRO. Um bloco
   // presente com `status: "nao_avaliado"` calava a lacuna: a tela deixava de
@@ -2540,7 +2624,8 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
   return {
     veredito,
     rotulo: shortenDecisionText(raw?.rotulo || rotulos[veredito], 90),
-    confianca: clampPercent(raw?.confianca ?? confidenceFallback(veredito, score)),
+    confianca: clampPercent(raw?.confianca),
+    confianca_informada: raw?.confianca_informada !== false && raw?.confianca != null,
     resumo_decisao: shortenDecisionText(raw?.resumo_decisao || resumoPadrao[veredito], 430),
     motivos: baseReasons,
     condicoes_para_participar: condicoes.length
@@ -2551,10 +2636,18 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
           veredito !== 'NO_GO' ? 'Validar margem líquida e capital de giro antes do lance final.' : '',
         ], 6),
     impeditivos: impeditivos.length ? impeditivos : riscosAltos,
-    proximas_acoes: normalizeDecisionActions(raw?.proximas_acoes),
+    proximas_acoes: (Array.isArray(raw?.proximas_acoes) ? raw!.proximas_acoes! : [])
+      .map((action) => ({
+        prazo: shortenDecisionText(action?.prazo, 40),
+        acao: shortenDecisionText(action?.acao, 220),
+        responsavel: shortenDecisionText(action?.responsavel, 80),
+        resultado_esperado: shortenDecisionText(action?.resultado_esperado, 160),
+      }))
+      .filter((action) => action.acao)
+      .slice(0, 5),
     perguntas_criticas: toDecisionTextList(raw?.perguntas_criticas, 5),
     decisao_executiva: shortenDecisionText(raw?.decisao_executiva || `${rotulos[veredito]} — ${resumoPadrao[veredito]}`, 340),
-    evidencias: normalizeDecisionEvidences(raw?.evidencias, result, baseReasons),
+    evidencias: normalizeDecisionEvidences(raw?.evidencias, result),
     lacunas: lacunas.length ? lacunas : fallbackLacunas,
     fatores_confianca: confidenceFactors,
     o_que_mudaria_decisao: oQueMudaria.length
@@ -2571,7 +2664,6 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
 function normalizeDecisionEvidences(
   raw: DecisionEvidence[] | undefined,
   result: AnalysisResult,
-  fallbackReasons: string[],
 ): DecisionEvidenceUi[] {
   const rawItems = Array.isArray(raw) ? raw : [];
   const fallbackItems: DecisionEvidence[] = [
@@ -2612,13 +2704,18 @@ function normalizeDecisionEvidences(
         impacto: risk.impacto ? `Impacto ${risk.impacto}.` : 'Pode alterar ou condicionar o veredito.',
       };
     }),
-    ...fallbackReasons.slice(0, 2).map((reason) => ({
-      categoria: 'Decisão',
-      titulo: reason,
-      detalhe: '',
-      fonte: 'Síntese Bawzi',
-      impacto: 'Sustenta a recomendação executiva.',
-    })),
+    /* ⚠️ AQUI OS MOTIVOS DA DECISÃO ENTRAVAM COMO EVIDÊNCIA DA DECISÃO.
+     *
+     * Era `...fallbackReasons.slice(0, 2).map(...)` com `fonte: 'Síntese
+     * Bawzi'` e `impacto: 'Sustenta a recomendação executiva.'`: a conclusão
+     * reapresentada, na secção "Por que a decisão é segura", como prova dela
+     * mesma. Circular — e a única pista era a palavra "Síntese" no mesmo
+     * campo `fonte` em que aparecem procedências reais ("CNAE / Perfil",
+     * "Preço / Mercado"), ou seja, nenhuma pista.
+     *
+     * Motivo não é evidência. Os motivos continuam onde sempre estiveram, na
+     * coluna "Motivos"; a lista de evidências fica menor quando não há prova —
+     * que é a informação correta. */
   ].filter(Boolean) as DecisionEvidence[];
 
   const sourceItemsBase = rawItems.length >= 3 ? rawItems : [...rawItems, ...fallbackItems];
@@ -2678,7 +2775,11 @@ function normalizeDecisionConfidenceFactors(
           : aderenciaMedida
             ? 'parcial'
             : 'ausente',
-      detalhe: result.aderencia_negocio?.justificativa || 'CNAE/perfil da empresa usado para medir match com o edital.',
+      // ⚠️ O literal antigo — "CNAE/perfil da empresa usado para medir match
+      // com o edital" — AFIRMAVA que a medição aconteceu, e aparecia
+      // justamente quando não havia justificativa nenhuma.
+      detalhe: result.aderencia_negocio?.justificativa
+        || (aderenciaMedida ? '' : 'A análise não comparou o objeto com o CNAE/perfil da empresa.'),
     },
     {
       criterio: 'Riscos do edital',
@@ -2691,8 +2792,13 @@ function normalizeDecisionConfidenceFactors(
     },
     {
       criterio: 'Preço e margem',
-      status: result.pricing_intelligence?.financial_verdict ? 'confirmado' : 'parcial',
-      detalhe: result.pricing_intelligence?.financial_verdict || 'Preço mínimo e margem ainda dependem de validação financeira.',
+      // ⚠️ ERA `: 'parcial'`. "Parcial" é uma avaliação — diz que se mediu em
+      // parte. Sem `financial_verdict` não se mediu nada, e o rótulo âmbar
+      // "Parcial" ainda descontava 3 pontos da confiança no backend por uma
+      // leitura que não existiu. Ausente é ausente.
+      status: result.pricing_intelligence?.financial_verdict ? 'confirmado' : 'ausente',
+      detalhe: result.pricing_intelligence?.financial_verdict
+        || 'Esta análise não avaliou preço mínimo nem margem.',
     },
     {
       criterio: 'Histórico de mercado',
@@ -2706,7 +2812,10 @@ function normalizeDecisionConfidenceFactors(
   const seen = new Set<string>();
   return [...rawItems, ...fallbackItems]
     .map((item) => {
-      const status = String(item?.status || 'parcial').toLowerCase();
+      // ⚠️ ERA `|| 'parcial'`: um fator sem status vindo da IA virava a pílula
+      // âmbar "Parcial", que o leitor lê como avaliação. Sem status não houve
+      // avaliação — é ausência, não meia-confirmação.
+      const status = String(item?.status || 'ausente').toLowerCase();
       const normalizedStatus: DecisionConfidenceFactorUi['status'] =
         status === 'confirmado' || status === 'ausente' || status === 'risco' ? status : 'parcial';
       return {
@@ -2733,40 +2842,20 @@ function normalizeDecisionVerdict(value: unknown, score: number): DecisionVerdic
   return score >= 70 ? 'GO' : score >= 45 ? 'GO_CONDICIONADO' : 'NO_GO';
 }
 
-function normalizeDecisionActions(actions: DecisionData['proximas_acoes']): DecisionUiData['proximas_acoes'] {
-  const normalized = (Array.isArray(actions) ? actions : [])
-    .map((action) => ({
-      prazo: shortenDecisionText(action?.prazo || 'Hoje', 40),
-      acao: shortenDecisionText(action?.acao, 220),
-      responsavel: shortenDecisionText(action?.responsavel, 80),
-      resultado_esperado: shortenDecisionText(action?.resultado_esperado, 160),
-    }))
-    .filter((action) => action.acao);
-
-  if (normalized.length) return normalized.slice(0, 5);
-
-  return [
-    {
-      prazo: 'Hoje',
-      acao: 'Conferir requisitos eliminatórios de habilitação e qualificação técnica.',
-      responsavel: 'Licitações',
-      resultado_esperado: 'Confirmar se há risco de desclassificação.',
-    },
-    {
-      prazo: 'Hoje',
-      acao: 'Calcular preço mínimo viável com impostos, logística, garantias e deságio provável.',
-      responsavel: 'Financeiro',
-      resultado_esperado: 'Definir limite de lance com margem preservada.',
-    },
-    {
-      prazo: 'Próximo dia útil',
-      acao: 'Validar cláusulas jurídicas, multas e pontos de impugnação.',
-      responsavel: 'Jurídico',
-      resultado_esperado: 'Decidir seguir, impugnar ou abandonar.',
-    },
-  ];
-}
-
+/** ⚠️ ESTA FUNÇÃO DEVOLVIA TRÊS TAREFAS INVENTADAS QUANDO O LAUDO NÃO TINHA
+ *  NENHUMA — "Conferir requisitos eliminatórios…", "Calcular preço mínimo
+ *  viável…", "Validar cláusulas jurídicas…" — cada uma com `prazo: 'Hoje'` e
+ *  um responsável atribuído, no bloco intitulado "Próximas ações, em ordem".
+ *
+ *  Efeito colateral que ninguém tinha notado: como a lista nunca voltava
+ *  vazia, o resumo da jornada dizia sempre "3 tarefa(s) a fazer — próxima:
+ *  Conferir requisitos eliminatórios…", e o ramo honesto do
+ *  `buildJourneySummary` ("Nenhuma ação registrada no plano.") era código
+ *  inalcançável.
+ *
+ *  O laudo é superfície de LEITURA: aqui, lista vazia fica vazia. O checklist
+ *  genérico continua a existir onde ele serve — na fila da Gestão, em
+ *  `lib/decisionQueue`, marcado com `generico: true` e sem prazo. */
 function toDecisionTextList(value: unknown, limit: number): string[] {
   const input = Array.isArray(value) ? value : value ? [value] : [];
   const items: string[] = [];
@@ -2790,17 +2879,29 @@ function shortenDecisionText(value: unknown, max = 260) {
   return `${text.slice(0, max - 1).trim()}…`;
 }
 
-function clampPercent(value: unknown) {
+/** ⚠️ ESTA FUNÇÃO DEVOLVIA 60 PARA QUALQUER ENTRADA NÃO-NUMÉRICA.
+ *  String vazia, `null`, objeto — tudo virava "60%" impresso no cartão
+ *  "Confiança", indistinguível de uma medida. Agora devolve `null`, e quem
+ *  chama decide como dizer que não há número. */
+function clampPercent(value: unknown): number | null {
   const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return 60;
+  if (value === null || value === undefined || value === '') return null;
+  if (!Number.isFinite(numeric)) return null;
   return Math.max(0, Math.min(100, Math.round(numeric)));
 }
 
-function confidenceFallback(veredito: DecisionVerdict, score: number) {
-  if (veredito === 'GO') return Math.min(95, Math.max(65, score + 10));
-  if (veredito === 'NO_GO') return Math.min(95, Math.max(65, 100 - score));
-  return Math.min(85, Math.max(55, score));
-}
+/* ⚠️ `confidenceFallback` FOI REMOVIDA.
+ *
+ * Ela fabricava a confiança a partir do score — `score + 10` para GO,
+ * `100 - score` para NO_GO — e o resultado saía no cartão "Confiança: N%",
+ * sob um tooltip que afirma "com base na quantidade e qualidade das
+ * evidências encontradas no edital". Nessa via a frase era falsa: o número
+ * era o score reescalado, e nada dizia isso ao leitor.
+ *
+ * O backend também deriva quando a IA não devolve (`_calcular_confianca_decisao`),
+ * mas agora declara: `decisao.confianca_informada`. Quando falta o número de
+ * vez, a tela diz que falta — não inventa uma segunda derivação em cima da
+ * primeira. */
 
 // ─── Deduplicação de conteúdo (a IA repete os mesmos fatos em várias seções) ──
 
@@ -3559,11 +3660,23 @@ function VereditoTopo({ result }: { result: AnalysisResult }) {
             <span className="text-sm font-medium text-slate-400">/100</span>
           </p>
           <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
-            Viabilidade
+            {result.score_limitado_por ? 'Viabilidade (teto)' : 'Viabilidade'}
           </p>
           <div className="mt-2 h-1 w-24 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full rounded-full bg-slate-900" style={{ width: `${pct}%` }} />
+            {/* ⚠️ TETO NÃO SE DESENHA COMO MEDIDA. Quando o score foi cortado
+                por regra, a barra vira tracejada: ela não representa quanto o
+                edital vale, representa onde a régua parou. */}
+            <div
+              className={`h-full rounded-full ${result.score_limitado_por ? 'bg-slate-300' : 'bg-slate-900'}`}
+              style={{ width: `${pct}%` }}
+            />
           </div>
+          {result.score_limitado_por === 'sem_aderencia_cnae' && (
+            <p className="mt-1.5 max-w-[13rem] text-[11px] font-medium leading-relaxed text-slate-400">
+              Limitado a 35 por não haver aderência ao seu CNAE
+              {typeof result.score_original === 'number' ? ` — a leitura do edital dava ${result.score_original}` : ''}.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -6203,7 +6316,12 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
         <Secao title="Veredito Executivo">
           <p><strong>{decision.veredito.replace('_', ' ')}</strong> — {decision.rotulo}</p>
           <p className="mt-1">{getDecisionSummary(decision)}</p>
-          <p className="mt-1">Score: <strong>{result.score}/100</strong> · Confiança: <strong>{decision.confianca}%</strong></p>
+          <p className="mt-1">
+            Score: <strong>{result.score}/100</strong>
+            {decision.confianca != null && (
+              <> · Confiança: <strong>{decision.confianca}%</strong>{decision.confianca_informada ? '' : ' (estimada do score)'}</>
+            )}
+          </p>
         </Secao>
 
         {businessFit && (

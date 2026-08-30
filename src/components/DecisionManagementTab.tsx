@@ -2986,8 +2986,16 @@ function getCriticalDeadline(record: Record<string, unknown>, nextTask: Decision
     };
   }
 
+  /* ⚠️ ESTE CAMPO CHAMA-SE "PRAZO CRÍTICO" E CHEGOU A EXIBIR "Hoje" INVENTADO.
+     Quando não havia data crítica extraída do edital, ele caía no `prazo` da
+     próxima tarefa — e a próxima tarefa, num laudo sem `proximas_acoes`, era o
+     checklist padrão da casa, cujos passos vinham com `prazo: 'Hoje'` fixo.
+     Resultado: uma data de agenda fabricada, lado a lado com prazos reais.
+     Os passos genéricos deixaram de ter prazo (ver `decisionQueue`), e aqui o
+     prazo de tarefa genérica é ignorado de propósito. */
+  const prazoDaTarefa = nextTask?.generico ? '' : (nextTask?.prazo || '');
   return {
-    label: nextTask?.prazo || 'Sem prazo identificado',
+    label: prazoDaTarefa || 'Sem prazo identificado',
     date: null,
   };
 }
