@@ -106,13 +106,38 @@ export default function HistoryTab({
 
 
   const [isMounted, setIsMounted] = useState(false);
+  /** Mensagem quando o servidor não entregou o histórico. `null` = deu certo.
+   *  Sem isto, uma falha ficava indistinguível de conta vazia. */
+  const [erroCarga, setErroCarga] = useState<string | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
     
     const loadData = async () => {
       try {
+        setErroCarga(null);
         const res = await apiFetch(`${API_URL}/api/analyses/history`);
+
+        // ⚠️ `.ok` ANTES DE LER O CORPO. Um erro do FastAPI vem como JSON
+        // VÁLIDO (`{"detail": ...}`), então `.json()` não lança: `data.history`
+        // ficava `undefined`, `Array.isArray(data)` era `false` porque é
+        // objeto, e o resultado era `[]`. Sem estado de erro em lugar nenhum,
+        // a tela terminava o carregamento e mostrava o vazio de primeira
+        // visita — "Seu primeiro laudo ainda não saiu" — para quem tem
+        // quarenta laudos salvos. E o botão ao lado convidava a gastar crédito
+        // refazendo uma análise que já existe.
+        //
+        // Esta é a mesma correção que `DecisionManagementTab` já tinha, com o
+        // diagnóstico escrito no comentário de lá. Ela não tinha viajado.
+        if (!res.ok) {
+          const corpo = await res.json().catch(() => null);
+          const detalhe = typeof corpo?.detail === 'string' ? corpo.detail : '';
+          throw new Error(
+            res.status === 403
+              ? (detalhe || 'Sem permissão para ver o histórico desta conta.')
+              : `Não foi possível carregar seus laudos (erro ${res.status}).${detalhe ? ' ' + detalhe : ''}`,
+          );
+        }
 
         const data = await res.json();
         const historicoReal = data.history || (Array.isArray(data) ? data : []);
@@ -123,6 +148,8 @@ export default function HistoryTab({
       } catch (err) {
         if (err instanceof SessionExpiredError) return;
         console.error("Erro ao carregar histórico:", err);
+        setErroCarga(err instanceof Error ? err.message
+          : 'Não foi possível carregar seus laudos agora.');
       } finally {
         setIsLoading(false);
       }
@@ -847,7 +874,17 @@ export default function HistoryTab({
           não analisou nada" (precisa de um caminho para a primeira análise);
           `paginatedAnalyses.length === 0` com laudos salvos é "o filtro não
           achou" (precisa de um caminho para limpar o filtro). */}
-      {analyses.length === 0 ? (
+      {/* O erro vem ANTES do vazio: um cofre que não pôde ser aberto não é um
+          cofre vazio, e a diferença decide o que a pessoa faz a seguir. */}
+      {erroCarga ? (
+        <div className="rounded-[2rem] border border-amber-200 bg-amber-50 py-16 text-center">
+          <h3 className="text-lg font-black text-amber-900">Seus laudos não foram carregados</h3>
+          <p className="mx-auto mt-2 max-w-[46ch] text-sm font-medium leading-relaxed text-amber-900/85">
+            {erroCarga} <strong>Nada foi perdido</strong> — o que está salvo continua salvo.
+            Recarregue a página daqui a pouco.
+          </p>
+        </div>
+      ) : analyses.length === 0 ? (
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
             <ScanSearch size={24} />

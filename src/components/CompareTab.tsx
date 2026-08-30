@@ -311,17 +311,37 @@ export default function CompareTab({ token }: { token: string }) {
   const [arquivarOutro, setArquivarOutro] = useState(false);
   const [erroDecisao, setErroDecisao]     = useState('');
   const [copiado, setCopiado]             = useState(false);
+  /** Mensagem quando o servidor não entregou o histórico. Ver o comentário
+   *  no `useEffect` abaixo — sem isto, falha e conta vazia são a mesma tela. */
+  const [erroCarga, setErroCarga]         = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
+    setErroCarga(null);
     apiFetch(`${API_URL}/api/analyses/history`)
-      .then(r => r.json())
+      // ⚠️ `.ok` ANTES DE LER O CORPO. O erro do FastAPI é JSON válido, então
+      // `.json()` não lança: `data.history` ficava `undefined` e a lista saía
+      // vazia. A tela dizia "nenhuma análise para comparar" durante uma
+      // instabilidade do servidor, para quem tem dezenas de laudos.
+      .then(async r => {
+        if (!r.ok) {
+          const corpo = await r.json().catch(() => null);
+          const detalhe = typeof corpo?.detail === 'string' ? corpo.detail : '';
+          throw new Error(
+            `Não foi possível carregar seus laudos (erro ${r.status}).${detalhe ? ' ' + detalhe : ''}`,
+          );
+        }
+        return r.json();
+      })
       .then(data => {
         const list: SavedAnalysis[] = data.history || (Array.isArray(data) ? data : []);
         setAnalyses(list);
       })
       .catch((err) => {
         if (err instanceof SessionExpiredError) { clearSession(); return; }
+        console.error('Erro ao carregar histórico para comparar:', err);
+        setErroCarga(err instanceof Error ? err.message
+          : 'Não foi possível carregar seus laudos agora.');
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -950,7 +970,17 @@ export default function CompareTab({ token }: { token: string }) {
 
       {/* Lista de análises seleccionáveis */}
       <div className="grid gap-3">
-        {listaVisivel.length === 0 && (
+        {/* O erro vem antes do vazio: "não deu para carregar" e "não há nada
+            que corresponda ao filtro" pedem reações opostas de quem lê. */}
+        {erroCarga && (
+          <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50 px-5 py-6 text-center">
+            <p className="text-sm font-bold text-amber-900">Seus laudos não foram carregados</p>
+            <p className="mx-auto mt-1.5 max-w-[46ch] text-[13px] font-medium leading-relaxed text-amber-900/85">
+              {erroCarga} Nada foi perdido — recarregue a página daqui a pouco.
+            </p>
+          </div>
+        )}
+        {!erroCarga && listaVisivel.length === 0 && (
           <div className="rounded-[1.5rem] border border-dashed border-slate-200 bg-white py-10 text-center text-sm font-medium text-slate-400">
             Nenhuma análise corresponde ao filtro &ldquo;{busca}&rdquo;.
           </div>
