@@ -739,25 +739,12 @@ export default function AnalysisResults({
                   },
                   {
                     titulo: 'Por que preço',
-                    quando: Boolean(liveResult.pricing_intelligence),
-                    conteudo: isNoGoVerdict(liveResult) ? (
-                      <div className="flex items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 print:hidden">
-                        <Target size={18} className="mt-0.5 shrink-0 text-slate-400" />
-                        <p className="text-sm font-medium leading-relaxed text-slate-500">
-                          <strong className="text-slate-700">Simulador tático desativado:</strong> o veredito é Não
-                          participar — não há proposta a precificar. Se o órgão corrigir o edital (documentos,
-                          prazos), reprocesse a análise para reativá-lo.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="print:hidden">
-                        <TacticalSimulator
-                          pricing={liveResult.pricing_intelligence!}
-                          fullResult={liveResult}
-                          userTier={userTier}
-                          onUpgradeClick={onUpgradeClick}
-                        />
-                      </div>
+                    conteudo: (
+                      <SimuladorPreco
+                        result={liveResult}
+                        userTier={userTier}
+                        onUpgradeClick={onUpgradeClick}
+                      />
                     ),
                   },
                   {
@@ -4679,6 +4666,93 @@ function HabilitacaoSection({
  * pena disputar preço; e os prazos são o que a pessoa faz na agenda depois
  * de decidir participar.
  */
+
+/* ─── Simulador de preço num laudo No-Go ──────────────────────────────────
+ *
+ * ⚠️ ISTO ERA UM BLOQUEIO, E O BLOQUEIO ESTAVA ERRADO.
+ *
+ * A tela dizia "Simulador tático desativado: o veredito é No-Go — não há
+ * proposta a precificar" e não renderizava a ferramenta. A regra nunca teve
+ * uma justificativa escrita em lado nenhum: entrou em commits chamados
+ * "melhorias" e "ajustes finais", e o único argumento a favor dela é o que
+ * está na própria frase.
+ *
+ * O argumento é parcialmente verdadeiro: a maioria dos No-Go do bawzi é de
+ * HABILITAÇÃO (atestado, liquidez, CNAE), e aí de facto não há proposta a
+ * precificar. Mas ele falha em três pontos:
+ *
+ *   1 · O No-Go nem sempre é de habilitação. Quando ele vem DO PREÇO — valor
+ *       estimado abaixo do custo, deságio inviável — o simulador é
+ *       exactamente a ferramenta que permite conferir o veredito. Desligá-lo
+ *       remove a auditoria no eixo em que a máquina decidiu.
+ *
+ *   2 · O veredito pode ser heurística. Sem `decisao.veredito`,
+ *       `normalizeDecision` cai no corte por score: abaixo de 45, NO_GO. Um
+ *       laudo em que a IA nunca emitiu veredito, com score 44, perdia a
+ *       ferramenta em silêncio. Ninguém decidiu isso.
+ *
+ *   3 · O PRÓPRIO PRODUTO CONTA AS PESSOAS QUE ESTE BLOQUEIO ATINGIA.
+ *       `/api/analyses/learning-stats` devolve
+ *       `no_go.total_participou_mesmo_assim` — o backend mede quantos
+ *       clientes disputam apesar do No-Go e usa isso para calibrar a taxa de
+ *       acerto que este mesmo laudo exibe. A plataforma sabe que essas
+ *       pessoas existem, mede-as, e escondia delas a ferramenta de preço.
+ *
+ * "Não participar" é recomendação, não trava — é assim que o resto da tela se
+ * comporta ("o que mudaria a decisão", impugnar, monitorar condições na
+ * Gestão). O aviso fica, porque na maioria dos casos ele está certo e o
+ * estado fechado respeita o veredito. O que deixa de existir é a proibição.
+ */
+function SimuladorPreco({
+  result,
+  userTier,
+  onUpgradeClick,
+}: {
+  result: AnalysisResult;
+  userTier: number;
+  onUpgradeClick: () => void;
+}) {
+  if (!result.pricing_intelligence) {
+    return (
+      <p className="text-sm font-medium text-slate-400">
+        Inteligência de preço não disponível nesta análise.
+      </p>
+    );
+  }
+
+  const simulador = (
+    <div className="print:hidden">
+      <TacticalSimulator
+        pricing={result.pricing_intelligence}
+        fullResult={result}
+        userTier={userTier}
+        onUpgradeClick={onUpgradeClick}
+      />
+    </div>
+  );
+
+  if (!isNoGoVerdict(result)) return simulador;
+
+  return (
+    <details className="group print:hidden">
+      <summary className="flex cursor-pointer list-none items-start gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 transition-colors hover:border-slate-300 [&::-webkit-details-marker]:hidden">
+        <Target size={18} className="mt-0.5 shrink-0 text-slate-400" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium leading-relaxed text-slate-500">
+            <strong className="font-semibold text-slate-700">O veredito é Não participar.</strong> Na maioria dos
+            casos o impedimento é de habilitação — e aí não há proposta a precificar. Se o seu impedimento for de
+            preço, ou se vai disputar mesmo assim, o simulador continua aqui.
+          </span>
+          <span className="mt-2 inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-700 underline underline-offset-2">
+            Simular mesmo assim
+            <ChevronDown size={14} className="transition-transform group-open:rotate-180" />
+          </span>
+        </span>
+      </summary>
+      <div className="mt-4">{simulador}</div>
+    </details>
+  );
+}
 
 function CriteriosJulgamentoSection({ result }: { result: AnalysisResult }) {
   const itens = (result.criterios_de_julgamento || []).filter((c) => String(c || '').trim());
