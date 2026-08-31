@@ -59,6 +59,33 @@ import {
  * carimbada aparecer como janeiro de 1970 — uma data plausível o suficiente
  * para ninguém desconfiar, e errada.
  */
+/* ⚠️ `parseInt(e.target.value) || 0` ERA O CAMINHO MAIS CURTO PARA UMA COTA
+   ILIMITADA. Esvaziar o campo para redigitar dá `""`; `parseInt("")` é `NaN`;
+   o `|| 0` transforma isso em zero. E zero não é "nenhum" nestes campos:
+   `monthly_limit: 0` significa ILIMITADO em toda a plataforma
+   (`router_analyses`: `if limite_atual > 0`), enquanto `max_chars: 0` recusa
+   qualquer texto e `max_mb: 0` recusa todo upload — para TODOS os clientes do
+   plano, no instante do Salvar.
+
+   Os dois campos vizinhos que dividem e multiplicam cobrança já tinham essa
+   guarda (`caracteres_por_credito` com `Math.max(1000, …)` e `peso_profunda`
+   com `Math.min(50, Math.max(1, …))`). Estes três ficaram de fora.
+
+   Campo vazio ou ilegível volta ao valor ATUAL do plano — não a zero, não ao
+   piso — porque quem apagou quer redigitar, não zerar. */
+/* Célula de preço vazia ou ilegível mantém o valor atual, em vez de virar 0.
+   Aceita vírgula decimal pelo mesmo motivo do `cortesia_fator`. */
+function _precoOuAtual(bruto: unknown, atual: number): number {
+  const n = parseFloat(String(bruto ?? '').trim().replace(',', '.'));
+  return Number.isFinite(n) && n >= 0 ? n : atual;
+}
+
+function _inteiroOuPadrao(bruto: string, atual: number, piso: number): number {
+  const n = parseInt(bruto, 10);
+  if (!Number.isFinite(n)) return atual;
+  return Math.max(piso, n);
+}
+
 function fmtData(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -361,7 +388,21 @@ function CalculadoraMargem({ tier, edit, precos, cambioInfo }: {
           </label>
           <input type="number" min={1} step={0.01} value={cambio || ''}
                  placeholder={cambioInfo ? '' : 'carregando…'}
-                 onChange={e => setCambioManual(Math.max(1, parseFloat(e.target.value) || 1))}
+                 /* ⚠️ `parseFloat("") || 1` ANCORAVA A SIMULAÇÃO EM R$ 1,00.
+                    Limpar o campo para redigitar dava câmbio 1: a receita do
+                    Elite passava de US$ 92 (497 / 5,4) para US$ 497, a margem
+                    saltava de ~40% para ~89% e ficava verde, e a "cota
+                    sugerida" logo abaixo — que é o número usado para decidir
+                    o plano — subia 5,4×. Campo vazio agora volta ao câmbio
+                    oficial, que é o comportamento que o comentário desta
+                    seção já descrevia. */
+                 onChange={e => {
+                   const n = parseFloat(e.target.value);
+                   setCambioManual(
+                     e.target.value.trim() === '' || !Number.isFinite(n) || n < 1
+                       ? null
+                       : n);
+                 }}
                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1.5 text-xs font-bold focus:outline-none focus:border-violet-500" />
           <p className="mt-1 text-[9px] leading-3 text-slate-500">
             {cambioManual !== null ? (
@@ -472,7 +513,16 @@ export default function AdminDashboard() {
   const [errorLogsTotal, setErrorLogsTotal] = useState(0);
   const [errorLogsLoading, setErrorLogsLoading] = useState(false);
   const [errorLogFilter, setErrorLogFilter] = useState<'' | 'WARNING' | 'ERROR' | 'CRITICAL'>('');
-  const [expandedLog, setExpandedLog] = useState<number | null>(null);
+  /* ⚠️ ESCOLHER O LOG EXPANDIDO PELO ÍNDICE ABRE O LOG ERRADO.
+     Era `number | null` comparado com a posição na lista. Abrir o 3º log em
+     "Todos" e depois clicar no filtro CRITICAL trocava o conteúdo da lista
+     sem limpar `expandedLog`: o 3º CRITICAL aparecia expandido sozinho, e o
+     operador lia o stack trace de um incidente que não escolheu. Guardar a
+     identidade do registro resolve nos dois sentidos — a lista pode mudar à
+     vontade. */
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const _idDoLog = (log: any, i: number) =>
+    String(log?._id ?? `${log?.created_at ?? ''}|${log?.message ?? ''}|${i}`);
 
   // Estados do Formulário SMTP
   const [smtpUser, setSmtpUser] = useState('');
@@ -586,7 +636,24 @@ export default function AdminDashboard() {
       const payload: Record<string, unknown> = {};
       for (const c of billingCampos) {
         const bruto = billingEdit[c.chave] ?? '';
-        if (c.chave === 'cortesia_fator') payload[c.chave] = parseFloat(bruto);
+        /* ⚠️ `parseFloat("1,15")` É `1`, E O BACKEND ACEITA 1.
+           `cortesia_fator` é campo de TEXTO livre, e 1,15 é como se escreve
+           1.15 em pt-BR. O parse local truncava na vírgula, o valor 1.0
+           passava na faixa `1.0 <= v <= 3.0` do backend, e a tela dizia
+           "Configuração salva." em verde: a margem de cortesia de 15%
+           desaparecia, e todo cliente pagante passava a cair no motor
+           gratuito no instante em que o saldo zerasse.
+
+           Os outros campos numéricos viajam como string crua e o Python
+           recusa com um 422 explícito. Este passa a normalizar a vírgula e a
+           recusar o que não for número — em vez de errar calado. */
+        if (c.chave === 'cortesia_fator') {
+          const n = parseFloat(String(bruto).trim().replace(',', '.'));
+          if (!Number.isFinite(n)) {
+            throw new Error(`O campo "${c.chave}" precisa ser um número (ex.: 1.15).`);
+          }
+          payload[c.chave] = n;
+        }
         else if (c.chave === 'pacote_creditos_qtd') payload[c.chave] = parseInt(bruto, 10);
         else if (ehBooleano(c)) payload[c.chave] = bruto === 'true';
         else if (c.chave === 'precos_llm') {
@@ -1138,9 +1205,23 @@ export default function AdminDashboard() {
   const handleRevogarPromo = async (token_promo: string, email: string) => {
     if (!confirm(`Revogar convite de ${email}?`)) return;
     const base  = API_URL;
-    await apiFetch(`${base}/api/admin/promo-invites/${token_promo}`, {
-      method: 'DELETE',
-    });
+    try {
+      // ⚠️ `apiFetch` NÃO LANÇA em erro HTTP — devolve a resposta com
+      // `ok: false`. Sem esta conferência, revogar um convite já revogado
+      // (404) recarregava a lista, a linha continuava lá, e nenhum erro
+      // aparecia: a tela dizia por omissão que tinha funcionado.
+      const res = await apiFetch(`${base}/api/admin/promo-invites/${token_promo}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        alert('Não foi possível revogar este convite.');
+        return;
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      alert('Não foi possível revogar este convite.');
+      return;
+    }
     loadPromoList();
   };
 
@@ -1224,17 +1305,40 @@ export default function AdminDashboard() {
         const d = await res.json();
         setErrorLogs(d.errors ?? []);
         setErrorLogsTotal(d.total ?? 0);
+        // A lista trocou de conteúdo: nada do que estava aberto sobrevive.
+        setExpandedLog(null);
       }
     } catch {}
     setErrorLogsLoading(false);
   };
 
   const clearErrorLogs = async () => {
-    if (!confirm('Apagar todos os logs de erro? Esta ação não pode ser desfeita.')) return;
+    /* ⚠️ O DELETE IGNORA O FILTRO, E A PERGUNTA NÃO DIZIA ISSO.
+       Com o filtro CRITICAL ativo, o cabeçalho mostrava "(3 no total)" e a
+       pergunta dizia "apagar todos os logs?" — o operador confirmava olhando
+       para 3 e o backend fazia `delete_many({})`, levando junto os 900
+       WARNING/ERROR que o filtro escondia. A resposta traz `deleted`, e ela
+       era descartada: o contador era zerado localmente, então nem depois
+       dava para perceber. */
+    const comFiltro = Boolean(errorLogFilter);
+    const pergunta = comFiltro
+      ? `Apagar TODOS os logs de erro?\n\nO filtro "${errorLogFilter}" está ativo e mostra ${errorLogsTotal} registro(s), mas esta ação apaga a coleção inteira — de todos os níveis. Não pode ser desfeita.`
+      : `Apagar os ${errorLogsTotal} logs de erro? Esta ação não pode ser desfeita.`;
+    if (!confirm(pergunta)) return;
     try {
       const base = API_URL;
       const res = await apiFetch(`${base}/api/admin/errors`, { method: 'DELETE' });
-      if (res.ok) { setErrorLogs([]); setErrorLogsTotal(0); }
+      if (!res.ok) {
+        alert('Não foi possível apagar os logs. Nada foi removido.');
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      setErrorLogs([]);
+      setErrorLogsTotal(0);
+      if (typeof data?.deleted === 'number') {
+        // O número do servidor, não o da tela: é ele que diz o que sumiu.
+        alert(`${data.deleted} log(s) apagado(s).`);
+      }
     } catch {}
   };
 
@@ -1282,9 +1386,15 @@ export default function AdminDashboard() {
       const res = await apiFetch(`${API_URL}/api/admin/precos-modelo/${encodeURIComponent(modelo)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        /* ⚠️ `Number("")` É `0`, E O `??` NÃO COBRE STRING VAZIA.
+           O input guarda a string crua, então limpar a célula para redigitar
+           guardava `""` — que não é `undefined`. O backend só recusa valores
+           NEGATIVOS, então US$ 0,00 era gravado: a calculadora de margem
+           passava a mostrar 100% para aquele modelo, e é sobre esse número
+           que a tela sugere a cota do plano. */
         body: JSON.stringify({
-          entrada: Number(e.entrada ?? atual.entrada),
-          saida:   Number(e.saida   ?? atual.saida),
+          entrada: _precoOuAtual(e.entrada, atual.entrada),
+          saida:   _precoOuAtual(e.saida,   atual.saida),
         }),
       });
       if (res.ok) await loadPrecosModelo();
@@ -1417,9 +1527,18 @@ export default function AdminDashboard() {
     if (!confirm(`Restaurar Tier ${tierId} aos valores padrão?`)) return;
     const baseUrl = API_URL;
     try {
-      await apiFetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
+      // ⚠️ MESMO CASO: `apiFetch` devolve `ok: false` em vez de lançar, então
+      // um 403 pintava "Restaurado aos padrões." em verde enquanto os
+      // overrides continuavam valendo — e `loadTierConfigs`, que TEM a
+      // conferência, falhava em silêncio deixando os valores antigos na tela.
+      const res = await apiFetch(`${baseUrl}/api/admin/tier-configs/${tierId}/reset`, {
         method: 'DELETE',
       });
+      if (!res.ok) {
+        setTierMsg({ tier_id: tierId, text: 'Não foi possível restaurar.', ok: false });
+        setTimeout(() => setTierMsg(null), 4000);
+        return;
+      }
       setTierMsg({ tier_id: tierId, text: 'Restaurado aos padrões.', ok: true });
       await loadTierConfigs();
       setTimeout(() => setTierMsg(null), 3000);
@@ -3963,7 +4082,7 @@ export default function AdminDashboard() {
                           value={edit.monthly_limit ?? tier.monthly_limit}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], monthly_limit: parseInt(e.target.value) || 0 },
+                            [tier.tier_id]: { ...prev[tier.tier_id], monthly_limit: _inteiroOuPadrao(e.target.value, tier.monthly_limit, 0) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
@@ -4107,6 +4226,18 @@ export default function AdminDashboard() {
                         <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1.5">
                           Caracteres por crédito
                           <span className="ml-1 text-slate-600 normal-case font-normal">(igual em todos)</span>
+                          {/* ⚠️ O BACKEND CALCULA ISTO E A TELA NUNCA LIA.
+                              `unidade_divergente` existe em router_admin.py
+                              "para a divergência não passar despercebida na
+                              tela", e aparecia neste arquivo uma única vez:
+                              dentro do comentário acima. Sem o aviso, "1
+                              crédito" passava a significar coisas diferentes
+                              por plano, cada card coerente consigo mesmo. */}
+                          {tier.unidade_divergente && (
+                            <span className="ml-1.5 text-amber-400 normal-case font-bold">
+                              ⚠ divergente entre planos
+                            </span>
+                          )}
                         </label>
                         <input
                           type="number"
@@ -4139,7 +4270,7 @@ export default function AdminDashboard() {
                           value={edit.max_chars ?? tier.max_chars}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], max_chars: parseInt(e.target.value) || 0 },
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_chars: _inteiroOuPadrao(e.target.value, tier.max_chars, 1000) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
@@ -4159,7 +4290,7 @@ export default function AdminDashboard() {
                           value={edit.max_mb ?? tier.max_mb}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], max_mb: parseInt(e.target.value) || 0 },
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_mb: _inteiroOuPadrao(e.target.value, tier.max_mb, 1) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
@@ -5678,16 +5809,17 @@ export default function AdminDashboard() {
                 const isWarning  = log.level === 'WARNING';
                 const levelColor = isCritical ? '#ef4444' : isError ? '#f97316' : '#f59e0b';
                 const levelBg    = isCritical ? 'rgba(239,68,68,0.12)' : isError ? 'rgba(249,115,22,0.10)' : 'rgba(245,158,11,0.09)';
-                const expanded   = expandedLog === i;
+                const logId      = _idDoLog(log, i);
+                const expanded   = expandedLog === logId;
                 // Timestamp formatting
                 const ts = log.created_at ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }) : '—';
 
                 return (
                   <div
-                    key={i}
+                    key={logId}
                     className="rounded-2xl border transition-all cursor-pointer"
                     style={{ background: expanded ? levelBg : 'rgba(15,23,42,0.6)', borderColor: expanded ? levelColor + '44' : 'rgba(51,65,85,0.5)' }}
-                    onClick={() => setExpandedLog(expanded ? null : i)}
+                    onClick={() => setExpandedLog(expanded ? null : logId)}
                   >
                     {/* Summary row */}
                     <div className="flex items-center gap-4 px-5 py-4">
