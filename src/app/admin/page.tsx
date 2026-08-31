@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { inteiroOuPadrao, precoOuAtual } from '@/lib/camposNumericos';
 import { useRouter } from 'next/navigation';
 import { apiFetch, SessionExpiredError, API_URL, initSession, mensagemDeErro } from '@/lib/apiClient';
 import {
@@ -59,33 +60,6 @@ import {
  * carimbada aparecer como janeiro de 1970 — uma data plausível o suficiente
  * para ninguém desconfiar, e errada.
  */
-/* ⚠️ `parseInt(e.target.value) || 0` ERA O CAMINHO MAIS CURTO PARA UMA COTA
-   ILIMITADA. Esvaziar o campo para redigitar dá `""`; `parseInt("")` é `NaN`;
-   o `|| 0` transforma isso em zero. E zero não é "nenhum" nestes campos:
-   `monthly_limit: 0` significa ILIMITADO em toda a plataforma
-   (`router_analyses`: `if limite_atual > 0`), enquanto `max_chars: 0` recusa
-   qualquer texto e `max_mb: 0` recusa todo upload — para TODOS os clientes do
-   plano, no instante do Salvar.
-
-   Os dois campos vizinhos que dividem e multiplicam cobrança já tinham essa
-   guarda (`caracteres_por_credito` com `Math.max(1000, …)` e `peso_profunda`
-   com `Math.min(50, Math.max(1, …))`). Estes três ficaram de fora.
-
-   Campo vazio ou ilegível volta ao valor ATUAL do plano — não a zero, não ao
-   piso — porque quem apagou quer redigitar, não zerar. */
-/* Célula de preço vazia ou ilegível mantém o valor atual, em vez de virar 0.
-   Aceita vírgula decimal pelo mesmo motivo do `cortesia_fator`. */
-function _precoOuAtual(bruto: unknown, atual: number): number {
-  const n = parseFloat(String(bruto ?? '').trim().replace(',', '.'));
-  return Number.isFinite(n) && n >= 0 ? n : atual;
-}
-
-function _inteiroOuPadrao(bruto: string, atual: number, piso: number): number {
-  const n = parseInt(bruto, 10);
-  if (!Number.isFinite(n)) return atual;
-  return Math.max(piso, n);
-}
-
 function fmtData(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -1393,8 +1367,8 @@ export default function AdminDashboard() {
            passava a mostrar 100% para aquele modelo, e é sobre esse número
            que a tela sugere a cota do plano. */
         body: JSON.stringify({
-          entrada: _precoOuAtual(e.entrada, atual.entrada),
-          saida:   _precoOuAtual(e.saida,   atual.saida),
+          entrada: precoOuAtual(e.entrada, atual.entrada),
+          saida:   precoOuAtual(e.saida,   atual.saida),
         }),
       });
       if (res.ok) await loadPrecosModelo();
@@ -4082,7 +4056,7 @@ export default function AdminDashboard() {
                           value={edit.monthly_limit ?? tier.monthly_limit}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], monthly_limit: _inteiroOuPadrao(e.target.value, tier.monthly_limit, 0) },
+                            [tier.tier_id]: { ...prev[tier.tier_id], monthly_limit: inteiroOuPadrao(e.target.value, tier.monthly_limit, 0) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
@@ -4270,7 +4244,7 @@ export default function AdminDashboard() {
                           value={edit.max_chars ?? tier.max_chars}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], max_chars: _inteiroOuPadrao(e.target.value, tier.max_chars, 1000) },
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_chars: inteiroOuPadrao(e.target.value, tier.max_chars, 1000) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
@@ -4290,7 +4264,7 @@ export default function AdminDashboard() {
                           value={edit.max_mb ?? tier.max_mb}
                           onChange={e => setTierEdits(prev => ({
                             ...prev,
-                            [tier.tier_id]: { ...prev[tier.tier_id], max_mb: _inteiroOuPadrao(e.target.value, tier.max_mb, 1) },
+                            [tier.tier_id]: { ...prev[tier.tier_id], max_mb: inteiroOuPadrao(e.target.value, tier.max_mb, 1) },
                           }))}
                           className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold focus:outline-none focus:border-violet-500 transition-colors"
                         />
