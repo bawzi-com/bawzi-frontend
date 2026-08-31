@@ -136,6 +136,12 @@ interface DisputasMeta {
   fora_total: number;
   /** Quantos desses vieram como amostra — sempre ≤ fora_total. */
   fora_amostrados: number;
+  /** Motivo, quando a consulta de disputas falhou. `null` no sucesso.
+   *  ⚠️ HTTP 200 NÃO GARANTE QUE HOUVE APURAÇÃO: o backend responde a rota
+   *  inteira mesmo quando só a agregação de disputas caiu. Sem ler isto, a
+   *  tela mostraria "nenhuma disputa à vista" para uma consulta que nunca
+   *  chegou a olhar. */
+  erro?: string | null;
 }
 
 /** Contrato de OUTRO fornecedor, vencendo, num órgão onde a empresa já está.
@@ -637,6 +643,10 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   // aparece na hora e o painel chega quando ficar pronto.
   const [arena, setArena] = useState<OrgaoConcorrencia[] | null>(null);
   const [arenaFalhou, setArenaFalhou] = useState(false);
+  // Separado de `arenaFalhou` de propósito: o painel de órgãos pode ter vindo
+  // inteiro e só a apuração das disputas ter falhado. Um flag só para os dois
+  // faria a tela dizer a frase errada em metade dos casos.
+  const [disputasFalharam, setDisputasFalharam] = useState(false);
   const [oportunidades, setOportunidades] = useState<Oportunidade[]>([]);
   // ⚠️ LISTA SEPARADA, NÃO UM FILTRO SOBRE A PRIMEIRA. O que o filtro de ramo
   // descartou nunca chegava aqui: a ordenação punha os descartados no fim e o
@@ -700,6 +710,20 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
         setContratos([]); setResumo(null); setCobertura(null);
         return;
       }
+      // ⚠️ CONSULTA QUE FALHOU NÃO PODE VIRAR CARTEIRA VAZIA. O backend passou a
+      // devolver `resumo: null` + `erro` quando a base local não respondeu (ver
+      // services/pncp/meus_contratos.py). Sem este ramo a tela ficaria muda —
+      // lista vazia, cartões sumidos — e mudez é indistinguível de "você não tem
+      // contrato nenhum". Trocar a mentira do R$ 0,00 por silêncio não é conserto.
+      if (json.erro) {
+        // Mesma regra do catch: refresh de fundo que falha não derruba o que
+        // a pessoa já está lendo.
+        if (silencioso) return;
+        setSemEmpresa(false);
+        setContratos([]); setResumo(null); setCobertura(json.cobertura || null);
+        setErro('Não consegui consultar seus contratos agora. Os números não são zero — eles não foram apurados. Tente novamente em instantes.');
+        return;
+      }
       setSemEmpresa(false);
       setContratos(json.data || []);
       setResumo(json.resumo || null);
@@ -727,6 +751,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
 
   const carregarArena = useCallback(async () => {
     setArenaFalhou(false);
+    setDisputasFalharam(false);
     try {
       const url = `${API_URL}/api/pncp/meus-contratos/concorrentes${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`;
       const res = await apiFetch(url);
@@ -736,6 +761,11 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       setOportunidades(json.oportunidades || []);
       setForaDoRamo(json.fora_do_ramo || []);
       setDisputasMeta(json.disputas_meta || null);
+      // ⚠️ VAZIO POR NÃO TER OLHADO NÃO É VAZIO POR NÃO HAVER. Ver `erro` em
+      // `DisputasMeta`: a rota responde 200 com a lista vazia quando a
+      // agregação cai, e sem esta linha a tela afirmaria que não há disputa
+      // nenhuma nos órgãos da empresa.
+      setDisputasFalharam(Boolean(json.disputas_meta?.erro));
     } catch (e) {
       if (e instanceof SessionExpiredError) return;
       // ⚠️ FALHA AQUI NÃO DERRUBA A TELA. O painel é complementar; a carteira
@@ -1910,6 +1940,15 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                   . Um concorrente que só apareça fora disso não entra na conta.
                 </p>
               </div>
+            )}
+            {!arenaFalhou && disputasFalharam && (
+              <p className="mt-6 border-t border-slate-100 pt-5 text-[11px] font-semibold text-slate-400">
+                Não consegui apurar as disputas que vão abrir nestes órgãos — o
+                que falta aqui não é zero, é não apurado.{' '}
+                <button onClick={carregarArena} className="font-black text-emerald-700 underline">
+                  tentar de novo
+                </button>
+              </p>
             )}
             {arenaFalhou && (
               <p className="mt-6 border-t border-slate-100 pt-5 text-[11px] font-semibold text-slate-400">
