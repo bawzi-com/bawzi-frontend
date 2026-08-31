@@ -2679,12 +2679,14 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
     rotulo: shortenDecisionText(raw?.rotulo || rotulos[veredito], 90),
     confianca: clampPercent(raw?.confianca),
     /* ⚠️ `!== false` TRATAVA O LAUDO LEGADO COMO MEDIDA.
-       Laudos gravados antes deste campo existir NÃO o têm — e têm
-       `confianca: 60`, o número que o default antigo do Pydantic fabricava.
-       `undefined !== false` é `true`, então o cartão exibia "60% Confiança"
-       com o tooltip "com base na quantidade e qualidade das evidências
-       encontradas no edital" e a cor de medida real. Era exatamente o número
-       inventado, agora com selo de apurado. Na dúvida, o rótulo defensivo
+       Laudos gravados antes deste campo existir NÃO o têm — e o número que
+       eles carregam saiu de `_calcular_confianca_decisao`, que semeia a base
+       a partir do SCORE (`score + 8`, `100 - score`…) sempre que a IA não
+       devolveu confiança própria. É o score reescalado, não uma leitura do
+       edital. `undefined !== false` é `true`, então esses laudos exibiam o
+       número com o tooltip "com base na quantidade e qualidade das evidências
+       encontradas no edital" e a cor de medida real — o derivado com selo de
+       apurado. Na dúvida, o rótulo defensivo
        ("est.") é o único honesto: só afirma quem foi afirmado. */
     confianca_informada: raw?.confianca_informada === true && raw?.confianca != null,
     resumo_decisao: shortenDecisionText(raw?.resumo_decisao || resumoPadrao[veredito], 430),
