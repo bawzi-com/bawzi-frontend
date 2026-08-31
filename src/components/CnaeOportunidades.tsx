@@ -227,13 +227,25 @@ export default function CnaeOportunidades({
     setLoadingId(uid);
     try {
       const termo = cnaeInfo?.termos[0] || edital.cnae_match || 'licitação';
+      // ⚠️ SEM `signal` PRÓPRIO, ESTA CHAMADA HERDAVA UM TIMEOUT DE 20s.
+      // A troca de `fetch` por `apiFetch` trouxe junto o `AbortController` de
+      // `DEFAULT_TIMEOUT_MS` do apiClient — que faz sentido para uma rota de
+      // perfil, não para `texto-completo`, que BAIXA E EXTRAI os anexos do
+      // PNCP (o servidor sozinho usa `timeout=30s` por sub-requisição, com
+      // retries entre bases). Passar dos 20s é o caso normal em edital com
+      // anexos, que é justamente quando a análise mais depende dele. O
+      // `PncpSearch` escapava porque passa `signal`; aqui não passava.
+      const controller = new AbortController();
+      const _prazo = setTimeout(() => controller.abort(), 120_000);
       const [resTexto, resMedia] = await Promise.all([
         // `apiFetch` e não `fetch`: o orçamento de anexos passou a sair do
         // tier lido no servidor, e sem cabeçalho de sessão o cliente pagante
         // seria atendido com o teto de convidado. Ver PncpSearch.
-        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${cnpj}&ano=${ano}&seq=${seq}`),
-        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo)}`),
-      ]);
+        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${cnpj}&ano=${ano}&seq=${seq}`,
+                 { signal: controller.signal }),
+        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo)}`,
+                 { signal: controller.signal }),
+      ]).finally(() => clearTimeout(_prazo));
 
       if (!resTexto.ok) throw new Error('Falha ao carregar o edital.');
       const dataTexto = await resTexto.json();
@@ -282,7 +294,14 @@ INSTRUÇÃO: Analise este edital priorizando a compatibilidade com o CNAE ${cnae
 
       onAnalyzeOportunity(prompt, edital.cnae_match || termo, { cnpj, ano, sequencial: seq, uf });
     } catch (err: unknown) {
-      setErroEdital(err instanceof Error ? err.message : 'Erro ao carregar edital. Tente novamente.');
+      // AbortError chega com mensagem do navegador, em inglês ("signal is
+      // aborted without reason"). Isso não é mensagem de produto.
+      const _abortado = err instanceof Error
+        && (err.name === 'AbortError' || /abort/i.test(err.message));
+      setErroEdital(
+        _abortado
+          ? 'O portal do PNCP demorou demais para entregar os anexos deste edital. Tente novamente em instantes.'
+          : err instanceof Error ? err.message : 'Erro ao carregar edital. Tente novamente.');
       setTimeout(() => setErroEdital(null), 5000);
     } finally {
       setLoadingId(null);

@@ -353,10 +353,18 @@ export default function DecisionManagementTab({
 
       if (etapasSelecionadas.size > 0 && !etapasSelecionadas.has(card.stage)) return false;
 
-      const score = Number(card.analysis.score || 0);
-      if (verdictFilter === 'go' && score < 70) return false;
-      if (verdictFilter === 'attention' && !(score >= 45 && score < 70)) return false;
-      if (verdictFilter === 'nogo' && score >= 45) return false;
+      // ⚠️ O CARTÃO DESTA MESMA TELA JÁ DIZ "sem score" — E O FILTRO AQUI
+      // CONTINUAVA TRATANDO AUSÊNCIA COMO ZERO. O laudo sem medida aparecia
+      // dentro do filtro No-Go e sumia de "Go" e "Atenção": a tela afirmando
+      // pelo filtro o oposto do que afirma no cartão.
+      const score = scoreOuNulo(card.analysis.score);
+      if (score === null) {
+        if (verdictFilter !== 'all') return false;
+      } else {
+        if (verdictFilter === 'go' && score < 70) return false;
+        if (verdictFilter === 'attention' && !(score >= 45 && score < 70)) return false;
+        if (verdictFilter === 'nogo' && score >= 45) return false;
+      }
 
       const isFinal = finalStages.includes(card.stage);
       if (activityFilter === 'active' && isFinal) return false;
@@ -395,8 +403,16 @@ export default function DecisionManagementTab({
     });
 
     return filtered.sort((a, b) => {
-      if (sortFilter === 'score_desc') return Number(b.analysis.score || 0) - Number(a.analysis.score || 0);
-      if (sortFilter === 'score_asc') return Number(a.analysis.score || 0) - Number(b.analysis.score || 0);
+      // Sem score vai para o FIM das duas ordenações, explicitamente — em vez
+      // de afundar como se valesse zero.
+      if (sortFilter === 'score_desc' || sortFilter === 'score_asc') {
+        const sa = scoreOuNulo(a.analysis.score);
+        const sb = scoreOuNulo(b.analysis.score);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return sortFilter === 'score_desc' ? sb - sa : sa - sb;
+      }
       if (sortFilter === 'deadline') {
         const da = getCriticalDeadline(asRecord(a.analysis), a.nextTask).date?.getTime() || Number.MAX_SAFE_INTEGER;
         const db = getCriticalDeadline(asRecord(b.analysis), b.nextTask).date?.getTime() || Number.MAX_SAFE_INTEGER;

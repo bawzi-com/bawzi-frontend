@@ -118,6 +118,24 @@ export function getDecisionQueueStage(
   if (!hasStarted) return { key: 'not_started' };
   if (tasks.length > 0 && completed >= tasks.length) return { key: 'submitted' };
 
+  /* ⚠️ CARTÕES ANTIGOS PODIAM REGREDIR DE ESTÁGIO AO REMOVERMOS O CHECKLIST
+   * PADRÃO. Antes, uma análise sem `proximas_acoes` recebia 3 tarefas
+   * sintetizadas; quem as concluía chegava a "Proposta enviada" pela linha
+   * acima — e apenas por ela, porque o servidor só passou a gravar
+   * `workflow_status: "submitted"` depois (comentário em
+   * DecisionManagementTab: "hoje 0 em 206 análises"). Com o checklist padrão
+   * removido, `tasks` fica vazio para essas análises, a linha acima não
+   * dispara, `workflow_status` não existe para preservar o estágio, e o
+   * cartão voltava para triagem/proposta.
+   *
+   * O trabalho registrado continua no `cockpit_status`: se TODAS as marcações
+   * salvas estão concluídas e não há mais tarefa nenhuma a fazer, o estágio
+   * é o mesmo que era ontem. */
+  const marcacoes = Object.values(statusMap);
+  if (tasks.length === 0 && marcacoes.length > 0 && marcacoes.every((state) => state?.done)) {
+    return { key: 'submitted' };
+  }
+
   const verdict = inferDecisionVerdict(analysis);
   if (verdict === 'NO_GO') return { key: 'pending' };
   if (verdict === 'GO') return { key: 'proposal' };
@@ -203,21 +221,58 @@ export function inferDecisionVerdict(analysis: SavedAnalysis): 'GO' | 'GO_CONDIC
    * único dos três rótulos que não afirma. Ele manda o edital para a fila de
    * TRIAGEM, que é onde um laudo ilegível deve estar. NO_GO esconderia o
    * edital; GO o empurraria para proposta. */
+  /* ═══════════════════════════════════════════════════════════════════════
+   * ⚠️ E `includes('go')` CASAVA DENTRO DE PALAVRA — INCLUSIVE NAS NEGADAS
+   * ═══════════════════════════════════════════════════════════════════════
+   * A primeira versão desta correção trocou o `||` pelo encadeamento certo,
+   * mas manteve `raw.includes(...)` com substring solta. Três casos reais,
+   * todos medidos:
+   *
+   *   recommendation: 'Não recomendamos participar deste certame.'
+   *       → contém 'participar' → GO          (antes desta função: NO_GO)
+   *   recommendation: 'Não avançar com este edital.'
+   *       → contém 'avancar'   → GO          (antes: NO_GO)
+   *   classification: 'Aquisição de artigos de higiene'
+   *       → 'arti(go)s' contém 'go' → GO     (antes: NO_GO)
+   *   decisao.rotulo: 'Participar somente após validações'  ← rótulo CANÔNICO
+   *       do backend para GO_CONDICIONADO → GO, e o edital ia para a fila de
+   *       Proposta em vez da de triagem.
+   *
+   * A negação some no `includes`: "não participar" e "não recomendamos
+   * participar" são a mesma decisão escrita de dois jeitos, e só a primeira
+   * era reconhecida. Agora o casamento é por PALAVRA e a forma negada entra
+   * explicitamente.
+   *
+   * ⚠️ E O VEREDITO EXPLÍCITO DO BACKEND PASSA NA FRENTE DE TUDO.
+   * `decisao.veredito` é o campo em que o motor grava a decisão que ele
+   * tomou, com os tetos, a congruência e o `hard_no_go` já aplicados.
+   * Recalcular por cima dele é a tela discordando do laudo — e a tela sempre
+   * perde essa discussão diante do cliente. O resto desta função é o caminho
+   * do laudo ANTIGO (ou ilegível), que não tem esse campo. */
+  const VEREDITOS = ['GO', 'GO_CONDICIONADO', 'NO_GO'] as const;
+  const explicito = String(decision.veredito || '').trim().toUpperCase();
+  if ((VEREDITOS as readonly string[]).includes(explicito)) {
+    return explicito as 'GO' | 'GO_CONDICIONADO' | 'NO_GO';
+  }
+
   const score = scoreOuNulo(analysis.score);
   // A normalização acima já trocou `_` e `-` por espaço, então "NO_GO",
-  // "NO-GO" e "no go" chegam aqui na mesma forma. A ordem dos testes importa:
-  // "no go" CONTÉM "go", e é por isso que o não-go é verificado primeiro.
-  const textoDizNaoGo = raw.includes('no go') || raw.includes('nao participar');
-  const textoDizCondicional = raw.includes('condicion') || raw.includes('atencao');
-  const textoDizGo = raw.includes('go') || raw.includes('participar')
-    || raw.includes('avancar');
+  // "NO-GO" e "no go" chegam aqui na mesma forma. A ordem importa: o não-go
+  // é testado primeiro porque "no go" contém "go", e o condicional antes do
+  // go porque "participar somente após" contém "participar".
+  const textoDizNaoGo = /(^|\s)(no go|nao participar|nao recomend\w+\s+(a\s+)?participa\w*|nao avancar|declinar)(\s|$)/.test(raw);
+  const textoDizCondicional = /(condicion|atencao|ressalva|somente (apos|se|mediante)|com cautela)/.test(raw);
+  const textoDizGo = /(^|\s)(go|participar|avancar)(\s|$)/.test(raw);
 
   if (textoDizNaoGo) return 'NO_GO';
-  if (score !== null && score < 45) return 'NO_GO';
   if (textoDizCondicional) return 'GO_CONDICIONADO';
-  if (score !== null && score >= 45 && score < 70) return 'GO_CONDICIONADO';
+  if (textoDizGo) return 'GO';
+  // Só agora o score fala: ele é o desempate de um laudo sem texto legível,
+  // não um voto que derruba o que o laudo escreveu.
+  if (score !== null && score < 45) return 'NO_GO';
+  if (score !== null && score < 70) return 'GO_CONDICIONADO';
   // Sem score E sem texto que se possa ler: não se afirma nem GO nem NO_GO.
-  if (score === null && !textoDizGo) return 'GO_CONDICIONADO';
+  if (score === null) return 'GO_CONDICIONADO';
   return 'GO';
 }
 

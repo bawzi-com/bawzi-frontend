@@ -22,6 +22,11 @@ import {
 import AnalysisResults from './AnalysisResults';
 import { AnalysisResult } from './analysis-types';
 import type { SavedAnalysis } from '@/lib/types';
+// ⚠️ `item.score || 0` transformava score AUSENTE em zero, e zero é uma
+// medida. O histórico pintava o cartão de vermelho, escrevia "0 / score /
+// NO-GO", somava o laudo no contador "No-Go" do topo e o entregava ao filtro
+// No-Go. `scoreOuNulo` é a mesma correção que já vale no Comparar e na Gestão.
+import { scoreOuNulo } from '@/lib/decisionQueue';
 
 export default function HistoryTab({
   token,
@@ -317,13 +322,20 @@ export default function HistoryTab({
     const search = searchText.toLowerCase().trim();
 
     return analyses.filter(item => {
-      const score = item.score || 0;
+      const score = scoreOuNulo(item.score);
 
       // Filtro de veredito
       if (activeFilter === 'favorites' && !favorites.includes(item.id)) return false;
-      if (activeFilter === 'go' && score < 70) return false;
-      if (activeFilter === 'attention' && !(score >= 45 && score < 70)) return false;
-      if (activeFilter === 'nogo' && score >= 45) return false;
+      // Sem score não é No-Go: um laudo sem medida não pertence a nenhuma das
+      // três faixas, e escondê-lo em "Go"/"Atenção" enquanto aparece em
+      // "No-Go" é a tela afirmando o que ninguém apurou.
+      if (score === null) {
+        if (activeFilter !== 'all' && activeFilter !== 'favorites') return false;
+      } else {
+        if (activeFilter === 'go' && score < 70) return false;
+        if (activeFilter === 'attention' && !(score >= 45 && score < 70)) return false;
+        if (activeFilter === 'nogo' && score >= 45) return false;
+      }
 
       // Filtro de período
       if (periodoFiltro !== 'all' && item.created_at) {
@@ -367,8 +379,22 @@ export default function HistoryTab({
     };
     const lista = [...filteredAnalyses];
     switch (ordem) {
-      case 'score_desc': return lista.sort((a, b) => (b.score || 0) - (a.score || 0));
-      case 'score_asc':  return lista.sort((a, b) => (a.score || 0) - (b.score || 0));
+      // `|| 0` afundava o laudo sem score como se valesse zero. Ele vai para o
+      // fim das DUAS ordenações, explicitamente: não é o pior nem o melhor.
+      case 'score_desc': return lista.sort((a, b) => {
+        const sa = scoreOuNulo(a.score), sb = scoreOuNulo(b.score);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return sb - sa;
+      });
+      case 'score_asc':  return lista.sort((a, b) => {
+        const sa = scoreOuNulo(a.score), sb = scoreOuNulo(b.score);
+        if (sa === null && sb === null) return 0;
+        if (sa === null) return 1;
+        if (sb === null) return -1;
+        return sa - sb;
+      });
       case 'valor_desc': return lista.sort((a, b) => soDigitos(b.estimated_value) - soDigitos(a.estimated_value));
       case 'antigos':    return lista.sort((a, b) =>
         new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
@@ -647,17 +673,21 @@ export default function HistoryTab({
     URL.revokeObjectURL(url);
   };
 
-  const scoreColors = (score: number) =>
-    score >= 70
+  const scoreColors = (score: number | null) =>
+    score === null
+      ? { bar: 'bg-slate-300', text: 'text-slate-500', light: 'bg-slate-50', border: 'border-slate-200', label: 'sem score' }
+      : score >= 70
       ? { bar: 'bg-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-50', border: 'border-emerald-100', label: 'Go' }
       : score >= 45
       ? { bar: 'bg-amber-400', text: 'text-amber-700', light: 'bg-amber-50', border: 'border-amber-100', label: 'Atenção' }
       : { bar: 'bg-red-500', text: 'text-red-700', light: 'bg-red-50', border: 'border-red-100', label: 'No-Go' };
 
   const totalAnalyses = analyses.length;
-  const goCount = analyses.filter(item => (item.score || 0) >= 70).length;
-  const attentionCount = analyses.filter(item => (item.score || 0) >= 45 && (item.score || 0) < 70).length;
-  const noGoCount = analyses.filter(item => (item.score || 0) < 45).length;
+  // Os três contadores ignoram laudo sem score, em vez de somá-lo no No-Go.
+  const _scores = analyses.map(item => scoreOuNulo(item.score));
+  const goCount = _scores.filter(s => s !== null && s >= 70).length;
+  const attentionCount = _scores.filter(s => s !== null && s >= 45 && s < 70).length;
+  const noGoCount = _scores.filter(s => s !== null && s < 45).length;
   const favoriteCount = analyses.filter(item => favorites.includes(item.id)).length;
 
   const filterOptions = [
@@ -917,7 +947,7 @@ export default function HistoryTab({
       ) : (
         <div className="grid gap-3">
           {paginatedAnalyses.map((item) => {
-            const score = item.score || 0;
+            const score = scoreOuNulo(item.score);
             const isFav = favorites.includes(item.id);
             const c = scoreColors(score);
             const cockpitStatus = item.cockpit_status && typeof item.cockpit_status === 'object'
@@ -954,7 +984,7 @@ export default function HistoryTab({
                 <div className="grid gap-4 p-4 md:grid-cols-[112px_minmax(0,1fr)_auto] md:items-center md:p-5">
                   <div className={`flex items-center justify-between rounded-2xl border p-3 md:block md:text-center ${c.light} ${c.border}`}>
                     <div>
-                      <span className={`block text-3xl font-black leading-none ${c.text}`}>{score}</span>
+                      <span className={`block text-3xl font-black leading-none ${c.text}`}>{score === null ? '—' : score}</span>
                       <span className="mt-1 block text-[9px] font-black uppercase text-slate-400">score</span>
                     </div>
                     <span className={`rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase md:mt-3 md:inline-block ${c.text}`}>

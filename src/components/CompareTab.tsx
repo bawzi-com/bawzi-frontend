@@ -26,7 +26,13 @@ interface RiskItem { titulo: string; descricao?: string; }
 
 // ─── Helpers de cor ────────────────────────────────────────────────────────────
 
-function scoreColors(score: number) {
+// ⚠️ O FALLBACK `?? 50` PINTAVA "ATENÇÃO" EM CIMA DE UM "—".
+// 50 cai na faixa âmbar, então o cartão do laudo SEM score saía com o número
+// "—" (correto) ao lado da etiqueta "ATENÇÃO", barra âmbar e fundo âmbar — o
+// leitor não via "sem score", via um veredito. Agora a ausência tem paleta
+// própria, neutra, e diz o que é.
+function scoreColors(score: number | null) {
+  if (score === null) return { bar: 'bg-slate-300', text: 'text-slate-500', light: 'bg-slate-50', border: 'border-slate-200', label: 'sem score' };
   if (score >= 70) return { bar: 'bg-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-50', border: 'border-emerald-200', label: 'Go' };
   if (score >= 45) return { bar: 'bg-amber-400',   text: 'text-amber-700',   light: 'bg-amber-50',   border: 'border-amber-200',   label: 'Atenção' };
   return             { bar: 'bg-red-500',     text: 'text-red-700',     light: 'bg-red-50',     border: 'border-red-200',     label: 'No-Go' };
@@ -184,7 +190,7 @@ function StatusChip({ data, destaque }: { data?: SemaforoItem; destaque: boolean
 
 function CompareColumn({ item, label, isWinner }: { item: SavedAnalysis; label: 'A' | 'B'; isWinner: boolean }) {
   const score      = scoreOuNulo(item.score);
-  const c          = scoreColors(score ?? 50);
+  const c          = scoreColors(score);
   const semaforo   = extrairSemaforo(item);
   const risks      = ((item as unknown as { risks?: RiskItem[] }).risks ?? []).slice(0, 3);
   const vantagens  = ((item as unknown as { vantagens?: string[] }).vantagens ?? []).slice(0, 3);
@@ -696,7 +702,7 @@ export default function CompareTab({ token }: { token: string }) {
               // Sem score não há barra a desenhar: a altura viraria a do
               // pior edital possível, e a coluna afirmaria uma derrota.
               const score = scoreOuNulo(item.score);
-              const c     = scoreColors(score ?? 50);
+              const c     = scoreColors(score);
               const h     = score === null
                 ? 0
                 : Math.max(6, Math.round((Math.min(score, 100) / 100) * 88));
@@ -1035,7 +1041,7 @@ export default function CompareTab({ token }: { token: string }) {
         )}
         {listaVisivel.map(item => {
           const score      = scoreOuNulo(item.score);
-          const c          = scoreColors(score ?? 50);
+          const c          = scoreColors(score);
           const isA        = selected[0]?.id === item.id;
           const isB        = selected[1]?.id === item.id;
           const isSelected = isA || isB;

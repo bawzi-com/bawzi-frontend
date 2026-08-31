@@ -941,12 +941,7 @@ function DecisionSnapshot({
 
   /* O que a leitura não devolveu. Dito uma vez, em nome próprio, em vez de
      cada campo vazio inventar uma frase afirmativa para se preencher. */
-  const naoDevolvido = [
-    decision.impeditivos.length === 0 ? 'impedimentos' : '',
-    decision.motivos.length === 0 ? 'motivos' : '',
-    decision.condicoes_para_participar.length === 0 ? 'condições para participar' : '',
-    decision.proximas_acoes.length === 0 ? 'próximas ações' : '',
-  ].filter(Boolean);
+  const naoDevolvido = decision.naoDevolvidos;
 
   const decisionColumns = [
     {
@@ -2464,6 +2459,9 @@ function normalizeBusinessFit(result: AnalysisResult) {
 }
 
 type DecisionUiData = {
+  /** Campos que a IA não devolveu — medidos no payload BRUTO, antes de a tela
+   *  aplicar qualquer fallback. É o que o rodapé de honestidade cita. */
+  naoDevolvidos: string[];
   veredito: DecisionVerdict;
   rotulo: string;
   /** `null` = o laudo não traz confiança. Não existe número a desenhar. */
@@ -2659,11 +2657,36 @@ function normalizeDecision(result: AnalysisResult): DecisionUiData {
   const baseReasons = motivos.length ? motivos : fallbackMotivos;
   const confidenceFactors = normalizeDecisionConfidenceFactors(raw?.fatores_confianca, result);
 
+  /* ⚠️ O RODAPÉ "esta leitura não devolveu…" LIA OS CAMPOS JÁ PREENCHIDOS.
+     `condicoes_para_participar`, `motivos` e `impeditivos` recebem fallback
+     logo abaixo (frases da casa, semáforo, exigências críticas), então nunca
+     chegavam vazios ao rodapé — que por isso quase nunca citava nada. Pior:
+     para GO/GO_CONDICIONADO a lista SEMPRE ganha "Validar margem líquida e
+     capital de giro antes do lance final", indistinguível do que veio do
+     edital. A ausência tem de ser medida no BRUTO, antes de a tela preencher
+     o buraco. */
+  const _vazioNoBruto = (v: unknown) => !Array.isArray(v) || v.length === 0;
+  const naoDevolvidos = [
+    _vazioNoBruto(raw?.impeditivos) ? 'impedimentos' : '',
+    _vazioNoBruto(raw?.motivos) ? 'motivos' : '',
+    _vazioNoBruto(raw?.condicoes_para_participar) ? 'condições para participar' : '',
+    _vazioNoBruto(raw?.proximas_acoes) ? 'próximas ações' : '',
+  ].filter(Boolean);
+
   return {
+    naoDevolvidos,
     veredito,
     rotulo: shortenDecisionText(raw?.rotulo || rotulos[veredito], 90),
     confianca: clampPercent(raw?.confianca),
-    confianca_informada: raw?.confianca_informada !== false && raw?.confianca != null,
+    /* ⚠️ `!== false` TRATAVA O LAUDO LEGADO COMO MEDIDA.
+       Laudos gravados antes deste campo existir NÃO o têm — e têm
+       `confianca: 60`, o número que o default antigo do Pydantic fabricava.
+       `undefined !== false` é `true`, então o cartão exibia "60% Confiança"
+       com o tooltip "com base na quantidade e qualidade das evidências
+       encontradas no edital" e a cor de medida real. Era exatamente o número
+       inventado, agora com selo de apurado. Na dúvida, o rótulo defensivo
+       ("est.") é o único honesto: só afirma quem foi afirmado. */
+    confianca_informada: raw?.confianca_informada === true && raw?.confianca != null,
     resumo_decisao: shortenDecisionText(raw?.resumo_decisao || resumoPadrao[veredito], 430),
     motivos: baseReasons,
     condicoes_para_participar: condicoes.length

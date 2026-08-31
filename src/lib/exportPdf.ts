@@ -187,6 +187,31 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
     return avisos.join('');
   })();
 
+  /* ⚠️ O PDF É O ARTEFATO QUE O CLIENTE ENCAMINHA — E SAÍA COM A RÉGUA ANTIGA.
+     A tela já escreve "Confiança est." quando o número foi derivado do score
+     pelo backend, e "Viabilidade (teto)" mais o motivo quando o score foi
+     limitado. Aqui as duas ressalvas não existiam: o PDF imprimia "72%
+     Confiança" e "35/100 Viabilidade" como se fossem medidas do edital — e,
+     com `confianca: null` (o default novo), imprimia literalmente "—%".
+     Quem recebe o PDF não tem a tela à frente para desconfiar. */
+  const _limitadoPor = result.score_limitado_por;
+  const _rotuloViabilidade = _limitadoPor ? 'Viabilidade (teto)' : 'Viabilidade';
+  const _confiancaEstimada = decision?.confianca_informada !== true;
+  const _metricaConfianca = typeof decision?.confianca === 'number'
+    ? `<div><strong>${esc(decision.confianca)}%</strong><span>Confiança${_confiancaEstimada ? ' est.' : ''}</span></div>`
+    : '';
+  const _notaTeto = _limitadoPor
+    ? `<p style="margin:8px 0 0 0;font-size:10px;color:#64748b">${esc(
+        _limitadoPor === 'sem_aderencia_cnae'
+          ? 'Viabilidade limitada por não haver aderência ao seu CNAE'
+          : `Viabilidade limitada por: ${String(_limitadoPor).toLowerCase()}`
+      )}${esc(
+        typeof result.score_original === 'number' && result.score_original !== result.score
+          ? ` — a leitura do edital dava ${result.score_original}.`
+          : '.'
+      )}</p>`
+    : '';
+
   const decisionHtml = (() => {
     if (!decision?.veredito && !decision?.resumo_decisao && !decision?.decisao_executiva) return '';
     return `
@@ -197,9 +222,10 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
           <p>${esc(decision?.resumo_decisao || decision?.decisao_executiva || result.recommendation || '')}</p>
         </div>
         <div class="decision-metrics">
-          <div><strong>${result.score}/100</strong><span>Viabilidade</span></div>
-          <div><strong>${esc(decision?.confianca ?? '—')}%</strong><span>Confiança</span></div>
+          <div><strong>${result.score}/100</strong><span>${esc(_rotuloViabilidade)}</span></div>
+          ${_metricaConfianca}
         </div>
+        ${_notaTeto}
       </div>
     `;
   })();
