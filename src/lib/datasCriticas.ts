@@ -75,6 +75,37 @@ export function partesDaDataCritica(iso: string | null | undefined): DataCritica
   const m = _RE_DATA.exec(String(iso).trim());
   if (!m) return null;
   const [, ano, mes, diaDoMes, hh, mm] = m;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ⚠️ DATA QUE NÃO EXISTE VIRAVA OUTRA DATA, PLAUSÍVEL, NA TELA.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // A regex confere o FORMATO, não o calendário. `Date.UTC(ano, mes-1, dia)`
+  // não recusa nada: ele TRANSBORDA. Medido em node:
+  //
+  //     '2026-13-15'  → "15 de jan. de 2027"   (um ano à frente)
+  //     '2026-09-31'  → "01 de out. de 2026"   (um dia depois do prazo)
+  //     '2026-02-30'  → "02 de mar. de 2026"
+  //
+  // Estas datas vêm da EXTRAÇÃO do edital por modelo. Um "31 de setembro"
+  // alucinado não aparecia como erro: aparecia como um prazo diferente, com a
+  // mesma cara de fato apurado — e sempre para frente, que é a direção que
+  // faz alguém perder a sessão. Pior ainda, os dois caminhos discordavam entre
+  // si: `formatarDataCritica` exibia a data transbordada enquanto
+  // `instanteLimite` devolvia `null` para o mês 13, de modo que a tela mostrava
+  // um prazo que nunca expirava.
+  //
+  // Ausência é honesta; data inventada não. Não sabendo ler, devolve `null`, e
+  // quem chama já trata `null` como "sem data".
+  const aN = Number(ano);
+  const mN = Number(mes);
+  const dN = Number(diaDoMes);
+  const conferencia = new Date(Date.UTC(aN, mN - 1, dN));
+  if (
+    conferencia.getUTCFullYear() !== aN
+    || conferencia.getUTCMonth() + 1 !== mN
+    || conferencia.getUTCDate() !== dN
+  ) return null;
+  // A hora também: 25:00 e 10:99 não existem.
+  if (hh !== undefined && (Number(hh) > 23 || Number(mm) > 59)) return null;
   // ⚠️ 00:00 NÃO É MEIA-NOITE, É "NÃO SEI A HORA". É o sentinela que o próprio
   // prompt manda escrever. Tratá-lo como instante faria todo prazo sem horário
   // vencer no primeiro segundo do dia — o oposto do que "prazo do dia 15"
