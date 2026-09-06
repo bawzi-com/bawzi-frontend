@@ -481,6 +481,14 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'billing' | 'promo' | 'analytics' | 'logs'>('overview');
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  // ── Funil do taster ────────────────────────────────────────────────────
+  // Estado próprio, e não um campo de `analyticsData`: as duas telas medem
+  // populações DIFERENTES — `analytics/usage` olha quem tem conta, o funil
+  // olha quem ainda não tem. Os filtros de tier e usuário de lá não fazem
+  // sentido aqui, e compartilhar o estado convidaria a aplicá-los.
+  const [funilData, setFunilData] = useState<any>(null);
+  const [funilLoading, setFunilLoading] = useState(false);
+  const [funilDias, setFunilDias] = useState(30);
 
   // Estados de Logs de Erro
   const [errorLogs, setErrorLogs] = useState<any[]>([]);
@@ -1250,6 +1258,19 @@ export default function AdminDashboard() {
     modo: string | null;
   }>({ dias: 0, tier: null, userId: null, modelo: null, soCompletas: false, modo: null });
 
+  const loadFunil = async (dias = funilDias) => {
+    setFunilLoading(true);
+    setFunilDias(dias);
+    try {
+      const res = await apiFetch(`${API_URL}/api/admin/analytics/funil-taster?dias=${dias}`);
+      setFunilData(res.ok ? await res.json() : null);
+    } catch {
+      setFunilData(null);
+    } finally {
+      setFunilLoading(false);
+    }
+  };
+
   const loadAnalytics = async (f: Partial<typeof analyticsFiltros> = {}) => {
     const alvo = { ...analyticsFiltros, ...f };
     setAnalyticsFiltros(alvo);
@@ -1992,7 +2013,7 @@ export default function AdminDashboard() {
           <Zap size={18} /> Promoções
         </button>
         <button
-          onClick={() => { setActiveTab('analytics'); if (!analyticsData) loadAnalytics(); }}
+          onClick={() => { setActiveTab('analytics'); if (!analyticsData) loadAnalytics(); if (!funilData) loadFunil(); }}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'analytics' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
           <BarChart2 size={18} /> Uso por IA
@@ -5123,6 +5144,128 @@ export default function AdminDashboard() {
       {/* ========================================== */}
       {activeTab === 'analytics' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+
+          {/* ══ FUNIL DA ANÁLISE GRATUITA ══════════════════════════════════
+              ⚠️ VEM ANTES DO USO POR MODELO DE PROPÓSITO. O bloco de baixo diz
+              quanto a IA custa; este diz se a oferta que gera parte desse
+              custo traz alguém. Sozinho, o custo só argumenta a favor de
+              cortar — é uma despesa sem contrapartida na mesma tela.
+
+              A taxa que decide é "recebeu o veredito → criou a conta": as duas
+              pontas são gravadas pelo servidor, então ela não se mexe quando o
+              visitante usa bloqueador. As etapas de tela (viu, submeteu,
+              clicou) são piso, não verdade — ver a docstring do endpoint. */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="text-xl font-black text-white">Funil da análise gratuita</h2>
+                <p className="text-slate-500 text-sm mt-1">Visitantes sem conta: quantos experimentaram e quantos se cadastraram</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {[7, 30, 90, 0].map((d) => (
+                  <button key={d} onClick={() => loadFunil(d)}
+                    className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold transition-colors ${
+                      funilDias === d ? 'bg-slate-800 border-slate-700 text-white'
+                                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}`}>
+                    {d === 0 ? 'Tudo' : `${d} dias`}
+                  </button>
+                ))}
+                <button onClick={() => loadFunil()} disabled={funilLoading}
+                  className="ml-2 flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                  <RefreshCw size={13} className={funilLoading ? 'animate-spin' : ''} /> Atualizar
+                </button>
+              </div>
+            </div>
+
+            {funilLoading && !funilData && (
+              <div className="flex items-center justify-center py-12 text-slate-500">
+                <Loader2 size={22} className="animate-spin mr-3" /> Carregando funil…
+              </div>
+            )}
+
+            {funilData && (() => {
+              const r = funilData.resumo || {};
+              const etapas = funilData.etapas || [];
+              const topo = etapas[0]?.visitantes || 0;
+              const pct = (v: number | null) => v === null || v === undefined ? '—' : `${v.toFixed(1)}%`;
+              return (
+                <div className={`space-y-4 transition-opacity duration-200 ${funilLoading ? 'opacity-40 pointer-events-none' : ''}`}>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { k: 'Veredito → conta',
+                        v: pct(r.conversao_veredito_para_conta),
+                        n: `${r.contas_trazidas ?? 0} de ${etapas.find((e: any) => e.evento === 'taster_veredito')?.visitantes ?? 0} que viram o veredito`,
+                        // Sem referência de mercado aqui: o corte é a conta de
+                        // baixo (custo por conta × valor de uma conta), não um
+                        // número bonito. Cor só destaca, não julga.
+                        c: 'text-emerald-400' },
+                      { k: 'Contas trazidas',
+                        v: (r.contas_trazidas ?? 0).toLocaleString('pt-BR'),
+                        n: 'cadastros que passaram pelo taster antes',
+                        c: 'text-white' },
+                      { k: 'Custo do grátis',
+                        v: r.custo_brl !== null && r.custo_brl !== undefined
+                          ? `R$ ${Number(r.custo_brl).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                          : `$${(r.custo_usd ?? 0).toFixed(2)}`,
+                        n: `${(r.analises_convidado ?? 0).toLocaleString('pt-BR')} análises de convidado na janela`,
+                        c: 'text-amber-400' },
+                      { k: 'Custo por conta',
+                        // ⚠️ O NÚMERO QUE RESPONDE À PERGUNTA. Compare com o
+                        // que uma conta gratuita vale para o negócio; se ele
+                        // não couber, o problema é a conversão, não o taster.
+                        v: r.custo_por_conta_brl !== null && r.custo_por_conta_brl !== undefined
+                          ? `R$ ${Number(r.custo_por_conta_brl).toFixed(2)}`
+                          : '—',
+                        n: 'em tokens, por conta criada via taster',
+                        c: 'text-violet-400' },
+                    ].map((kpi) => (
+                      <div key={kpi.k} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{kpi.k}</p>
+                        <p className={`mt-1.5 text-2xl font-black tabular-nums ${kpi.c}`}>{kpi.v}</p>
+                        <p className="mt-1 text-[11px] font-medium text-slate-500">{kpi.n}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* As etapas, com a barra proporcional ao topo. A coluna
+                      "da anterior" é onde o vazamento aparece: 90% do topo e
+                      12% da anterior são o mesmo número contado de dois
+                      jeitos, e só o segundo diz onde mexer. */}
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/60 divide-y divide-slate-800">
+                    {etapas.map((e: any) => (
+                      <div key={e.evento} className="flex items-center gap-4 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-slate-200">{e.rotulo}</p>
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                            <div className="h-full rounded-full bg-emerald-500/70"
+                              style={{ width: `${topo ? Math.min(100, (e.visitantes / topo) * 100) : 0}%` }} />
+                          </div>
+                        </div>
+                        <div className="w-20 shrink-0 text-right text-sm font-black tabular-nums text-white">
+                          {e.visitantes.toLocaleString('pt-BR')}
+                        </div>
+                        <div className="w-16 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-500"
+                          title="% do topo do funil">
+                          {pct(e.pct_do_topo)}
+                        </div>
+                        <div className="w-16 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-400"
+                          title="% da etapa anterior — é aqui que o vazamento aparece">
+                          {pct(e.pct_da_anterior)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[11px] font-medium leading-relaxed text-slate-600">
+                    &ldquo;Viu&rdquo;, &ldquo;colou&rdquo; e &ldquo;clicou&rdquo; são medidos no navegador e somem com bloqueador de script —
+                    trate-os como piso. &ldquo;Recebeu o veredito&rdquo; e &ldquo;criou a conta&rdquo; são gravados pelo servidor:
+                    é entre esses dois que a taxa de conversão é confiável.
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-black text-white">Uso por Modelo de IA</h2>

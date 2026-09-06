@@ -28,6 +28,12 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { API_URL, getAuthToken } from '@/lib/apiClient';
+// A oferta da campanha no CTA do resultado, e a medição do funil. Ver
+// `lib/promoPublica.ts` e `lib/visitante.ts` — o "por que" mora lá.
+import { usePromoPublica } from '@/lib/promoPublica';
+import { ofertaDaCampanha } from '@/lib/promo';
+import { publicoDaPromo } from '@/components/PromoModal';
+import { marcarEtapa, visitanteId } from '@/lib/visitante';
 import { usePrecos, type TabelaDePrecos } from '@/lib/precos';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 
@@ -659,6 +665,12 @@ interface TasterResult {
   };
   vantagens?: string[];
   desvantagens?: string[];
+  /** Presente só quando o material enviado não coube na amostra gratuita. */
+  recorte?: {
+    enviados: number;
+    analisados: number;
+    limite: number;
+  };
 }
 
 const SEMAFORO_LABELS: Record<string, string> = {
@@ -768,6 +780,52 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
   // exatamente o defeito que este trecho tinha.
   const [guestLimit, setGuestLimit] = useState<number | null>(null);
   const [freeMonthly, setFreeMonthly] = useState<number | null>(null);
+  // Tetos da amostra gratuita, vindos da MESMA config que a rota de análise
+  // aplica. Escritos à mão aqui, divergiriam do servidor no primeiro ajuste de
+  // plano — foi assim que o "5 análises por mês" desta página ficou errado.
+  const [maxChars, setMaxChars] = useState<number | null>(null);
+  const [maxMb, setMaxMb] = useState<number | null>(null);
+  const [arquivo, setArquivo] = useState<File | null>(null);
+
+  // ── A campanha ativa, aqui dentro ───────────────────────────────────────
+  // ⚠️ ELA JÁ ESTAVA NA PÁGINA — NO LUGAR ERRADO. O banner do topo pede a
+  // conversão ANTES de a pessoa ter visto qualquer valor, e a escassez ("200
+  // vagas", "expira em 17d") fica sem lastro logo acima de uma oferta que diz
+  // "grátis, sem cadastro, todo dia". Duas ofertas grátis competindo, e a de
+  // baixo desarma a de cima.
+  //
+  // O momento em que os 50 créditos valem alguma coisa é DEPOIS do veredito:
+  // ali a pessoa já tem a prova na mão e está decidindo se vale criar conta. O
+  // CTA daquela tela dizia só "Ver análise completa" e não mencionava a
+  // campanha — a página anunciava o bônus para quem ainda não queria e o
+  // escondia de quem já queria.
+  const promo = usePromoPublica();
+  const ofertaCampanha = promo && publicoDaPromo(promo) !== 'logado'
+    ? ofertaDaCampanha(promo)
+    : null;
+  const codigoCampanha = ofertaCampanha ? (promo?.coupon_code || '') : '';
+  const vagasRestantes = ofertaCampanha && typeof promo?.vagas_restantes === 'number'
+    ? promo.vagas_restantes
+    : null;
+
+  /** O link de cadastro com tudo que precisa viajar junto: retomada e campanha. */
+  const linkCadastro = (redirect?: string) => {
+    const q = new URLSearchParams({ view: 'register' });
+    if (redirect) q.set('redirect', redirect);
+    // ⚠️ SEM ISTO A CAMPANHA SÓ CREDITA QUEM CHEGOU PELO LINK DELA. O
+    // `campanhaAtual()` guarda o `?campanha=` da URL de entrada — quem veio de
+    // busca orgânica, viu o banner e converteu pelo taster não tem código
+    // nenhum guardado. Anunciar o bônus no CTA e não passar o código seria
+    // prometer na tela o que o cadastro depois nega.
+    if (codigoCampanha) q.set('campanha', codigoCampanha);
+    return `/login?${q.toString()}`;
+  };
+
+  // ── Funil: viu a análise gratuita ───────────────────────────────────────
+  // Topo do funil. `marcarEtapa` é idempotente por aba, então o segundo
+  // TasterSection da página (herói e seção são o mesmo componente montado
+  // duas vezes) não conta uma segunda visita.
+  useEffect(() => { marcarEtapa('taster_visto', { origem: modo }); }, [modo]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/tiers/guest-limit`)
@@ -775,6 +833,8 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
       .then(data => {
         if (data?.daily_limit > 0) setGuestLimit(data.daily_limit);
         if (data?.free_monthly > 0) setFreeMonthly(data.free_monthly);
+        if (data?.max_chars > 0) setMaxChars(data.max_chars);
+        if (data?.max_mb > 0) setMaxMb(data.max_mb);
       })
       .catch(() => {});
   }, [API_URL]);
@@ -817,12 +877,16 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
 
   const handleAnalyze = async () => {
     const trimmed = text.trim();
-    if (trimmed.length < 80) {
+    // Com arquivo, o mínimo não se aplica: o texto vem da extração do PDF, que
+    // só acontece no servidor. Exigir 80 caracteres colados de quem arrastou o
+    // edital inteiro seria pedir o trabalho que o upload existe para poupar.
+    if (!arquivo && trimmed.length < 80) {
       setError('Cole um trecho maior (mínimo 80 caracteres).');
       return;
     }
     setError(null);
     setLoading(true);
+    marcarEtapa('taster_submetido', { origem: modo });
     // Rotaciona mensagens de loading
     let idx = 0;
     const interval = setInterval(() => {
@@ -832,11 +896,34 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
 
     try {
       const form = new FormData();
-      form.append('raw_text', trimmed.slice(0, 10000));
+      // ⚠️ SEM `.slice()`. O corte era feito aqui, em silêncio, e o servidor
+      // recebia um edital que já tinha perdido 93% de si — sem ninguém, nem o
+      // modelo nem a pessoa, saber disso. Agora o texto vai inteiro e QUEM
+      // apara é o servidor, que apara pelos dois extremos, avisa o modelo
+      // (trava anti-falsa-ausência) e devolve `recorte` para esta tela dizer
+      // sobre quanto o veredito foi dado.
+      if (trimmed) form.append('raw_text', trimmed);
+      if (arquivo) form.append('files', arquivo);
       form.append('uf', 'BR');
       form.append('provider', 'openai');
+      // Id anônimo do navegador. É ele que liga "colou um edital aqui" a
+      // "criou conta depois" — sem isso o servidor mede o CUSTO do grátis e
+      // nunca o retorno. Vem vazio antes do aceite LGPD (ver `visitanteId`), e
+      // aí o backend simplesmente não registra a etapa: as cinco etapas do
+      // funil usam a mesma régua, então a taxa continua comparável.
+      const vid = visitanteId();
+      if (vid) form.append('visitor_id', vid);
 
-      const res = await fetch(`${API_URL}/api/analyze`, { method: 'POST', body: form });
+      // ⚠️ `credentials` NÃO É OPCIONAL AQUI. A cota do visitante passou a ser
+      // contada por um cookie funcional que o servidor grava nesta resposta
+      // (ver `_monta_cookie_convidado` no backend). Sem isto o browser não
+      // envia nem guarda o cookie em requisição cross-origin — a home e a API
+      // podem estar em domínios diferentes —, cada análise viraria um visitante
+      // novo e a cota individual não existiria. O CORS do backend já responde
+      // com `allow_credentials`.
+      const res = await fetch(`${API_URL}/api/analyze`, {
+        method: 'POST', body: form, credentials: 'include',
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         const detail = err?.detail || {};
@@ -856,6 +943,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             setGuestLimit(detail.limite);
           }
           registrarUso(detail?.limite ?? guestLimit ?? 1);
+          marcarEtapa('taster_cota_esgotada', { origem: modo });
           return;
         }
         throw new Error(detail?.mensagem || `Erro ${res.status}`);
@@ -911,6 +999,34 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             {result.title && (
               <p className="text-slate-600 font-semibold text-sm max-w-2xl mx-auto">{result.title}</p>
             )}
+
+            {/* ── Sobre quanto deste documento o veredito foi dado ──────────
+                ⚠️ ISTO NÃO É LETRA MIÚDA, É O QUE SUSTENTA O VEREDITO ACIMA.
+                O H1 desta página promete ler "o edital inteiro — objeto,
+                habilitação, prazos, penalidades", e a amostra gratuita lê uma
+                fração de um edital típico. Quem trabalha com licitação percebe
+                que a habilitação não foi avaliada; sem esta linha, a conclusão
+                disponível é "o produto é raso" — pior do que não ter oferecido
+                a degustação.
+
+                Com ela, o mesmo fato vira o argumento do upgrade: o veredito
+                que ele tem na mão saiu de um recorte, e a conta lê o resto.
+                Por isso fica AQUI, colada ao veredito, e não num rodapé. */}
+            {result.recorte && result.recorte.enviados > result.recorte.analisados && (
+              <div className="mx-auto mt-4 max-w-2xl rounded-2xl px-4 py-3 text-left"
+                style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}>
+                <p className="text-[12.5px] font-bold leading-[1.55]" style={{ color: '#92400E' }}>
+                  Veredito sobre {result.recorte.analisados.toLocaleString('pt-BR')} dos{' '}
+                  {result.recorte.enviados.toLocaleString('pt-BR')} caracteres que você enviou
+                  {' '}({Math.round((result.recorte.analisados / result.recorte.enviados) * 100)}% do documento).
+                </p>
+                <p className="mt-1 text-[12px] font-medium leading-[1.55]" style={{ color: '#A16207' }}>
+                  A amostra gratuita lê o início e o fim do arquivo. Habilitação, prazos e
+                  penalidades costumam ficar no miolo — e é lá que o veredito muda.
+                  A análise completa lê o edital inteiro.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="max-w-2xl mx-auto space-y-4">
@@ -952,13 +1068,27 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             )}
 
             {/* CTAs — cadastro direto (não login) e com retomada: o texto que a
-                pessoa acabou de analisar espera por ela no workspace. */}
+                pessoa acabou de analisar espera por ela no workspace.
+
+                ⚠️ É AQUI QUE A CAMPANHA VALE ALGUMA COISA, e não na barra do
+                topo da página. Quem chegou a esta tela já tem o veredito na
+                mão e está decidindo se cria conta; quem viu a barra ainda não
+                tinha visto nada. O bônus e a escassez entram no rótulo do
+                botão quando há campanha ativa, e o botão volta ao texto neutro
+                quando não há — sem campanha, "Ver análise completa" continua
+                sendo a promessa certa. */}
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-4">
               <Link
-                href={`/login?view=register&redirect=${encodeURIComponent('/workspace?from=taster')}`}
+                href={linkCadastro('/workspace?from=taster')}
+                onClick={() => marcarEtapa('taster_cta', {
+                  origem: modo, veredito: vLabel, score,
+                })}
                 className="w-full sm:flex-1 flex items-center justify-center gap-2 py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-lg transition-all"
               >
-                Ver análise completa <ArrowRight size={15} />
+                {ofertaCampanha
+                  ? `Ver análise completa e ganhar ${ofertaCampanha.valor.replace(/^\+/, '')}`
+                  : 'Ver análise completa'}
+                <ArrowRight size={15} />
               </Link>
               <Link
                 href="/plans"
@@ -968,7 +1098,14 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
                 Ver planos
               </Link>
             </div>
-            <p className="text-center text-slate-500 text-xs">Crie uma conta gratuita para ver a análise completa — sem cartão</p>
+            {/* A escassez vem do CONTADOR ATÔMICO do backend, como na barra —
+                quando zera, a campanha some sozinha e esta linha some junto,
+                em vez de continuar anunciando um bônus que o cadastro nega. */}
+            <p className="text-center text-slate-500 text-xs">
+              {ofertaCampanha
+                ? <>Conta gratuita, sem cartão — com <strong className="font-black text-emerald-700">{ofertaCampanha.valor}</strong> {ofertaCampanha.prazo}{vagasRestantes !== null && ` · ${vagasRestantes.toLocaleString('pt-BR')} ${vagasRestantes === 1 ? 'vaga restante' : 'vagas restantes'}`}</>
+                : 'Crie uma conta gratuita para ver a análise completa — sem cartão'}
+            </p>
           </div>
       </Envelope>
     );
@@ -1018,20 +1155,36 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             </h2>
             <p className="mb-7 text-[15px] font-medium leading-[1.6]" style={{ color: '#4B5563' }}>
               {/* O número vem do servidor. Estava escrito "5 análises por mês" na
-                  mão, e a configuração já dizia outro valor há tempos. */}
+                  mão, e a configuração já dizia outro valor há tempos.
+
+                  ⚠️ COM CAMPANHA ATIVA, O BÔNUS ENTRA AQUI TAMBÉM — e este é o
+                  momento de maior intenção da página inteira: a pessoa acabou
+                  de tentar usar o produto e foi barrada. Oferecer a cota
+                  mensal padrão a quem bateu no limite, tendo 50 créditos de
+                  bônus para dar, é deixar a melhor carta na mão. */}
               Crie uma conta gratuita e ganhe{' '}
               <strong className="font-black" style={{ color: '#111827' }}>
-                {freeMonthly ? `${freeMonthly} créditos grátis por mês` : 'mais créditos por mês'}
+                {ofertaCampanha
+                  ? `${ofertaCampanha.valor.replace(/^\+/, '')} de bônus`
+                  : freeMonthly ? `${freeMonthly} créditos grátis por mês` : 'mais créditos por mês'}
               </strong>{' '}
-              — sem cartão, sem prazo de expiração.
+              {ofertaCampanha
+                ? <>{ofertaCampanha.prazo}, além da cota mensal gratuita — sem cartão.</>
+                : '— sem cartão, sem prazo de expiração.'}
             </p>
             <Link
-              href="/login?view=register"
+              href={linkCadastro()}
+              onClick={() => marcarEtapa('taster_cta', { origem: modo })}
               className="inline-flex h-14 w-full items-center justify-center gap-2 rounded-2xl px-8 text-sm font-black text-white transition-all hover:bg-emerald-500"
               style={{ background: '#059669', boxShadow: '0 4px 16px rgba(5,150,105,0.35)' }}
             >
-              Criar conta gratuita <ArrowRight size={16} />
+              {ofertaCampanha ? 'Criar conta e resgatar' : 'Criar conta gratuita'} <ArrowRight size={16} />
             </Link>
+            {ofertaCampanha && vagasRestantes !== null && (
+              <p className="mt-3 text-[11px] font-black tabular-nums" style={{ color: '#059669' }}>
+                {vagasRestantes.toLocaleString('pt-BR')} {vagasRestantes === 1 ? 'vaga restante' : 'vagas restantes'}
+              </p>
+            )}
             <p className="mt-4 text-xs font-medium" style={{ color: '#787266' }}>Seus créditos gratuitos voltam amanhã.</p>
 
             {/* A escada de modelos, dita sem vender o que a conta gratuita não
@@ -1078,7 +1231,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
   }
 
   // ── Estado: formulário ──
-  const canSubmit = !loading && text.trim().length >= 80;
+  const canSubmit = !loading && (text.trim().length >= 80 || !!arquivo);
   return (
     <Envelope largura="max-w-[1180px]">
 
@@ -1129,7 +1282,14 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             <textarea
               value={text}
               onChange={e => { setText(e.target.value); setError(null); }}
-              maxLength={10000}
+              /* ⚠️ ERA 10.000 — O TETO DA AMOSTRA GRATUITA. Com ele, colar um
+                 edital de 150 mil caracteres perdia 93% do documento no ato
+                 do Ctrl+V, sem um pixel dizendo isso. A pessoa via um veredito
+                 Go/No-Go e não tinha como saber que ele fora dado sobre a capa.
+                 Agora o texto vai inteiro; o servidor apara pelos dois
+                 extremos e devolve o recorte, que a tela de resultado declara.
+                 O número aqui é só uma trava contra colar um livro. */
+              maxLength={400000}
               rows={7}
               className="w-full rounded-2xl border-2 p-4 text-slate-800 placeholder:text-slate-400 font-medium text-sm resize-none transition-all leading-relaxed focus:outline-none"
               /* Era `#f8fafc` sobre borda `#e2e8f0`: família slate, cinza
@@ -1143,18 +1303,83 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               placeholder="Cole aqui o texto do edital, objeto da contratação ou termo de referência..."
             />
             {/* "0 / 10.000" dentro de uma caixa vazia é ruído — e caixa vazia
-                é o estado que 100% das visitas veem primeiro. */}
+                é o estado que 100% das visitas veem primeiro.
+
+                ⚠️ E DEIXOU DE SER UMA FRAÇÃO. "10.000 / 10.000" num edital de
+                150 mil dizia que estava tudo certo. Agora o contador diz o
+                tamanho do que foi colado e, quando ele passa da amostra, avisa
+                ali mesmo quanto será lido — antes de a pessoa clicar, não
+                depois. */}
             {text.length > 0 && (
-              <div className="absolute bottom-3 right-3 text-[10px] font-bold rounded-lg px-2 py-1" style={{ background: '#F1EFE9', color: '#A8A49B' }}>
-                {text.length.toLocaleString('pt-BR')}&nbsp;/&nbsp;10.000
+              <div className="absolute bottom-3 right-3 flex items-center gap-1.5 text-[10px] font-bold rounded-lg px-2 py-1"
+                style={{ background: '#F1EFE9', color: '#A8A49B' }}>
+                <span>{text.length.toLocaleString('pt-BR')} caracteres</span>
+                {maxChars !== null && text.length > maxChars && (
+                  <span style={{ color: '#B45309' }}>
+                    · amostra lê {maxChars.toLocaleString('pt-BR')}
+                  </span>
+                )}
               </div>
+            )}
+          </div>
+
+          {/* ── Anexar o edital ──────────────────────────────────────────
+              O backend já aceitava arquivo de convidado (PDF ou texto, dentro
+              do teto de MB do tier -1); faltava o campo. Quem chega de anúncio
+              tem o edital como PDF baixado, não como texto em outra aba —
+              exigir copiar e colar era pedir justamente o trabalho que o
+              produto promete tirar. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {arquivo ? (
+              <span className="inline-flex max-w-full items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold"
+                style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#047857' }}>
+                <ClipboardCheck size={14} className="shrink-0" />
+                <span className="truncate">{arquivo.name}</span>
+                <button
+                  type="button"
+                  onClick={() => { setArquivo(null); setError(null); }}
+                  aria-label="Remover arquivo"
+                  className="shrink-0 font-black text-emerald-700/60 transition-colors hover:text-emerald-800"
+                >
+                  ×
+                </button>
+              </span>
+            ) : (
+              <label
+                className="inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold transition-colors"
+                style={{ background: '#FAF9F5', border: '1px solid #E5E2DC', color: '#4B5563' }}
+              >
+                <input
+                  type="file"
+                  accept="application/pdf,text/plain,.pdf,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    // Recusa aqui o que o servidor recusaria de qualquer jeito.
+                    // Deixar subir 8 MB para receber 400 no fim gasta o tempo e
+                    // a paciência de quem ainda está decidindo se testa.
+                    if (f && maxMb !== null && f.size > maxMb * 1024 * 1024) {
+                      setError(`O arquivo tem ${(f.size / 1024 / 1024).toFixed(1)} MB e a análise gratuita aceita até ${maxMb} MB. Cole um trecho do edital ou crie uma conta.`);
+                      e.target.value = '';
+                      return;
+                    }
+                    setArquivo(f);
+                    setError(null);
+                  }}
+                />
+                <ArrowRight size={13} className="rotate-90" />
+                Anexar o edital (PDF)
+                {maxMb !== null && (
+                  <span className="font-medium" style={{ color: '#A8A49B' }}>até {maxMb} MB</span>
+                )}
+              </label>
             )}
           </div>
 
           {/* Só enquanto a caixa está vazia — depois de colado, vira ruído.
               Este botão existe porque a caixa vazia é a maior barreira do
               taster: quem chega de anúncio não tem edital em outra aba. */}
-          {text.length === 0 && (
+          {text.length === 0 && !arquivo && (
             /* Era uma caixa tracejada de largura inteira, texto centralizado,
                colada em cima do botão verde: dois blocos de mesmo peso e mesma
                largura disputando o mesmo papel. Agora é linha de ajuda —
@@ -1211,7 +1436,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
                 <ArrowRight size={14} className="ml-0.5" />
               </>
             ) : text.trim().length === 0 ? (
-              'Cole o edital acima para analisar'
+              'Cole o edital acima ou anexe o PDF'
             ) : (
               `Faltam ${80 - text.trim().length} caracteres`
             )}
@@ -1221,7 +1446,8 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
           <div className="mt-4 flex items-center justify-between">
             <p className="text-xs text-slate-400">Análise com IA · sem salvar histórico</p>
             <Link
-              href="/login?view=register"
+              href={linkCadastro()}
+              onClick={() => marcarEtapa('taster_cta', { origem: modo })}
               className="flex items-center gap-1 text-sm font-bold text-emerald-600 hover:text-emerald-700 transition-colors whitespace-nowrap"
             >
               Criar conta grátis <ArrowRight size={13} />

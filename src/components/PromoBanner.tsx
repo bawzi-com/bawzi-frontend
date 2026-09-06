@@ -43,8 +43,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { X, Copy, Check, ArrowRight, Tag } from 'lucide-react';
 import { campanhaAtual } from '@/lib/campanha';
-import { API_URL, getAuthToken, initSession } from '@/lib/apiClient';
+import { getAuthToken, initSession } from '@/lib/apiClient';
 import { type DadosPromo, paletaPromo, rotaAceitaPopup } from '@/lib/promo';
+import { carregarPromoPublica } from '@/lib/promoPublica';
 import PromoModal, { ctaDaPromo, publicoDaPromo, urlDeLogin } from './PromoModal';
 
 const CHAVE_CONSENTIMENTO = 'bawzi_consent_accepted';
@@ -112,13 +113,12 @@ export default function PromoBanner() {
     // senão o cadastro não sabe de onde a pessoa veio.
     campanhaAtual();
 
-    fetch(`${API_URL}/api/admin/promo-banner/public`)
-      .then(r => r.ok ? r.json() : null)
-      .then((data: DadosPromo | null) => {
-        if (!data?.active) return;
-        setBanner(data);
-      })
-      .catch(() => null);
+    // ⚠️ O FETCH SAIU DAQUI PARA `lib/promoPublica`. O resultado do taster
+    // passou a mostrar a MESMA oferta no CTA, e dois componentes buscando a
+    // mesma rota no primeiro paint são duas requisições e duas verdades
+    // possíveis sobre o número de vagas. A promessa é compartilhada; quem
+    // chegar depois reaproveita.
+    carregarPromoPublica().then((data) => { if (data) setBanner(data); });
   }, []);
 
   // ── 2. Tem sessão? ────────────────────────────────────────────────────────
