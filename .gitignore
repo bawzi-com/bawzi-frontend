@@ -12,3 +12,8 @@ _to_delete/
 archive/
 *.tsbuildinfo
 *.db
+
+# Artefato incremental do TypeScript — muda a cada build e gera conflito
+# em todo merge. Não é código nem configuração.
+tsconfig.tsbuildinfo
+COMMIT_MSG.tmp
