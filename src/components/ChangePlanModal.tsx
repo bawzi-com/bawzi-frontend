@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { API_URL, apiFetch } from '@/lib/apiClient';
 import { usePrecos, precoPorCiclo } from '@/lib/precos';
+import { useTierConfig } from '@/Contexts/TierContext';
+import { cotaMensal } from '@/lib/unidadeCota';
 
 
 /* ⚠️ ESTE ARQUIVO MENTIA SOBRE A CAPACIDADE COMPRADA, na tela de pagamento.
@@ -147,6 +149,7 @@ export default function ChangePlanModal({
 
   if (!targetTier) return null;
 
+  const { regua } = useTierConfig();
   const current = PLAN_INFO[currentTier];
   const next    = PLAN_INFO[targetTier];
   const isUp    = targetTier > currentTier;
@@ -159,7 +162,7 @@ export default function ChangePlanModal({
     if (!l) return null;
     const cota = l.ilimitado
       ? 'Cota mensal ilimitada'
-      : `${l.monthly_limit.toLocaleString('pt-BR')} créditos/mês`;
+      : cotaMensal(regua, l.monthly_limit);
     const chars = l.max_chars
       ? ` · editais até ${l.max_chars.toLocaleString('pt-BR')} caracteres`
       : '';

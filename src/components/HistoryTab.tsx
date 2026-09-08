@@ -36,6 +36,7 @@ export default function HistoryTab({
   onAbrirComparar,
   onAprofundar,
   pesoProfunda,
+  unidadeCobranca,
   // ⚠️ O LAUDO ABERTO PELAS DECISÕES NÃO TINHA "OCULTAR MENU" — E O MESMO
   // LAUDO, ABERTO PELO WORKSPACE, TINHA.
   // `AnalysisResults` renderiza o botão sob `{onToggleSidebar && ...}`. O
@@ -66,6 +67,8 @@ export default function HistoryTab({
    *  que cada laudo já custou, o botão mostra o preço exato do
    *  aprofundamento — mesma conta do banner do laudo. */
   pesoProfunda?: number | null;
+  /** Qual régua cobra, dita pelo backend. 'analises' → 1 por análise. */
+  unidadeCobranca?: 'creditos' | 'analises' | null;
   sidebarHidden?: boolean;
   onToggleSidebar?: () => void;
   /** ⚠️ MESMA HISTÓRIA DO `onToggleSidebar` LOGO ACIMA, outra prop.
@@ -630,6 +633,7 @@ export default function HistoryTab({
               : undefined
           }
           pesoProfunda={pesoProfunda ?? null}
+          unidadeCobranca={unidadeCobranca ?? null}
           onUpgradeClick={() => setNotice({ type: 'info', message: 'Faça upgrade pelo painel de planos para desbloquear este recurso.' })}
         />
       </div>
@@ -967,10 +971,18 @@ export default function HistoryTab({
             // Mesma conta do banner do laudo: profunda = pago × peso, então a
             // diferença é pago × (peso − 1). Sai do que o laudo JÁ custou —
             // não de estimativa sobre texto, que aqui nem existe.
+            // ⚠️ DUAS RÉGUAS, E QUEM DIZ QUAL COBRA É O BACKEND.
+            // Por ANÁLISE (desde 07/09/2026) aprofundar custa 1 e não há
+            // abatimento: a rápida também custou 1. Por CUSTO, vale a conta
+            // antiga — profunda = pago × peso, diferença = pago × (peso − 1).
+            // Inferir pelo peso seria proxy: `peso_profunda` segue valendo 4
+            // na configuração porque a régua por custo ainda o lê.
             const _pesoP = Math.max(1, Number(pesoProfunda) || 0);
-            const custoAprofundar = (_pesoP > 1 && typeof item.creditos === 'number' && item.creditos > 0)
-              ? item.creditos * (_pesoP - 1)
-              : null;
+            const custoAprofundar = unidadeCobranca === 'analises'
+              ? 1
+              : ((_pesoP > 1 && typeof item.creditos === 'number' && item.creditos > 0)
+                  ? item.creditos * (_pesoP - 1)
+                  : null);
 
             return (
               <div

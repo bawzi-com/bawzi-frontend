@@ -1545,6 +1545,7 @@ export default function AnalysisApp() {
                       // cobra sobre o texto + os PDFs que ele baixa do PNCP)
                       // e no histórico nem existia texto para estimar.
                       pesoProfunda={quota?.peso_profunda ?? null}
+                      unidadeCobranca={quota?.unidade ?? null}
                       saldoCreditos={quota?.restante ?? null}
                       // Sem a flag do Capital, o CTA do laudo some junto —
                       // prop undefined em vez de aba em branco.
@@ -1735,6 +1736,7 @@ export default function AnalysisApp() {
                       }}
                       onAprofundar={handleAprofundarDoHistorico}
                       pesoProfunda={quota?.peso_profunda ?? null}
+                      unidadeCobranca={quota?.unidade ?? null}
                     />
                   ) : (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">

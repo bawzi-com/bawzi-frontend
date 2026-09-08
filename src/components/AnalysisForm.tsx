@@ -157,6 +157,18 @@ function tempoEstimadoLabel(token: string | null, userTier: number): string {
  */
 function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
                     quota?: QuotaInfo | null): number | null {
+  // ── Régua por ANÁLISE: 1, e o tamanho não entra ──────────────────────
+  // Desde 07/09/2026 a régua fixa cobra 1 crédito por análise
+  // (`modos.custo_em_creditos`). O backend anuncia isso em `unidade`, e é
+  // ele quem sabe qual régua está cobrando — não este arquivo.
+  //
+  // ⚠️ ESTA CONDIÇÃO VEM PRIMEIRO DE PROPÓSITO. Abaixo há duas fórmulas que
+  // ainda calculam pelo tamanho, e as duas continuam corretas para a régua
+  // por CUSTO. Se a checagem viesse depois, a tela cotaria por tamanho uma
+  // cobrança que é por análise — o defeito mais caro que este produto tem,
+  // porque a cotação daqui é firme.
+  if (quota?.unidade === 'analises') return 1;
+
   // ── Caminho novo: o crédito mede CUSTO ────────────────────────────────
   // O backend manda coeficientes; aqui só se avalia a soma. Nada de modelo
   // nem de tabela de preços no frontend — se um preço mudar no Admin, este

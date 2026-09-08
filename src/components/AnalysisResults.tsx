@@ -83,6 +83,9 @@ interface AnalysisResultsProps {
    *  depende do texto na tela — que é justamente por onde a estimativa
    *  antiga errava (o backend cobra sobre o texto + PDFs do PNCP). */
   pesoProfunda?: number | null;
+  /** Qual régua cobra, dita pelo backend (`/api/analyses/quota`).
+   *  'analises' → 1 crédito por análise; 'creditos' → régua por custo. */
+  unidadeCobranca?: 'creditos' | 'analises' | null;
   /** Créditos disponíveis no período — o banner mostra ao lado do preço para
    *  a pessoa não precisar sair do laudo para saber se dá. */
   saldoCreditos?: number | null;
@@ -149,6 +152,7 @@ export default function AnalysisResults({
   onGoToCapital,
   onAprofundar,
   pesoProfunda,
+  unidadeCobranca,
   saldoCreditos,
   onTrackedChange,
   onGerarImpugnacao,
@@ -466,6 +470,7 @@ export default function AnalysisResults({
             onAprofundar={onAprofundar}
             jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
             pesoProfunda={pesoProfunda ?? null}
+            unidade={unidadeCobranca ?? null}
             saldo={saldoCreditos ?? null}
           />
         )}
@@ -603,6 +608,7 @@ export default function AnalysisResults({
                                   onAprofundar={onAprofundar}
                                   jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
                                   pesoProfunda={pesoProfunda ?? null}
+                                  unidade={unidadeCobranca ?? null}
                                   saldo={saldoCreditos ?? null}
                                 />
                               )}
@@ -5465,7 +5471,26 @@ function rotuloDoAssunto(chave?: string): string | undefined {
  *  "+2 créditos" e o portão debitou 21 — a tela mentindo sobre preço, que é
  *  o defeito mais caro que este produto pode ter. Pior ainda no histórico,
  *  onde o formulário está vazio e a estimativa nem existia. */
-function precoAprofundar(jaPago: number | null | undefined, pesoProfunda: number | null | undefined) {
+function precoAprofundar(
+  jaPago: number | null | undefined,
+  pesoProfunda: number | null | undefined,
+  unidade?: 'creditos' | 'analises' | null,
+) {
+  // ── Régua por ANÁLISE: aprofundar é uma análise, logo 1 crédito ───────
+  // Desde 07/09/2026 a régua fixa cobra 1 por análise. Aprofundar é uma
+  // análise nova, então custa 1 — e NÃO HÁ O QUE ABATER: a rápida também
+  // custou 1, e `max(1, 1 − 1)` é 1. A linha "já pago" desaparece porque o
+  // abatimento desaparece, não porque foi escondida.
+  //
+  // O que passa a limitar não é o preço, é o teto de auditorias profundas do
+  // plano — e é isso que a tela precisa dizer no lugar da subtração.
+  //
+  // ⚠️ PERGUNTA A `unidade`, NÃO AO PESO. Inferir por `peso <= 1` seria um
+  // proxy: `peso_profunda` continua valendo 4 na configuração porque a régua
+  // POR CUSTO ainda o lê. Quem sabe qual régua cobra é o backend, e ele diz.
+  if (unidade === 'analises') {
+    return { cheio: 1, pago: null, diferenca: 1 };
+  }
   const pago = typeof jaPago === 'number' && jaPago > 0 ? jaPago : null;
   const peso = Math.max(1, Number(pesoProfunda) || 0);
   if (pago === null || peso <= 1) return { cheio: null, pago, diferenca: null };
@@ -5509,6 +5534,25 @@ function ContaAprofundar({ cheio, pago, diferenca }: {
       </p>
     );
   }
+  // ── Régua por análise: uma linha, não uma subtração ──────────────────
+  // Com 1 crédito por análise não há abatimento (a rápida também custou 1),
+  // e a conta de três linhas viraria "completa: 1 crédito · você paga: 1
+  // crédito" — o mesmo número dito duas vezes, com uma subtração invisível
+  // no meio. O que limita aqui não é o preço, é o teto de auditorias
+  // profundas do plano, e o card de cota já avisa quando ele aperta.
+  if (pago === null && cheio === diferenca) {
+    return (
+      <div className="flex items-baseline justify-between gap-3 rounded-xl border border-sky-100 bg-white px-4 py-3">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+          Auditoria profunda
+        </span>
+        <span className="text-lg font-semibold tabular-nums text-sky-700">
+          {creditosLabel(diferenca)}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-xl border border-sky-100 bg-white px-4 py-3">
       <div className="flex items-baseline justify-between gap-3 text-[12px] font-medium text-slate-500">
@@ -5558,13 +5602,14 @@ function SaldoAprofundar({ saldo, diferenca }: { saldo: number | null; diferenca
  *  seria peso demais. Mesma gramática da PersistentSummaryBar: a informação
  *  acompanha o leitor sem competir com o conteúdo da etapa. Leva o preço
  *  junto — quem decide na aba do Jurídico não precisa ir procurar quanto é. */
-function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
+function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo, unidade }: {
   onAprofundar: () => void;
   jaPago: number | null;
   pesoProfunda: number | null;
   saldo: number | null;
+  unidade?: 'creditos' | 'analises' | null;
 }) {
-  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda);
+  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda, unidade);
 
   // ⚠️ A FAIXA AGORA ABRE, E ISSO MUDA ONDE O DINHEIRO É GASTO.
   //
@@ -5661,10 +5706,11 @@ function AprofundarFaixa({ onAprofundar, jaPago, pesoProfunda, saldo }: {
   );
 }
 
-function AprofundarBanner({ onAprofundar, jaPago, pesoProfunda, saldo }: {
+function AprofundarBanner({ onAprofundar, jaPago, pesoProfunda, saldo, unidade }: {
   onAprofundar: () => void;
   jaPago: number | null;
   pesoProfunda: number | null;
+  unidade?: 'creditos' | 'analises' | null;
   saldo: number | null;
 }) {
   // A CONTA, não um número solto. O botão dizia "+9 CR": "CR" é abreviação de
@@ -5677,7 +5723,7 @@ function AprofundarBanner({ onAprofundar, jaPago, pesoProfunda, saldo }: {
   // banner é a versão sempre-aberta (aba Análise, logo abaixo do texto que
   // lista o que a leitura única não fez) e a faixa é a versão sob demanda.
   // Duas cópias do markup acabariam com dois preços para a mesma pergunta.
-  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda);
+  const { cheio, pago, diferenca } = precoAprofundar(jaPago, pesoProfunda, unidade);
 
   // Container queries pelo mesmo motivo da faixa: a coluna do laudo é
   // estreita mesmo em monitor largo (barra lateral de 350px). Com `md:`,

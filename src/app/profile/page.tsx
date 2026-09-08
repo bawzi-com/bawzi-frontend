@@ -46,6 +46,7 @@ import ChangePlanModal from '@/components/ChangePlanModal';
 import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCreditosModal';
 import { detalhesDeCreditos, corDoDetalhe, ajudasDaCarteira, Numero, BOTAO_SECUNDARIO } from '@/components/ResumoCreditos';
 import { usePrecos, precoPorCiclo } from '@/lib/precos';
+import { cotaMensal } from '@/lib/unidadeCota';
 
 /** Rótulo do ciclo → sufixo do preço.
  *
@@ -138,7 +139,7 @@ function ProfileContent() {
   // Cota mensal por plano, da MESMA fonte que o backend aplica (Admin →
   // tier_configs → /api/tiers/config). Escrever os números à mão aqui os faria
   // divergir do que a cota realmente é no dia em que você mexer no Admin.
-  const { tierCredits, tierNames } = useTierConfig();
+  const { tierCredits, tierNames, regua } = useTierConfig();
   const nomeDoPlano = (t: number) => tierNames[t] || getTierNameFallback(t);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -1101,7 +1102,7 @@ function ProfileContent() {
                             <span className="mt-1 flex flex-wrap items-center gap-1.5">
                               {!!tierCredits[userTier] && (
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 text-[11px] font-black text-white/80">
-                                  {tierCredits[userTier].toLocaleString('pt-BR')} créditos/mês
+                                  {cotaMensal(regua, tierCredits[userTier])}
                                 </span>
                               )}
                               {/* O saldo comprado fica COLADO na cota do plano
@@ -1501,7 +1502,7 @@ function ProfileContent() {
                               </span>
                               {!!tierCredits[tier] && (
                                 <span className={`mt-0.5 text-[11px] font-bold ${isCurrent ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                  {tierCredits[tier].toLocaleString('pt-BR')} créditos/mês
+                                  {cotaMensal(regua, tierCredits[tier])}
                                 </span>
                               )}
                               {/* ⚠️ DIZER O QUE MUDA, COM NÚMERO. "Você perderá
@@ -1513,7 +1514,7 @@ function ProfileContent() {
                                   precisa ver isso ANTES de clicar, não depois. */}
                               {!isCurrent && !isUp && !!tierCredits[tier] && !!tierCredits[userTier] && (
                                 <span className="mt-1 text-[10px] leading-3.5 text-amber-600">
-                                  {tierCredits[userTier].toLocaleString('pt-BR')} → {tierCredits[tier].toLocaleString('pt-BR')} créditos/mês
+                                  {tierCredits[userTier].toLocaleString('pt-BR')} → {cotaMensal(regua, tierCredits[tier])}
                                   {Number(quota?.usado || 0) > tierCredits[tier] && (
                                     <> · você já usou {Number(quota?.usado).toLocaleString('pt-BR')} neste ciclo</>
                                   )}
