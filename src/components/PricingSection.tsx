@@ -129,7 +129,8 @@ const tiers = [
       // para que o texto volte junto com o módulo, no mesmo commit de 1 linha
       // que troca `capital` para `true` — e não fique um item órfão a menos.
       ...(LAUNCH_FLAGS.capital ? ['Fôlego financeiro e capital de execução'] : []),
-      '100 dossiês por dia · 2 empresas',
+      '100 dossiês de concorrente por dia',
+      'Cadastro de empresa (CNPJ) · 2 empresas',
     ],
     limites: ['Editais até 180.000 caracteres', 'PDF até 20 MB'],
     mbSufixo: '',
@@ -145,7 +146,8 @@ const tiers = [
     // `mbSufixo` o colava no fim da linha do PDF. Fica só como item.
     features: [
       'Simulador tático de preços na proposta',
-      '500 dossiês por dia · 3 empresas',
+      '500 dossiês de concorrente por dia',
+      'Cadastro de empresa (CNPJ) · 3 empresas',
       'Suporte prioritário',
     ],
     limites: ['Editais até 500.000 caracteres', 'PDF até 20 MB'],
@@ -164,12 +166,23 @@ interface LimitePublico {
   ilimitado: boolean;
   max_chars: number | null;
   max_mb: number | null;
-  /** `true` quando um crédito PODE diferir de uma análise neste plano — por
-   *  multiplicador de modo ou por edital maior que a unidade. O servidor decide,
-   *  porque a regra depende de dois campos que ele já tem. */
+  /** `true` quando um crédito PODE diferir de uma análise neste plano.
+   *
+   *  ⚠️ Desde 07/09/2026 responde "a régua POR CUSTO está ligada?", e não mais
+   *  "o peso multiplica ou o edital passa da unidade". Aqueles dois seguem
+   *  verdadeiros nos planos pagos e descrevem uma régua que não cobra mais —
+   *  a fixa debita 1 crédito por análise. Quem sabe é o servidor, porque quem
+   *  sabe é a régua ativa. */
   em_creditos?: boolean;
   caracteres_por_credito?: number;
   peso_profunda?: number;
+  /** Teto de auditorias profundas por mês. Removido em 07/09/2026 quando o
+   *  multiplicador voltou — a cota passou a conter o custo sozinha. Fica no
+   *  tipo porque o campo ainda existe no Admin e pode ser reativado. */
+  limit_profunda?: number | null;
+  /** R$ por crédito avulso. A tela usa para COMPOR quando a rotina passa da
+   *  cota: reprovar sem dizer quanto custaria completar é meia resposta. */
+  preco_credito_brl?: number;
 }
 
 const numeroBr = (n: number) => n.toLocaleString('pt-BR');
@@ -227,9 +240,16 @@ const FAIXAS_TAMANHO: readonly FaixaTamanho[] = [
 
 /** A régua fixa, com os coeficientes que o SERVIDOR mandou.
  *  `teto(caracteres ÷ unidade) × peso`, mínimo 1 — igual a `modos.custo_em_creditos`. */
+/** Espelha `modos.custo_em_creditos`: o TAMANHO não entra, o MODO entra.
+ *
+ *  ⚠️ A divisão por `unidade` saiu em 07/09/2026 — ela media a dimensão que
+ *  quase não custa (a rápida mais cara medida foi US$ 0,038 em 400 mil
+ *  caracteres) e obrigava a página a ensinar uma conta. O multiplicador ficou,
+ *  porque é ele que cobra o que o modo custa de verdade (21x medido no tier 4)
+ *  e o que faz a cota responder à escolha do cliente. */
 function creditosDoEdital(chars: number, unidade: number, peso: number, profunda: boolean): number {
-  const base = Math.max(1, Math.ceil(chars / Math.max(1, unidade)));
-  return base * (profunda ? Math.max(1, peso) : 1);
+  void chars; void unidade;   // mantidos na assinatura; ver acima
+  return profunda ? Math.max(1, peso) : 1;
 }
 
 /** Teto do slider de volume. 60 era baixo demais: uma assessoria de licitações
@@ -237,7 +257,14 @@ function creditosDoEdital(chars: number, unidade: number, peso: number, profunda
  *  produto não é para ele — quando é justamente o cliente que mais paga.
  *  Acima deste número a resposta honesta deixa de ser "assine o Avançado" e
  *  passa a ser "fale com a gente", que é o que a simulação diz. */
-const MAX_EDITAIS = 200;
+// Alcança a cota do maior plano (320): um simulador que não chega ao teto
+// do que se vende faz o comprador concluir que o produto não é para ele.
+const MAX_EDITAIS = 320;
+/** Teto do slider de profundas. 40 passa da capacidade do maior plano (32 no
+ *  Avançado, 320 ÷ peso 10) de propósito: o simulador precisa poder mostrar a
+ *  rotina que NÃO cabe, senão ele nunca diz "fale com a gente" — e é para esse
+ *  cliente que a condição própria existe. */
+const MAX_PROFUNDAS = 40;
 
 /** Slider + campo numérico. Só slider perde precisão num intervalo de 200;
  *  só campo perde a noção de escala. Mesmo par usado na calculadora de
@@ -280,7 +307,7 @@ function CampoVolume({ label, valor, min, max, ajuda, cor, onChange }: {
   );
 }
 
-type Veredito = 'folga' | 'limite' | 'corta' | 'estoura' | 'tamanho';
+type Veredito = 'folga' | 'limite' | 'corta' | 'estoura' | 'tamanho' | 'profundas';
 
 function SimuladorDePlano({
   limites,
@@ -306,8 +333,17 @@ function SimuladorDePlano({
   // tabela, cartões e o modal de upgrade montados juntos fazem UMA requisição.
   const precos = usePrecos();
 
-  const profundasReais = Math.min(profundas, editais);
-  const rapidas = Math.max(0, editais - profundasReais);
+  // ⚠️ DUAS QUANTIDADES INDEPENDENTES, NÃO UM TOTAL E UM SUBCONJUNTO.
+  // A primeira versão perguntava "editais por mês" e "DESTES, em profunda", e
+  // subtraía: 320 editais com 2 profundas viravam 318 rápidas + 2 profundas =
+  // 338 créditos, e o Avançado (320) reprovava — correto na aritmética e
+  // absurdo na leitura, porque ninguém descreve a rotina assim.
+  //
+  // A régua é `rápidas + profundas × peso ≤ cota`, e é nesses dois termos que
+  // o cliente pensa: "320 rápidas e nenhuma profunda" OU "100 rápidas e 22
+  // profundas". Uma compensa a outra, e agora os controles dizem isso.
+  const profundasReais = profundas;
+  const rapidas = editais;
 
   // ⚠️ O CÁLCULO SUBIU PARA ANTES DO `return null` por regra de hooks: o
   // `useEffect` que publica a recomendação não pode ficar depois de um return
@@ -320,6 +356,7 @@ function SimuladorDePlano({
     const cota = Number(lim?.monthly_limit || 0);
     const maxChars = Number(lim?.max_chars || 0);
 
+    // Um caminho só: `creditosDoEdital` já ignora o tamanho.
     const custo = (chars: number) =>
       rapidas * creditosDoEdital(chars, unidade, peso, false)
       + profundasReais * creditosDoEdital(chars, unidade, peso, true);
@@ -341,16 +378,27 @@ function SimuladorDePlano({
     // E o corte tira o fim do documento, que é onde ficam termo de referência,
     // sanções e matriz de risco (item 19). Vender folga de crédito sobre laudo
     // cego é pior do que dizer que o plano não serve.
+    // ⚠️ O TETO DE PROFUNDAS SAIU, E A COTA VOLTOU A SEPARAR OS PLANOS.
+    // Ele existiu nas horas em que a régua cobrava 1 por análise em qualquer
+    // modo: sem multiplicador, pedir profunda não movia a conta e os três
+    // planos diziam "atende com folga". Com o peso de volta, escolher profunda
+    // consome a cota na hora — e é a própria cota que reprova, com o número à
+    // vista, em vez de uma parede separada.
+    const tetoProfunda = Number(lim?.limit_profunda || 0);
+    const estouraProfundas = tetoProfunda > 0 && profundasReais > tetoProfunda;
+
     let veredito: Veredito;
     if (maxChars > 0 && maxChars < faixa.min) veredito = 'tamanho';
     else if (!semCota && cMin > cota) veredito = 'estoura';
+    else if (estouraProfundas) veredito = 'profundas';
     else if (cortaEdital) veredito = 'corta';
     else if (!semCota && cMax > cota) veredito = 'limite';
     else veredito = 'folga';
 
     const preco = precoDoCartao(meta, precos?.[String(nivel)]);
 
-    return { nivel, meta, preco, lim, cota, maxChars, cMin, cMax, veredito, unidade, cortaEdital };
+    return { nivel, meta, preco, lim, cota, maxChars, cMin, cMax, veredito, unidade,
+             cortaEdital, tetoProfunda };
   });
 
   // O recomendado é o MAIS BARATO que atende com folga — o que agora exige
@@ -372,6 +420,10 @@ function SimuladorDePlano({
     corta:   { chip: 'bg-amber-50 text-amber-700 border-amber-200',       texto: 'Recorta os maiores' },
     estoura: { chip: 'bg-red-50 text-red-700 border-red-200',             texto: 'Não atende o volume' },
     tamanho: { chip: 'bg-red-50 text-red-700 border-red-200',             texto: 'Não comporta o tamanho' },
+    // Vermelho como os outros dois "não atende": o cliente pediu N auditorias
+    // profundas e este plano não entrega N. As excedentes rodam sem auditoria,
+    // que é justamente o produto pelo qual ele estaria pagando.
+    profundas: { chip: 'bg-red-50 text-red-700 border-red-200',           texto: 'Poucas auditorias profundas' },
   };
 
   return (
@@ -394,30 +446,37 @@ function SimuladorDePlano({
         {/* ── Entradas ─────────────────────────────────────────────── */}
         <div className="space-y-5">
           <CampoVolume
-            label="Editais por mês"
+            label="Análises rápidas por mês"
             valor={editais}
-            min={1}
+            min={0}
             max={MAX_EDITAIS}
             cor="accent-emerald-600"
             ajuda={editais >= MAX_EDITAIS
               ? 'No teto da simulação — nesse volume a conversa é de condição própria.'
               : undefined}
-            onChange={(v) => {
-              setEditais(v);
-              // O número de profundas nunca pode ultrapassar o total. Sem esta
-              // linha, baixar o volume deixava um resíduo maior que o todo e a
-              // conta passava a cobrar profundas que não existem.
-              if (profundas > v) setProfundas(v);
-            }}
+            /* ⚠️ SEM ACOPLAMENTO. Antes, baixar este número forçava o outro
+               para baixo junto, porque as profundas eram um subconjunto. São
+               duas quantidades independentes: quem faz 20 auditorias profundas
+               e nenhuma rápida é uma rotina legítima, e a régua a comporta. */
+            onChange={setEditais}
           />
 
           <CampoVolume
-            label="Destes, em auditoria profunda"
+            label="Auditorias profundas por mês"
             valor={profundasReais}
             min={0}
-            max={editais}
+            max={MAX_PROFUNDAS}
             cor="accent-sky-600"
-            ajuda="A auditoria profunda relê o edital inteiro em blocos e custa mais por isso."
+            /* ⚠️ "CUSTA MAIS POR ISSO" DEIXOU DE SER VERDADE EM 07/09/2026.
+               Com 1 crédito por análise a profunda custa o MESMO que a rápida
+               em créditos — o que ela consome é uma vaga no teto mensal do
+               plano, que é justamente o que este campo passou a medir. Dizer
+               que custa mais faria o leitor procurar a diferença na coluna de
+               créditos, onde ela não está mais. */
+            ajuda={`A auditoria profunda relê o edital inteiro em blocos, confere cada `
+              + `afirmação contra o texto e procura contradições. Cada uma consome várias `
+              + `análises da sua cota — é a única coisa que muda a conta; o tamanho do `
+              + `edital não entra.`}
             onChange={setProfundas}
           />
 
@@ -480,18 +539,91 @@ function SimuladorDePlano({
                           </span>
                         )}
                       </p>
-                      <p className="mt-1 text-[11px] font-semibold text-slate-500 tabular-nums">
-                        {p.veredito === 'tamanho'
-                          ? `Analisa até ${numeroBr(p.maxChars)} caracteres — menos que o seu edital típico`
-                          : `Usaria ${p.cMin === p.cMax ? p.cMin : `${p.cMin} a ${p.cMax}`} de ${numeroBr(p.cota)} créditos`}
-                      </p>
-                      {/* Corte silencioso jamais: se o plano atende o volume mas
-                          corta os editais maiores, isso é dito aqui. Um plano que
-                          "cabe" entregando laudo sobre documento truncado não cabe. */}
-                      {p.veredito !== 'tamanho' && p.cortaEdital && (
-                        <p className="mt-1 text-[11px] font-bold text-amber-700">
-                          ⚠ Editais acima de {numeroBr(p.maxChars)} caracteres seriam recortados
+                      {/* ⚠️ O NÚMERO EM DESTAQUE TEM DE SER O QUE DECIDE.
+                          Com 1 crédito por análise, "Usaria 200 de 320 créditos"
+                          só repete o volume que a pessoa acabou de digitar — e
+                          parecia caber, com um selo vermelho ao lado sobre um
+                          limite que não aparecia em lugar nenhum. O leitor via
+                          folga e reprovação na mesma linha.
+
+                          Agora as duas dimensões aparecem, e a que estoura vem
+                          em vermelho. Quem lê descobre QUAL número passou do
+                          limite sem precisar deduzir do selo. */}
+                      {p.veredito === 'tamanho' ? (
+                        <p className="mt-1 text-[11px] font-semibold text-slate-500 tabular-nums">
+                          {`Analisa até ${numeroBr(p.maxChars)} caracteres — menos que o seu edital típico`}
                         </p>
+                      ) : (
+                        <div className="mt-1 space-y-0.5 tabular-nums">
+                          {/* ⚠️ O NÚMERO EM DESTAQUE TEM DE SER O QUE DECIDE, e
+                              com o multiplicador de volta ele é o CRÉDITO: a
+                              conta responde à escolha de modo, então mostrá-la
+                              já explica a reprovação. Nas horas em que a régua
+                              cobrou 1 por análise, esta linha só repetia o
+                              volume digitado e o veredito vinha de um teto
+                              invisível — folga e reprovação na mesma linha. */}
+                          <p className={`text-[11px] font-semibold ${
+                            !p.lim?.ilimitado && p.cota > 0 && p.cMax > p.cota
+                              ? 'text-red-700' : 'text-slate-500'}`}>
+                            Usaria {p.cMin === p.cMax ? p.cMin : `${p.cMin} a ${p.cMax}`} de{' '}
+                            {p.lim?.ilimitado || p.cota === 0 ? '∞' : numeroBr(p.cota)}
+                          </p>
+                          {/* A decomposição, que é o que a pessoa pediu: sem ela o
+                              leitor precisa dividir de cabeça para saber por que
+                              o número deu aquilo. */}
+                          {profundasReais > 0 && (p.lim?.peso_profunda ?? 1) > 1 && (
+                            <p className="text-[11px] font-medium text-slate-400">
+                              {rapidas} rápida(s) + {profundasReais} profunda(s) × {p.lim?.peso_profunda}
+                            </p>
+                          )}
+                          {/* ⚠️ ESTOURAR A COTA NÃO É O FIM DA CONVERSA.
+                              Bloquear o slider impediria a pessoa de descrever a
+                              rotina real dela; reprovar e parar é meia resposta,
+                              porque o produto PERMITE completar com pacote avulso
+                              (e já diz isso no aviso amarelo, em texto, sem
+                              número). Aqui a falta vira preço fechado: o leitor
+                              compara "assinar o de cima" com "ficar neste e
+                              completar" sem sair da tela nem fazer conta. */}
+                          {(() => {
+                            const preco = Number(p.lim?.preco_credito_brl || 0);
+                            const cota = Number(p.cota || 0);
+                            if (!preco || !cota || p.lim?.ilimitado) return null;
+                            const falta = p.cMax - cota;
+                            if (falta <= 0) return null;
+                            const custoPacote = falta * preco;
+                            const mensal = Number(p.preco.centavos || 0) / 100;
+                            return (
+                              <p className="text-[11px] font-semibold text-sky-700">
+                                Faltam {numeroBr(falta)} — pacote avulso a{' '}
+                                {brl(preco)} cada = {brl(custoPacote)}
+                                {mensal > 0 && <> · total {brl(mensal + custoPacote)}/mês</>}
+                              </p>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {/* ⚠️ O LIMITE DE CARACTERES APARECE SEMPRE, NÃO SÓ QUANDO CORTA.
+                          Desde que o tamanho saiu do CUSTO (07/09/2026), ele é a
+                          única coisa que o terceiro controle da simulação decide —
+                          e o card só o mencionava no caso ruim. Para o Avançado com
+                          edital grande, nada aparecia, e a impressão era de que o
+                          plano não tem limite de tamanho. Tem, e é ele que separa
+                          os planos agora que a cota fala em análises.
+
+                          Corte silencioso jamais: quando o limite morde, a linha
+                          vira aviso. Um plano que "cabe" entregando laudo sobre
+                          documento truncado não cabe. */}
+                      {p.veredito !== 'tamanho' && p.maxChars > 0 && (
+                        p.cortaEdital ? (
+                          <p className="mt-1 text-[11px] font-bold text-amber-700">
+                            ⚠ Analisa até {numeroBr(p.maxChars)} caracteres — os maiores
+                            seriam recortados
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-[11px] font-medium text-slate-400">
+                            Analisa editais até {numeroBr(p.maxChars)} caracteres
+                          </p>
+                        )
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -529,12 +661,33 @@ function SimuladorDePlano({
           <div className="mt-3.5 space-y-2">
             <p className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[11px] font-medium leading-5 text-slate-500">
               {recomendado
-                ? <>Estimativa, não promessa: o consumo real depende do tamanho de cada edital.
-                    A régua é <strong className="text-slate-700">1 crédito a cada {numeroBr(recomendado.unidade)} caracteres
-                    analisados</strong> (texto + PDFs), e a auditoria profunda multiplica.</>
-                : <>Nenhum plano cobre essa rotina inteira. Assinar o maior sabendo que vai
-                    faltar não resolve o seu problema — <strong className="text-slate-700">fale
-                    com a gente</strong>: volume assim costuma pedir condição própria.</>}
+                ? <>A cota é em <strong className="text-slate-700">análises rápidas</strong>, e cada
+                    auditoria profunda consome <strong className="text-slate-700">{recomendado.lim?.peso_profunda ?? 1} delas</strong>.
+                    O tamanho do edital não entra na conta — só no limite de caracteres do plano.</>
+                : <>{/* ⚠️ REPROVAR SEM DIZER O QUE CABE É UM BECO.
+                        Os dois controles são acoplados (profundas ≤ editais), então
+                        no extremo do slider a pessoa pede 320 auditorias = 3.200
+                        créditos e os três planos falham juntos. Sem um número de
+                        referência, ela não sabe se errou por pouco ou por 10x — e
+                        "fale com a gente" vira porta fechada em vez de convite.
+                        A capacidade do maior plano NA MISTURA DELA responde isso
+                        numa linha, e é o que transforma a reprovação em comparação. */}
+                    Nenhum plano cobre essa rotina inteira.{(() => {
+                      const topo = planos[planos.length - 1];
+                      const pesoTopo = Math.max(1, topo?.lim?.peso_profunda ?? 1);
+                      const cotaTopo = Number(topo?.cota || 0);
+                      if (!cotaTopo || !topo) return null;
+                      // Mesma proporção que a pessoa pediu, escalada até a cota.
+                      const custoDaRotina = rapidas + profundasReais * pesoTopo;
+                      const fracao = custoDaRotina > 0 ? cotaTopo / custoDaRotina : 0;
+                      const cabeR = Math.floor(rapidas * fracao);
+                      const cabeP = Math.floor(profundasReais * fracao);
+                      return <> O <strong className="text-slate-700">{topo.meta?.name}</strong> comporta
+                        cerca de <strong className="text-slate-700">{numeroBr(cabeR)} rápidas
+                        e {numeroBr(cabeP)} profundas</strong> por mês nessa mesma proporção.</>;
+                    })()} Assinar o maior sabendo que vai faltar não resolve o seu
+                    problema — <strong className="text-slate-700">fale com a gente</strong>:
+                    volume assim costuma pedir condição própria.</>}
             </p>
             <p className="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-2.5 text-[11px] font-medium leading-5 text-amber-900">
               <strong>Se a cota acabar antes do fim do mês:</strong> as análises não param
@@ -577,7 +730,12 @@ function linhaQuantidade(
   // O portão daqueles tiers debita crédito como todos os outros, então dizer
   // crédito é igualmente verdadeiro. E quem sobe de plano não aprende unidade
   // nova: recebe mais da mesma.
-  const palavra = n === 1 ? 'crédito' : 'créditos';
+  // ⚠️ "CRÉDITO" É UMA ABSTRAÇÃO QUE O CLIENTE NÃO PRECISA APRENDER.
+  // A cota é expressa na unidade em que ele já pensa — análises rápidas — e a
+  // auditoria profunda é cotada NESSA MESMA unidade ("consome 10"). Some uma
+  // camada inteira: não há conversão a fazer, e o preço da profunda passa a
+  // ser legível sem tabela. Ver `linhasLimites` logo abaixo.
+  const palavra = n === 1 ? 'análise rápida' : 'análises rápidas';
   // "grátis" faz trabalho que "/mês" não faz num plano cujo preço já é Grátis:
   // diz que aqueles créditos são presente, não cota comprada.
   const gratis = tier.price === 'Grátis' ? ' grátis' : '';
@@ -612,7 +770,13 @@ function linhaQuantidade(
   // Traduzir para "20 auditorias profundas por mês" foi considerado e recusado:
   // o número cai conforme o plano sobe (43 · 31 · 20), porque cada plano é
   // medido pelo próprio edital máximo. Verdadeiro, e engana lado a lado.
-  return `${numeroBr(n)} ${palavra}${gratis} por mês`;
+  // A cota e o que a consome, numa frase só: "320 análises rápidas por mês ·
+  // cada auditoria profunda consome 10". Separadas, o leitor lia o preço da
+  // profunda três itens antes do número a que ele se aplica.
+  const custoProfunda = (lim.peso_profunda ?? 1) > 1 && lim.em_creditos
+    ? ` · cada auditoria profunda consome ${lim.peso_profunda}`
+    : '';
+  return `${numeroBr(n)} ${palavra}${gratis} por mês${custoProfunda}`;
 }
 
 
@@ -627,15 +791,27 @@ function linhasLimites(
     return tier.limites;
   }
   return [
-    ...(lim.em_creditos && lim.caracteres_por_credito
-      // A regra completa, uma vez só. A frase curta que acompanha o número da
-      // cota ("edital comum usa 2 a 3") é o resumo; esta é a definição.
-      // "analisados": mesma palavra da linha de créditos do formulário —
-      // texto + PDFs contam juntos. Dois lugares imprimindo a régua com
-      // vocabulários diferentes é como o app acabou com quatro nomes de plano.
-      ? [`1 crédito a cada ${numeroBr(lim.caracteres_por_credito)} caracteres analisados`
-         + ((lim.peso_profunda ?? 1) > 1 ? ` · auditoria profunda ×${lim.peso_profunda}` : '')]
-      : []),
+    // ⚠️ A RÉGUA MUDOU EM 07/09/2026 E ESTA LINHA É ONDE ELA É PROMETIDA.
+    // Era "1 crédito a cada 50.000 caracteres · auditoria profunda ×4",
+    // porque o crédito media TAMANHO. Medido: tamanho quase não custa (a
+    // rápida mais cara observada foi US$ 0,038) e o MODO custa 21x. Hoje a
+    // régua fixa cobra 1 crédito por análise e quem contém custo é o teto de
+    // profundas — então é o teto que o card precisa dizer.
+    //
+    // A tradução em "N auditorias profundas por mês" já tinha sido recusada
+    // aqui, e com razão: o número era DERIVADO do edital máximo de cada plano
+    // e caía conforme o plano subia (43 · 31 · 20) — verdadeiro e enganoso
+    // lado a lado. Agora o teto é explícito e SOBE (15 · 25 · 35). A objeção
+    // era sobre um número inferido; este é declarado.
+    // A régua inteira numa frase, sem divisão: o tamanho saiu da conta em
+    // 07/09/2026 porque quase não custa (a rápida mais cara medida foi
+    // US$ 0,038 em 400 mil caracteres). O que custa é o modo, e é ele que a
+    // frase precisa dizer — é a única coisa que o cliente escolhe e paga.
+    // ⚠️ O PREÇO DA PROFUNDA MUDOU DE LINHA — subiu para junto da cota, em
+    // `numeroDaCota`. Aqui ele ficava três itens acima do número a que se
+    // refere ("consome 4 análises" … "320 análises rápidas por mês"), e o
+    // leitor tinha de ligar os dois de memória. São a mesma informação: a cota
+    // e o que a consome.
     `Editais até ${numeroBr(lim.max_chars)} caracteres`,
     `PDF até ${numeroBr(lim.max_mb)} MB${tier.mbSufixo}`,
   ];
@@ -654,9 +830,19 @@ function linhasLimites(
 function precoDoCartao(
   tier: { price: string; period: string } | undefined,
   p: PrecoDoPlano | undefined,
-): { valor: string; sufixo: string } {
-  if (!p?.valor) return { valor: tier?.price ?? '', sufixo: tier?.period ?? '' };
-  return { valor: p.valor, sufixo: p.por ? `/${p.por}` : '' };
+): { valor: string; sufixo: string; centavos: number | null } {
+  // `centavos` sobe junto porque a composição com pacote avulso precisa SOMAR
+  // mensalidade + pacote, e `valor` já vem formatado em BRL pelo servidor —
+  // desformatar string para voltar a somar é como se inventa um bug de preço.
+  if (!p?.valor) {
+    return { valor: tier?.price ?? '', sufixo: tier?.period ?? '', centavos: null };
+  }
+  return { valor: p.valor, sufixo: p.por ? `/${p.por}` : '', centavos: p.centavos ?? null };
+}
+
+/** R$ com duas casas, pt-BR. Local porque é a única tela que soma dinheiro. */
+function brl(v: number): string {
+  return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 // Paleta visual por tier
@@ -796,17 +982,27 @@ function featuresAcumuladas(nivel: number): string[] {
  *  Lista explícita, e não heurística por texto: adivinhar "isto parece uma
  *  quantidade" erraria em silêncio no dia em que alguém escrevesse um recurso
  *  novo com número no nome. */
+// ⚠️ "100 dossiês por dia · 2 empresas" ERA UM RECURSO SÓ NO TEXTO E DOIS NA
+// REALIDADE — e por isso aparecia nas DUAS cadeias abaixo, o que já era o
+// sintoma. Para o leitor, era pior: "dossiê" só é explicado no card do
+// Gratuito, e o Profissional diz "TUDO DO ESSENCIAL +", que não é onde a
+// explicação está; e "2 empresas" só faz sentido para quem leu "Cadastro de
+// empresa (CNPJ) · 1 empresa" no cartão anterior. Duas siglas sem antecedente
+// na mesma linha.
+//
+// Separados, cada item carrega o próprio substantivo e cada cadeia fica com
+// uma quantidade só — que é o que estas cadeias existem para modelar.
 const CADEIAS_QUE_SUBSTITUEM: readonly (readonly string[])[] = [
   [
     'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
     '30 dossiês de concorrente por dia',
-    '100 dossiês por dia · 2 empresas',
-    '500 dossiês por dia · 3 empresas',
+    '100 dossiês de concorrente por dia',
+    '500 dossiês de concorrente por dia',
   ],
   [
     'Cadastro de empresa (CNPJ) · 1 empresa',
-    '100 dossiês por dia · 2 empresas',
-    '500 dossiês por dia · 3 empresas',
+    'Cadastro de empresa (CNPJ) · 2 empresas',
+    'Cadastro de empresa (CNPJ) · 3 empresas',
   ],
 ];
 
@@ -1564,8 +1760,28 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
             para validar com um edital real antes de decidir
           </span>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:max-w-[46rem]">
+        {/* ⚠️ MESMA GRADE DE TRÊS COLUNAS DA FILEIRA DE BAIXO.
+            Era `sm:grid-cols-2 lg:max-w-[46rem]`: os dois cartões paravam no
+            meio da página enquanto os pagos iam até a borda, e a margem à
+            direita ficava órfã — a página parecia cortada, não agrupada.
+
+            Esticar os dois para a largura inteira seria pior: cartão de ~700px
+            com cinco recursos em fonte de 11px vira um campo vazio com texto
+            no canto. A terceira coluna carrega a ponte para os planos pagos,
+            que é o que o leitor faz a seguir de qualquer forma — e alinha o
+            ritmo das colunas entre as duas fileiras. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
           {tiers.filter((t) => t.tierLevel <= 1).map(renderCartao)}
+          <div className="hidden flex-col justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5 md:flex">
+            <p className="text-sm font-black text-slate-800">
+              Testou e serviu?
+            </p>
+            <p className="mt-1.5 text-[12px] font-medium leading-5 text-slate-500">
+              Os planos abaixo abrem os agentes de mercado, o parecer jurídico e
+              o cadastro de empresa — e sobem o tamanho de edital que cabe numa
+              análise.
+            </p>
+          </div>
         </div>
       </div>
       )}
