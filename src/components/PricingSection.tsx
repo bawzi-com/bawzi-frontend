@@ -51,7 +51,7 @@ const tiers = [
   {
     name: 'Teste', badge: 'NÍVEL 0', price: 'Grátis', period: '',
     inherits: null,
-    quantidade: '1 crédito grátis por dia · sem cadastro',
+    quantidade: '1 análise rápida grátis por dia · sem cadastro',
     features: [
       'Nova Análise — score Go/No-Go',
       'Resumo executivo do edital',
@@ -64,7 +64,7 @@ const tiers = [
   {
     name: 'Gratuito', badge: 'NÍVEL 1', price: 'Grátis', period: '',
     inherits: null,
-    quantidade: '5 créditos grátis por mês',   // reserva; o servidor manda
+    quantidade: '5 análises rápidas grátis por mês',   // reserva; o servidor manda
     features: [
       'Análise completa com matriz de riscos e exigências críticas',
       'Auditoria profunda — contradições entre o edital e o cadastro do PNCP',
@@ -94,9 +94,9 @@ const tiers = [
     buttonText: 'Criar conta', tierLevel: 1, popular: false, label: null,
   },
   {
-    name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 79', period: '/mês',   // preço: reserva; o Stripe manda
+    name: 'Essencial', badge: 'NÍVEL 2', price: 'R$ 149', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 1,
-    quantidade: '90 créditos por mês',   // reserva; espelha LIMIT_TIER_2 — o servidor manda
+    quantidade: '60 análises rápidas por mês',   // reserva; espelha LIMIT_TIER_2 — o servidor manda
     // ⚠️ NADA DE QUANTIDADE DERIVADA DE CONFIGURAÇÃO AQUI.
     // "16 auditorias profundas por mês" saiu daqui: eu tinha calculado a
     // partir do `.env` (130 créditos) e o servidor serve o override do banco
@@ -115,9 +115,9 @@ const tiers = [
     buttonText: 'Assinar Essencial', tierLevel: 2, popular: false, label: null,
   },
   {
-    name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 197', period: '/mês',   // preço: reserva; o Stripe manda
+    name: 'Profissional', badge: 'NÍVEL 3', price: 'R$ 299', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 2,
-    quantidade: '250 créditos por mês',   // reserva; espelha LIMIT_TIER_3 — o servidor manda
+    quantidade: '130 análises rápidas por mês',   // reserva; espelha LIMIT_TIER_3 — o servidor manda
     features: [
       'Parecer jurídico no laudo — terceiro agente',
       'Alertas do PNCP (e-mail + sino)',
@@ -137,9 +137,9 @@ const tiers = [
     buttonText: 'Assinar Profissional', tierLevel: 3, popular: true, label: 'Mais popular',
   },
   {
-    name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 497', period: '/mês',   // preço: reserva; o Stripe manda
+    name: 'Avançado', badge: 'NÍVEL 4', price: 'R$ 699', period: '/mês',   // preço: reserva; o Stripe manda
     inherits: 3,
-    quantidade: '650 créditos por mês',   // reserva; espelha LIMIT_TIER_4 e a âncora do billing_config (R$ 497 ÷ 650)
+    quantidade: '320 análises rápidas por mês',   // reserva; espelha LIMIT_TIER_4 — o servidor manda
     // O tamanho do edital saiu daqui: a linha de limites, montada pelo
     // servidor, já diz "Editais até 500.000 caracteres" — o card exibia duas
     // vezes. O suporte prioritário também aparecia duas vezes, porque o
@@ -594,8 +594,16 @@ function SimuladorDePlano({
                             const mensal = Number(p.preco.centavos || 0) / 100;
                             return (
                               <p className="text-[11px] font-semibold text-sky-700">
+                                {/* ⚠️ "a R$ 3,90 CADA" NÃO DIZ CADA O QUÊ.
+                                    Esta era a única linha da página que voltava
+                                    à unidade anônima: o resto fala em análises
+                                    rápidas, e aqui o leitor recebia um preço
+                                    unitário sem substantivo, logo abaixo de dois
+                                    números que também não tinham. Um avulso vale
+                                    exatamente uma rápida (é a mesma régua do
+                                    portão), então é isso que ele se chama. */}
                                 Faltam {numeroBr(falta)} — pacote avulso a{' '}
-                                {brl(preco)} cada = {brl(custoPacote)}
+                                {brl(preco)} por análise rápida = {brl(custoPacote)}
                                 {mensal > 0 && <> · total {brl(mensal + custoPacote)}/mês</>}
                               </p>
                             );
@@ -694,7 +702,7 @@ function SimuladorDePlano({
               imediatamente — há uma margem de cortesia por nossa conta. Passada ela, elas
               continuam saindo num motor mais simples e <strong>sem auditoria profunda</strong>,
               até a renovação. Para não chegar lá, dá para comprar um pacote avulso a qualquer
-              momento — créditos de pacote não expiram no reset.
+              momento — o que vem no pacote não expira na virada do mês.
             </p>
           </div>
         </div>
@@ -715,7 +723,7 @@ function linhaQuantidade(
   lim: LimitePublico | undefined,
 ): string {
   if (!lim) return tier.quantidade;
-  if (lim.ilimitado) return 'Créditos ilimitados';
+  if (lim.ilimitado) return 'Análises rápidas ilimitadas';
   const n = lim.monthly_limit;
 
   // CRÉDITO EM TODOS OS PLANOS, inclusive nos gratuitos.
@@ -992,6 +1000,37 @@ function featuresAcumuladas(nivel: number): string[] {
 //
 // Separados, cada item carrega o próprio substantivo e cada cadeia fica com
 // uma quantidade só — que é o que estas cadeias existem para modelar.
+/** Recursos que NÃO entram na tabela de recursos porque viraram LIMITES.
+ *
+ *  Dossiês e empresas são quantidade, e quantidade se compara numa linha só
+ *  com um número por coluna — `linhasDeLimite` faz isso. Mantê-los aqui em
+ *  cima produzia cinco linhas negando o mesmo recurso a planos que o têm. */
+const VIRARAM_LIMITE: readonly string[] = [
+  'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
+  '30 dossiês de concorrente por dia',
+  '100 dossiês de concorrente por dia',
+  '500 dossiês de concorrente por dia',
+  'Cadastro de empresa (CNPJ) · 1 empresa',
+  'Cadastro de empresa (CNPJ) · 2 empresas',
+  'Cadastro de empresa (CNPJ) · 3 empresas',
+];
+
+// Estas strings precisam bater LETRA POR LETRA com as de `tiers`. Se alguém
+// reescrever o texto de um recurso lá em cima e esquecer daqui, o filtro para
+// de casar em silêncio e a linha confusa volta para a tabela — sem erro, sem
+// tela quebrada, só a comparação mentindo de novo. O aviso abaixo é a única
+// coisa que separa esse defeito de passar despercebido.
+if (process.env.NODE_ENV !== "production") {
+  const todas = new Set(tiers.flatMap((t) => t.features));
+  const orfas = VIRARAM_LIMITE.filter((f) => !todas.has(f));
+  if (orfas.length > 0) {
+    console.warn(
+      "[PricingSection] VIRARAM_LIMITE não corresponde a nenhum recurso de `tiers`:",
+      orfas,
+    );
+  }
+}
+
 const CADEIAS_QUE_SUBSTITUEM: readonly (readonly string[])[] = [
   [
     'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
@@ -1005,6 +1044,23 @@ const CADEIAS_QUE_SUBSTITUEM: readonly (readonly string[])[] = [
     'Cadastro de empresa (CNPJ) · 3 empresas',
   ],
 ];
+
+// A recíproca. Uma "cadeia que substitui" É, por definição, o mesmo recurso em
+// quantidades diferentes — e quantidade pertence ao bloco LIMITES, com um número
+// por coluna. Uma cadeia nova que entre aqui e não entre em VIRARAM_LIMITE
+// reintroduz exatamente as linhas "Essencial — não incluído" que este commit
+// removeu, e de novo sem quebrar nada.
+if (process.env.NODE_ENV !== "production") {
+  const soltas = CADEIAS_QUE_SUBSTITUEM.flat().filter(
+    (f) => !VIRARAM_LIMITE.includes(f),
+  );
+  if (soltas.length > 0) {
+    console.warn(
+      "[PricingSection] cadeia de substituição sem linha em LIMITES — vai voltar a aparecer como recurso negado:",
+      soltas,
+    );
+  }
+}
 
 /** O plano tem este recurso E ele ainda é o vigente (não foi substituído por um
  *  elo posterior da mesma cadeia que o plano também possua). */
@@ -1027,6 +1083,12 @@ function mapaDeRecursos(): { recurso: string; desde: number }[] {
   const visto = new Map<string, number>();
   for (const nivel of ordem) {
     for (const f of tiers.find((t) => t.tierLevel === nivel)?.features ?? []) {
+      // Quantidade não é recurso. Os elos de VIRARAM_LIMITE viraram linha
+      // única no bloco LIMITES, com um número por coluna; deixá-los aqui
+      // também faria a tabela dizer a mesma coisa duas vezes — e a versão
+      // daqui é a que mente ("Essencial — não incluído" sobre 30 dossiês
+      // por dia), porque o rótulo da linha carrega a faixa de um plano só.
+      if (VIRARAM_LIMITE.includes(f)) continue;
       if (!visto.has(f)) visto.set(f, nivel);
     }
   }
@@ -1069,7 +1131,10 @@ function TabelaComparativa({
 
   const linhasDeLimite = [
     {
-      rotulo: "Créditos por mês",
+      // A mesma palavra dos cartões. "Créditos" ficou para trás quando a
+      // cota passou a ser dita em análises rápidas — e tabela comparativa
+      // com vocabulário próprio é onde a pessoa desconfia do número.
+      rotulo: "Análises rápidas por mês",
       valor: (n: number) => {
         const l = limites?.[String(n)];
         if (!l) return "—";
@@ -1094,16 +1159,35 @@ function TabelaComparativa({
       },
     },
     {
-      rotulo: "Custo da auditoria profunda",
+      // "×4" é notação, não frase. A página inteira já diz "consome N
+      // análises"; a tabela dizendo outra coisa obriga o leitor a traduzir.
+      rotulo: "Cada auditoria profunda consome",
       valor: (n: number) => {
         const l = limites?.[String(n)];
         if (!l) return "—";
         const peso = l.peso_profunda ?? 1;
         // O peso existe no config de todo nível, mas só é acionável onde há
-        // botão de modo (conta criada). Anunciar "×4" no Teste ensinaria uma
-        // regra que aquele nível não tem como usar.
-        return peso > 1 && n >= 1 ? `×${peso}` : "—";
+        // botão de modo (conta criada). Anunciar no Teste ensinaria uma regra
+        // que aquele nível não tem como usar.
+        return peso > 1 && n >= 1 ? `${peso} análises` : "—";
       },
+    },
+    // ⚠️ QUANTIDADE É LINHA ÚNICA COM UM NÚMERO POR COLUNA.
+    // Dossiês e empresas vinham como RECURSOS, um por faixa ("5 por dia",
+    // "30 por dia", "100 por dia", "500 por dia"), e a cadeia de substituição
+    // marcava só o dono de cada faixa. Correto contra o acúmulo, ilegível na
+    // leitura: quem varria a linha do "5 por dia" via "Essencial — não
+    // incluído" sobre um plano que tem 30. Cinco linhas negando o mesmo
+    // recurso que todos têm.
+    //
+    // Aqui embaixo elas viram o que sempre foram: limites.
+    {
+      rotulo: "Dossiês de concorrente por dia",
+      valor: (n: number) => ({ [-1]: "—", 1: "5", 2: "30", 3: "100", 4: "500" }[n] ?? "—"),
+    },
+    {
+      rotulo: "Empresas cadastradas (CNPJ)",
+      valor: (n: number) => ({ [-1]: "—", 1: "—", 2: "1", 3: "2", 4: "3" }[n] ?? "—"),
     },
   ];
 
