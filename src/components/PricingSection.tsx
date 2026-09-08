@@ -47,6 +47,25 @@ interface PricingSectionProps {
 // MESMO plano. Agora vem de `/api/tiers/precos-publicos`, e o literal só
 // aparece enquanto a resposta não chega ou se ela falhar: uma página de preços
 // vazia custa mais caro que um preço com meio segundo de atraso.
+// ⚠️ ESTE ITEM VENDIA UM BLOCO DESLIGADO.
+// "motivo de inabilitação e minuta de recurso" é o bloco "Riscos de
+// Habilitação" do War Room — vulnerabilidades E minuta —, e ele INTEIRO está
+// atrás de `LAUNCH_FLAGS.minutaJuridicaOfensiva`, que é `false`. Não é meia
+// promessa: nenhuma das duas metades tem porta de entrada no lançamento.
+//
+// O que o dossiê entrega hoje é o Radar de Estratégia Competitiva —
+// inteligência de preço do órgão, evidências de preço unitário, deságio e
+// mapa de território por UF. É isso que o cartão passa a dizer.
+//
+// Mora numa constante, e não em literal, porque a MESMA string precisa
+// aparecer em `tiers`, em VIRARAM_LIMITE e em CADEIAS_QUE_SUBSTITUEM: três
+// literais que têm de mudar juntos é exatamente como esta linha volta a
+// divergir. Amarrada à flag para o texto voltar junto com o módulo, no mesmo
+// commit de 1 linha que troca `minutaJuridicaOfensiva` para `true`.
+const DOSSIE_NIVEL_1: string = LAUNCH_FLAGS.minutaJuridicaOfensiva
+  ? 'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia'
+  : 'Dossiê de concorrente — preços praticados, deságio e território · 5 por dia';
+
 const tiers = [
   {
     name: 'Teste', badge: 'NÍVEL 0', price: 'Grátis', period: '',
@@ -76,8 +95,7 @@ const tiers = [
       // comprava procurava no menu o que tinha lido na tabela de preços e
       // não encontrava. Renomear navegação sem varrer a página de vendas
       // deixa a promessa e o produto falando línguas diferentes.
-      'Sugestões por CNAE e contratos vencendo no mercado',
-      'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
+      DOSSIE_NIVEL_1,
       // ⚠️ AQUI DIZIA "1 empresa cadastrada". O backend dá ZERO:
       // `TIER_COMPANY_LIMITS[1] = 0` (config.py:95), e cadastrar a primeira
       // empresa devolve 403 em router_workspaces.py:564.
@@ -108,6 +126,20 @@ const tiers = [
     features: [
       'Agentes de mercado no laudo — concorrentes e preços',
       'Cadastro de empresa (CNPJ) · 1 empresa',
+      // ⚠️ ESTA LINHA ESTAVA NO GRATUITO, E O GRATUITO NÃO CONSEGUE USÁ-LA.
+      // As duas metades dependem de empresa cadastrada: `/feed-cnae` lê o
+      // `cnae_principal` da primeira empresa do workspace e, sem nenhuma,
+      // devolve `status: "sem_cnae"` com lista vazia; "Próximas disputas" só
+      // vira link de verdade quando `empresas.length > 0` (AppSidebar: "A
+      // exigência real é ter empresa cadastrada"). E `TIER_COMPANY_LIMITS[1]`
+      // é ZERO — o Gratuito não tem como cadastrar a primeira.
+      //
+      // O caminho inteiro era um beco: a barra lateral dizia "Configure a
+      // empresa primeiro", mandava para /profile, e /profile devolvia 403.
+      // Mesma família do "1 empresa cadastrada" que já saiu daqui.
+      //
+      // Ela nasce onde nasce a vaga de CNPJ — na linha de cima, neste plano.
+      'Sugestões por CNAE e contratos vencendo no mercado',
       '30 dossiês de concorrente por dia',
     ],
     limites: ['Editais até 80.000 caracteres', 'PDF até 15 MB'],
@@ -1006,7 +1038,7 @@ function featuresAcumuladas(nivel: number): string[] {
  *  com um número por coluna — `linhasDeLimite` faz isso. Mantê-los aqui em
  *  cima produzia cinco linhas negando o mesmo recurso a planos que o têm. */
 const VIRARAM_LIMITE: readonly string[] = [
-  'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
+  DOSSIE_NIVEL_1,
   '30 dossiês de concorrente por dia',
   '100 dossiês de concorrente por dia',
   '500 dossiês de concorrente por dia',
@@ -1033,7 +1065,7 @@ if (process.env.NODE_ENV !== "production") {
 
 const CADEIAS_QUE_SUBSTITUEM: readonly (readonly string[])[] = [
   [
-    'Dossiê de concorrente — motivo de inabilitação e minuta de recurso · 5 por dia',
+    DOSSIE_NIVEL_1,
     '30 dossiês de concorrente por dia',
     '100 dossiês de concorrente por dia',
     '500 dossiês de concorrente por dia',
