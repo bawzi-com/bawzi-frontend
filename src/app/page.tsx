@@ -702,9 +702,23 @@ const SEMAFORO_COLOR: Record<SemaforoSinal | string, string> = {
  * ("corridos" x "úteis"), que é o tipo de coisa que passa despercebido numa
  * leitura rápida e que o detector de contradições existe para pegar.
  */
-const EDITAL_EXEMPLO = `[TRECHO DE EDITAL — EXEMPLO PARA DEMONSTRAÇÃO]
-
-PREGÃO ELETRÔNICO — REGISTRO DE PREÇOS
+// ⚠️ A PRIMEIRA LINHA DAQUI ERA "[TRECHO DE EDITAL — EXEMPLO PARA
+// DEMONSTRAÇÃO]", E ELA IA DENTRO DO TEXTO ANALISADO.
+// O modelo lia, acreditava — corretamente — e devolvia no laudo:
+//
+//   "O material é apenas um trecho de exemplo e não apresenta edital integral,
+//    anexos, datas ou documentação da empresa."
+//
+// Ou seja: o botão que existe para quem chega SEM edital em mãos entregava um
+// NO-GO cuja segunda razão era a etiqueta que nós mesmos colamos no material.
+// Escrevemos a frase que afunda a própria demonstração, e ela estava no lugar
+// onde ninguém procura um problema de conversão: dentro do payload.
+//
+// O motivo do rótulo continua válido — não atribuir cláusula composta a órgão
+// real —, mas ele é informação para a PESSOA, não para o analisador. Passou a
+// viver como selo na tela (`usouExemplo`), acima da caixa, onde cumpre a mesma
+// função sem entrar na análise.
+const EDITAL_EXEMPLO = `PREGÃO ELETRÔNICO — REGISTRO DE PREÇOS
 OBJETO: Registro de preços para eventual aquisição de medicamentos de uso
 hospitalar (antibióticos, analgésicos e soluções parenterais), conforme
 quantitativos e especificações do Termo de Referência — Anexo I.
@@ -771,6 +785,9 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
 
 
   const [text, setText]       = useState('');
+  // Só para o selo da tela. Some assim que a pessoa edita o texto, senão o
+  // aviso passa a descrever um material que não é mais o exemplo.
+  const [usouExemplo, setUsouExemplo] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadMsg, setLoadMsg] = useState(LOADING_MSGS[0]);
   const [result, setResult]   = useState<TasterResult | null>(null);
@@ -1277,6 +1294,16 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               : undefined}
           >
 
+          {/* O rótulo que saiu de dentro do texto analisado. Mesma função —
+              deixar claro que a cláusula é composta e não é de órgão real —
+              sem que o analisador leia "isto é um exemplo" e reprove o
+              material por não ser um edital inteiro. */}
+          {usouExemplo && (
+            <p className="mb-2 text-[11.5px] font-bold leading-5 text-slate-500">
+              Trecho de exemplo, composto pela Bawzi — não é edital de órgão real.
+            </p>
+          )}
+
           {/* Textarea */}
           <div className="relative mb-4">
             {/* ⚠️ TRAVADO ENQUANTO ANALISA, E `readOnly` EM VEZ DE `disabled`.
@@ -1295,7 +1322,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               value={text}
               readOnly={loading}
               aria-busy={loading}
-              onChange={e => { setText(e.target.value); setError(null); }}
+              onChange={e => { setText(e.target.value); setUsouExemplo(false); setError(null); }}
               /* ⚠️ ERA 10.000 — O TETO DA AMOSTRA GRATUITA. Com ele, colar um
                  edital de 150 mil caracteres perdia 93% do documento no ato
                  do Ctrl+V, sem um pixel dizendo isso. A pessoa via um veredito
@@ -1413,7 +1440,7 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               <button
                 type="button"
                 disabled={loading}
-                onClick={() => { setText(EDITAL_EXEMPLO); setError(null); }}
+                onClick={() => { setText(EDITAL_EXEMPLO); setUsouExemplo(true); setError(null); }}
                 className="font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
               >
                 Use um trecho de exemplo
