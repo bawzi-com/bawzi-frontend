@@ -999,23 +999,126 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
       ? result.vantagens
       : [];
 
+  // ── O ACHADO ─────────────────────────────────────────────────────────────
+  //
+  // ⚠️ A TELA ABRIA COM "NO-GO · 35/100" — UM JULGAMENTO SOBRE UM CERTAME EM
+  // QUE O VISITANTE NÃO TEM INTERESSE NENHUM, e escolhido por nós quando ele
+  // usa o trecho de exemplo. A primeira impressão do motor era uma reprovação.
+  //
+  // Enquanto isso, o que de facto prova o valor — "o item 9.2 diz 30 dias
+  // corridos, o 10.2 diz 30 dias úteis, e é sobre esse prazo que incide multa
+  // diária de 0,5% do lote" — saía como um bullet entre dois, em ordem do
+  // modelo, do mesmo tamanho do ruído ao lado. Contradição entre dois artigos
+  // do mesmo edital, com dinheiro amarrado nela, é exatamente o que passa numa
+  // leitura rápida: é ISSO que a degustação existe para mostrar.
+  //
+  // A escolha abaixo é determinística e NÃO INVENTA TEXTO: o achado é um dos
+  // motivos que o modelo escreveu, citado na íntegra. O que se faz aqui é
+  // ordenar.
+  //
+  //   1. Documentação NÃO É CANDIDATA A MANCHETE — nesta tela, e só nesta.
+  //      É o pilar onde mora tanto exigência abusiva (achado legítimo) quanto
+  //      "não recebi os anexos" (nosso ponto cego), e daqui não há como
+  //      distinguir os dois: o texto de `decisao.motivos` é escrito pelo
+  //      modelo, separado do motivo do semáforo que o backend reescreve.
+  //      Na degustação o segundo caso é o NORMAL — é uma amostra de material
+  //      avulso, sempre —, então o risco de promover o ponto cego a manchete
+  //      supera o de deixar um achado documental legítimo uma linha abaixo.
+  //      Ele continua aparecendo na lista, apenas não abre a tela.
+  //   2. Entre as candidatas, gravidade do sinal (vermelho > amarelo > resto).
+  //   3. Ordem do modelo, para a escolha ser estável entre execuções.
+  //
+  // Sem candidato — só motivo de documentação, ou nenhum motivo —, `achado`
+  // fica nulo e a tela volta ao formato antigo. Promover ruído a manchete
+  // seria pior do que não ter manchete.
+  const PESO_SINAL: Record<string, number> = {
+    vermelho: 3, amarelo: 2, verde: 1, cinza: 1,
+  };
+  const PILAR_DO_ROTULO: Record<string, keyof NonNullable<TasterResult['semaforo']>> = {
+    'jurídica': 'juridica', 'juridica': 'juridica',
+    'técnica': 'tecnica', 'tecnica': 'tecnica',
+    'financeira': 'financeira',
+    'documentação': 'documentacao', 'documentacao': 'documentacao',
+  };
+
+  const achado = (() => {
+    const candidatos = motivos.map((texto, ordem) => {
+      // `[\s\S]` e não `.` com a flag `s`: o alvo do tsconfig é anterior a
+      // es2018 e a flag não compila. Mesmo efeito, sem depender do alvo.
+      const m = /^\s*([A-Za-zÀ-ÿ]+)\s*:\s*([\s\S]+)$/.exec(texto);
+      const rotulo = m ? m[1] : '';
+      const pilar = PILAR_DO_ROTULO[rotulo.toLowerCase()];
+      const sinal = pilar ? result?.semaforo?.[pilar] : undefined;
+      return {
+        rotulo: m && pilar ? rotulo : '',
+        corpo: m && pilar ? m[2].trim() : texto.trim(),
+        ordem,
+        peso: sinal ? PESO_SINAL[sinal] ?? 0 : 0,
+        ehDocumentacao: pilar === 'documentacao',
+      };
+    });
+    const elegiveis = candidatos.filter(c => !c.ehDocumentacao);
+    if (elegiveis.length === 0) return null;
+    return [...elegiveis].sort((a, b) => b.peso - a.peso || a.ordem - b.ordem)[0];
+  })();
+
+  // Os demais motivos, na ordem original, sem o que virou manchete.
+  const motivosRestantes = achado
+    ? motivos.filter((_, i) => i !== achado.ordem)
+    : motivos;
+
   // ── Estado: resultado ──
   if (result) {
     return (
       <Envelope largura="max-w-[1180px]">
-          <div className="text-center mb-10">
+          <div className="text-center mb-6">
             <p className="text-xs font-black uppercase tracking-widest text-emerald-700 mb-4">Resultado da sua análise gratuita</p>
-            <div className="flex items-center justify-center gap-3 flex-wrap mb-4">
-              <span className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-base font-black text-white ${vBg}`}>
-                {vLabel}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-slate-900 text-sm font-black" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
-                Score {score}/100
-              </span>
-            </div>
             {result.title && (
               <p className="text-slate-600 font-semibold text-sm max-w-2xl mx-auto">{result.title}</p>
             )}
+          </div>
+
+          {/* ── O ACHADO, EM PRIMEIRO ─────────────────────────────────────
+              O que estava aqui era o selo "NO-GO" em corpo grande e o
+              "Score 35/100" ao lado. Os dois julgam um CERTAME, e o visitante
+              não tem participação nenhuma nele — quando ele clica em "usar um
+              trecho de exemplo", o certame é literalmente escolhido por nós.
+              A pergunta que ele veio fazer não é "esse edital presta", é "essa
+              ferramenta me ajudaria" — e um selo vermelho responde a primeira.
+
+              Agora o topo é a coisa que só a Bawzi entrega: o achado. Texto do
+              próprio laudo, citado na íntegra, com o pilar como etiqueta. O
+              veredito continua na tela, logo abaixo, em corpo de apoio. */}
+          {achado && (
+            <div className="mx-auto mb-6 max-w-2xl rounded-2xl px-5 py-5 text-left"
+              style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
+              <p className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                O que a Bawzi encontrou
+                {achado.rotulo && (
+                  <span className="font-bold normal-case tracking-normal text-slate-400">
+                    · {achado.rotulo}
+                  </span>
+                )}
+              </p>
+              <p className="text-[15px] font-bold leading-[1.5] text-slate-800">
+                {achado.corpo}
+              </p>
+            </div>
+          )}
+
+          <div className="text-center mb-10">
+            {/* Veredito e score em segundo plano: continuam disponíveis para
+                quem quer a conclusão, sem serem a primeira coisa que a pessoa
+                lê. Menores, e depois do achado que os sustenta. */}
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest text-white ${vBg}`}>
+                {vLabel}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-slate-500 text-[11px] font-black" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
+                Score {score}/100
+              </span>
+            </div>
 
             {/* ── Sobre quanto deste documento o veredito foi dado ──────────
                 ⚠️ ISTO NÃO É LETRA MIÚDA, É O QUE SUSTENTA O VEREDITO ACIMA.
@@ -1061,18 +1164,21 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               </div>
             )}
 
-            {/* Motivos — 2 visíveis, restante desfocado */}
-            {motivos.length > 0 && (
+            {/* Motivos — `motivosRestantes`, não `motivos`: o que virou
+                manchete lá em cima sai daqui. Repetir o mesmo texto a 200px de
+                distância faria o bloco do achado parecer enfeite e a lista
+                parecer mais curta do que é. */}
+            {motivosRestantes.length > 0 && (
               <div className="space-y-2">
-                {motivos.slice(0, 2).map((m, i) => (
+                {motivosRestantes.slice(0, achado ? 1 : 2).map((m, i) => (
                   <div key={i} className="rounded-xl px-4 py-3 text-sm text-slate-700 font-medium leading-relaxed" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
                     {m}
                   </div>
                 ))}
-                {motivos.length > 2 && (
+                {motivosRestantes.length > (achado ? 1 : 2) && (
                   <div className="relative">
                     <div className="rounded-xl px-4 py-3 text-sm text-slate-700 font-medium leading-relaxed blur-sm select-none pointer-events-none" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
-                      {motivos[2]}
+                      {motivosRestantes[achado ? 1 : 2]}
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest px-3 py-1 rounded-full" style={{ background: '#0f172a', border: '1px solid #475569' }}>
