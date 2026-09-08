@@ -1171,8 +1171,22 @@ function TabelaComparativa({
         const l = limites?.[String(n)];
         if (!l) return "—";
         if (l.ilimitado) return "Ilimitado";
+        // ⚠️ NO VISITANTE, `monthly_limit` GUARDA UMA COTA DIÁRIA.
+        // `LIMIT_TIER_MINUS_1 = 1` é 1 POR DIA (contada por cookie, com teto
+        // de rede em `LIMIT_GUEST_IP_DIARIO`) — o campo tem nome mensal e
+        // valor diário só naquele nível. A célula dizia "1 por dia" embaixo de
+        // um cabeçalho "por mês", e aí a única coluna que o leitor não
+        // consegue comparar é justamente a primeira: "1 por dia" ao lado de
+        // "60" não se lê como escada, se lê como erro de digitação.
+        //
+        // O equivalente mensal vem junto, e o mecanismo fica DITO entre
+        // parênteses — porque não existe contador mensal no Visitante: o
+        // portão é diário, e 30 é a consequência dele, não um número
+        // configurado. Prometer "30 por mês" sozinho seria vender uma cota
+        // acumulável que ninguém implementou (quem não usar hoje não leva
+        // duas para amanhã).
         return n === -1
-          ? `${numeroBr(l.monthly_limit)} por dia`
+          ? `${numeroBr(l.monthly_limit * 30)} (${numeroBr(l.monthly_limit)} por dia)`
           : numeroBr(l.monthly_limit);
       },
     },

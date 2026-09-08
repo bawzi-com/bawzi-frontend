@@ -3913,7 +3913,17 @@ export default function AdminDashboard() {
                         </span>
                         <h3 className="text-base font-black text-white">{tier.label}</h3>
                         <span className="text-xs text-slate-600 font-medium">
-                          {tier.price_brl > 0 ? `R$ ${tier.price_brl}/mês` : 'Gratuito'}
+                          {/* ⚠️ TRÊS ESTADOS, NÃO DOIS. `price_brl` agora vem do
+                              Stripe e pode voltar `null` quando ele não
+                              responde. Com o teste antigo (`> 0`), `null` caía
+                              no ramo do zero e o Avançado aparecia como
+                              "Gratuito" — na mesma tela onde se decide cota por
+                              margem. Preço ausente tem de LER como ausente. */}
+                          {tier.price_brl == null
+                            ? <span className="text-amber-600">preço indisponível</span>
+                            : tier.price_brl > 0
+                              ? `${tier.price_brl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}/mês`
+                              : 'Gratuito'}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-600 font-mono bg-slate-800 px-2 py-1 rounded leading-relaxed text-right">
