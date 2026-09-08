@@ -1279,8 +1279,22 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
 
           {/* Textarea */}
           <div className="relative mb-4">
+            {/* ⚠️ TRAVADO ENQUANTO ANALISA, E `readOnly` EM VEZ DE `disabled`.
+                A análise leva segundos e a caixa continuava editável: dava para
+                apagar tudo, colar outro edital ou anexar um PDF enquanto o
+                veredito do texto ANTERIOR ainda estava a caminho. O pedido não
+                se corrompe (o texto é capturado no clique), e é justamente esse
+                o problema — a tela devolvia um Go/No-Go sobre um texto que não
+                estava mais ali, sem nada indicando a troca.
+
+                `readOnly` e não `disabled` porque o conteúdo é o edital que a
+                pessoa está esperando: `disabled` o acinzenta e o tira da ordem
+                de tabulação. Assim ele fica legível e selecionável — dá para
+                copiar de volta — e só não aceita edição. */}
             <textarea
               value={text}
+              readOnly={loading}
+              aria-busy={loading}
               onChange={e => { setText(e.target.value); setError(null); }}
               /* ⚠️ ERA 10.000 — O TETO DA AMOSTRA GRATUITA. Com ele, colar um
                  edital de 150 mil caracteres perdia 93% do documento no ato
@@ -1297,8 +1311,9 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
                  Sobre papel quente ela lê como peça de outro projeto — e é o
                  elemento central do cartão. */
               style={{
-                background: '#FAF9F5',
+                background: loading ? '#F1EFE9' : '#FAF9F5',
                 borderColor: text.length > 0 ? '#059669' : '#E5E2DC',
+                cursor: loading ? 'not-allowed' : undefined,
               }}
               placeholder="Cole aqui o texto do edital, objeto da contratação ou termo de referência..."
             />
@@ -1337,20 +1352,27 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
                 <span className="truncate">{arquivo.name}</span>
                 <button
                   type="button"
+                  disabled={loading}
                   onClick={() => { setArquivo(null); setError(null); }}
                   aria-label="Remover arquivo"
-                  className="shrink-0 font-black text-emerald-700/60 transition-colors hover:text-emerald-800"
+                  className="shrink-0 font-black text-emerald-700/60 transition-colors hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   ×
                 </button>
               </span>
             ) : (
+              /* O `<label>` dispara o input mesmo com o input desabilitado se
+                 ele continuar clicável — daí `pointer-events-none` no rótulo
+                 inteiro, e não só o `disabled` no campo. */
               <label
-                className="inline-flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold transition-colors"
+                className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[12.5px] font-bold transition-colors ${
+                  loading ? 'pointer-events-none opacity-40' : 'cursor-pointer'
+                }`}
                 style={{ background: '#FAF9F5', border: '1px solid #E5E2DC', color: '#4B5563' }}
               >
                 <input
                   type="file"
+                  disabled={loading}
                   accept="application/pdf,text/plain,.pdf,.txt"
                   className="hidden"
                   onChange={(e) => {
@@ -1390,8 +1412,9 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
               Sem um edital à mão?{' '}
               <button
                 type="button"
+                disabled={loading}
                 onClick={() => { setText(EDITAL_EXEMPLO); setError(null); }}
-                className="font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600"
+                className="font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-4 transition-colors hover:decoration-emerald-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
               >
                 Use um trecho de exemplo
               </button>
