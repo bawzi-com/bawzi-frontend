@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
-import { LogOut, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
+import { CreditCard, LogOut, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
 import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, initSession, urlDoAvatar } from '@/lib/apiClient';
 import { useTierConfig } from '@/Contexts/TierContext';
 import type { BawziUpdateEvent } from '@/lib/types';
@@ -416,6 +416,39 @@ export default function Header() {
                           <Sparkles size={16} className="shrink-0 text-slate-400" />
                           Planos e créditos
                         </Link>
+                        {/* ⚠️ ESCOLHER PLANO E CUIDAR DA ASSINATURA SÃO COISAS
+                            DIFERENTES, e só a primeira tinha entrada aqui.
+                            "Planos e créditos" leva à vitrine — comparar,
+                            subir de plano. Quem já assina e quer trocar o
+                            cartão, baixar a fatura ou cancelar não está
+                            comprando nada, e mandá-lo para a grade de preços
+                            é responder outra pergunta.
+
+                            O único caminho para a gestão era o botão
+                            "Gerenciar" do cartão de plano no fim do workspace
+                            — que, até o commit anterior, ficava POR BAIXO da
+                            barra lateral quando o menu estava aberto. Ou seja,
+                            na prática não havia caminho nenhum.
+
+                            Mesmo destino do botão daquele cartão
+                            (`handleManageSubscription`): a seção de assinatura
+                            do perfil, pelo mesmo formato de âncora que a linha
+                            "Equipe" acima já usa.
+
+                            Só aparece para quem TEM assinatura paga: no
+                            Gratuito não há o que gerenciar, e no acesso
+                            promocional a cobrança não é do cliente — nos dois
+                            casos a linha levaria a uma seção vazia. */}
+                        {Number(userTier) > 1 && !promo?.is_promo && (
+                          <Link
+                            href="/profile#sec-assinatura"
+                            role="menuitem"
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                          >
+                            <CreditCard size={16} className="shrink-0 text-slate-400" />
+                            Gerenciar assinatura
+                          </Link>
+                        )}
                         {/* ⚠️ ADMIN TAMBÉM AQUI. Fora, ele é um botão que só
                             aparece de `sm:` para cima; no celular o acesso
                             simplesmente não existia. */}
