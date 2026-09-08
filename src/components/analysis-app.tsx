@@ -1898,15 +1898,46 @@ export default function AnalysisApp() {
         </div>
 
         {/* ── PLANO ATUAL (resumo compacto) ── */}
-        <section id="planos" className="bg-white py-10 px-6 border-t border-slate-100 print:hidden">
-          <div className="max-w-[1400px] mx-auto">
-            <PricingSection
-              compact
-              onRegister={() => { setAuthMode('register'); setShowAuthModal(true); }}
-              onUpgrade={handleUpgrade}
-              onChangePlan={userTier > 1 ? setChangePlanTargetTier : undefined}
-              currentTier={userTier}
-            />
+        {/* ⚠️ ESTE BLOCO NÃO SEGUIA O LAYOUT DO RESTO DA PÁGINA, E ERRAVA DUAS
+            VEZES NO MESMO LUGAR.
+
+            1) Largura fixa em 1400px. Todo o resto alterna 1400 ↔ 1920 com
+               `sidebarHidden` (a seção principal e o próprio invólucro da
+               barra). Recolher o menu alargava a página inteira e deixava só
+               este cartão para trás, com a borda esquerda desalinhada de tudo
+               que está acima dele.
+
+            2) E o pior: ele não RESERVAVA a coluna da barra. A barra é
+               `fixed` e a grade do conteúdo compensa isso com uma segunda
+               coluna vazia (64px ou 288px) — é o que faz "abrir o menu
+               AJUSTAR o conteúdo em vez de cobri-lo", como diz o comentário
+               da grade lá em cima. Aqui essa coluna não existia, então o
+               cartão se estendia por baixo da barra: com o menu expandido,
+               288px da direita dele — onde ficam justamente os botões
+               "Gerenciar" e "Ver todos os planos" — sumiam sob o painel.
+
+            A correção é espelhar a mesma estrutura, não inventar outra: mesmo
+            interruptor de largura, mesma grade, mesma coluna vazia. Duas
+            regiões da mesma página com regras de largura próprias é como esta
+            volta a divergir. O `px-4 md:px-6` também veio junto — era `px-6`
+            fixo, e no celular a margem esquerda daqui não batia com a de cima. */}
+        <section id="planos" className="bg-white py-10 px-4 md:px-6 border-t border-slate-100 print:hidden">
+          <div className={`mx-auto transition-[max-width] duration-300 ${
+            sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
+          }`}>
+            <div className={`grid gap-8 md:gap-12 items-start print:block ${
+              sidebarHidden ? 'lg:grid-cols-[1fr_64px]' : 'lg:grid-cols-[1fr_288px]'
+            }`}>
+              <div className="w-full min-w-0 print:m-0">
+                <PricingSection
+                  compact
+                  onRegister={() => { setAuthMode('register'); setShowAuthModal(true); }}
+                  onUpgrade={handleUpgrade}
+                  onChangePlan={userTier > 1 ? setChangePlanTargetTier : undefined}
+                  currentTier={userTier}
+                />
+              </div>
+            </div>
           </div>
         </section>
       </main>
