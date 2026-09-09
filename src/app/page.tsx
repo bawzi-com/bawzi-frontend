@@ -36,6 +36,13 @@ import { publicoDaPromo } from '@/components/PromoModal';
 import { marcarEtapa, visitanteId } from '@/lib/visitante';
 import { usePrecos, type TabelaDePrecos } from '@/lib/precos';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
+// ⚠️ NÃO FORMATAR DATA DE EDITAL COM `new Date(iso).toLocaleDateString()`.
+// `datasCriticas.ts` existe para matar exatamente esse defeito e o documenta
+// com o mesmo exemplo: o prompt de extração manda usar `T00:00:00Z` quando não
+// há hora, e sem `timeZone: 'UTC'` um prazo de 15/09 imprime "14 de set." em
+// São Paulo. Erra para o lado pessimista — a pessoa descarta sozinha um edital
+// ainda vivo. A régua é única e mora lá.
+import { formatarDataCritica } from '@/lib/datasCriticas';
 
 const DECISION_SIGNALS = [
   {
@@ -674,12 +681,44 @@ interface TasterResult {
   };
   vantagens?: string[];
   desvantagens?: string[];
+  /** ⚠️ TUDO ABAIXO JÁ CHEGAVA E ERA JOGADO FORA.
+   *  Nada é removido da resposta do visitante — só a telemetria de custo é
+   *  gravada à parte. O laudo vinha inteiro e a tela mostrava veredito,
+   *  semáforo e dois motivos. Estes campos são o que um licitante usa para
+   *  decidir se a ferramenta serve: se ele se habilita, o que pode dar errado
+   *  e quando fecha o prazo. */
+  estimated_value?: string;
+  exigencias_criticas?: (string | {
+    exigencia?: string;
+    texto?: string;
+    /** Citação literal, já conferida contra o edital pelo backend. */
+    trecho_edital?: string;
+    trecho?: string;
+  })[];
+  datas_criticas?: { label: string; data_iso: string | null; urgente: boolean }[];
+  risks?: { titulo: string; descricao: string; impacto?: 'alto' | 'medio' | 'baixo' }[];
   /** Presente só quando o material enviado não coube na amostra gratuita. */
   recorte?: {
     enviados: number;
     analisados: number;
     limite: number;
   };
+}
+
+/** `exigencias_criticas` vem como string OU objeto, e no objeto o texto pode
+ *  estar em `exigencia` ou em `texto` — os dois nomes existem no backend. Ler
+ *  só um deles produziria itens em branco em parte dos laudos, que é o tipo de
+ *  falha que não quebra a tela e ninguém percebe. */
+function textoDaExigencia(item: NonNullable<TasterResult['exigencias_criticas']>[number]): string {
+  if (typeof item === 'string') return item.trim();
+  return (item?.exigencia || item?.texto || '').trim();
+}
+
+/** A citação literal, quando o backend conseguiu conferi-la contra o edital.
+ *  É ela que separa "a IA disse" de "está escrito no documento, nesta linha". */
+function trechoDaExigencia(item: NonNullable<TasterResult['exigencias_criticas']>[number]): string {
+  if (typeof item === 'string') return '';
+  return (item?.trecho_edital || item?.trecho || '').trim();
 }
 
 const SEMAFORO_LABELS: Record<string, string> = {
@@ -1099,6 +1138,16 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
   // `resumo_decisao` vinha no payload desde sempre e nunca era renderizado: o
   // veredito aparecia como uma pílula "NO-GO" sem uma linha dizendo por quê.
   // Veredito sem porquê não é análise, é palpite com selo.
+  // ── O QUE MAIS O LAUDO TROUXE ───────────────────────────────────────────
+  // Listas normalizadas uma vez, para a tela não repetir `?.filter(Boolean)`
+  // em cinco lugares e divergir num deles.
+  const exigencias = (result?.exigencias_criticas || [])
+    .filter(it => textoDaExigencia(it).length > 0);
+  const riscos = (result?.risks || [])
+    .filter(r => (r?.titulo || r?.descricao || '').trim().length > 0);
+  const datas = (result?.datas_criticas || [])
+    .filter(d => d?.label && d?.data_iso);
+
   const porqueDoVeredito = (() => {
     const d = result?.decisao;
     const cadeia = [
@@ -1246,6 +1295,127 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
                     </p>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* ── O QUE O LAUDO TROUXE, EM NÚMEROS ─────────────────────────
+                Uma linha, três contagens. É a prova mais barata de que a
+                análise tem profundidade: "12 exigências críticas" diz mais
+                sobre o trabalho feito do que qualquer adjetivo, e não gasta a
+                tela nem entrega o conteúdo. Cada número só aparece se existir —
+                contagem zero disfarçada de dado é pior que silêncio. */}
+            {(exigencias.length > 0 || riscos.length > 0 || datas.length > 0) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11.5px] font-bold text-slate-500">
+                {exigencias.length > 0 && (
+                  <span>{exigencias.length} exigência{exigencias.length > 1 ? 's' : ''} crítica{exigencias.length > 1 ? 's' : ''}</span>
+                )}
+                {riscos.length > 0 && (
+                  <><span className="text-slate-300">·</span><span>{riscos.length} risco{riscos.length > 1 ? 's' : ''} mapeado{riscos.length > 1 ? 's' : ''}</span></>
+                )}
+                {datas.length > 0 && (
+                  <><span className="text-slate-300">·</span><span>{datas.length} data{datas.length > 1 ? 's' : ''} crítica{datas.length > 1 ? 's' : ''}</span></>
+                )}
+                {result.estimated_value && (
+                  <><span className="text-slate-300">·</span><span>valor estimado {result.estimated_value}</span></>
+                )}
+              </div>
+            )}
+
+            {/* ── EXIGÊNCIAS CRÍTICAS ───────────────────────────────────────
+                Para quem licita, a primeira pergunta não é "o edital é bom", é
+                "eu me habilito". Este bloco responde isso, e é o que faltava
+                na degustação inteira.
+
+                ⚠️ COM A CITAÇÃO LITERAL QUANDO ELA EXISTE. `trecho_edital` é
+                texto conferido contra o documento pelo backend — é ele que
+                separa "a IA disse" de "está escrito no edital, nesta linha".
+                Numa tela cujo trabalho é fazer um estranho confiar no motor,
+                essa distinção vale mais que qualquer frase de venda. */}
+            {exigencias.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Exigências críticas
+                </p>
+                <div className="space-y-2">
+                  {exigencias.slice(0, 2).map((it, i) => {
+                    const trecho = trechoDaExigencia(it);
+                    return (
+                      <div key={i} className="rounded-xl px-4 py-3" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
+                        <p className="text-sm font-semibold leading-relaxed text-slate-800">
+                          {textoDaExigencia(it)}
+                        </p>
+                        {trecho && (
+                          <p className="mt-1.5 border-l-2 border-slate-200 pl-3 text-[12px] font-medium italic leading-5 text-slate-500">
+                            “{trecho}”
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {exigencias.length > 2 && (
+                    <p className="text-[11.5px] font-bold text-slate-400">
+                      + {exigencias.length - 2} exigência{exigencias.length - 2 > 1 ? 's' : ''} na análise completa
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── DATAS ─────────────────────────────────────────────────────
+                Curtas, então viram etiquetas em vez de cartões. `urgente` é
+                calculado no backend (dias ÚTEIS até a data), não aqui — a tela
+                só pinta o que já foi decidido. */}
+            {datas.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {datas.slice(0, 4).map((d, i) => (
+                  <span key={i}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] font-bold"
+                    style={d.urgente
+                      ? { background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412' }
+                      : { background: '#FFFFFF', border: '1px solid #E5E2DC', color: '#6B7280' }}>
+                    {d.urgente && <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />}
+                    {d.label}
+                    <span className="font-black">
+                      {formatarDataCritica(d.data_iso) || '—'}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* ── RISCOS ────────────────────────────────────────────────────
+                Um visível com o selo de impacto, o resto contado. O selo é o
+                que mostra que a matriz classifica, e não só lista. */}
+            {riscos.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  Riscos mapeados
+                </p>
+                <div className="rounded-xl px-4 py-3" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
+                  <p className="flex items-start gap-2 text-sm font-semibold leading-relaxed text-slate-800">
+                    {riscos[0].impacto && (
+                      <span className="mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest"
+                        style={riscos[0].impacto === 'alto'
+                          ? { background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C' }
+                          : riscos[0].impacto === 'medio'
+                            ? { background: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }
+                            : { background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#64748B' }}>
+                        {riscos[0].impacto}
+                      </span>
+                    )}
+                    <span>{riscos[0].titulo || riscos[0].descricao}</span>
+                  </p>
+                  {riscos[0].titulo && riscos[0].descricao && (
+                    <p className="mt-1.5 text-[12.5px] font-medium leading-5 text-slate-500">
+                      {riscos[0].descricao}
+                    </p>
+                  )}
+                </div>
+                {riscos.length > 1 && (
+                  <p className="mt-2 text-[11.5px] font-bold text-slate-400">
+                    + {riscos.length - 1} risco{riscos.length - 1 > 1 ? 's' : ''} na análise completa
+                  </p>
+                )}
               </div>
             )}
 
