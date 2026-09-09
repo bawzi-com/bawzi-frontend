@@ -654,6 +654,70 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
           </div>
         )}
 
+        {/* ── CARREGANDO ────────────────────────────────────────────────
+            ⚠️ O PAINEL FICAVA VAZIO. Todos os blocos abaixo — estado inicial,
+            "sem resultados", lista — exigem `!loading` ou dependem de
+            `contratos`, então durante a busca não sobrava NADA na área de
+            resultados. E esta busca vai ao PNCP: medido, uma consulta nacional
+            leva ~31s. Meio minuto de painel branco, com um botão "Cancelar" no
+            topo como única prova de que algo acontece.
+
+            Dois estados, porque são duas situações diferentes:
+
+            • PRIMEIRA BUSCA (sem lista ainda): esqueleto. Mostra a forma do que
+              vem e que o trabalho está em curso.
+
+            • RE-BUSCA (mudou UF, janela ou termo, com lista na tela): `buscar()`
+              NÃO limpa `contratos` de propósito — some com o resultado seria
+              pior. Mas a lista antiga ficava lá, intacta e sem aviso: a pessoa
+              lia números da consulta ANTERIOR como se fossem a resposta da
+              nova, e depois eles trocavam sozinhos. Agora a lista é esmaecida
+              e ganha esta faixa dizendo que está desatualizada. */}
+        {loading && (
+          <div className="mb-6">
+            <div className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+              <Loader2 size={15} className="shrink-0 animate-spin text-amber-600" />
+              <div className="min-w-0">
+                <p className="text-[12.5px] font-black text-amber-900">
+                  {contratos.length > 0
+                    ? 'Atualizando os resultados…'
+                    : `Consultando contratos de “${termo.trim()}” no PNCP…`}
+                </p>
+                {/* Dizer o tempo esperado é o que separa "está lento" de "está
+                    quebrado". A consulta nacional é a mais cara: sem UF, o
+                    PNCP devolve o país inteiro. */}
+                <p className="mt-0.5 text-[11px] font-medium text-amber-700">
+                  A consulta ao portal costuma levar alguns segundos
+                  {/* `uf` do componente, não o `ufAtiva` local de `buscar()`:
+                      aquele só existe dentro da função. O default é '' =
+                      Brasil todo, que é justamente o caso lento. */}
+                  {uf && uf !== 'BR' ? '.' : ' — buscas nacionais demoram mais que as de uma UF.'}
+                </p>
+              </div>
+            </div>
+
+            {contratos.length === 0 && (
+              <div className="space-y-3" aria-hidden>
+                {[0, 1, 2].map(i => (
+                  <div key={i} className="rounded-2xl border border-slate-100 bg-white p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-3.5 w-2/3 animate-pulse rounded bg-slate-100" />
+                        <div className="h-3 w-1/3 animate-pulse rounded bg-slate-100" />
+                      </div>
+                      <div className="h-6 w-20 shrink-0 animate-pulse rounded-lg bg-slate-100" />
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <div className="h-5 w-24 animate-pulse rounded-md bg-slate-100" />
+                      <div className="h-5 w-16 animate-pulse rounded-md bg-slate-100" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Erro */}
         {erro && (
           <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-medium">
@@ -760,7 +824,13 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
           }
 
           return (
-          <>
+          // ⚠️ ESMAECIDA E INERTE DURANTE A RE-BUSCA.
+          // A faixa de "atualizando" avisa, mas sozinha não basta: números em
+          // contraste cheio continuam LENDO como a resposta atual, e estes são
+          // da consulta anterior. Sem `pointer-events-none` a pessoa ainda
+          // clicaria em "Analisar" num contrato que a busca em curso pode
+          // remover da lista um segundo depois.
+          <div className={loading ? 'pointer-events-none opacity-40 transition-opacity' : 'transition-opacity'}>
             <div className="flex items-center justify-between mb-5">
               <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
                 {/* Conta a lista FILTRADA. Com `contratos.length` o cabeçalho
@@ -1111,7 +1181,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                 </div>
               </div>
             )}
-          </>
+          </div>
           );
         })()}
       </div>
