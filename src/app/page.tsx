@@ -652,10 +652,19 @@ interface TasterResult {
   title?: string;
   score?: number;
   classification?: string;
+  /** ⚠️ O VISITANTE CHAMA O MESMO `/api/analyze` DE TODO MUNDO.
+   *  A resposta é o laudo INTEIRO; esta interface é que só declarava quatro
+   *  campos, e o resto era descartado em silêncio. `resumo_decisao` já vinha
+   *  no payload desde sempre e nunca foi renderizado — o veredito aparecia
+   *  como uma pílula "NO-GO" sem uma linha dizendo por quê. */
   decisao?: {
     veredito?: string;
+    rotulo?: string;
     resumo_decisao?: string;
+    decisao_executiva?: string;
     motivos?: string[];
+    impeditivos?: string[];
+    condicoes_para_participar?: string[];
   };
   semaforo?: {
     tecnica?:      SemaforoSinal;
@@ -989,8 +998,20 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
   const rawVeredito  = (result?.decisao?.veredito || result?.classification || '').toUpperCase();
   const isGo         = rawVeredito.startsWith('GO') && !rawVeredito.includes('NO');
   const isNoGo       = rawVeredito.includes('NO') || rawVeredito.includes('NÃO');
-  const vBg          = isNoGo ? 'bg-red-500' : isGo && rawVeredito === 'GO' ? 'bg-emerald-500' : 'bg-amber-500';
+  // `vLabel` sobrevive só para a TELEMETRIA do funil (`marcarEtapa`), e é de
+  // propósito: mudar o rótulo gravado quebraria a comparação com todo o
+  // histórico de eventos já registrado. O que a pessoa lê é `vVerbo`.
   const vLabel       = isNoGo ? 'NO-GO' : rawVeredito === 'GO' ? 'GO' : rawVeredito || 'GO CONDICIONADO';
+  // ⚠️ VERBO, NÃO SIGLA — e a decisão não é minha, é a que o laudo já tomou.
+  // `decisionUi.rotuloCurto`, em AnalysisResults, diz textualmente: "Verbo, não
+  // sigla: é o que a pessoa lê primeiro ao abrir o laudo". O produto já
+  // concluiu que "NO-GO" é a palavra errada para um humano — e a vitrine, que
+  // fala com quem nunca viu o produto, continuava usando a sigla.
+  const vVerbo       = isNoGo ? 'Não participar'
+                     : rawVeredito === 'GO' ? 'Participar'
+                     : 'Participar com ressalva';
+  const vRail        = isNoGo ? 'border-red-600' : isGo && rawVeredito === 'GO' ? 'border-emerald-600' : 'border-amber-500';
+  const vTexto       = isNoGo ? 'text-red-800' : isGo && rawVeredito === 'GO' ? 'text-emerald-800' : 'text-amber-800';
   const score        = result?.score ?? 0;
 
   const motivos: string[] = result?.decisao?.motivos?.length
@@ -1067,6 +1088,35 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
     ? motivos.filter((_, i) => i !== achado.ordem)
     : motivos;
 
+  // ── O PORQUÊ DO VEREDITO ────────────────────────────────────────────────
+  //
+  // Mesma cadeia de prioridade do `VereditoTopo` do laudo real: num "não
+  // participar" o que fecha a porta é o impeditivo; num condicionado, a
+  // condição que falta; senão, a síntese da decisão. Só a posição de
+  // `motivos[0]` sai da cadeia, porque nesta tela ele já é a manchete e
+  // repeti-lo aqui diria a mesma frase duas vezes em 200px.
+  //
+  // `resumo_decisao` vinha no payload desde sempre e nunca era renderizado: o
+  // veredito aparecia como uma pílula "NO-GO" sem uma linha dizendo por quê.
+  // Veredito sem porquê não é análise, é palpite com selo.
+  const porqueDoVeredito = (() => {
+    const d = result?.decisao;
+    const cadeia = [
+      isNoGo ? d?.impeditivos?.[0] : '',
+      !isNoGo && rawVeredito !== 'GO' ? d?.condicoes_para_participar?.[0] : '',
+      d?.resumo_decisao,
+      d?.decisao_executiva,
+      // Sem manchete (só motivo de documentação), o primeiro motivo volta a
+      // ser um porquê válido — não há duplicação a evitar.
+      achado ? '' : motivos[0],
+    ];
+    const escolhido = cadeia.find(t => typeof t === 'string' && t.trim().length > 0) || '';
+    // Guarda contra a cadeia devolver exatamente o texto que já está na
+    // manchete por outro caminho (o modelo repete a mesma frase em campos
+    // diferentes com frequência).
+    return achado && escolhido.trim() === achado.corpo.trim() ? '' : escolhido.trim();
+  })();
+
   // ── Estado: resultado ──
   if (result) {
     return (
@@ -1107,17 +1157,52 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             </div>
           )}
 
-          <div className="text-center mb-10">
-            {/* Veredito e score em segundo plano: continuam disponíveis para
-                quem quer a conclusão, sem serem a primeira coisa que a pessoa
-                lê. Menores, e depois do achado que os sustenta. */}
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              <span className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] font-black uppercase tracking-widest text-white ${vBg}`}>
-                {vLabel}
-              </span>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-slate-500 text-[11px] font-black" style={{ background: '#FFFFFF', border: '1px solid #E5E2DC' }}>
-                Score {score}/100
-              </span>
+          <div className="mb-10">
+            {/* ── O VEREDITO COMO O LAUDO O MOSTRA ───────────────────────────
+                ⚠️ AQUI HAVIA DUAS PÍLULAS: "NO-GO" e "Score 35/100". Nenhuma
+                das duas dizia POR QUÊ — e veredito sem porquê não é análise, é
+                palpite com selo. A pessoa via uma reprovação sem um argumento
+                para avaliar, o que é a definição de não conseguir julgar a
+                ferramenta.
+
+                E o dado para dizer o porquê ESTAVA na resposta o tempo todo: o
+                visitante chama o mesmo `/api/analyze` de todo mundo e recebe o
+                laudo inteiro. Era a interface `TasterResult` que declarava
+                quatro campos e descartava o resto — `resumo_decisao`,
+                `impeditivos` e `condicoes_para_participar` chegavam a cada
+                análise e nunca foram renderizados.
+
+                O formato é o do `VereditoTopo` do laudo real: trilho colorido,
+                verbo, o porquê mais afiado e o score com a barra neutra. Não é
+                uma versão inventada para a vitrine — é a primeira coisa que a
+                pessoa veria dentro do produto. */}
+            <div className={`mx-auto flex max-w-2xl flex-wrap items-start gap-x-8 gap-y-4 border-l-4 pl-5 text-left ${vRail}`}>
+              <div className="min-w-0 flex-1">
+                <p className={`text-[26px] font-semibold leading-[1.05] tracking-tight md:text-[30px] ${vTexto}`}>
+                  {vVerbo}
+                </p>
+                {porqueDoVeredito && (
+                  <p className="mt-2 max-w-[52ch] text-sm font-medium leading-relaxed text-slate-700">
+                    {porqueDoVeredito}
+                  </p>
+                )}
+              </div>
+
+              {/* ⚠️ O NÚMERO É NEUTRO, como no laudo. Ele já teve cor própria
+                  lá dentro, calculada por cortes que não eram os do veredito —
+                  era daí que vinha o laudo âmbar com pílula vermelha. */}
+              <div className="shrink-0">
+                <p className="text-2xl font-semibold leading-none tabular-nums text-slate-900">
+                  {score}<span className="text-sm font-medium text-slate-400">/100</span>
+                </p>
+                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-400">
+                  Viabilidade
+                </p>
+                <div className="mt-2 h-1 w-24 overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-full rounded-full bg-slate-900"
+                    style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
+                </div>
+              </div>
             </div>
 
             {/* ── Sobre quanto deste documento o veredito foi dado ──────────
