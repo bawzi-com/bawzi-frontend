@@ -246,7 +246,17 @@ export default function Header() {
   ];
 
   return (
-    <div className="sticky top-0 z-50 print:hidden">
+    <div className="max-sm:contents sm:sticky sm:top-0 sm:z-50 print:hidden">
+      {/* ⚠️ NO CELULAR ESTE INVÓLUCRO DEIXA DE EXISTIR COMO CAIXA.
+          Abaixo de `sm`, barra da campanha + cabeçalho fixos somavam ~30% da
+          tela — o H1 chegava cortado e a barra (4 linhas) acompanhava a
+          rolagem inteira. A barra precisa rolar com a página e o cabeçalho
+          precisa continuar fixo. `sticky` no cabeçalho SOZINHO não bastaria:
+          um elemento sticky só gruda dentro dos limites do pai, e o pai aqui
+          acaba logo depois do cabeçalho. `max-sm:contents` tira este div da
+          árvore de caixas, os filhos passam a ser filhos diretos do layout, e
+          o `max-sm:sticky` do <header> abaixo passa a valer para a página
+          inteira. De `sm` em diante nada muda: o bloco é sticky como sempre. */}
       {/* ⚠️ A BARRA DE PROMOÇÃO MORA AQUI DENTRO, E NÃO NO `layout.tsx`.
           Ela ficava como irmã DEPOIS deste bloco, com `z-index: auto` — e este
           bloco é `sticky z-50`. Medido no navegador: com 34px de rolagem, a
@@ -261,7 +271,7 @@ export default function Header() {
           então não fica preso neste contexto de empilhamento. */}
       <PromoBanner />
       {promoStrip}
-    <header className="bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all">
+    <header className="max-sm:sticky max-sm:top-0 max-sm:z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all">
       <div className="max-w-[1400px] mx-auto px-6 py-4 flex justify-between items-center">
         
         {/* LOGÓTIPO */}

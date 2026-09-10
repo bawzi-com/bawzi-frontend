@@ -44,7 +44,7 @@ import { usePathname } from 'next/navigation';
 import { X, Copy, Check, ArrowRight, Tag } from 'lucide-react';
 import { campanhaAtual } from '@/lib/campanha';
 import { getAuthToken, initSession } from '@/lib/apiClient';
-import { type DadosPromo, paletaPromo, rotaAceitaPopup } from '@/lib/promo';
+import { type DadosPromo, paletaPromo } from '@/lib/promo';
 import { carregarPromoPublica } from '@/lib/promoPublica';
 import PromoModal, { ctaDaPromo, publicoDaPromo, urlDeLogin } from './PromoModal';
 
@@ -186,17 +186,23 @@ export default function PromoBanner() {
     return publico === 'logado' ? !deslogado : deslogado;
   }, [banner, deslogado]);
 
-  useEffect(() => {
-    if (!banner || !eCampanha) return;
-    // ⚠️ `podeVer` ENTRA COMO MAIS UMA CONDIÇÃO, NÃO NO LUGAR DAS OUTRAS. O
-    // público bater não dispensa o consentimento resolvido, a rota que aceita
-    // pop-up nem o "já fechei nesta sessão" — cada uma dessas linhas existe
-    // por um motivo próprio, documentado onde ela mora.
-    if (podeVer !== true || !consentimentoResolvido) return;
-    if (!rotaAceitaPopup(pathname)) return;
-    if (leu('session', chavePopup)) return;
-    setModalAberto(true);
-  }, [banner, eCampanha, podeVer, consentimentoResolvido, pathname, chavePopup]);
+  // ⚠️ O POP-UP NÃO ABRE MAIS SOZINHO (10/09/2026).
+  //
+  // Ele abria na primeira visita, por cima do herói, antes de a pessoa ler uma
+  // linha sobre o produto. Para quem chega de anúncio, a primeira imagem da
+  // Bawzi era um cupom de um produto que ela ainda não conhecia — e o reflexo
+  // é fechar sem ler. O próprio `page.tsx` já dizia onde a campanha vale
+  // alguma coisa: "DEPOIS do veredito: ali a pessoa já tem a prova na mão e
+  // está decidindo se cria conta". O CTA daquela tela carrega o bônus e as
+  // vagas restantes. O pop-up competia com esse gancho, e chegava antes.
+  //
+  // A barra fica. O modal continua montado abaixo e `setModalAberto` continua
+  // existindo, para que abri-lo por um clique (e não por chegada) seja uma
+  // linha; o que saiu foi só o gatilho automático. Se for religar, o gatilho
+  // era: `podeVer === true && consentimentoResolvido &&
+  // rotaAceitaPopup(pathname) && !leu('session', chavePopup)` — e
+  // `rotaAceitaPopup` (lib/promo.ts) documenta, rota a rota, os momentos em
+  // que interromper é errado. Vale ler antes.
 
   // A barra some se já tiver sido fechada — por sessão na campanha, para
   // sempre no cupom.
@@ -250,7 +256,7 @@ export default function PromoBanner() {
 
       {podeVer === true && !dismissed && (
         <div className={`relative w-full ${c.bar} print:hidden`} role="banner" aria-label="Oferta promocional">
-          <div className="max-w-[1400px] mx-auto pl-4 pr-11 py-2.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-center">
+          <div className="max-w-[1400px] mx-auto pl-4 pr-11 py-2.5 flex max-sm:flex-nowrap max-sm:gap-x-2.5 flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-center">
 
             {/* Etiqueta de desconto */}
             {banner.discount_label && (
@@ -260,8 +266,14 @@ export default function PromoBanner() {
               </span>
             )}
 
-            {/* Título + descrição */}
-            <span className={`text-[13px] font-bold leading-tight ${c.text}`}>
+            {/* Título + descrição.
+                ⚠️ `max-sm:hidden` EM TUDO QUE NÃO É SELO, CÓDIGO OU BOTÃO.
+                No celular a barra quebrava em quatro linhas e ficava fixa;
+                agora é uma linha — "BONUS · BAWZI50 · Criar conta →" — que
+                rola com a página. A oferta inteira (o que dá, quantas vagas,
+                até quando) continua aparecendo onde pesa: no CTA logo depois
+                do veredito da degustação. */}
+            <span className={`max-sm:hidden text-[13px] font-bold leading-tight ${c.text}`}>
               {banner.title}
               {banner.description && (
                 <span className={`ml-1.5 font-medium ${c.subtext}`}>{banner.description}</span>
@@ -288,7 +300,7 @@ export default function PromoBanner() {
                 campanha e o banner some sozinho, em vez de continuar anunciando um
                 bônus que o cadastro vai negar depois da conta criada. */}
             {banner.origem === 'campanha' && typeof banner.vagas_restantes === 'number' && (
-              <span className={`shrink-0 text-[11px] font-black tabular-nums ${c.subtext}`}>
+              <span className={`max-sm:hidden shrink-0 text-[11px] font-black tabular-nums ${c.subtext}`}>
                 {banner.vagas_restantes === 1
                   ? 'última vaga'
                   : `${banner.vagas_restantes.toLocaleString('pt-BR')} vagas restantes`}
@@ -298,7 +310,7 @@ export default function PromoBanner() {
 
             {/* Countdown */}
             {countdown && (
-              <span className={`shrink-0 text-[11px] font-black tabular-nums ${c.subtext}`}>
+              <span className={`max-sm:hidden shrink-0 text-[11px] font-black tabular-nums ${c.subtext}`}>
                 expira em {countdown}
               </span>
             )}
@@ -320,7 +332,7 @@ export default function PromoBanner() {
             {mostraLogin && (linkCadastro ? (
               <a
                 href={urlDeLogin(banner)}
-                className={`shrink-0 inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-[12px] font-bold transition-all ${c.copy}`}
+                className={`max-sm:hidden shrink-0 inline-flex items-center gap-1 rounded-lg border px-3 py-1 text-[12px] font-bold transition-all ${c.copy}`}
               >
                 Já tenho conta
               </a>

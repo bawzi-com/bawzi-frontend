@@ -411,27 +411,18 @@ export default function LandingPage() {
           definido logo abaixo; devolvê-lo à página é uma linha. */}
       <ProvaReal />
 
-      {/* Simulação — análise de exemplo */}
-      {/* ── Prova · direção D ────────────────────────────────────────────
-          Continua o papel do herói, com a mesma escala tipográfica. O título
-          deixa de descrever a peça ("veja uma análise em ação") e passa a dizer
-          o que a pessoa recebe — o laudo abaixo já mostra o resto, e legenda
-          que explica o que está logo ali embaixo é texto que ninguém lê. */}
-      <section style={{ background: '#F3F2EE', borderTop: '1px solid #EAE7E1' }}>
-        <div className="mx-auto max-w-[1280px] px-6 py-16 md:py-20">
-          <div className="mb-9 max-w-[620px]">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: '#047857' }}>
-              É isto que você recebe
-            </p>
-            <h2 className="mt-4 text-[30px] font-black leading-[1.1] tracking-[-0.02em] md:text-[34px]" style={{ color: '#111827' }}>
-              Um veredito, com o motivo e o que fazer em seguida.
-            </h2>
-          </div>
-          <div className="mx-auto max-w-5xl">
-            <OutputCard />
-          </div>
-        </div>
-      </section>
+      {/* ⚠️ A SIMULAÇÃO FICTÍCIA SAIU DAQUI (10/09/2026).
+          Era o `<OutputCard />` — "Go condicionado · 68 · Município de São
+          Paulo · exemplo fictício" — sob o título "É isto que você recebe".
+          Enquanto o taster do herói devolvia só um selo e dois motivos, ela
+          fazia sentido: era o único lugar da página mostrando o formato do
+          laudo. O taster passou a renderizar o veredito REAL no formato do
+          laudo real, com o porquê, o score, exigências, riscos e datas. A
+          partir daí, um exemplo inventado 800px abaixo de um resultado
+          verdadeiro enfraquecia os dois: o real parecia recorte, o fictício
+          parecia o produto.
+          O componente continua definido lá embaixo, como a TrustBar;
+          devolvê-lo à página é uma linha. */}
 
       <section id="problema" className="scroll-mt-24 py-16 md:py-20" style={{ background: '#FBFAF7', borderTop: '1px solid #EAE7E1' }}>
         <div className="mx-auto max-w-[1180px] px-6">
