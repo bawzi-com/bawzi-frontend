@@ -415,16 +415,36 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       return;
     }
     if (pareceNcp) {
+      // ⚠️ TIMEOUT PRÓPRIO, E MAIOR. `apiFetch` desiste em 20s — certo para
+      // o resto do app, curto para isto: a consulta pelo número vai à API de
+      // consulta do PNCP, medida em ~31s por chamada num dia normal, e o
+      // portal tem dias piores (o selo "PNCP OFFLINE" no topo é esse dia).
+      // Na primeira tentativa real, o frontend desistiu antes de o backend
+      // receber resposta, e a tela mostrou "Fetch is aborted" — o texto cru
+      // do navegador, que não diz nem o que aconteceu nem o que fazer.
+      // `options.signal` substitui o timer interno do apiFetch.
+      const PACIENCIA_MS = 75_000;
+      const controle = new AbortController();
+      const timer = setTimeout(() => controle.abort(), PACIENCIA_MS);
       try {
-        const res = await apiFetch(`${API_URL}/api/pncp/por-ncp?ncp=${encodeURIComponent(termoNcp)}`);
+        const res = await apiFetch(
+          `${API_URL}/api/pncp/por-ncp?ncp=${encodeURIComponent(termoNcp)}`,
+          { signal: controle.signal },
+        );
         const data = await res.json();
         if (!res.ok) throw new Error(mensagemDeErro(data.detail, 'Não encontrei esse edital no PNCP.'));
         setResults([...(data.data || [])]);
         setHydrationKey(k => k + 1);
       } catch (err: any) {
         if (err instanceof SessionExpiredError) { clearSession(); return; }
-        setError(err.message);
+        // O sinal é nosso, então a pergunta é ao sinal — não ao formato da
+        // exceção, que muda de navegador para navegador ("Fetch is aborted"
+        // no Safari, "signal is aborted" no Chrome).
+        setError(controle.signal.aborted
+          ? `O PNCP não respondeu em ${PACIENCIA_MS / 1000} segundos. O portal está lento agora — o selo no topo diz o estado dele. Espere um pouco e tente de novo; o número está guardado no campo.`
+          : err.message);
       } finally {
+        clearTimeout(timer);
         setIsSearching(false);
       }
       return;
