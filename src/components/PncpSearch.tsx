@@ -95,6 +95,14 @@ export default function PncpSearch({
   const [orgaoDescartados, setOrgaoDescartados] = useState(0);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [forceExact, setForceExact] = useState(false);
+  // ⚠️ MODO EXPLÍCITO, ALÉM DA DETECÇÃO AUTOMÁTICA. A detecção pelo formato
+  // do número funciona, mas é invisível: ninguém descobre que o campo aceita
+  // o NCP até tentar. E se o texto colado vier com um caractere estranho (um
+  // hífen tipográfico, um espaço duro), a regex não casa e a pessoa cai na
+  // busca por termo sem saber por quê. Com o interruptor ligado, o campo
+  // muda de cara e a busca vai SEMPRE pelo número — e diz o que espera se o
+  // texto não parecer um.
+  const [porNumero, setPorNumero] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [results, setResults] = useState<PncpItem[]>([]);
@@ -388,12 +396,27 @@ const UFS: readonly { sigla: string; nome: string }[] = [
     // não há ambiguidade com termo de busca. Sem mercado nem regional aqui:
     // um edital não é um mercado. E sem o filtro de vigência da lista — quem
     // colou o número pediu ESTE edital, e o cartão mostra a data real.
+    // Copiado do portal, de um PDF ou de um e-mail, o número chega com hífen
+    // tipográfico (‐ ‑ – —), espaço duro ou zero-width no meio. Nenhum deles
+    // é visível, e qualquer um derruba a regex. Normaliza antes de testar e
+    // manda a forma limpa para o servidor.
+    const termoNcp = termo
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, '-')
+      .replace(/[\u00a0\u200b\u200c\u200d\ufeff]/g, '')
+      .trim();
     const pareceNcp =
-      /^\s*\d{14}-\d-\d{1,6}\/\d{4}\s*$/.test(termo) ||
-      /pncp\.gov\.br\/(?:app\/editais|compras)\/\d{14}\/\d{4}\/\d{1,6}/i.test(termo);
+      /^\d{14}-\d-\d{1,6}\/\d{4}$/.test(termoNcp) ||
+      /pncp\.gov\.br\/(?:app\/editais|compras)\/\d{14}\/\d{4}\/\d{1,6}/i.test(termoNcp);
+    if (porNumero && !pareceNcp) {
+      // Modo ligado e texto que não é número: dizer o formato aqui, antes de
+      // qualquer rede, vale mais que uma lista de outros editais.
+      setError('Com "Buscar por número" ligado, cole o número de controle do PNCP — ex.: 92787118000120-1-000861/2026 — ou o link do edital no portal.');
+      setIsSearching(false);
+      return;
+    }
     if (pareceNcp) {
       try {
-        const res = await apiFetch(`${API_URL}/api/pncp/por-ncp?ncp=${encodeURIComponent(termo)}`);
+        const res = await apiFetch(`${API_URL}/api/pncp/por-ncp?ncp=${encodeURIComponent(termoNcp)}`);
         const data = await res.json();
         if (!res.ok) throw new Error(mensagemDeErro(data.detail, 'Não encontrei esse edital no PNCP.'));
         setResults([...(data.data || [])]);
@@ -1044,7 +1067,11 @@ const UFS: readonly { sigla: string; nome: string }[] = [
               type="text" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="O que você fornece — ou o número do edital do PNCP"
+              placeholder={porNumero
+                ? 'Número de controle do PNCP — ex.: 92787118000120-1-000861/2026'
+                : 'O que você fornece — ou o número do edital do PNCP'}
+              inputMode={porNumero ? 'text' : undefined}
+              spellCheck={porNumero ? false : undefined}
               className="block w-full h-full pl-11 pr-4 bg-transparent border-none text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-0 sm:text-sm"
             />
           </div>
@@ -1219,6 +1246,27 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                 não achar, a lista volta vazia.
               </span>
             </Tooltip>
+
+            {/* ── Buscar por número ──────────────────────────────────────
+                Sugestão do Marcelo, 10/09/2026, depois de colar o NCP e
+                receber uma lista de outros editais: "talvez uma flag buscar
+                por código/número". A detecção automática já existia e
+                funcionava — mas invisível, e sem dizer nada quando não
+                casava. Um interruptor com nome faz as duas coisas. */}
+            <label className="ml-3 flex items-center gap-2.5 cursor-pointer group min-w-0 border-l border-slate-200 pl-3">
+              <div className="relative flex items-center justify-center">
+                <input
+                  type="checkbox"
+                  checked={porNumero}
+                  onChange={(e) => { setPorNumero(e.target.checked); setError(''); }}
+                  className="peer sr-only"
+                />
+                <div className="w-9 h-5 bg-slate-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600 transition-colors"></div>
+              </div>
+              <span className="text-xs font-bold text-slate-500 group-hover:text-slate-700 transition-colors">
+                Buscar por número <span className="opacity-60">— cole o NCP ou o link do edital</span>
+              </span>
+            </label>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
