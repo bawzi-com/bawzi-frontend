@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 // A régua de créditos anunciada na landing sai da mesma fonte que o portão
 // aplica (`/api/tiers/config`), não de texto digitado. Ver `SavingsCalculator`.
-import { useTierConfig } from '../Contexts/TierContext';
+import { useTierConfig, type ReguaInfo } from '../Contexts/TierContext';
+import { unidadeCota } from '@/lib/unidadeCota';
 import Link from 'next/link';
 // HeroFeed/HeroCards saíram: eram importados e nunca renderizados nesta
 // página (feature construída e órfã). Os componentes continuam no repo;
@@ -131,16 +132,35 @@ const PLANOS = [
   {
     nome: 'Essencial',
     publico: 'Para começar com controle',
-    preco: 'R$ 79',
+    preco: 'R$ 149',
     nivel: 'Nível 2',
     cor: 'from-sky-500 to-indigo-500',
     destaque: false,
-    itens: ['Radar PNCP e central de decisões', 'Plano de ação pós-decisão', 'Perfil da empresa por CNPJ/UF', 'Priorização entre editais'],
+    // ⚠️ DOIS ITENS DAQUI JÁ ERAM DO GRATUITO, E UM ESTAVA NO PLANO ERRADO.
+    // "Radar PNCP e central de decisões" e "Priorização entre editais" são do
+    // nível 1 (a barra lateral marca os dois como "sem nível", e o
+    // PricingSection lista "Central de decisões, priorização e gestão do
+    // fluxo" no Gratuito). Vendê-los aqui inflava o degrau do Essencial com
+    // coisas que a conta grátis já tem — e escondia o que ele de fato
+    // acrescenta, que é a EMPRESA: a vaga de CNPJ e tudo que depende dela.
+    //
+    // "Sugestões por CNAE" estava no Profissional. Ela precisa de empresa
+    // cadastrada (`/feed-cnae` lê o CNAE da primeira empresa do workspace), e
+    // a primeira vaga de CNPJ é DESTE plano — mesma correção feita no
+    // PricingSection, onde a linha saiu do Gratuito por não caber lá.
+    //
+    // Cada item abaixo espelha o `tiers[2].features` do PricingSection, que é
+    // a lista revisada. Duas listas com fatos diferentes é como a vitrine
+    // volta a discordar da tabela de preços.
+    itens: ['Cadastro da empresa (CNPJ) — 1 empresa',
+            'Sugestões por CNAE e contratos a vencer no mercado',
+            'Agente de mercado no laudo — concorrentes e preços',
+            '30 dossiês de concorrente por dia'],
   },
   {
     nome: 'Profissional',
     publico: 'Para operação recorrente',
-    preco: 'R$ 197',
+    preco: 'R$ 299',
     nivel: 'Nível 3',
     cor: 'from-emerald-500 to-teal-500',
     destaque: true,
@@ -154,18 +174,32 @@ const PLANOS = [
     //    `router_analyses.py` fecha em `max(agent_count, 3)` para tier >= 3.
     //    O card de preços (PricingSection) já dizia "terceiro agente" — eram
     //    duas contagens da mesma coisa, e esta era a errada.
-    itens: ['Sugestões por CNAE', 'Alertas do PNCP',
+    // "Sugestões por CNAE" desceu para o Essencial (ver comentário lá). O que
+    // este nível acrescenta é o terceiro agente e os alertas — e "3 agentes"
+    // passa a dizer QUAL é o terceiro, que é a informação que vende.
+    itens: ['Parecer jurídico no laudo — terceiro agente',
+            'Alertas do PNCP (e-mail + sino)',
             ...(LAUNCH_FLAGS.capital ? ['Fôlego financeiro da disputa'] : []),
-            '3 agentes de IA em paralelo'],
+            '2 empresas cadastradas · 100 dossiês por dia'],
   },
   {
     nome: 'Avançado',
     publico: 'Para times de alta disputa',
-    preco: 'R$ 497',
+    preco: 'R$ 699',
     nivel: 'Nível 4',
     cor: 'from-amber-500 to-orange-500',
     destaque: false,
-    itens: ['Pipeline de renovações', 'War Room de concorrentes', 'Simulador tático de preços', 'Suporte prioritário'],
+    // ⚠️ "Pipeline de renovações" e "War Room" NÃO SÃO DESTE NÍVEL.
+    // O pipeline (Próximas disputas) abre para quem tem empresa cadastrada —
+    // Essencial em diante. O War Room é o dossiê de concorrente, que até o
+    // Gratuito tem (5 por dia). Como diferenciais do plano mais caro, os dois
+    // eram promessa de coisa que o cliente já tinha dois degraus abaixo. O
+    // que o Avançado acrescenta de verdade é o simulador, o volume de
+    // dossiês, a terceira empresa e o suporte — como no PricingSection.
+    itens: ['Simulador tático de preços na proposta',
+            '500 dossiês de concorrente por dia',
+            '3 empresas cadastradas',
+            'Suporte prioritário'],
   },
 ];
 
@@ -194,6 +228,27 @@ export default function LandingPage() {
   // como as duas cópias divergem.
   // Preço dos cards: vem do Stripe, com o literal de PLANOS como reserva.
   const precos = usePrecos();
+
+  // ⚠️ OS CARDS DA HOME NÃO DIZIAM QUANTAS ANÁLISES CADA PLANO DÁ.
+  // Quatro colunas de funcionalidades e nenhum número de volume — sendo que
+  // os planos se distinguem, antes de tudo, por volume (5 → 60 → 130 → 320).
+  // Quem lia via quatro pacotes de recursos e tinha de abrir /plans para
+  // descobrir a única coisa que decide qual deles cabe na rotina dele.
+  //
+  // Mesma fonte da tabela de preços: `/api/tiers/limites-publicos`, que lê o
+  // `get_tier_config()` que o portão usa. Número em dois lugares diverge; aqui
+  // ele vem do mesmo lugar. Sem resposta, a linha simplesmente não aparece —
+  // reserva escrita à mão é como o "5 análises por mês" virou mentira.
+  const [limitesHome, setLimitesHome] = useState<Record<string, {
+    monthly_limit: number; ilimitado: boolean; peso_profunda?: number;
+  }> | null>(null);
+  const { regua: reguaHome } = useTierConfig();
+  useEffect(() => {
+    fetch(`${API_URL}/api/tiers/limites-publicos`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.tiers) setLimitesHome(d.tiers); })
+      .catch(() => { /* servidor fora: os cards ficam sem a linha de cota */ });
+  }, []);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -569,6 +624,39 @@ export default function LandingPage() {
                   {p.sufixo && (
                     <span className="text-sm font-medium text-slate-400">{p.sufixo}</span>
                   )}
+                  {(() => {
+                    const n = Number(nivel.replace(/\D/g, '')) || 1;
+                    const l = limitesHome?.[String(n)];
+                    if (!l) return null;
+                    if (l.ilimitado) {
+                      return <p className="mt-1.5 text-[12.5px] font-bold text-slate-600">Análises ilimitadas</p>;
+                    }
+                    // A mesma palavra da tabela de preços, decidida pela
+                    // mesma função: "análise rápida" quando há multiplicador
+                    // de profunda, "crédito" quando a régua por custo está
+                    // ligada. Escrever "análises" aqui à mão recriaria as
+                    // duas moedas que `unidadeCota` existe para evitar.
+                    const reguaDoNivel: ReguaInfo = {
+                      tipo: reguaHome?.tipo ?? 'fixa',
+                      caracteres_por_credito: reguaHome?.caracteres_por_credito ?? null,
+                      peso_profunda: l.peso_profunda ?? null,
+                    };
+                    const peso = l.peso_profunda ?? 1;
+                    return (
+                      <p className="mt-1.5 text-[12.5px] font-bold text-slate-600">
+                        {l.monthly_limit.toLocaleString('pt-BR')} {unidadeCota(reguaDoNivel, l.monthly_limit)}
+                        {n === 1 ? ' grátis' : ''} por mês
+                        {/* De nível 1 em diante, como em /plans: o Gratuito
+                            também faz profunda (peso 4 numa cota de 5 = uma).
+                            Só o Visitante não tem botão de modo. */}
+                        {peso > 1 && n >= 1 && (
+                          <span className="block text-[11px] font-medium text-slate-400">
+                            cada auditoria profunda consome {peso}
+                          </span>
+                        )}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <ul className="mb-6 flex-1 space-y-3">
                   {itens.map(item => (
@@ -1629,8 +1717,8 @@ function TasterSection({ modo = 'secao' }: { modo?: 'secao' | 'heroi' }) {
             {guestLimit === null
               ? 'Análise gratuita · sem cadastro'
               : usadas > 0
-                ? `${guestLimit - usadas} de ${guestLimit} créditos restantes hoje · sem cadastro`
-                : `${guestLimit} crédito${guestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro`}
+                ? `${guestLimit - usadas} de ${guestLimit} análises restantes hoje · sem cadastro`
+                : `${guestLimit} análise${guestLimit !== 1 ? 's' : ''} grátis por dia · sem cadastro`}
           </span>
           {modo === 'secao' && (
             <>
@@ -2028,15 +2116,38 @@ function FAQ() {
  * único cujo valor o comprador não tem opinião formada. Meia hora é generoso
  * contra nós — reduz a economia que estamos alegando. */
 const HORAS_PARA_LER_LAUDO = 0.5;
-/** Plano mais barato pago. Serve de referência do "já se paga?". */
-const PLANO_MAIS_BARATO = 79;
+/** Reserva do plano pago mais barato, para o "já se paga?" enquanto o Stripe
+ *  não responde. ⚠️ ERA 79, CRAVADO — e a escada foi para 149 em 07/09/2026.
+ *  A calculadora seguiu dizendo "cobre 16× o plano mais barato (R$ 79/mês)"
+ *  quando a conta real era 8× de R$ 149: o retorno prometido estava DOBRADO,
+ *  na seção que existe para o comprador fazer a conta. E a 400px dali os
+ *  cards já mostravam R$ 149, lidos do Stripe. Dois preços na mesma página,
+ *  e o errado era o que multiplicava. Agora o valor vem de `usePrecos()`, a
+ *  mesma leitura dos cards; este número só serve enquanto ela não chega. */
+const PLANO_MAIS_BARATO_RESERVA = 149;
 
 function SavingsCalculator() {
   // A régua vem do backend porque ela é uma chave no Admin. Escrita à mão
   // aqui, a frase "1 crédito a cada 50.000 caracteres" continuaria na landing
   // depois de a cobrança ter mudado — e é a primeira conta que um comprador
   // faz antes de assinar. Ver `TierContext.regua`.
+  //
+  // ⚠️ E FOI EXATAMENTE ISSO QUE ACONTECEU, PELA PORTA QUE O COMENTÁRIO ACIMA
+  // NÃO VIGIAVA. A guarda distinguia régua POR CUSTO de régua FIXA — e a fixa
+  // deixou de depender de tamanho em 07/09/2026 (1 análise = 1 da cota,
+  // `modos.custo_em_creditos`). O ramo "fixa" continuou imprimindo "1 crédito
+  // a cada 50.000 caracteres" porque `caracteres_por_credito` continua
+  // existindo no config, só não cobra mais nada. O texto abaixo descreve a
+  // régua que de fato debita, e aponta para os cards, onde a cota de cada
+  // plano agora aparece.
   const { regua } = useTierConfig();
+  const precosCalc = usePrecos();
+  const planoMaisBarato = (() => {
+    const pagos = [2, 3, 4]
+      .map(n => precosCalc?.[String(n)]?.centavos)
+      .filter((c): c is number => typeof c === 'number' && c > 0);
+    return pagos.length ? Math.min(...pagos) / 100 : PLANO_MAIS_BARATO_RESERVA;
+  })();
   const [editais, setEditais] = useState(12);
   const [horas, setHoras] = useState(3);
   const [custoHora, setCustoHora] = useState(85);
@@ -2065,7 +2176,7 @@ function SavingsCalculator() {
   const economiaMes = Math.round(horasMes * custoHora);
   const economiaAno = economiaMes * 12;
   const analysesPerDay = Math.max(1, Math.ceil(editais / 22));
-  const jaSePaga = economiaMes >= PLANO_MAIS_BARATO;
+  const jaSePaga = economiaMes >= planoMaisBarato;
 
   const setClampedValue = (
     setter: (value: number) => void,
@@ -2205,19 +2316,18 @@ function SavingsCalculator() {
                  style={{ background: '#FFFCF2', border: '1px solid #F0E9D8', color: '#57534E' }}>
                 Com {editais} editais por mês, essa estimativa cobre{' '}
                 <strong style={{ color: '#B45309' }}>
-                  {Math.floor(economiaMes / PLANO_MAIS_BARATO)}× o plano mais barato
+                  {Math.floor(economiaMes / planoMaisBarato)}× o plano mais barato
                 </strong>{' '}
-                (R$ {PLANO_MAIS_BARATO}/mês). Qual plano atende o seu volume depende do
-                tamanho dos editais —{' '}
+                (R$ {planoMaisBarato.toLocaleString('pt-BR')}/mês).{' '}
                 {regua.tipo === 'custo'
-                  ? 'cada análise custa os créditos que ela consome, e o número aparece antes de você enviar.'
-                  : `a régua é 1 crédito a cada ${(regua.caracteres_por_credito ?? 50000).toLocaleString('pt-BR')} caracteres analisados.`}
+                  ? 'Qual plano atende o seu volume depende do tamanho dos editais: cada análise custa os créditos que ela consome, e o número aparece antes de você enviar.'
+                  : 'Qual plano atende o seu volume depende de quantos editais você analisa por mês: cada análise rápida consome 1 da cota, a auditoria profunda consome mais — a cota de cada plano está nos cards abaixo.'}
               </p>
             ) : (
               <p className="mt-4 rounded-xl px-4 py-3 text-xs font-semibold leading-6"
                  style={{ background: '#F6F5F2', border: '1px solid #E7E4DE', color: '#57534E' }}>
                 Nesse volume a economia estimada ({formatCurrency(economiaMes)}/mês) ainda fica
-                abaixo do plano mais barato (R$ {PLANO_MAIS_BARATO}/mês). Vale começar pelo{' '}
+                abaixo do plano mais barato (R$ {planoMaisBarato.toLocaleString('pt-BR')}/mês). Vale começar pelo{' '}
                 <strong style={{ color: '#166534' }}>plano gratuito</strong> e voltar aqui quando
                 o volume subir.
               </p>
@@ -2340,7 +2450,11 @@ function OutputCard({ className = '' }: { className?: string }) {
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-3">
-              {['4 agentes', '84% confiança', 'minutos'].map((item) => (
+              {/* ⚠️ ERA "4 agentes". O card do Profissional já tinha sido
+                  corrigido de 4 para 3 ("eram duas contagens da mesma coisa,
+                  e esta era a errada") — esta era a TERCEIRA cópia do mesmo
+                  número, e ficou. `agent_count` máximo é 3 (tier_config.py). */}
+              {['3 agentes', '84% confiança', 'minutos'].map((item) => (
                 <div key={item} className="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
                   <p className="text-sm font-black text-slate-950">{item}</p>
                 </div>
