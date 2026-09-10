@@ -376,6 +376,37 @@ const UFS: readonly { sigla: string; nome: string }[] = [
     setError('');
     setMarketData(null);
 
+    // ── Número de controle ou link do portal: vai direto no edital ─────────
+    // ⚠️ EXISTIA UM BURACO ENTRE "TENHO O NÚMERO" E "ANALISAR". O campo só
+    // aceitava termo. Quem chegava com o NCP em mãos — do próprio PNCP, de um
+    // e-mail, de um colega — tinha de adivinhar palavras do objeto, acertar a
+    // UF, abrir os filtros, digitar o CNPJ do órgão e torcer para o
+    // otimizador de termos não reescrever a busca. Quatro editais publicados
+    // no dia, número na mão, e a resposta era "não consigo localizar".
+    //
+    // O número tem formato inconfundível (14 dígitos-1-6 dígitos/ano), então
+    // não há ambiguidade com termo de busca. Sem mercado nem regional aqui:
+    // um edital não é um mercado. E sem o filtro de vigência da lista — quem
+    // colou o número pediu ESTE edital, e o cartão mostra a data real.
+    const pareceNcp =
+      /^\s*\d{14}-\d-\d{1,6}\/\d{4}\s*$/.test(termo) ||
+      /pncp\.gov\.br\/(?:app\/editais|compras)\/\d{14}\/\d{4}\/\d{1,6}/i.test(termo);
+    if (pareceNcp) {
+      try {
+        const res = await apiFetch(`${API_URL}/api/pncp/por-ncp?ncp=${encodeURIComponent(termo)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(mensagemDeErro(data.detail, 'Não encontrei esse edital no PNCP.'));
+        setResults([...(data.data || [])]);
+        setHydrationKey(k => k + 1);
+      } catch (err: any) {
+        if (err instanceof SessionExpiredError) { clearSession(); return; }
+        setError(err.message);
+      } finally {
+        setIsSearching(false);
+      }
+      return;
+    }
+
     try {
       const ufParam = ufVal ? `&uf=${encodeURIComponent(ufVal)}` : '';
       const exactParam = forceExact ? `&force_exact=true` : '';
@@ -1013,7 +1044,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
               type="text" 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="O que você fornece: material, serviço ou segmento"
+              placeholder="O que você fornece — ou o número do edital do PNCP"
               className="block w-full h-full pl-11 pr-4 bg-transparent border-none text-slate-900 font-medium placeholder-slate-400 focus:outline-none focus:ring-0 sm:text-sm"
             />
           </div>
