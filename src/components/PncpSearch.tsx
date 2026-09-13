@@ -12,7 +12,8 @@ import Tooltip from './Tooltip';
 import ActiveContextSwitcher from './ActiveContextSwitcher';
 import CnaeMismatchModal from './CnaeMismatchModal';
 import { API_URL, apiFetch, SessionExpiredError, clearSession, mensagemDeErro } from '@/lib/apiClient';
-import { checarAderenciaObjetoEmpresa } from '@/lib/cnaeMatch';
+import { checarAderenciaObjetoEmpresa, type CnaeMatchResult } from '@/lib/cnaeMatch';
+import { descricaoFitBase, ordenarRadar, rotuloFit, type FitBase, type FitNegocio } from '@/lib/radarFit';
 import { resolveActiveCompany, getCompanyDisplayName } from '@/lib/activeContext';
 import type { Empresa } from '@/lib/types';
 
@@ -33,6 +34,8 @@ interface PncpItem {
   data_divulgacao?: string;
   data_inicio?: string;
   data_fim?: string;
+  /** Fit com o ramo da empresa ativa, medido no backend (só com sessão). */
+  fit_negocio?: FitNegocio | null;
   [key: string]: any;
 }
 
@@ -99,6 +102,9 @@ export default function PncpSearch({
   // "site" no objeto. Sem este número, zero por descarte e zero por "não
   // existe" seriam a mesma tela, com conselhos opostos.
   const [objetoDescartados, setObjetoDescartados] = useState(0);
+  /** Base do fit de negócio da última busca (carteira × cadastro) — `null`
+   *  quando a lista veio sem fit (visitante, empresa sem cadastro, falha). */
+  const [fitBase, setFitBase] = useState<FitBase | null>(null);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [forceExact, setForceExact] = useState(false);
   // ⚠️ MODO EXPLÍCITO, ALÉM DA DETECÇÃO AUTOMÁTICA. A detecção pelo formato
@@ -475,8 +481,16 @@ const UFS: readonly { sigla: string; nome: string }[] = [
 
       const ufAtivo = detectedUf ? detectedUf.trim().toUpperCase() : '';
 
+      // 🎯 A empresa ativa vai junto nas duas buscas: o backend devolve, por
+      // edital, um fit com o ramo dela (carteira no PNCP, senão cadastro) e a
+      // tela ORDENA por ele dentro de cada grupo regional. Sem sessão ou sem
+      // empresa o parâmetro não vai, e a lista fica como sempre foi.
+      const empresaParam = empresaAtiva?.cnpj
+        ? `&empresa_cnpj=${encodeURIComponent(String(empresaAtiva.cnpj))}`
+        : '';
+
       // 1. Busca principal (UF e cidade viram filtros REAIS na API do PNCP)
-      const reqNacional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${orgaoParam}${exactParam}`);
+      const reqNacional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}${ufParam}${munParam}${orgaoParam}${exactParam}${empresaParam}`);
       // Inteligência de mercado só faz sentido com termo definido.
       //
       // ⚠️ O `market-score` NÃO recebe o filtro de órgão, e é intencional: ele
@@ -491,7 +505,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       // 2. A PINÇA: só ativa se não há filtro de cidade E não há UF manual
       let reqRegional = null;
       if ((!ufVal || ufVal === '') && ufAtivo && !munId && !munNome) {
-        reqRegional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${orgaoParam}${exactParam}`).catch(() => null);
+        reqRegional = apiFetch(`${API_URL}/api/pncp/buscar?q=${encodeURIComponent(termo)}&uf=${ufAtivo}${orgaoParam}${exactParam}${empresaParam}`).catch(() => null);
       }
 
       // Dispara tudo
@@ -518,6 +532,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       const descartadosObjeto =
         (dataEditais as { descartados_objeto?: number })?.descartados_objeto ?? 0;
       setObjetoDescartados(descartadosObjeto);
+      setFitBase((dataEditais as { fit_base?: FitBase | null })?.fit_base ?? null);
 
       let encontrados: PncpItem[] = dataEditais.data || dataEditais.items || dataEditais.oportunidades || [];
 
@@ -542,17 +557,14 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       }
 
       // ==========================================================
-      // 📍 ORDENAÇÃO MILITAR (GARANTIA FINAL)
+      // 📍 ORDENAÇÃO MILITAR (GARANTIA FINAL) + 🎯 RAMO DA EMPRESA
       // ==========================================================
-      if ((!ufVal || ufVal === '') && ufAtivo) {
-        encontrados = encontrados.sort((a, b) => {
-          const siglaA = String(a.uf || '').trim().toUpperCase();
-          const siglaB = String(b.uf || '').trim().toUpperCase();
-          if (siglaA === ufAtivo && siglaB !== ufAtivo) return -1;
-          if (siglaB === ufAtivo && siglaA !== ufAtivo) return 1;
-          return 0;
-        });
-      }
+      // A regionalidade manda primeiro (só quando o usuário NÃO escolheu UF:
+      // com UF escolhida todos são da mesma UF e o critério some). Dentro de
+      // cada grupo, o fit com o ramo da empresa ativa: nível, depois score.
+      // Empate mantém a ordem recebida — a data. Sem fit nos itens a função
+      // devolve exatamente a ordem de antes de 13/09/2026.
+      encontrados = ordenarRadar(encontrados, (!ufVal || ufVal === '') ? ufAtivo : '');
 
       // ──────────────────────────────────────────────────────────────
       // 🛡️ FILTRO FINAL CLIENTE: elimina editais com prazo vencido
@@ -908,8 +920,18 @@ const UFS: readonly { sigla: string; nome: string }[] = [
   // ── Checagem de CNAE antes de disparar uma análise individual ───────────
   // Alerta preventivo: não bloqueia, só confirma antes de gastar o crédito
   // quando o objeto do edital não parece ter relação com o negócio cadastrado.
+  // O fit do backend (carteira + cadastro + sinônimos) enxerga mais que a
+  // heurística local. Quando ele diz "alto", a tela não pode perguntar "parece
+  // fora do seu ramo, tem certeza?" num card que acabou de receber o selo "Do
+  // seu ramo". Nos demais níveis (médio inclusive — "sites da Câmara" num
+  // edital de microfones é médio) a heurística local decide, como antes.
+  const aderenciaParaAnalise = (edital: PncpItem): CnaeMatchResult =>
+    edital.fit_negocio?.nivel === 'alto'
+      ? { compativel: true, indeterminado: false, termosEncontrados: edital.fit_negocio.termos || [] }
+      : checarAderenciaObjetoEmpresa(edital.objeto, empresaAtiva);
+
   const dispararAnaliseUnica = (edital: PncpItem) => {
-    const resultado = checarAderenciaObjetoEmpresa(edital.objeto, empresaAtiva);
+    const resultado = aderenciaParaAnalise(edital);
     // Log de diagnóstico: ajuda a entender, no console do navegador, por que
     // o alerta de CNAE apareceu ou não apareceu num teste específico.
     console.debug('[cnaeMatch]', {
@@ -917,6 +939,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       cnaeDescricao: empresaAtiva?.cnae_descricao || null,
       coreBusiness: empresaAtiva?.core_business || null,
       objeto: edital.objeto,
+      fitBackend: edital.fit_negocio ?? null,
       resultado,
     });
     if (!resultado.indeterminado && !resultado.compativel) {
@@ -952,7 +975,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
     if (selected.size === 0) return;
     const editaisSelecionados = results.filter(e => selected.has(e.id || e.link));
     const foraDoCnae = editaisSelecionados.filter((e) => {
-      const { compativel, indeterminado } = checarAderenciaObjetoEmpresa(e.objeto, empresaAtiva);
+      const { compativel, indeterminado } = aderenciaParaAnalise(e);
       return !indeterminado && !compativel;
     });
     if (foraDoCnae.length > 0) {
@@ -1486,6 +1509,15 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                   · {objetoDescartados} sem o termo no objeto, descartado{objetoDescartados > 1 ? 's' : ''}
                 </span>
               )}
+              {fitBase?.fonte && (
+                <span
+                  title={descricaoFitBase(fitBase)}
+                  className="text-[10px] text-violet-300 font-medium block mt-1 relative z-10"
+                >
+                  🎯 ordenados pelo ramo de {fitBase.empresa || 'sua empresa'}
+                  {fitBase.fonte === 'carteira' ? ` · ${fitBase.carteira} contrato${fitBase.carteira === 1 ? '' : 's'} no PNCP` : ' · pelo cadastro'}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1586,7 +1618,10 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                 style={bulkMode ? { cursor: 'pointer' } : undefined}
               >
                 <div className="flex justify-between items-start mb-4">
-                  <div className="flex gap-2 items-center">
+                  {/* `flex-wrap`: a fileira ganhou mais um selo (o do ramo) e,
+                      sem quebra, num card estreito os selos saíam pela direita
+                      por cima do valor. */}
+                  <div className="flex flex-wrap gap-2 items-center">
                     {/* Checkbox em modo bulk */}
                     {bulkMode && (
                       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${isSelected ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 bg-white'}`}>
@@ -1642,6 +1677,29 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                         </span>
                       </span>
                     )}
+                    {/* 🎯 O SELO DO RAMO: explica por que este card subiu.
+                        Só "alto" e "médio" ganham selo — um "fora do seu ramo"
+                        em 80% dos cards seria ruído. Os termos que casaram vão
+                        no título e, resumidos, no próprio selo. */}
+                    {(() => {
+                      const rotulo = rotuloFit(edital.fit_negocio);
+                      if (!rotulo) return null;
+                      return (
+                        <span
+                          title={`${rotulo.texto}${rotulo.termos ? ` — casou em: ${rotulo.termos}` : ''}${edital.fit_negocio?.fonte === 'carteira' ? ' (pela carteira da empresa no PNCP)' : ' (pelo cadastro da empresa)'}`}
+                          className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border shadow-sm animate-in fade-in zoom-in duration-500 ${
+                            rotulo.tom === 'alto'
+                              ? 'bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 border-violet-200'
+                              : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          {rotulo.tom === 'alto' ? '🎯 ' : '≈ '}{rotulo.texto}
+                          {rotulo.termos && (
+                            <span className="ml-1 font-semibold normal-case tracking-normal opacity-80">· {rotulo.termos}</span>
+                          )}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {valorNum > 0 ? (
                     <span className="text-sm font-black text-slate-900 bg-slate-50 border border-slate-200 px-3 py-1 rounded-lg shadow-sm shrink-0">

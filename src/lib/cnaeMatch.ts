@@ -64,7 +64,7 @@ const GRUPOS_SINONIMOS: string[][] = [
   ['hospi', 'saude', 'clini', 'enfer', 'ambul', 'cirur', 'odont', 'labor', 'medic', 'farma', 'remed', 'fisio', 'terap', 'reabi', 'ortop', 'fonoa'],
   ['alime', 'comes', 'nutri', 'meren', 'hortf', 'refei', 'gener'],
   ['limpe', 'higie', 'sanea', 'desin'],
-  ['infor', 'tecno', 'softw', 'hardw', 'sistm', 'digit', 'compu'],
+  ['infor', 'tecno', 'softw', 'hardw', 'siste', 'digit', 'compu'],
   ['const', 'engen', 'obras', 'refor', 'predi'],
   ['veicu', 'autom', 'transp', 'frota', 'combu'],
   ['educa', 'escol', 'ensin', 'pedag', 'didat'],
