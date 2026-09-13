@@ -32,7 +32,12 @@ interface TierContextProps {
 export interface ReguaInfo {
   tipo: 'fixa' | 'custo';
   caracteres_por_credito: number | null;
+  /** O peso do menor plano pago. Desde 07/09/2026 os pesos DIFEREM por plano
+   *  (4 · 7 · 10) — para imprimir a régua, use `peso_por_plano`. */
   peso_profunda: number | null;
+  /** O peso da auditoria profunda em cada plano vendido, na ordem dos tiers.
+   *  Vazio na régua por custo, e enquanto a API não responde. */
+  peso_por_plano: { tier: number; nome: string; peso_profunda: number }[];
 }
 
 // Valores de segurança (Fallbacks)
@@ -66,7 +71,7 @@ const fallbackTierNames: Record<number, string> = {
 // número desatualizado; errar para o outro anuncia uma fórmula que o backend
 // não está usando.
 const fallbackRegua: ReguaInfo = {
-  tipo: 'fixa', caracteres_por_credito: 50000, peso_profunda: 4,
+  tipo: 'fixa', caracteres_por_credito: 50000, peso_profunda: 4, peso_por_plano: [],
 };
 
 // Criar o Contexto
@@ -149,6 +154,14 @@ export function TierProvider({ children }: { children: ReactNode }) {
             peso_profunda:
               typeof data.regua.peso_profunda === 'number'
                 ? data.regua.peso_profunda : null,
+            peso_por_plano: Array.isArray(data.regua.peso_por_plano)
+              ? data.regua.peso_por_plano
+                  .filter((p: { tier?: unknown; nome?: unknown; peso_profunda?: unknown }) =>
+                    typeof p?.tier === 'number' && typeof p?.nome === 'string'
+                    && typeof p?.peso_profunda === 'number' && p.peso_profunda >= 1)
+                  .map((p: { tier: number; nome: string; peso_profunda: number }) =>
+                    ({ tier: p.tier, nome: p.nome, peso_profunda: p.peso_profunda }))
+              : [],
           });
         }
       } catch {

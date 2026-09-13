@@ -515,7 +515,23 @@ function SectionAnalise() {
 function SectionCreditos() {
   const { regua } = useTierConfig();
   const porCusto = regua.tipo === 'custo';
-  const peso = regua.peso_profunda ?? 4;
+  // ⚠️ O PESO NÃO É UM NÚMERO SÓ. Desde 07/09/2026 a auditoria profunda pesa
+  // 4, 7 ou 10 conforme o plano, e esta página imprimia o do tier 2 como "o
+  // fator do seu plano" — para um cliente do Avançado, que paga 10. Página
+  // pública não tem sessão, então não sabe qual é "o seu plano": a única
+  // frase honesta cita os três. `peso_profunda` (singular) fica só como
+  // reserva enquanto a lista não chegou.
+  const planos = regua.peso_por_plano.filter((p) => p.tier >= 2);
+  const pesos = planos.map((p) => p.peso_profunda);
+  const pesoUnico = pesos.length > 0 && pesos.every((x) => x === pesos[0])
+    ? pesos[0]
+    : (pesos.length === 0 ? (regua.peso_profunda ?? 4) : null);
+  const algumPesoMaiorQue1 = pesoUnico !== null ? pesoUnico > 1 : pesos.some((x) => x > 1);
+  // "4 créditos no Essencial, 7 no Profissional e 10 no Avançado" — a unidade
+  // só no primeiro; repeti-la três vezes é o que fazia a frase engasgar.
+  const listaPesos = (valor: (peso: number) => number, unidade = 'créditos') => planos
+    .map((p, i) => `${valor(p.peso_profunda)}${i === 0 ? ` ${unidade}` : ''} no ${p.nome}`)
+    .reduce((acc, parte, i, arr) => acc + (i === 0 ? '' : i === arr.length - 1 ? ' e ' : ', ') + parte, '');
 
   return (
     <>
@@ -558,9 +574,11 @@ function SectionCreditos() {
           </P>
           <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-sm font-bold text-slate-800">
-              {peso > 1
-                ? <>Análise rápida: 1 crédito · Auditoria profunda: {peso} créditos</>
-                : <>1 crédito por análise, em qualquer modo</>}
+              {!algumPesoMaiorQue1
+                ? <>1 crédito por análise, em qualquer modo</>
+                : pesoUnico !== null
+                  ? <>Análise rápida: 1 crédito · Auditoria profunda: {pesoUnico} créditos</>
+                  : <>Análise rápida: 1 crédito · Auditoria profunda: {listaPesos((n) => n)}</>}
             </p>
             <p className="mt-1 text-sm text-slate-600">
               O tamanho do edital não entra na conta: até o teto do seu plano, um edital
@@ -598,17 +616,21 @@ function SectionCreditos() {
           enxerga.{' '}
           {porCusto
             ? 'Custa mais porque faz mais chamadas e usa os modelos mais capazes do seu plano — quanto mais, aparece no botão antes de você confirmar.'
-            : peso > 1
-              ? `Custa ${peso} créditos — o fator do seu plano.`
-              : 'Custa o mesmo que a rápida neste plano.'}</LI>
+            : !algumPesoMaiorQue1
+              ? 'Custa o mesmo que a rápida.'
+              : pesoUnico !== null
+                ? `Custa ${pesoUnico} créditos — o fator do plano.`
+                : `Custa o fator do plano: ${listaPesos((n) => n)}.`}</LI>
       </UL>
       <Callout type="tip">
         <strong>Aprofundar um laudo que você já rodou paga só a diferença.</strong>{' '}
         {porCusto
           ? 'Se a rápida custou 2 créditos e a auditoria completa custa 14, você paga 12. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.'
-          : peso > 1
-            ? `A rápida custou 1 crédito e a auditoria completa custa ${peso}: você paga ${peso - 1}. Se a rápida saiu em cortesia (nada foi debitado), não há o que abater e a auditoria custa ${peso}. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`
-            : 'Neste plano os dois modos custam 1 crédito, e aprofundar também.'}
+          : !algumPesoMaiorQue1
+            ? 'Os dois modos custam 1 crédito, e aprofundar também.'
+            : pesoUnico !== null
+              ? `A rápida custou 1 crédito e a auditoria completa custa ${pesoUnico}: você paga ${pesoUnico - 1}. Se a rápida saiu em cortesia (nada foi debitado), não há o que abater e a auditoria custa ${pesoUnico}. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`
+              : `A rápida custou 1 crédito e a auditoria completa custa o fator do plano, então você paga o fator menos 1: ${listaPesos((n) => n - 1)}. Se a rápida saiu em cortesia (nada foi debitado), não há o que abater e a auditoria custa o fator inteiro. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`}
       </Callout>
       <P>
         O <strong>parecer técnico-jurídico</strong> não depende do modo: ele é liberado a partir do

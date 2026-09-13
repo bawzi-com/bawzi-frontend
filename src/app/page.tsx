@@ -631,6 +631,7 @@ export default function LandingPage() {
                       tipo: reguaHome?.tipo ?? 'fixa',
                       caracteres_por_credito: reguaHome?.caracteres_por_credito ?? null,
                       peso_profunda: l.peso_profunda ?? null,
+                      peso_por_plano: [],
                     };
                     const peso = l.peso_profunda ?? 1;
                     return (
