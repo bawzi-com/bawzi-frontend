@@ -1165,6 +1165,43 @@ export default function AnalysisApp() {
   }
 
 
+  // ── O painel do menu (desktop): UM markup, dois lugares ────────────────
+  // Logado: dentro da camada `fixed`, que persegue a rolagem (ver a camada,
+  // abaixo do grid). Anônimo: em fluxo, na própria coluna do grid — a camada
+  // fixa cobria o hero de marketing (ver a coluna reservada, no grid). Uma
+  // constante para os dois, senão o botão de recolher e as props do
+  // AppSidebar viram duas cópias que divergem na primeira correção.
+  const menuEmFluxo = !isCheckingAuth && !(token && userData);
+  const painelMenu = (
+    <div className={`pointer-events-auto relative transition-[width] duration-200 ease-out ${
+      sidebarHidden ? 'w-16' : 'w-72'
+    }`}>
+      <button
+        type="button"
+        onClick={() => setSidebarHidden(v => !v)}
+        title={sidebarHidden ? 'Abrir o menu' : 'Recolher para o trilho de ícones'}
+        aria-label={sidebarHidden ? 'Abrir o menu' : 'Recolher menu'}
+        aria-expanded={!sidebarHidden}
+        className="absolute -left-3 top-7 z-40 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-md transition-all hover:scale-105 hover:border-slate-300 hover:text-slate-700 active:scale-95"
+      >
+        {sidebarHidden ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
+      </button>
+
+      <AppSidebar
+        token={token}
+        userData={userData}
+        currentTier={currentTier}
+        activeTab={activeTab}
+        onSetActiveTab={setActiveTab}
+        onNotificacaoAberta={abrirNotificacao}
+        renovacoesCount={renovacoesCount}
+        onNotifCountChange={setNotifCount}
+        onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
+        colapsado={sidebarHidden}
+      />
+    </div>
+  );
+
   /* ⚠️ `overflow-x-clip` NA RAIZ, E NÃO `hidden` — É O QUE PERMITE O MENU FIXO.
      `overflow-x: hidden` obriga o `overflow-y` a computar `auto`: a <div> raiz
      vira contêiner de rolagem, e todo `position: sticky` abaixo dela passa a
@@ -1839,15 +1876,38 @@ export default function AnalysisApp() {
             )}
 
             {/* Desktop: sidebar normal — some quando o laudo da Gestão ou o painel de resultados pede mais espaço */}
-            {/* ⚠️ ESTA COLUNA É SÓ O ESPAÇO RESERVADO — a barra de verdade é
-                desenhada fora do grid, logo abaixo, em camada `fixed`.
-                Motivo: `sticky` gruda apenas DENTRO da caixa do pai, e o pai
-                aqui é a coluna do grid, que termina antes do fim da página
-                (há a faixa de planos e o rodapé depois dela). Medido: a barra
-                grudava a 112px durante todo o conteúdo e soltava aos ~1400px
-                de scroll, com 430px de página ainda por rolar. "Sempre
-                visível" não admite esse último trecho. */}
-            <div aria-hidden className="hidden lg:block" />
+            {/* ⚠️ LOGADO, ESTA COLUNA É SÓ O ESPAÇO RESERVADO — a barra de
+                verdade é desenhada fora do grid, logo abaixo, em camada
+                `fixed`. Motivo: `sticky` gruda apenas DENTRO da caixa do pai,
+                e o pai aqui é a coluna do grid, que termina antes do fim da
+                página (há a faixa de planos e o rodapé depois dela). Medido:
+                a barra grudava a 112px durante todo o conteúdo e soltava aos
+                ~1400px de scroll, com 430px de página ainda por rolar.
+                "Sempre visível" não admite esse último trecho.
+
+                ⚠️ ANÔNIMO, A BARRA MORA AQUI, EM FLUXO. A camada `fixed`
+                começa a 112px do topo da JANELA em qualquer rolagem — e no
+                topo da página do visitante está o hero de marketing, que
+                ocupa a largura toda e não reserva coluna nenhuma. Resultado
+                medido em 13/09/2026, em 1568px: o cartão "Laudo multiagente"
+                — o exemplo de laudo, a peça de venda do hero — ficava com a
+                metade direita escondida embaixo do menu, junto com o selo
+                "GO condicionado". Para quem não tem sessão o menu é o convite
+                de entrar e pouco mais; ele não precisa perseguir a rolagem, e
+                a página do visitante é curta o bastante para o `sticky`
+                dentro da coluna bastar. */}
+            {/* `self-stretch`: o grid é `items-start`, e com isso a coluna
+                encolheria à altura do próprio painel — `sticky` não teria
+                por onde andar e viraria estático (medido: o painel rolava
+                junto com a página). Esticada à altura da linha, a coluna é
+                o trilho do sticky. */}
+            <div aria-hidden={!menuEmFluxo} className="hidden lg:block lg:self-stretch">
+              {menuEmFluxo && (
+                <div className="sticky top-28">
+                  {painelMenu}
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
@@ -1861,41 +1921,17 @@ export default function AnalysisApp() {
             `pointer-events-none` na camada e `auto` só na barra: a faixa
             invisível cobre a largura toda da janela e engoliria cliques do
             conteúdo se não fosse transparente ao mouse. */}
-        <div className={`pointer-events-none fixed inset-x-0 top-28 z-30 hidden lg:block print:hidden ${
-          sidebarHidden ? 'max-w-none' : ''
-        }`}>
-          <div className={`mx-auto flex justify-end px-4 md:px-6 transition-[max-width] duration-300 ${
-            sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
+        {!menuEmFluxo && (
+          <div className={`pointer-events-none fixed inset-x-0 top-28 z-30 hidden lg:block print:hidden ${
+            sidebarHidden ? 'max-w-none' : ''
           }`}>
-            <div className={`pointer-events-auto relative transition-[width] duration-200 ease-out ${
-              sidebarHidden ? 'w-16' : 'w-72'
+            <div className={`mx-auto flex justify-end px-4 md:px-6 transition-[max-width] duration-300 ${
+              sidebarHidden ? 'max-w-[1920px]' : 'max-w-[1400px]'
             }`}>
-              <button
-                type="button"
-                onClick={() => setSidebarHidden(v => !v)}
-                title={sidebarHidden ? 'Abrir o menu' : 'Recolher para o trilho de ícones'}
-                aria-label={sidebarHidden ? 'Abrir o menu' : 'Recolher menu'}
-                aria-expanded={!sidebarHidden}
-                className="absolute -left-3 top-7 z-40 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-md transition-all hover:scale-105 hover:border-slate-300 hover:text-slate-700 active:scale-95"
-              >
-                {sidebarHidden ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-              </button>
-
-              <AppSidebar
-                token={token}
-                userData={userData}
-                currentTier={currentTier}
-                activeTab={activeTab}
-                onSetActiveTab={setActiveTab}
-                onNotificacaoAberta={abrirNotificacao}
-                renovacoesCount={renovacoesCount}
-                onNotifCountChange={setNotifCount}
-                onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-                colapsado={sidebarHidden}
-              />
+              {painelMenu}
             </div>
           </div>
-        </div>
+        )}
 
         {/* ── PLANO ATUAL (resumo compacto) ── */}
         {/* ⚠️ ESTE BLOCO NÃO SEGUIA O LAYOUT DO RESTO DA PÁGINA, E ERRAVA DUAS
