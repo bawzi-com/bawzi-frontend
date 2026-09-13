@@ -353,7 +353,15 @@ const UFS: readonly { sigla: string; nome: string }[] = [
 
   const formatCurrency = (value: number | undefined | null) => {
     if (value === undefined || value === null || value === 0) {
-      return "A Apurar (Sigiloso)"; 
+      // ⚠️ ERA "A Apurar (Sigiloso)". "Sigiloso" é um estado jurídico
+      // (orçamento sigiloso, Lei 14.133) — e este zero aparece também quando
+      // a API de busca simplesmente não trouxe o valor e a hidratação lenta
+      // do cartão ainda não chegou. Afirmar sigilo para "não sei" é inventar
+      // um fato, e o prompt copiava a invenção para o laudo ("Orçamento
+      // Sigiloso") por cima do valor que o edital declara. O rótulo diz só o
+      // que se sabe: o cadastro não informou. Quem decide se o edital traz o
+      // valor é a leitura do documento.
+      return "Não informado no cadastro do PNCP";
     }
     if (!mounted) return `R$ ${Number(value).toFixed(2)}`;
     return new Intl.NumberFormat('pt-BR', { 

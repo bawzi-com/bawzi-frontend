@@ -720,8 +720,15 @@ export default function AppSidebar({
         <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 transition-colors hover:bg-slate-50">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Motor de Análise</span>
+          {/* ⚠️ ERA "4 Agentes IA". O teto de `agent_count` na plataforma é 3
+              (tier_config.py; ChangePlanModal e a landing já foram corrigidos
+              de 4 para 3 pelo mesmo motivo). Os quatro itens abaixo são
+              FRENTES da análise — jurídica, financeira, auditoria, aderência
+              —, não quatro agentes cobrados; a aderência, por exemplo, é um
+              guardrail determinístico. Dizer "frentes" é verdade em todo
+              plano; "4 agentes" era falso em todos. */}
           <span className="ml-auto text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-bold border border-slate-200">
-            4 Agentes IA
+            4 frentes
           </span>
           <ChevronDown size={13} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
         </summary>

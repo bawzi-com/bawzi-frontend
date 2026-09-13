@@ -458,6 +458,20 @@ export interface AnalysisResult {
     }>;
   };
   conferencia_prosa_falhou?: boolean;
+  /** Conferência das citações ESTRUTURADAS — as que o cliente lê sob "ver o
+   *  trecho do edital que comprova isso": evidências da decisão, red flags,
+   *  checklist de habilitação, composição do score. `conferir_citacoes` em
+   *  `auditoria.py`, nos dois modos. ⚠️ Chegava na API desde sempre e nunca
+   *  foi renderizado: a verificação mais importante do laudo acontecia às
+   *  escuras, e uma citação REMOVIDA por não existir no edital sumia sem
+   *  aviso. */
+  citacoes_conferidas?: {
+    total?: number;
+    confirmadas?: number;
+    corrigidas?: number;
+    removidas?: number;
+    curtas?: number;
+  };
   /** D-03 — CNPJ de concorrente que não fechou no módulo 11 ou não veio do
    *  PNCP. O concorrente permanece; só o número sai. */
   cnpjs_concorrentes_conferidos?: {

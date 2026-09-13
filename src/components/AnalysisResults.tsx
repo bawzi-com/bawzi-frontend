@@ -3334,6 +3334,40 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
     });
   }
 
+  /* ── D-06 · AS CITAÇÕES DOS ACHADOS ──────────────────────────────────
+     ⚠️ ESTA LINHA NÃO EXISTIA, E O LAUDO PARECIA NÃO CONFERIR NADA.
+     A linha de cima (D-05) cobre só a PROSA — resumo e fundamentação. As
+     citações que o cliente de facto lê, sob "ver o trecho do edital que
+     comprova isso" (evidências da decisão, red flags, checklist, composição
+     do score), são conferidas por `conferir_citacoes` (auditoria.py) nos
+     dois modos, e o resultado chega em `citacoes_conferidas` — que o front
+     nunca renderizou. Num laudo com dois trechos citados nas evidências, a
+     única linha sobre citações dizia "não havia o que conferir".
+
+     Pior: uma citação REMOVIDA (não localizada no edital) sumia da tela sem
+     deixar rastro. Para quem vai impugnar com base no laudo, saber que uma
+     aspas não se confirmou é a informação mais cara que existe. */
+  const conf = result.citacoes_conferidas;
+  if (conf && typeof conf.total === 'number') {
+    const removidas = conf.removidas || 0;
+    const corrigidas = conf.corrigidas || 0;
+    const curtas = conf.curtas || 0;
+    rows.push({
+      key: 'citacoes-achados',
+      Icon: FileSearch,
+      label: 'Citações dos achados conferidas',
+      status: removidas > 0 ? 'atencao' : 'ok',
+      headline: conf.total === 0
+        ? 'Nenhum achado trouxe citação literal do edital — não havia o que conferir.'
+        : removidas > 0
+          ? `${removidas} de ${conf.total} citação(ões) dos achados NÃO foram localizadas no edital e saíram das aspas. O achado permanece; a citação é que não se confirmou — confira no documento antes de usar.`
+          : `As ${conf.total} citação(ões) dos achados foram localizadas no edital` +
+            (corrigidas > 0 ? ` — ${corrigidas} tiveram o texto ajustado para o trecho exato do documento` : '') +
+            (curtas > 0 ? ` (${curtas} curta(s) demais para conferir)` : '') + '.',
+      stepKey: 'decisao',
+    });
+  }
+
   /* ── D-02 · O QUE SE REPETE E O QUE NÃO SE REPETE ────────────────────
      A camada determinística de qualidade dá sempre o mesmo resultado para a
      mesma leitura. A LEITURA não: as famílias de modelo em uso recusam ajuste
@@ -3376,11 +3410,22 @@ function buildEscopoAnalise(result: AnalysisResult, userTier: number): ScopeRow[
            : result.qualidade_extracao?.nivel === 'media' ? 'atencao'
            : coberturaPct >= 75 ? 'ok' : coberturaPct >= 45 ? 'atencao' : 'alerta')
         : 'ok',
+    // ⚠️ DUAS MEDIDAS NUMA FRASE SÓ, E ELAS SE CONTRADIZIAM AOS OLHOS.
+    // "13/20 campos localizados (100% de cobertura)" — quem lê vê 65% e 100%
+    // sobre a mesma coisa. Não são a mesma coisa: os 20 campos são a ficha
+    // técnica inteira, muitos opcionais (garantia, reajuste, subcontratação);
+    // a cobertura é uma régua ponderada sobre os 9 campos que DECIDEM
+    // (objeto, valor, datas, modalidade, itens, habilitação…) mais a leitura
+    // dos anexos publicados (`analysis_quality.py`, A-04). Um laudo pode ter
+    // 100% do que decide e 65% da ficha. A frase agora diz isso, em vez de
+    // colar os dois números como se um explicasse o outro.
     headline: ficha.length === 0
       ? 'Extração estruturada não disponível nesta análise.'
-      : `${fichaLocalizados}/${ficha.length} campos localizados e cross-checados contra o texto original${
-          typeof coberturaPct === 'number' ? ` (${coberturaPct}% de cobertura)` : ''
-        }.`,
+      : `${fichaLocalizados} dos ${ficha.length} campos da ficha localizados e conferidos contra o texto.${
+          typeof coberturaPct === 'number'
+            ? ` Cobertura do material que decide: ${coberturaPct}% (campos críticos e anexos lidos — não é a fração da ficha).`
+            : ''
+        }`,
     detail: detalheFicha.length ? detalheFicha : undefined,
     stepKey: 'aderencia',
   });
