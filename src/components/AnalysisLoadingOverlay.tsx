@@ -12,8 +12,17 @@
  * agitada, não carregada de informação. Agora cada fato tem um lugar só:
  *
  *   quanto falta ......... o anel, com o número no meio (a barra do corpo saiu)
- *   qual etapa ........... a fila lateral — só ela numera, no cabeçalho dela
+ *   qual etapa ........... a fila lateral — só ela numera, no cabeçalho dela —
+ *                          e o NOME CURTO dela dentro do anel, sob o número
  *   o que a etapa faz .... o título e UMA linha de descrição
+ *
+ * ⚠️ O NOME DA ETAPA ENTROU NO ANEL em 13/09/2026, a pedido. O anel dizia
+ * "75% concluído" — e "concluído" não informa nada que o número já não diga.
+ * No celular o painel empilha e a fila fica abaixo da dobra: o anel era o
+ * único lugar visível e não dizia EM QUE etapa a análise estava. O nome vai
+ * curto ("Jurídico", não "Agente jurídico em parecer") porque o anel tem
+ * ~100px de largura útil; a frase inteira continua sendo o título, logo
+ * abaixo. A fila segue sendo a única que NUMERA — "3/5" mora só lá.
  *
  * A régua de 4px no topo do cartão ficou porque não disputa: é cromo de borda,
  * o que se percebe de canto de olho sem olhar para o painel.
@@ -57,14 +66,20 @@ interface AnalysisLoadingOverlayProps {
   onCancel: () => void;
 }
 
-// Ordem REAL do pipeline (reportada pelo backend etapa a etapa)
+// Ordem REAL do pipeline (reportada pelo backend etapa a etapa).
+// `curto` é o que cabe dentro do anel: em caixa alta a 9px com tracking
+// 0.18em, nove letras ("DOCUMENTO", o mesmo tamanho de "CONCLUÍDO", que
+// morava lá) é o máximo antes de encostar no arco.
 const STEPS = [
-  { label: 'Documento', icon: FileSearch },
-  { label: 'Analista IA', icon: Gauge },
-  { label: 'Mercado & Financeiro', icon: Radar },
-  { label: 'Jurídico', icon: Scale },
-  { label: 'Veredito', icon: CheckCircle2 },
+  { label: 'Documento', curto: 'Documento', icon: FileSearch },
+  { label: 'Analista IA', curto: 'Analista', icon: Gauge },
+  { label: 'Mercado & Financeiro', curto: 'Mercado', icon: Radar },
+  { label: 'Jurídico', curto: 'Jurídico', icon: Scale },
+  { label: 'Veredito', curto: 'Veredito', icon: CheckCircle2 },
 ];
+
+// Comprimento do cometa que percorre o trilho (em unidades do viewBox).
+const COMETA = 14;
 
 const RAIO = 54;
 const CIRCUNFERENCIA = 2 * Math.PI * RAIO;
@@ -172,14 +187,19 @@ export default function AnalysisLoadingOverlay({
           <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
 
             {/* ⚠️ O ANEL SUBSTITUI A BARRA, não decora. O giro de antes não
-                dizia nada; o arco é o próprio progresso. O anel pontilhado de
-                fora existe só por vivacidade: a porcentagem muda a cada
-                dezenas de segundos e, parada, um anel estático parece travado. */}
+                dizia nada; o arco é o próprio progresso.
+
+                ⚠️ O MOVIMENTO É O COMETA, NO PRÓPRIO TRILHO. A porcentagem
+                muda a cada dezenas de segundos e, parada em 75% por um minuto,
+                o anel parecia travado — o halo pontilhado que girava do lado
+                de fora, a 9s por volta, era fraco demais para alguém notar
+                (pedido de 13/09/2026: "poderia ficar em movimento"). Saiu, e
+                entrou um traço curto que percorre o anel sem parar, POR CIMA
+                do arco: sobre o trilho cinza ele é um ponto verde correndo;
+                sobre o arco preenchido, um brilho passando. Um movimento só,
+                onde o olho já está. `motion-safe`: quem pediu menos movimento
+                ao sistema fica com o arco parado, que continua correto. */}
             <div className="relative mb-8 h-32 w-32">
-              <span
-                aria-hidden
-                className="absolute -inset-2 animate-spin rounded-full border border-dashed border-emerald-200/70 [animation-duration:9s]"
-              />
               <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
                 <defs>
                   {/* ⚠️ O EIXO SEGUE O ARCO, e por isso não é o diagonal
@@ -203,6 +223,31 @@ export default function AnalysisLoadingOverlay({
                   strokeDashoffset={CIRCUNFERENCIA * (1 - progress / 100)}
                   className="transition-[stroke-dashoffset] duration-1000 ease-out"
                 />
+                {/* Cometa. O <g> gira em torno do centro do viewBox (64,64):
+                    sem `transformOrigin` explícito um SVG gira em torno de
+                    (0,0) e o traço sairia do anel. Mesmo sentido do arco.
+
+                    ⚠️ A ANIMAÇÃO INTEIRA NUM UTILITÁRIO SÓ. A forma óbvia,
+                    `motion-safe:animate-spin [animation-duration:2.4s]`, não
+                    funciona: o Tailwind emite as variantes DEPOIS dos
+                    utilitários simples, o `animation:` (atalho) da variante
+                    vem por último e devolve a duração para 1s. Medido no
+                    navegador em 13/09/2026: `animationDuration` "1s". O halo
+                    pontilhado antigo (`animate-spin [animation-duration:9s]`)
+                    dependia da mesma ordem. */}
+                <g
+                  aria-hidden
+                  className="motion-safe:animate-[spin_2.4s_linear_infinite]"
+                  style={{ transformOrigin: '64px 64px' }}
+                >
+                  <circle
+                    cx="64" cy="64" r={RAIO} fill="none"
+                    stroke="#6ee7b7"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={`${COMETA} ${CIRCUNFERENCIA - COMETA}`}
+                  />
+                </g>
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 {/* tabular-nums: o número não muda de largura ao passar de 9 para 10 */}
@@ -210,8 +255,20 @@ export default function AnalysisLoadingOverlay({
                   {progress}
                   <span className="text-base font-black text-slate-300">%</span>
                 </span>
-                <span className="mt-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-400">
-                  concluído
+                {/* O nome curto da etapa, trocado com um fade quando ela
+                    muda. `truncate` por segurança: nenhum `curto` passa de
+                    nove letras, mas um rótulo novo não pode furar o anel.
+
+                    ⚠️ `fadeIn` É O KEYFRAME GLOBAL de `styles/components.css`,
+                    não o `animate-in fade-in` usado no resto deste arquivo:
+                    esse vem do plugin `tw-animate-css`, que NÃO está instalado
+                    — as 24 telas que usam `animate-in` não animam nada (zero
+                    regras `.animate-in` na folha compilada, 13/09/2026). */}
+                <span
+                  key={queueStep}
+                  className="mt-1.5 max-w-[5.75rem] truncate text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-700 motion-safe:animate-[fadeIn_.5s_ease-out]"
+                >
+                  {STEPS[queueStep].curto}
                 </span>
               </div>
             </div>
