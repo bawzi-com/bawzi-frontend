@@ -93,6 +93,12 @@ export default function PncpSearch({
   // OrgaoAutocomplete.tsx para por que ele não mora no campo de busca.
   const [orgaoFiltro, setOrgaoFiltro] = useState('');
   const [orgaoDescartados, setOrgaoDescartados] = useState(0);
+  // Quantos editais o portal devolveu SEM o termo no objeto — ele casa o
+  // termo em campos internos ("edital disponível no site…") e o backend os
+  // descarta. Medido em 13/09/2026: "site" em SP → 125 devolvidos, 124 sem
+  // "site" no objeto. Sem este número, zero por descarte e zero por "não
+  // existe" seriam a mesma tela, com conselhos opostos.
+  const [objetoDescartados, setObjetoDescartados] = useState(0);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
   const [forceExact, setForceExact] = useState(false);
   // ⚠️ MODO EXPLÍCITO, ALÉM DA DETECÇÃO AUTOMÁTICA. A detecção pelo formato
@@ -509,6 +515,9 @@ const UFS: readonly { sigla: string; nome: string }[] = [
       setOrgaoDescartados(
         (dataEditais as { orgao_descartados?: number })?.orgao_descartados ?? 0,
       );
+      const descartadosObjeto =
+        (dataEditais as { descartados_objeto?: number })?.descartados_objeto ?? 0;
+      setObjetoDescartados(descartadosObjeto);
 
       let encontrados: PncpItem[] = dataEditais.data || dataEditais.items || dataEditais.oportunidades || [];
 
@@ -636,6 +645,11 @@ const UFS: readonly { sigla: string; nome: string }[] = [
             ? `Nenhum edital aberto de "${orgaoAtivo}"${termo ? ` para "${termo}"` : ''} neste momento. O PNCP devolveu ${descartadosOrgao} edital${descartadosOrgao > 1 ? 'is' : ''} de outros compradores, que foram descartados. Confira a grafia do órgão — ou use o CNPJ, que não tem homônimo.`
           : orgaoAtivo
             ? `Nenhum edital aberto de "${orgaoAtivo}" no momento. Se o nome estiver certo, é porque esse órgão não tem licitação com proposta em aberto agora.`
+          // ⚠️ O PORTAL ACHOU O TERMO, MAS FORA DO OBJETO. "Tente um termo mais
+          // amplo" seria o conselho errado: mais amplo traz mais ruído. O que
+          // resolve é um termo mais específico — o produto ou serviço inteiro.
+          : termo && descartadosObjeto > 0
+            ? `Nenhum edital aberto com "${termo}" no objeto. O portal encontrou o termo em ${descartadosObjeto} edital${descartadosObjeto > 1 ? 'is' : ''}, mas só em campos internos — como "edital disponível no site…" —, não no que está sendo contratado; esses foram descartados. Tente um termo mais específico (o produto ou o serviço por inteiro, como "site institucional" ou "desenvolvimento de site").`
           : encontrados.length > 0
             ? 'Nenhuma licitação ativa encontrada. Os editais encontrados já encerraram o prazo de propostas.'
             : termo
@@ -1464,6 +1478,14 @@ const UFS: readonly { sigla: string; nome: string }[] = [
               <span className="text-[10px] text-sky-400 font-bold block mt-1 relative z-10">
                 Licitações ativas agora
               </span>
+              {objetoDescartados > 0 && (
+                <span
+                  title="O portal do PNCP casa o termo também em campos internos do edital (ex.: 'disponível no site…'). Esses editais não tratam do termo e foram descartados."
+                  className="text-[10px] text-slate-400 font-medium block mt-1 relative z-10"
+                >
+                  · {objetoDescartados} sem o termo no objeto, descartado{objetoDescartados > 1 ? 's' : ''}
+                </span>
+              )}
             </div>
           </div>
         </div>
