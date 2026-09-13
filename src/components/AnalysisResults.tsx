@@ -9,6 +9,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
+import { debitadoNaLeitura, precoAprofundar } from '@/lib/aprofundar';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
 import {
   Radar, Printer, Mail, Zap, Target,
@@ -78,13 +79,14 @@ interface AnalysisResultsProps {
    *  Só chega em laudo rápido persistido, com o texto ainda carregado. */
   onAprofundar?: () => void;
   /** Multiplicador da auditoria profunda no plano (`quota.peso_profunda`).
-   *  Com ele e o que ESTE laudo já custou (`result.creditos`), a conta sai
-   *  exata: profunda = pago × peso, diferença = pago × (peso − 1). Não
-   *  depende do texto na tela — que é justamente por onde a estimativa
-   *  antiga errava (o backend cobra sobre o texto + PDFs do PNCP). */
+   *  Na régua fixa é o preço cheio da profunda (4, 7 ou 10); aprofundar
+   *  custa isso menos o que a rápida debitou. A conta mora em
+   *  `lib/aprofundar` — não depende do texto na tela, que é por onde a
+   *  estimativa antiga errava (o backend cobra sobre texto + PDFs do PNCP). */
   pesoProfunda?: number | null;
   /** Qual régua cobra, dita pelo backend (`/api/analyses/quota`).
-   *  'analises' → 1 crédito por análise; 'creditos' → régua por custo. */
+   *  'analises' → régua fixa: rápida 1, profunda `peso_profunda`;
+   *  'creditos' → régua por custo. */
   unidadeCobranca?: 'creditos' | 'analises' | null;
   /** Créditos disponíveis no período — o banner mostra ao lado do preço para
    *  a pessoa não precisar sair do laudo para saber se dá. */
@@ -468,7 +470,7 @@ export default function AnalysisResults({
           && activeStep !== 'riscos' && (
           <AprofundarFaixa
             onAprofundar={onAprofundar}
-            jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
+            jaPago={debitadoNaLeitura(liveResult)}
             pesoProfunda={pesoProfunda ?? null}
             unidade={unidadeCobranca ?? null}
             saldo={saldoCreditos ?? null}
@@ -606,7 +608,7 @@ export default function AnalysisResults({
                               {onAprofundar && liveResult.rodape_leitura && !liveResult.auditoria_delta && (
                                 <AprofundarBanner
                                   onAprofundar={onAprofundar}
-                                  jaPago={typeof liveResult.creditos === 'number' ? liveResult.creditos : null}
+                                  jaPago={debitadoNaLeitura(liveResult)}
                                   pesoProfunda={pesoProfunda ?? null}
                                   unidade={unidadeCobranca ?? null}
                                   saldo={saldoCreditos ?? null}
@@ -5516,31 +5518,12 @@ function rotuloDoAssunto(chave?: string): string | undefined {
  *  "+2 créditos" e o portão debitou 21 — a tela mentindo sobre preço, que é
  *  o defeito mais caro que este produto pode ter. Pior ainda no histórico,
  *  onde o formulário está vazio e a estimativa nem existia. */
-function precoAprofundar(
-  jaPago: number | null | undefined,
-  pesoProfunda: number | null | undefined,
-  unidade?: 'creditos' | 'analises' | null,
-) {
-  // ── Régua por ANÁLISE: aprofundar é uma análise, logo 1 crédito ───────
-  // Desde 07/09/2026 a régua fixa cobra 1 por análise. Aprofundar é uma
-  // análise nova, então custa 1 — e NÃO HÁ O QUE ABATER: a rápida também
-  // custou 1, e `max(1, 1 − 1)` é 1. A linha "já pago" desaparece porque o
-  // abatimento desaparece, não porque foi escondida.
-  //
-  // O que passa a limitar não é o preço, é o teto de auditorias profundas do
-  // plano — e é isso que a tela precisa dizer no lugar da subtração.
-  //
-  // ⚠️ PERGUNTA A `unidade`, NÃO AO PESO. Inferir por `peso <= 1` seria um
-  // proxy: `peso_profunda` continua valendo 4 na configuração porque a régua
-  // POR CUSTO ainda o lê. Quem sabe qual régua cobra é o backend, e ele diz.
-  if (unidade === 'analises') {
-    return { cheio: 1, pago: null, diferenca: 1 };
-  }
-  const pago = typeof jaPago === 'number' && jaPago > 0 ? jaPago : null;
-  const peso = Math.max(1, Number(pesoProfunda) || 0);
-  if (pago === null || peso <= 1) return { cheio: null, pago, diferenca: null };
-  return { cheio: pago * peso, pago, diferenca: pago * (peso - 1) };
-}
+/* `precoAprofundar` MORAVA AQUI e dizia que, na régua por análise, aprofundar
+ * custa 1 "e não há o que abater". Era a régua que durou algumas horas em
+ * 07/09/2026; o backend voltou ao multiplicador (rápida 1, profunda
+ * `peso_profunda`, abate o debitado) e esta cópia ficou para trás — a tela
+ * prometia 1 e o portão debitava 9 no Avançado. Agora a conta é UMA, em
+ * `lib/aprofundar`, com teste, e o histórico usa a mesma. */
 
 const creditosLabel = (n: number) => `${n} ${n === 1 ? 'crédito' : 'créditos'}`;
 
@@ -5579,12 +5562,12 @@ function ContaAprofundar({ cheio, pago, diferenca }: {
       </p>
     );
   }
-  // ── Régua por análise: uma linha, não uma subtração ──────────────────
-  // Com 1 crédito por análise não há abatimento (a rápida também custou 1),
-  // e a conta de três linhas viraria "completa: 1 crédito · você paga: 1
-  // crédito" — o mesmo número dito duas vezes, com uma subtração invisível
-  // no meio. O que limita aqui não é o preço, é o teto de auditorias
-  // profundas do plano, e o card de cota já avisa quando ele aperta.
+  // ── Sem abatimento: uma linha, não uma subtração ─────────────────────
+  // Acontece quando a rápida não debitou nada (cortesia) ou quando o plano
+  // tem peso 1 e os dois modos custam o mesmo. "Completa: 10 · você paga:
+  // 10" seria o mesmo número dito duas vezes, com uma subtração invisível
+  // no meio. Com abatimento de verdade a conta inteira aparece abaixo:
+  // cheio − já pago = você paga.
   if (pago === null && cheio === diferenca) {
     return (
       <div className="flex items-baseline justify-between gap-3 rounded-xl border border-sky-100 bg-white px-4 py-3">

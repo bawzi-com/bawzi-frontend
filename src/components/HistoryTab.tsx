@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import AnalysisResults from './AnalysisResults';
 import { AnalysisResult } from './analysis-types';
+import { debitadoNaLeitura, precoAprofundar } from '@/lib/aprofundar';
 import type { SavedAnalysis } from '@/lib/types';
 // ⚠️ `item.score || 0` transformava score AUSENTE em zero, e zero é uma
 // medida. O histórico pintava o cartão de vermelho, escrevia "0 / score /
@@ -968,21 +969,18 @@ export default function HistoryTab({
               || (item.modo_escolhido && item.modo_escolhido !== 'openai'));
             const ehRapida = !ehProfunda && item.modo_escolhido === 'openai';
             const temOrigemPncp = Boolean(item.pncp_cnpj && item.pncp_ano && item.pncp_sequencial);
-            // Mesma conta do banner do laudo: profunda = pago × peso, então a
-            // diferença é pago × (peso − 1). Sai do que o laudo JÁ custou —
-            // não de estimativa sobre texto, que aqui nem existe.
-            // ⚠️ DUAS RÉGUAS, E QUEM DIZ QUAL COBRA É O BACKEND.
-            // Por ANÁLISE (desde 07/09/2026) aprofundar custa 1 e não há
-            // abatimento: a rápida também custou 1. Por CUSTO, vale a conta
-            // antiga — profunda = pago × peso, diferença = pago × (peso − 1).
-            // Inferir pelo peso seria proxy: `peso_profunda` segue valendo 4
-            // na configuração porque a régua por custo ainda o lê.
-            const _pesoP = Math.max(1, Number(pesoProfunda) || 0);
-            const custoAprofundar = unidadeCobranca === 'analises'
-              ? 1
-              : ((_pesoP > 1 && typeof item.creditos === 'number' && item.creditos > 0)
-                  ? item.creditos * (_pesoP - 1)
-                  : null);
+            // A MESMA conta do banner do laudo, pela mesma função
+            // (`lib/aprofundar`): régua fixa → peso − o que a rápida debitou;
+            // régua por custo → pago × (peso − 1). Sai do que o laudo JÁ
+            // custou — não de estimativa sobre texto, que aqui nem existe.
+            //
+            // ⚠️ ESTE BOTÃO DIZIA "1 CRÉDITOS" NO AVANÇADO, ONDE O PORTÃO
+            // DEBITA 9. A cópia local da conta encodava a régua que durou
+            // algumas horas em 07/09/2026 ("aprofundar custa 1 e não há o que
+            // abater"); o backend voltou ao multiplicador e ela não. Medido
+            // em 13/09/2026. Duas cópias, dois preços — por isso a cópia saiu.
+            const _pagoNaRapida = debitadoNaLeitura(item);
+            const custoAprofundar = precoAprofundar(_pagoNaRapida, pesoProfunda, unidadeCobranca).diferenca;
 
             return (
               <div
@@ -1106,7 +1104,9 @@ export default function HistoryTab({
                         type="button"
                         onClick={(e) => { e.stopPropagation(); void openAnalysisDetail(item, true); }}
                         title={custoAprofundar !== null
-                          ? `Ver a auditoria profunda deste edital: ${custoAprofundar} créditos, já abatidos os ${item.creditos} pagos nesta leitura`
+                          ? (_pagoNaRapida
+                              ? `Ver a auditoria profunda deste edital: ${custoAprofundar} crédito(s), já abatido${_pagoNaRapida > 1 ? 's' : ''} ${_pagoNaRapida} que esta leitura debitou`
+                              : `Ver a auditoria profunda deste edital: ${custoAprofundar} crédito(s) — esta leitura não debitou crédito, então não há o que abater`)
                           : 'Ver o convite de auditoria profunda deste edital'}
                         className="inline-flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-2xl border border-sky-200 bg-white px-3.5 text-[11px] font-black text-sky-700 transition-all hover:border-sky-300 hover:bg-sky-50"
                       >
@@ -1114,7 +1114,7 @@ export default function HistoryTab({
                         Aprofundar
                         {custoAprofundar !== null && (
                           <span className="font-bold tabular-nums text-sky-400">
-                            {custoAprofundar} créditos
+                            {custoAprofundar} {custoAprofundar === 1 ? 'crédito' : 'créditos'}
                           </span>
                         )}
                       </button>

@@ -515,7 +515,6 @@ function SectionAnalise() {
 function SectionCreditos() {
   const { regua } = useTierConfig();
   const porCusto = regua.tipo === 'custo';
-  const unidade = (regua.caracteres_por_credito ?? 50000).toLocaleString('pt-BR');
   const peso = regua.peso_profunda ?? 4;
 
   return (
@@ -548,27 +547,37 @@ function SectionCreditos() {
         </>
       ) : (
         <>
+          {/* ⚠️ ESTA PÁGINA ENSINAVA "1 CRÉDITO A CADA 50.000 CARACTERES" —
+              a régua que saiu em 07/09/2026 (`modos.custo_em_creditos`): o
+              tamanho deixou de contar, o MODO passou a contar. Um comprador
+              B2B que fizesse a conta daqui chegaria a outro número que o
+              extrato. Medido em 13/09/2026. */}
           <P>
             Toda análise consome créditos da sua cota mensal. A regra é uma só, e você
             consegue fazer a conta antes de enviar:
           </P>
           <div className="my-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-sm font-bold text-slate-800">
-              1 crédito a cada {unidade} caracteres analisados
+              {peso > 1
+                ? <>Análise rápida: 1 crédito · Auditoria profunda: {peso} créditos</>
+                : <>1 crédito por análise, em qualquer modo</>}
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              Arredondando para cima, com mínimo de 1 crédito por análise.
+              O tamanho do edital não entra na conta: até o teto do seu plano, um edital
+              pequeno e um grande custam o mesmo.
             </p>
           </div>
         </>
       )}
-      <Callout type="warning">
-        <strong>&quot;Analisados&quot; inclui os PDFs, não só o que você digitou.</strong> O contador
-        da caixa de texto mostra apenas o texto colado — mas a cobrança soma o texto,
-        os PDFs que você anexou e os arquivos que baixamos do PNCP por você. É por isso
-        que um edital do Radar quase sempre custa mais do que parece pelo campo de texto:
-        o edital em si costuma ser pequeno perto dos anexos.
-      </Callout>
+      {porCusto && (
+        <Callout type="warning">
+          <strong>&quot;Analisados&quot; inclui os PDFs, não só o que você digitou.</strong> O contador
+          da caixa de texto mostra apenas o texto colado — mas a cobrança soma o texto,
+          os PDFs que você anexou e os arquivos que baixamos do PNCP por você. É por isso
+          que um edital do Radar quase sempre custa mais do que parece pelo campo de texto:
+          o edital em si costuma ser pequeno perto dos anexos.
+        </Callout>
+      )}
       <P>
         O preço exato aparece no botão antes de você enviar, e é sempre esse valor que é
         debitado — a tela e a cobrança usam a mesma regra.
@@ -583,19 +592,23 @@ function SectionCreditos() {
         <LI><strong>Análise rápida</strong> — uma leitura do edital.{' '}
           {porCusto
             ? 'É o modo mais barato, e a diferença cresce com o tamanho do edital.'
-            : 'Custa o valor da régua acima.'}</LI>
+            : 'Custa 1 crédito.'}</LI>
         <LI><strong>Auditoria profunda</strong> — relê o documento inteiro em blocos, confere cada
           afirmação contra o texto original e procura contradições que a leitura única não
           enxerga.{' '}
           {porCusto
             ? 'Custa mais porque faz mais chamadas e usa os modelos mais capazes do seu plano — quanto mais, aparece no botão antes de você confirmar.'
-            : `Multiplica o custo pelo fator do seu plano (hoje ${peso}×).`}</LI>
+            : peso > 1
+              ? `Custa ${peso} créditos — o fator do seu plano.`
+              : 'Custa o mesmo que a rápida neste plano.'}</LI>
       </UL>
       <Callout type="tip">
         <strong>Aprofundar um laudo que você já rodou paga só a diferença.</strong>{' '}
         {porCusto
           ? 'Se a rápida custou 2 créditos e a auditoria completa custa 14, você paga 12. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.'
-          : `Se a rápida custou 8 créditos e o fator é ${peso}×, a auditoria completa custa ${8 * peso} — e como 8 já foram pagos, você paga ${8 * peso - 8}. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`}
+          : peso > 1
+            ? `A rápida custou 1 crédito e a auditoria completa custa ${peso}: você paga ${peso - 1}. Se a rápida saiu em cortesia (nada foi debitado), não há o que abater e a auditoria custa ${peso}. A conta aparece inteira antes de confirmar: valor cheio, o que já foi pago e o que você paga.`
+            : 'Neste plano os dois modos custam 1 crédito, e aprofundar também.'}
       </Callout>
       <P>
         O <strong>parecer técnico-jurídico</strong> não depende do modo: ele é liberado a partir do

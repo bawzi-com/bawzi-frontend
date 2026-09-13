@@ -13,6 +13,7 @@ import {
   RefreshCw, Coins, ArrowRight,
 } from 'lucide-react';
 import { formatMB } from './analysis-types';
+import { precoProfundaCheio } from '@/lib/aprofundar';
 
 import ResumoCreditos, { BOTAO_PRIMARIO } from './ResumoCreditos';
 import Tooltip from './Tooltip';
@@ -157,17 +158,27 @@ function tempoEstimadoLabel(token: string | null, userTier: number): string {
  */
 function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
                     quota?: QuotaInfo | null): number | null {
-  // ── Régua por ANÁLISE: 1, e o tamanho não entra ──────────────────────
-  // Desde 07/09/2026 a régua fixa cobra 1 crédito por análise
-  // (`modos.custo_em_creditos`). O backend anuncia isso em `unidade`, e é
-  // ele quem sabe qual régua está cobrando — não este arquivo.
+  // ── Régua FIXA (por análise): rápida 1, profunda `peso_profunda` ─────
+  // O tamanho não entra (`modos.custo_em_creditos`, 07/09/2026). O backend
+  // anuncia a régua em `unidade`, e é ele quem sabe qual está cobrando — não
+  // este arquivo.
+  //
+  // ⚠️ ERA `return 1` PARA OS DOIS MODOS. Essa é a régua que durou algumas
+  // horas em 07/09 (o docstring de `custo_em_creditos` conta); o backend
+  // voltou ao multiplicador e esta função não. O botão da auditoria profunda
+  // cotava "1 crédito" e o portão debitava 10 no Avançado — e, pior, o
+  // `estadoDoPedido` abaixo comparava 1 com o saldo e oferecia uma profunda
+  // que o servidor iria rebaixar para o motor gratuito. Medido em
+  // 13/09/2026. Sem peso ainda, sem preço: `null`, nunca 1 por falta de dado.
   //
   // ⚠️ ESTA CONDIÇÃO VEM PRIMEIRO DE PROPÓSITO. Abaixo há duas fórmulas que
   // ainda calculam pelo tamanho, e as duas continuam corretas para a régua
   // por CUSTO. Se a checagem viesse depois, a tela cotaria por tamanho uma
   // cobrança que é por análise — o defeito mais caro que este produto tem,
   // porque a cotação daqui é firme.
-  if (quota?.unidade === 'analises') return 1;
+  if (quota?.unidade === 'analises') {
+    return modo === 'profunda' ? precoProfundaCheio(quota.peso_profunda) : 1;
+  }
 
   // ── Caminho novo: o crédito mede CUSTO ────────────────────────────────
   // O backend manda coeficientes; aqui só se avalia a soma. Nada de modelo
@@ -298,10 +309,23 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
  * duas linhas de leitura de quem já sabe.
  */
 function ReguaDeCobranca({ quota, isGuest = false }: { quota: QuotaInfo; isGuest?: boolean }) {
-  // Só quando o peso muda alguma coisa. Nos planos em que os dois modos usam o
-  // mesmo par de modelos o backend devolve `unidade: "analises"`, e não há
-  // conceito novo para ensinar.
-  if (isGuest || quota.unidade !== 'creditos') return null;
+  if (isGuest) return null;
+
+  // ── Régua FIXA: a frase inteira, sem divisão ──────────────────────────
+  // "Rápida usa 1; auditoria profunda usa N." É a régua do lançamento
+  // (`modos.custo_em_creditos`). Só aparece quando o peso muda alguma coisa:
+  // com peso 1 os dois botões já mostram o mesmo número e não há o que
+  // ensinar.
+  if (quota.unidade !== 'creditos') {
+    const peso = precoProfundaCheio(quota.peso_profunda);
+    if (!peso || peso <= 1) return null;
+    return (
+      <>
+        Análise rápida usa 1 crédito; auditoria profunda usa {peso}. O tamanho
+        do edital não muda o preço.
+      </>
+    );
+  }
 
   return (
     <>
@@ -761,7 +785,7 @@ export default function AnalysisForm({
                  tarde. Medido em 1280/1600/1920: sem teto ele acompanha
                  (947 → 1267 → 1587px). */
               className="w-full shadow-sm md:flex-1"
-              acessorio={quota.unidade === 'creditos'
+              acessorio={quota.unidade === 'creditos' || (precoProfundaCheio(quota.peso_profunda) ?? 1) > 1
                 ? <Tooltip rotulo="como os créditos são cobrados"><ReguaDeCobranca quota={quota} /></Tooltip>
                 : undefined}
             />

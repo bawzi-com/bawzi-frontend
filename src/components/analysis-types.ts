@@ -593,10 +593,16 @@ export interface AnalysisResult {
    *  abatidos. Só existem quando o desconto foi aplicado. */
   aprofundada_de?: string;
   desconto_aprofundar?: number;
-  /** Créditos que ESTE laudo debitou. Mesma fonte que o backend usa para
-   *  abater no aprofundamento — por isso o banner do "Fazer auditoria
-   *  profunda" a lê daqui em vez de estimar de novo. */
+  /** Preço do pedido desta análise (o que ela CUSTOU). Não é o que saiu do
+   *  saldo — ver `creditos_cobrados`. */
   creditos?: number;
+  /** O que de fato SAIU DO SALDO. Diverge de `creditos` quando a análise foi
+   *  servida acima do saldo (cortesia). É este campo que o backend abate no
+   *  "Aprofundar este laudo" — `lib/aprofundar.debitadoNaLeitura` repete a
+   *  cascata dele para a tela mostrar a conta que o portão vai fazer. */
+  creditos_cobrados?: number;
+  /** Rodou acima do saldo: nada foi debitado, nada há a abater. */
+  em_cortesia?: boolean;
   score_breakdown?: ScoreFactorItem[];
   oportunidades?: string[];
   qualidade_extracao?: QualidadeExtracao;

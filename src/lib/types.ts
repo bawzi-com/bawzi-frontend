@@ -93,8 +93,11 @@ export interface SavedAnalysis {
   pncp_cnpj?: string | null;
   pncp_ano?: string | number | null;
   pncp_sequencial?: string | number | null;
-  /** Créditos que este laudo debitou — base do abatimento no aprofundamento. */
+  /** Preço do pedido. O abatimento do aprofundamento usa `creditos_cobrados`
+   *  (o que saiu do saldo) — ver `lib/aprofundar.debitadoNaLeitura`. */
   creditos?: number;
+  creditos_cobrados?: number;
+  em_cortesia?: boolean;
   created_at?: string;
   cockpit_status?: Record<string, { done?: boolean; updated_at?: string; responsavel?: string; prazo?: string; nota?: string }>;
   cockpit_updated_at?: string;
