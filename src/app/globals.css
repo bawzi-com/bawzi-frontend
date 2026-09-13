@@ -1,4 +1,22 @@
-@import "tailwindcss"; 
+@import "tailwindcss";
+
+/* ⚠️ `animate-in`, `fade-in`, `slide-in-from-*`, `zoom-in-*` NÃO SÃO DO
+   TAILWIND. São do plugin `tw-animate-css` (sucessor do `tailwindcss-animate`
+   para a v4). O código usava essas classes em 24 arquivos — 77 `animate-in` —
+   sem o plugin instalado: zero regras `.animate-in` na folha compilada, nenhuma
+   entrada suave acontecia, e ninguém via porque a ausência de animação não dá
+   erro. Medido em 13/09/2026 no dev server. Este import é o que liga todas
+   elas de uma vez; a duração vem do `duration-*` de cada uso (o plugin lê
+   `--tw-duration`), e sem `duration-*` fica 150ms. */
+@import "tw-animate-css";
+
+/* Quem pediu menos movimento ao sistema não recebe as entradas animadas.
+   Fora de camada de propósito, para vencer o utilitário; só `animate-in` —
+   um `animate-out` que dependa do `animationend` para desmontar não pode ser
+   silenciado assim (hoje não há nenhum). */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in { animation: none; }
+}
 
 /* Seus estilos da Bawzi abaixo */
 @import '../styles/tokens.css';
