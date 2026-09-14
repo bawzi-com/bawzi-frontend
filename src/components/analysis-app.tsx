@@ -486,12 +486,6 @@ export default function AnalysisApp() {
   // quebrado exatamente para quem ainda não é cliente.
   const tierParaLimites     = token ? userTier : -1;
   const currentCharLimit    = tierLimits[tierParaLimites] ?? tierLimits[-1] ?? 10000;
-  // Maior capacidade existente entre os planos — usada para não sugerir
-  // upgrade a quem já está no topo. Tolerante a config parcial vinda da API.
-  const maxCharLimitPlataforma = Math.max(
-    ...Object.values(tierLimits).map(Number).filter(Number.isFinite),
-    currentCharLimit,
-  );
   // Mesmo raciocínio do limite de caracteres: o anexo do visitante era medido
   // pela régua do plano 1 ("até 5MB" na tela) e recusado pela do tier -1.
   const currentFileLimitMB  = tierFileLimits[tierParaLimites] ?? tierFileLimits[-1] ?? 3;
@@ -810,15 +804,21 @@ export default function AnalysisApp() {
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
-    const tierReal   = typeof window !== 'undefined' ? Number(localStorage.getItem('bawzi_tier') || userTier) : userTier;
-    const limiteReal = tierLimits[tierReal] || 10000;
-    if (newText.length <= limiteReal) {
-      setText(newText);
-    } else {
-      setText(newText.substring(0, limiteReal));
-      setError(`O limite do Nível ${tierReal} é de ${limiteReal.toLocaleString()} caracteres.`);
-      setTimeout(() => setError(null), 5000);
+    // Leitura completa: quem tem conta cola o edital inteiro, sem corte no
+    // cliente (mesma politica "sem limitador" do backend - D1/D2/D3 em
+    // router_analyses.py). Só o convidado (sem token) ainda tem a amostra
+    // truncada aqui, espelhando o corte silencioso que o backend faz pro
+    // tier -1 (D2, inalterado).
+    if (!token) {
+      const limiteAmostra = currentCharLimit; // = tierLimits[-1] quando !token
+      if (newText.length > limiteAmostra) {
+        setText(newText.substring(0, limiteAmostra));
+        setError(`A amostra gratuita lê até ${limiteAmostra.toLocaleString()} caracteres. Crie uma conta pra ler o edital inteiro.`);
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
     }
+    setText(newText);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1433,14 +1433,6 @@ export default function AnalysisApp() {
                         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
                           <PncpSearch
                             token={token}
-                            /* BUG CORRIGIDO: sem esta prop o PncpSearch caía no
-                               default de 30.000 e truncava TODO edital em
-                               ~29.917 chars — inclusive para quem paga o plano
-                               de 400.000. A IA analisava 7,5% do documento e o
-                               laudo ainda mandava o usuário fazer upgrade de um
-                               plano que ele já tinha. */
-                            charLimit={currentCharLimit}
-                            podeUpgrade={currentCharLimit < maxCharLimitPlataforma}
                             userUf={activeCompany?.uf || userData?.company?.uf}
                             contextCompanies={contextCompanies}
                             carregandoContexto={isCheckingAuth}

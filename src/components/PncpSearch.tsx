@@ -45,11 +45,6 @@ interface PncpSearchProps {
     termoPesquisado: string,
     editalDados?: { cnpj: string; ano: number; sequencial: number; uf?: string }
   ) => void;
-  charLimit?: number;
-  /** false quando o usuário já está no plano de maior capacidade — muda o
-   *  texto do aviso de truncamento (não faz sentido pedir upgrade a quem já
-   *  está no topo). */
-  podeUpgrade?: boolean;
   onUfChange?: (estadoSelecionado: string) => void;
   token?: string | null;
   userUf?: string;
@@ -74,8 +69,6 @@ interface PncpSearchProps {
 
 export default function PncpSearch({
   onAnalyzeOportunity,
-  charLimit = 30000,
-  podeUpgrade = true,
   onUfChange,
   token,
   userUf,
@@ -871,24 +864,15 @@ const UFS: readonly { sigla: string; nome: string }[] = [
   Baseie a sua análise puramente nos dados fornecidos, sem inventar valores.
   `;
 
-      const espacoOcupado = cabecalhoPrompt.length + rodapePrompt.length;
-      const espacoLivre = charLimit - espacoOcupado - 500; 
-
-      let conteudoDetalhamentoFinal = "";
-      if (detalhamentoTecnico.length > espacoLivre && espacoLivre > 0) {
-        conteudoDetalhamentoFinal = `
-  [3. DETALHAMENTO TÉCNICO E REGRAS]
-  ${detalhamentoTecnico.substring(0, espacoLivre)}
-
-  [⚠️ ALERTA DO SISTEMA - DADOS TRUNCADOS]
-  O detalhamento técnico acima foi cortado por exceder ${charLimit.toLocaleString('pt-BR')} caracteres${podeUpgrade ? ' (limite do plano atual do utilizador)' : ' (capacidade máxima da plataforma para um único edital)'}. Baseie a sua análise nesta amostragem e declare explicitamente, na cobertura e na confiança, que a leitura foi parcial.${podeUpgrade ? ' Informe ao utilizador, no Veredito Financeiro, que um plano superior permite analisar a totalidade dos itens e documentos desta licitação.' : ' NÃO sugira upgrade de plano: o utilizador já está na maior capacidade disponível.'}
-  `;
-        } else {
-          conteudoDetalhamentoFinal = `
+      // Leitura completa: sem teto comercial de caracteres aplicado aqui.
+      // O detalhamento vai inteiro pro prompt — se um dia for grande o
+      // suficiente pra estourar o teto TÉCNICO do provedor de IA, é o
+      // backend (_texto_para_modelo/aviso_de_perda em ai_router.py) quem
+      // avisa disso, com honestidade, nunca culpando "o limite do plano".
+      const conteudoDetalhamentoFinal = `
   [3. DETALHAMENTO TÉCNICO E REGRAS]
   ${detalhamentoTecnico}
 `;
-      }
 
       const promptEstrategicoFinal = cabecalhoPrompt + conteudoDetalhamentoFinal + rodapePrompt;
 

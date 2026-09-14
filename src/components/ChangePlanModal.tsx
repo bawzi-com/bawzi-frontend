@@ -160,13 +160,12 @@ export default function ChangePlanModal({
   const capacidade = (tier: number): string | null => {
     const l = limites?.[String(tier)];
     if (!l) return null;
-    const cota = l.ilimitado
+    // Leitura completa em qualquer plano com conta (tier ≥ 1) — não há
+    // mais "editais até X caracteres" real pra diferenciar entre planos
+    // aqui (todo tier comparado nesta tela é ≥ 2, nunca convidado).
+    return l.ilimitado
       ? 'Cota mensal ilimitada'
       : cotaMensal(regua, l.monthly_limit);
-    const chars = l.max_chars
-      ? ` · editais até ${l.max_chars.toLocaleString('pt-BR')} caracteres`
-      : '';
-    return cota + chars;
   };
 
   const handleConfirm = async () => {

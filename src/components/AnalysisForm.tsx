@@ -249,7 +249,7 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
 }) {
   const degrau = useProximoDegrau(isGuest, tierAtual, !!onUpgradeClick);
   if (!degrau || !onUpgradeClick) return null;
-  const { destino, atual, tierLimits, tierCredits, tierNames } = degrau;
+  const { destino, atual, tierCredits, tierNames } = degrau;
 
   const num = (v: number | undefined) => Number(v || 0).toLocaleString('pt-BR');
   const nome = tierNames[destino] || (isGuest ? 'Gratuito' : 'Avançado');
@@ -267,8 +267,11 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
       ? `${num(creditosDestino)} créditos grátis por mês (hoje é 1 por dia)`
       : `${num(creditosDestino)} créditos por mês`);
   }
-  if (tierLimits[destino] > (tierLimits[atual] ?? 0)) {
-    ganhos.push(`editais até ${num(tierLimits[destino])} caracteres`);
+  // Só o convidado tem teto de caracteres de verdade (amostra). Quem já
+  // tem conta não ganha "editais até X caracteres" ao subir de nível —
+  // nenhum nível corta por tamanho, então não há número real pra prometer.
+  if (isGuest) {
+    ganhos.push('lê o edital inteiro, sem amostra');
   }
   ganhos.push(isGuest ? 'histórico salvo e Matchmaker por CNAE' : 'auditoria profunda sem sublimite');
 
@@ -864,10 +867,12 @@ export default function AnalysisForm({
           />
           <div className="absolute bottom-4 right-4 flex items-center gap-2">
             <div className="px-3 py-1 bg-white border border-slate-200 rounded-lg shadow-sm text-xs font-bold text-slate-500">
-              <span className={text.length >= currentCharLimit ? 'text-red-500' : 'text-slate-900'}>
+              <span className={!token && text.length >= currentCharLimit ? 'text-red-500' : 'text-slate-900'}>
                 {text.length.toLocaleString('pt-BR')}
               </span>
-              <span className="opacity-50"> / {currentCharLimit.toLocaleString('pt-BR')}</span>
+              {!token && (
+                <span className="opacity-50"> / {currentCharLimit.toLocaleString('pt-BR')}</span>
+              )}
             </div>
           </div>
         </div>

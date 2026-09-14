@@ -676,7 +676,7 @@ function SimuladorDePlano({
               {recomendado
                 ? <>A cota é em <strong className="text-slate-700">análises rápidas</strong>, e cada
                     auditoria profunda consome <strong className="text-slate-700">{recomendado.lim?.peso_profunda ?? 1} delas</strong>.
-                    O tamanho do edital não entra na conta — só no limite de caracteres do plano.</>
+                    O tamanho do edital não entra na conta: o crédito custa o mesmo e a leitura é sempre completa.</>
                 : <>{/* ⚠️ REPROVAR SEM DIZER O QUE CABE É UM BECO.
                         Os dois controles são acoplados (profundas ≤ editais), então
                         no extremo do slider a pessoa pede 320 auditorias = 3.200

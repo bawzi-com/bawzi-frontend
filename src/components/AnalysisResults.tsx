@@ -4276,15 +4276,17 @@ function ProsaNaoConferidaBanner({ result }: { result: AnalysisResult }) {
 }
 
 /* ── D-06 · A ANÁLISE CORREU SOBRE MATERIAL INCOMPLETO ────────────────────
-   Quando o sistema apara texto pelo limite do plano, ou não consegue abrir um
-   anexo, o modelo recebe uma proibição explícita de afirmar ausência. O
-   cliente precisa saber disso pelo mesmo motivo: um campo que não aparece no
-   laudo pode ser um campo que ninguém conseguiu ler. */
+   Quando o texto estoura o teto TÉCNICO do provedor de IA (igual pra
+   qualquer plano — não é mais um corte comercial por tier, esse foi
+   removido), ou quando o sistema não consegue abrir um anexo, o modelo
+   recebe uma proibição explícita de afirmar ausência. O cliente precisa
+   saber disso pelo mesmo motivo: um campo que não aparece no laudo pode
+   ser um campo que ninguém conseguiu ler. */
 function MaterialIncompletoBanner({ result }: { result: AnalysisResult }) {
   const m = result.material_incompleto;
   if (!m?.trava_anti_falsa_ausencia) return null;
   const partes: string[] = [];
-  if (m.chars_aparados) partes.push(`${m.chars_aparados.toLocaleString('pt-BR')} caracteres foram aparados para caber no limite do seu plano`);
+  if (m.chars_aparados) partes.push(`${m.chars_aparados.toLocaleString('pt-BR')} caracteres não couberam no teto técnico desta análise`);
   if (m.documentos_nao_lidos) partes.push(`${m.documentos_nao_lidos} documento(s) oficial(is) não puderam ser lidos`);
   return (
     <div className="mb-6 rounded-2xl border border-slate-300 bg-slate-50 p-4">

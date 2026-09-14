@@ -633,9 +633,9 @@ curl -H "Authorization: Bearer eyJ..." \\
                 color: 'text-emerald-600',
               },
               {
-                label: 'Chars / edital',
-                value: limite?.max_chars ? fmtMilhar(limite.max_chars) : '—',
-                sub: 'acima disso, lê em recorte',
+                label: 'Leitura do edital',
+                value: 'Completa',
+                sub: 'sem corte por tamanho, em qualquer plano',
                 color: 'text-sky-600',
               },
               { label: 'Upload',     value: `${TETO_UPLOAD_MB} MB`, sub: 'teto por requisição', color: 'text-amber-600' },
