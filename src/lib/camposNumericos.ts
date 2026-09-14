@@ -16,9 +16,14 @@ export function precoOuAtual(bruto: unknown, atual: number): number {
    ILIMITADA. Esvaziar o campo para redigitar dá `""`; `parseInt("")` é `NaN`;
    o `|| 0` transforma isso em zero. E zero não é "nenhum" nestes campos:
    `monthly_limit: 0` significa ILIMITADO em toda a plataforma
-   (`router_analyses`: `if limite_atual > 0`), enquanto `max_chars: 0` recusa
-   qualquer texto e `max_mb: 0` recusa todo upload — para TODOS os clientes do
-   plano, no instante do Salvar.
+   (`router_analyses`: `if limite_atual > 0`), e `max_mb: 0` recusa todo
+   upload — para TODOS os clientes do plano, no instante do Salvar.
+
+   `max_chars: 0` tem o mesmo risco só pro convidado (tier -1): é o único
+   tier onde este teto ainda corta de verdade a amostra gratuita. Pros tiers
+   com conta o campo virou só configuração/exibição — a leitura já não corta
+   mais por tamanho lá, então zerar por engano aqui não tira nada de quem
+   está logado.
 
    Os dois campos vizinhos que dividem e multiplicam cobrança já tinham essa
    guarda (`caracteres_por_credito` com `Math.max(1000, …)` e `peso_profunda`

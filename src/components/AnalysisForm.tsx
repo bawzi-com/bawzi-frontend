@@ -39,8 +39,10 @@ export interface QuotaInfo {
   /** Caracteres que valem 1 crédito. A cobrança é contínua:
    *  `teto(caracteres ÷ unidade) × multiplicador`. */
   caracteres_por_credito?: number;
-  /** Maior edital que o plano aceita — define quantos créditos uma análise
-   *  pode chegar a custar naquele plano. */
+  /** Maior edital que o plano aceita, em caracteres — como o backend manda.
+   *  Não lido neste arquivo: a leitura não corta mais por tamanho em nenhum
+   *  tier com conta, só a amostra do convidado (tier -1) ainda tem um teto
+   *  real (fora deste componente). */
   max_chars?: number;
   /** `creditos` quando o crédito pode diferir de 1 por análise — por peso de
    *  modo OU por faixa de tamanho. Opcional porque a cota de convidado é

@@ -4281,6 +4281,7 @@ export default function AdminDashboard() {
                         />
                         <p className="text-[10px] text-slate-600 mt-1">
                           Padrão: {(tier.max_chars / 1000).toFixed(0)}k
+                          {tier.tier_id !== -1 && ' · não corta mais análise — só o convidado (Nível 0) ainda usa isto de verdade'}
                         </p>
                       </div>
 
