@@ -9,28 +9,34 @@ import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, i
 import { useTierConfig } from '@/Contexts/TierContext';
 import type { BawziUpdateEvent } from '@/lib/types';
 import PromoBanner from './PromoBanner';
+import TabQueryWatcher from './TabQueryWatcher';
 
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
   const isLanding = pathname === '/';
 
-  /** ⚠️ Sem isto, "Gestão" no menu de cima nunca acendia — ela mora dentro
-   *  de `/workspace?tab=gestao` (comentário em `app/gestao/page.tsx` explica
-   *  por que: ficar em `/gestao` sozinho fazia o menu inteiro sumir), então
-   *  o `pathname` de quem está na Gestão é `/workspace`, igual ao de quem
-   *  está na Área de trabalho. Resultado: clicar em Gestão troca o conteúdo
-   *  certinho, mas o menu continuava sublinhando "Área de trabalho" — parecia
-   *  que o clique "não abria" ou "voltava". Mesmo padrão de leitura de
-   *  `?tab=` que `analysis-app.tsx` já usa (não `useSearchParams`, que
-   *  exigiria envolver este Header — renderizado no layout raiz, em toda
-   *  página do site — num `Suspense`). Recalcula a cada troca de `pathname`
-   *  porque é isso que muda quando `/gestao` redireciona de volta para
-   *  `/workspace` com a aba na querystring. */
+  /** ⚠️ "Gestão" no menu de cima só acende quando isto sabe a aba certa — ela
+   *  mora dentro de `/workspace?tab=gestao` (comentário em
+   *  `app/gestao/page.tsx` explica por que: ficar em `/gestao` sozinho fazia
+   *  o menu inteiro sumir), então o `pathname` de quem está na Gestão é
+   *  `/workspace`, igual ao de quem está na Área de trabalho — dá para saber
+   *  qual das duas é só olhando a querystring, não o `pathname`.
+   *
+   *  ⚠️ Cheguei a recalcular isto a cada troca de `pathname` (lendo
+   *  `window.location.search` direto), e cobria só a IDA: `/gestao` →
+   *  `/workspace?tab=gestao` é troca de rota (o redirect de
+   *  `app/gestao/page.tsx` sai de `/gestao` e entra em `/workspace`), o
+   *  `pathname` muda e o efeito disparava. Não cobria a VOLTA: clicar em
+   *  "Área de trabalho" dentro da Gestão vai de `/workspace?tab=gestao` para
+   *  `/workspace` — MESMA rota, `pathname` não muda, o efeito não disparava
+   *  de novo, e o menu ficava preso em "Gestão" mesmo com o conteúdo já
+   *  tendo voltado. `TabQueryWatcher` usa `useSearchParams()`, que reage à
+   *  querystring sozinha, sem depender de troca de rota — cobre os dois
+   *  sentidos. Existe como componente à parte porque `useSearchParams()`
+   *  exige um `Suspense` em volta (o build do Next.js falha sem isso), e
+   *  este Header renderiza no layout raiz, em toda página do site. */
   const [tabAtivo, setTabAtivo] = useState<string | null>(null);
-  useEffect(() => {
-    setTabAtivo(new URLSearchParams(window.location.search).get('tab'));
-  }, [pathname]);
 
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
@@ -264,6 +270,7 @@ export default function Header() {
 
   return (
     <div className="max-sm:contents sm:sticky sm:top-0 sm:z-50 print:hidden">
+      <TabQueryWatcher onChange={setTabAtivo} />
       {/* ⚠️ NO CELULAR ESTE INVÓLUCRO DEIXA DE EXISTIR COMO CAIXA.
           Abaixo de `sm`, barra da campanha + cabeçalho fixos somavam ~30% da
           tela — o H1 chegava cortado e a barra (4 linhas) acompanhava a

@@ -38,6 +38,7 @@ import AppSidebar from './AppSidebar';
 import ActiveCompanyBanner from './ActiveCompanyBanner';
 import ShareModal from './ShareModal';
 import ImpugnacaoModal from './ImpugnacaoModal';
+import TabQueryWatcher from './TabQueryWatcher';
 
 // Componentes externos (mantidos inalterados)
 import HistoryTab from './HistoryTab';
@@ -248,7 +249,29 @@ export default function AnalysisApp() {
   // Sem isto, qualquer link vindo de fora — como o botão "Ir para Decisões" no
   // estado vazio da Gestão — só consegue largar o utilizador na aba padrão e
   // deixá-lo procurar o destino na barra lateral.
+  //
+  // ⚠️ Antes disparava só uma vez, no mount (array de dependências vazio):
+  // funcionava para ENTRAR na Gestão (`/gestao` → `/workspace?tab=gestao` é
+  // troca de rota — o redirect de app/gestao/page.tsx sai de `/gestao` e
+  // entra em `/workspace`, remonta tudo) mas não para SAIR — "Área de
+  // trabalho" dentro da Gestão vai de `/workspace?tab=gestao` para
+  // `/workspace`, MESMA rota, não remonta, e o efeito nunca disparava de
+  // novo (nem para voltar ao padrão). `tabNaUrl` vem do `TabQueryWatcher`
+  // (usa `useSearchParams`, reage à querystring sozinha, sem depender de
+  // troca de rota).
+  //
+  // `undefined` é "o watcher ainda não respondeu" (não faz nada — evita
+  // cravar 'workspace' por um instante antes do valor real da URL chegar);
+  // `null` é "respondeu, e não há aba na URL" (aí sim volta para
+  // 'workspace' — é o que faltava para a volta funcionar).
+  //
+  // Trocas feitas pela própria barra lateral (`onSetActiveTab`, direto para
+  // `setActiveTab`) não mexem na URL — de propósito, ver comentário sobre
+  // "Gestão" em AppSidebar.tsx — então não passam por aqui, e continuam
+  // funcionando exatamente como antes.
+  const [tabNaUrl, setTabNaUrl] = useState<string | null | undefined>(undefined);
   useEffect(() => {
+    if (tabNaUrl === undefined) return;
     const ABAS_VALIDAS = [
       'workspace', 'analise', 'concorrentes', 'renovacoes',
       'alertas', 'cnae', 'parametrizacao', 'history', 'gestao', 'comparar',
@@ -256,9 +279,8 @@ export default function AnalysisApp() {
       // abrir uma aba que a sidebar do lançamento esconde.
       ...(LAUNCH_FLAGS.capital ? ['capital'] : []),
     ];
-    const alvo = new URLSearchParams(window.location.search).get('tab');
-    if (alvo && ABAS_VALIDAS.includes(alvo)) setActiveTab(alvo);
-  }, []);
+    setActiveTab(tabNaUrl && ABAS_VALIDAS.includes(tabNaUrl) ? tabNaUrl : 'workspace');
+  }, [tabNaUrl]);
   // Valor pré-preenchido para Capital (vindo de uma análise)
   const [capitalPrefilledValor, setCapitalPrefilledValor] = useState<number>(0);
   const [capitalPrefilledObjeto, setCapitalPrefilledObjeto] = useState<string>('');
@@ -1215,6 +1237,9 @@ export default function AnalysisApp() {
      `clip` corta o transbordo horizontal igual e não cria contêiner. */
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-clip relative">
+      {/* Sentinela que mantém `tabNaUrl` (acima) sincronizado com `?tab=` da
+          URL a cada navegação — não só no mount. Não renderiza nada. */}
+      <TabQueryWatcher onChange={setTabNaUrl} />
       {/* Compra de créditos avulsos — chamada de vários pontos (barra de
           créditos, cards de modo e aviso de laudo degradado). Fica na raiz
           para não ser desmontada quando a aba muda. */}
