@@ -270,6 +270,34 @@ export function clearSession({ notifyExpired = true }: { notifyExpired?: boolean
   }
 }
 
+// ─── Logout entre abas ───────────────────────────────────────────────────────────────
+/**
+ * `encerrarSessao()` revoga o cookie no servidor, mas cada aba guarda seu
+ * próprio access token EM MEMÓRIA (isolado por desenho, ver topo do arquivo)
+ * — deslogar numa aba não avisava as outras. Sem isto, a aba B continuava
+ * "logada" (seu token em memória ainda era válido) por até 60 min depois da
+ * aba A deslogar, até a primeira renovação falhar.
+ *
+ * `localStorage` é o único canal que atravessa abas do mesmo navegador:
+ * gravar uma chave aqui dispara o evento `storage` nas OUTRAS abas (nunca na
+ * que gravou — por isso não há loop). Por isso esta chave carrega só um
+ * timestamp, nunca o token: o acesso em si nunca toca o localStorage,
+ * preservando a garantia "invisível a XSS" do topo do arquivo.
+ *
+ * Ao receber o sinal, a outra aba chama `clearSession()` — não
+ * `encerrarSessao()` — porque o cookie já foi revogado pela aba de origem;
+ * chamar de novo só duplicaria a requisição em cada aba aberta.
+ */
+const LOGOUT_BROADCAST_KEY = 'bawzi_logout_broadcast';
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key === LOGOUT_BROADCAST_KEY && e.newValue) {
+      clearSession({ notifyExpired: true });
+    }
+  });
+}
+
 /**
  * Encerra a sessão DE VERDADE: mata o cookie de refresh no servidor e só então
  * limpa a memória.
@@ -301,6 +329,15 @@ export async function encerrarSessao(
     // Offline ou servidor fora: a limpeza local abaixo ainda vale.
   }
   clearSession({ notifyExpired });
+  try {
+    // Timestamp, não booleano: garante um `newValue` sempre DIFERENTE do
+    // anterior, então o evento `storage` dispara mesmo em logouts seguidos
+    // (ex.: usuário sai, loga de novo nesta aba, sai de novo).
+    localStorage.setItem(LOGOUT_BROADCAST_KEY, String(Date.now()));
+  } catch {
+    // Modo privado ou storage bloqueado: as outras abas não serão avisadas,
+    // mas o logout local (acima) já aconteceu — não é motivo para falhar.
+  }
 }
 
 // ─── Inicialização de sessão (chamar no mount do app) ────────────────────────
