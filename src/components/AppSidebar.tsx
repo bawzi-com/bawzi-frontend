@@ -54,6 +54,12 @@ import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 interface AppSidebarProps {
   token: string | null;
   userData: UserData | null;
+  /** ⚠️ Sem isto, "sessão ainda em verificação" e "sem sessão de verdade"
+   *  desenhavam o mesmo card "Modo anônimo" — o cabeçalho (que tem seu
+   *  próprio estado) já mostrava logado enquanto esta barra ainda mostrava
+   *  anônimo. `analysis-app` já calcula isto; faltava só repassar. Opcional,
+   *  com default `false`, para não quebrar quem ainda não passa a prop. */
+  isCheckingAuth?: boolean;
   currentTier: number;
   activeTab: string;
   onSetActiveTab: (tab: string) => void;
@@ -287,6 +293,7 @@ export default function AppSidebar({
   onNotifCountChange,
   onShowAuthModal,
   colapsado = false,
+  isCheckingAuth = false,
 }: AppSidebarProps) {
   const router = useRouter();
 
@@ -644,7 +651,13 @@ export default function AppSidebar({
 
           O que ficou é o que É operacional: o CONTEXTO ATIVO decide por qual
           CNPJ o app inteiro consulta, e trocar de empresa muda a tela toda. */}
-      {token && userData ? (
+      {isCheckingAuth ? (
+        <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center animate-pulse">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-100" />
+          <div className="h-5 w-32 bg-slate-100 rounded-lg mx-auto mb-2" />
+          <div className="h-4 w-40 bg-slate-50 rounded-lg mx-auto" />
+        </div>
+      ) : token && userData ? (
         <div className="flex flex-col gap-2 rounded-[1.5rem] border border-slate-100 bg-white p-2 shadow-sm">
           {/* ⚠️ SÓ RENDERIZA QUANDO HÁ O QUE TROCAR. Com uma empresa só — o
               caso da maioria — o `ActiveContextSwitcher` desenha um `<p>`

@@ -1198,6 +1198,7 @@ export default function AnalysisApp() {
         onNotifCountChange={setNotifCount}
         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
         colapsado={sidebarHidden}
+        isCheckingAuth={isCheckingAuth}
       />
     </div>
   );
@@ -1788,7 +1789,22 @@ export default function AnalysisApp() {
               {/* Aba Gestão */}
               {activeTab === 'gestao' && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  {!token ? (
+                  {/* ⚠️ `isCheckingAuth` PRIMEIRO — mesmo padrão da aba Histórico,
+                   *  algumas linhas acima. Sem este ramo, `!token` também é
+                   *  verdadeiro ENQUANTO a sessão ainda está sendo confirmada
+                   *  (o estado inicial de `token` é `null` até
+                   *  `loadUnifiedData` resolver `initSession()`), e as duas
+                   *  situações desenhavam a MESMA tela — "Inicie sessão",
+                   *  mesmo para quem já estava logado. Reproduzido ao entrar
+                   *  em /gestao (que redireciona para cá) e olhar a tela
+                   *  antes do `/api/auth/refresh` responder. */}
+                  {isCheckingAuth ? (
+                    <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm flex flex-col items-center animate-pulse">
+                      <div className="w-16 h-16 bg-slate-100 rounded-full mb-4"></div>
+                      <div className="h-5 w-48 bg-slate-100 rounded-lg mb-2"></div>
+                      <div className="h-4 w-64 bg-slate-50 rounded-lg"></div>
+                    </div>
+                  ) : !token ? (
                     <div className="bg-white p-12 rounded-[2rem] border border-slate-200 text-center shadow-sm">
                       <h3 className="text-lg font-black text-slate-800 mb-2">Inicie sessão para gerir decisões</h3>
                       <p className="text-slate-500 font-medium mb-6">A gestão de execução usa as análises salvas e o cockpit pós-veredito.</p>
@@ -1861,6 +1877,7 @@ export default function AnalysisApp() {
                       renovacoesCount={renovacoesCount}
                       onNotifCountChange={setNotifCount}
                       onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); setSidebarMobileOpen(false); }}
+                      isCheckingAuth={isCheckingAuth}
                     />
                   </div>
                 </div>
