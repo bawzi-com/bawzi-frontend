@@ -22,6 +22,23 @@ const GENERICOS_CNAE = new Set([
   'especificados', 'especificadas', 'anteriormente', 'partes', 'pecas',
   'acessorios', 'novos', 'usados', 'aluguel', 'locacao', 'manutencao',
   'humano', 'humanos', 'animal', 'animais', 'veterinario', 'veterinaria',
+  // ⚠️ 15/09/2026: sincronizado com fit_negocio.GENERICOS_CNAE (backend) e
+  // com router_analyses._GENERICOS_CNAE, que já tinham estas 58 palavras e
+  // este arquivo não. Três rodadas de correção (10/09: número por extenso e
+  // burocracia de prazo; 13/09: "termo"/"condições"/"atender"; 15/09:
+  // conjugação de "ser") corrigiam falso alerta de "fora do ramo" no Radar,
+  // mas nunca vieram aqui -- mesma classe de bug: palavra de FORMATO de
+  // texto contando como se fosse vocabulário de CNAE.
+  'zero', 'um', 'uma', 'dois', 'duas', 'tres', 'quatro', 'cinco', 'seis',
+  'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze',
+  'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove',
+  'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta',
+  'oitenta', 'noventa', 'cem', 'cento', 'duzentos', 'trezentos', 'mil',
+  'meses', 'dias', 'anos', 'horas', 'semanas', 'diversos', 'diversas',
+  'estabelecidas', 'estabelecido', 'estabelecer', 'conforme', 'mediante',
+  'referencia', 'referente',
+  'termo', 'termos', 'condicoes', 'condicao', 'atender', 'atendendo',
+  'serem', 'sendo', 'sejam',
 ]);
 
 function normalizar(texto: string): string {
