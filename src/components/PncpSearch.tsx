@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar, Info, PlayCircle, Timer, Radar, BrainCircuit,
   Search, MapPin, SlidersHorizontal, Layers, X, Zap, History, ArrowRight, Landmark,
+  Pencil, ChevronDown, AlertTriangle, Archive, Target, Check, Globe, ArrowUpRight, Wallet,
 } from 'lucide-react';
 import PncpStatusBadge from './PncpStatusBadge';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
@@ -1081,7 +1082,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                   onClick={() => setEditandoUf(true)}
                   className="ml-1 text-sky-400 transition-colors hover:text-sky-700"
                 >
-                  ✎
+                  <Pencil size={14} />
                 </button>
               </span>
               )}
@@ -1146,7 +1147,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
               ))}
             </select>
             <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none">
-              <span className="text-slate-400 text-xs">▼</span>
+              <ChevronDown size={14} className="text-slate-400" />
             </div>
           </div>
 
@@ -1383,7 +1384,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 text-red-700 animate-in fade-in slide-in-from-top-2 relative z-10">
-          <span className="text-xl leading-none mt-0.5">⚠️</span>
+          <AlertTriangle size={20} className="shrink-0 mt-0.5" />
           <p className="text-sm font-medium leading-relaxed">{error}</p>
         </div>
       )}
@@ -1422,7 +1423,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
               Inteligência de Mercado
             </h3>
             <div className={`border px-3 py-1.5 rounded-lg flex items-center gap-2 shadow-sm ${uf ? 'bg-amber-100/50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-              <span className="text-sm">🗂️</span>
+              <Archive size={14} />
               <span className="text-[9px] font-black uppercase tracking-widest">
                 Base Histórica: {marketData.previsaoVolume} contrato{marketData.previsaoVolume === '1' ? '' : 's'} assinado{marketData.previsaoVolume === '1' ? '' : 's'} {uf ? `em ${uf}` : 'no PNCP'}
               </span>
@@ -1498,7 +1499,8 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                   title={descricaoFitBase(fitBase)}
                   className="text-[10px] text-violet-300 font-medium block mt-1 relative z-10"
                 >
-                  🎯 ordenados pelo ramo de {fitBase.empresa || 'sua empresa'}
+                  <Target size={11} className="inline -mt-0.5 mr-1" />
+                  ordenados pelo ramo de {fitBase.empresa || 'sua empresa'}
                   {fitBase.fonte === 'carteira' ? ` · ${fitBase.carteira} contrato${fitBase.carteira === 1 ? '' : 's'} no PNCP` : ' · pelo cadastro'}
                 </span>
               )}
@@ -1524,7 +1526,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                       : 'border-emerald-300 text-emerald-300'
                   }`}
                 >
-                  {i < selected.size ? '✓' : i + 1}
+                  {i < selected.size ? <Check size={12} /> : i + 1}
                 </span>
               ))}
             </div>
@@ -1629,16 +1631,19 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           title="Plataforma onde a disputa acontece — clique para abrir"
-                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200 hover:bg-teal-100 hover:border-teal-300 transition-colors"
+                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200 hover:bg-teal-100 hover:border-teal-300 transition-colors inline-flex items-center gap-1"
                         >
-                          🌐 {edital.plataforma} ↗
+                          <Globe size={11} />
+                          {edital.plataforma}
+                          <ArrowUpRight size={11} />
                         </a>
                       ) : (
                         <span
                           title="Plataforma onde a disputa acontece"
-                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200"
+                          className="text-[10px] font-black text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200 inline-flex items-center gap-1"
                         >
-                          🌐 {edital.plataforma}
+                          <Globe size={11} />
+                          {edital.plataforma}
                         </span>
                       )
                     )}
@@ -1656,8 +1661,9 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                         </span>
+                        <MapPin size={11} />
                         <span className="text-[10px] font-black uppercase tracking-widest">
-                          📍 Oportunidade Local
+                          Oportunidade Local
                         </span>
                       </span>
                     )}
@@ -1671,13 +1677,14 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                       return (
                         <span
                           title={`${rotulo.texto}${rotulo.termos ? ` — casou em: ${rotulo.termos}` : ''}${edital.fit_negocio?.fonte === 'carteira' ? ' (pela carteira da empresa no PNCP)' : ' (pelo cadastro da empresa)'}`}
-                          className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border shadow-sm animate-in fade-in zoom-in duration-500 ${
+                          className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border shadow-sm animate-in fade-in zoom-in duration-500 inline-flex items-center gap-1 ${
                             rotulo.tom === 'alto'
                               ? 'bg-gradient-to-r from-violet-50 to-fuchsia-50 text-violet-700 border-violet-200'
                               : 'bg-slate-50 text-slate-600 border-slate-200'
                           }`}
                         >
-                          {rotulo.tom === 'alto' ? '🎯 ' : '≈ '}{rotulo.texto}
+                          <Target size={11} className={rotulo.tom === 'alto' ? '' : 'opacity-60'} />
+                          {rotulo.texto}
                           {rotulo.termos && (
                             <span className="ml-1 font-semibold normal-case tracking-normal opacity-80">· {rotulo.termos}</span>
                           )}
@@ -1836,7 +1843,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                   >
                     {loadingId === edital.id ? (
                       <><span className="w-3 h-3 border-2 border-red-300 border-t-red-600 rounded-full animate-spin"></span> Cancelar extração</>
-                    ) : 'Extrair e Analisar IA ⚡'}
+                    ) : <><Zap size={13} />Extrair e Analisar IA</>}
                   </button>
                   {edital.link_sistema_origem && (
                     <a
@@ -1847,7 +1854,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                       title={`Abrir a disputa${edital.plataforma ? ` na ${edital.plataforma}` : ' na plataforma de origem'}`}
                       className="sm:w-auto px-5 py-3 bg-teal-50 text-teal-700 font-black rounded-xl text-xs border border-teal-200 hover:bg-teal-100 transition-all flex items-center justify-center gap-1.5"
                     >
-                      Ir para a disputa ↗
+                      Ir para a disputa<ArrowUpRight size={13} />
                     </a>
                   )}
                   {onMedirFolego && (
@@ -1860,7 +1867,7 @@ const UFS: readonly { sigla: string; nome: string }[] = [
                       title="Abre o Fôlego Financeiro com o valor e o objeto deste edital já preenchidos"
                       className="sm:w-auto px-5 py-3 bg-amber-50 text-amber-700 font-black rounded-xl text-xs border border-amber-200 hover:bg-amber-100 transition-all flex items-center justify-center gap-1.5"
                     >
-                      💰 Medir fôlego
+                      <Wallet size={13} />Medir fôlego
                     </button>
                   )}
                   {edital.link && (
