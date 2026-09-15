@@ -942,6 +942,53 @@ function DecisionSnapshot({
   const evidenceItems = decision.evidencias.slice(0, 4);
   const gapItems = dedupTextos(decision.lacunas, _vistosDedup);
 
+  /* ── Lacunas de perfil da empresa ────────────────────────────────────────
+   * `_calcular_confianca_decisao` (backend, app/api/router_analyses.py) tira
+   * até 6 pontos de confiança quando há lacunas no material — 2 pontos por
+   * lacuna, teto de 6 no total. Uma fração recorrente dessas lacunas não é
+   * sobre o edital: é o perfil da empresa (produtos/serviços, regiões
+   * atendidas, margem mínima, limite operacional, capacidade operacional)
+   * que a IA foi conferir e achou vazio. Isso é preenchível pelo usuário e
+   * vale para TODAS as análises futuras, não só esta.
+   *
+   * O backend não marca a origem de cada lacuna (a lista mistura texto livre
+   * da IA com itens injetados deterministicamente), então a classificação
+   * abaixo é por palavra-chave sobre o texto — uma aproximação. Ela funciona
+   * porque a IA tende a nomear o campo do formulário quase literalmente
+   * quando o aponta como faltante (foi o que aconteceu nesta mesma análise:
+   * "Margem mínima desejada da empresa não informada."). O ganho mostrado é
+   * só a fatia do teto de 6 atribuível a essas lacunas — a fórmula tem
+   * outros tetos (cobertura, veredito) que este cálculo não replica, por
+   * isso a mensagem fala em "até X pontos", nunca num número final garantido.
+   */
+  const PERFIL_EMPRESA_CAMPOS: { termo: string; campo: string }[] = [
+    { termo: 'produtos e servico', campo: 'produtos e serviços' },
+    { termo: 'regioes atendidas', campo: 'regiões atendidas' },
+    { termo: 'margem minima', campo: 'margem mínima' },
+    { termo: 'limite operacional', campo: 'limite operacional' },
+    { termo: 'capacidade operacional', campo: 'capacidade operacional' },
+    { termo: 'historico de vitorias', campo: 'histórico de vitórias' },
+  ];
+  const _foldAccents = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const camposDePerfilFaltando = Array.from(new Set(
+    decision.lacunas.flatMap((texto) => {
+      const alvo = _foldAccents(texto);
+      return PERFIL_EMPRESA_CAMPOS.filter(({ termo }) => alvo.includes(termo)).map(({ campo }) => campo);
+    })
+  ));
+  const lacunasDePerfilCount = decision.lacunas.filter((texto) => {
+    const alvo = _foldAccents(texto);
+    return PERFIL_EMPRESA_CAMPOS.some(({ termo }) => alvo.includes(termo));
+  }).length;
+  const PONTOS_POR_LACUNA = 2;
+  const TETO_PENALIDADE_LACUNAS = 6;
+  const _penalidadeLacunasAtual = Math.min(TETO_PENALIDADE_LACUNAS, decision.lacunas.length * PONTOS_POR_LACUNA);
+  const _penalidadeLacunasSemPerfil = Math.min(
+    TETO_PENALIDADE_LACUNAS,
+    Math.max(0, decision.lacunas.length - lacunasDePerfilCount) * PONTOS_POR_LACUNA,
+  );
+  const ganhoPotencialConfianca = _penalidadeLacunasAtual - _penalidadeLacunasSemPerfil;
+
   // Detalhes da "Base da confiança" que apenas repetem evidências são omitidos
   const _evidenciaTextos = evidenceItems.map(e => `${e.titulo || ''} ${e.detalhe || ''}`);
   const detalheJaCoberto = (txt?: string) =>
@@ -1373,6 +1420,37 @@ function DecisionSnapshot({
                 title: item,
               }))}
             />
+            {camposDePerfilFaltando.length > 0 && (
+              <div
+                className="mt-3 flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2.5 text-[11px] font-medium leading-relaxed text-violet-800"
+                title="Cada lacuna custa até 2 pontos de confiança nesta análise, com teto de 6 no total (ver 'O que significam Viabilidade, Confiança e Cobertura'). Esta conta isola só a fatia do perfil da empresa dentro desse teto; quando outras lacunas (do edital, não do perfil) já esgotam o teto sozinhas, completar o perfil não muda ESTA análise, mas remove o gap do cálculo nas próximas. A fórmula completa tem outros limites (cobertura, veredito) que não estão aqui — trate como estimativa."
+              >
+                <Sparkles size={14} className="mt-0.5 shrink-0 text-violet-500" />
+                <span>
+                  {lacunasDePerfilCount === 1 ? 'Uma dessas lacunas vem' : `${lacunasDePerfilCount} dessas lacunas vêm`} do{' '}
+                  <strong>perfil da empresa incompleto</strong> — não do edital. Preencher {camposDePerfilFaltando.join(', ')}{' '}
+                  no perfil{' '}
+                  {ganhoPotencialConfianca > 0 ? (
+                    <>
+                      pode recuperar até <strong>{ganhoPotencialConfianca} ponto{ganhoPotencialConfianca === 1 ? '' : 's'} de confiança</strong>
+                      {decision.confianca != null && (
+                        <> (hoje {decision.confianca}%, até {Math.min(95, decision.confianca + ganhoPotencialConfianca)}%)</>
+                      )} — e vale para as próximas análises também.{' '}
+                    </>
+                  ) : (
+                    <>
+                      não muda a confiança <strong>desta análise</strong> — as outras lacunas já esgotam sozinhas o desconto máximo — mas o gap some do cálculo e ajuda a confiança das próximas análises.{' '}
+                    </>
+                  )}
+                  <a
+                    href="/profile"
+                    className="font-semibold text-violet-700 underline decoration-violet-300 underline-offset-2 hover:text-violet-900"
+                  >
+                    Completar perfil da empresa <ExternalLink size={10} className="inline -mt-0.5" />
+                  </a>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
