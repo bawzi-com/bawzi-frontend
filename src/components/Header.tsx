@@ -15,6 +15,23 @@ export default function Header() {
   const pathname = usePathname();
   const isLanding = pathname === '/';
 
+  /** ⚠️ Sem isto, "Gestão" no menu de cima nunca acendia — ela mora dentro
+   *  de `/workspace?tab=gestao` (comentário em `app/gestao/page.tsx` explica
+   *  por que: ficar em `/gestao` sozinho fazia o menu inteiro sumir), então
+   *  o `pathname` de quem está na Gestão é `/workspace`, igual ao de quem
+   *  está na Área de trabalho. Resultado: clicar em Gestão troca o conteúdo
+   *  certinho, mas o menu continuava sublinhando "Área de trabalho" — parecia
+   *  que o clique "não abria" ou "voltava". Mesmo padrão de leitura de
+   *  `?tab=` que `analysis-app.tsx` já usa (não `useSearchParams`, que
+   *  exigiria envolver este Header — renderizado no layout raiz, em toda
+   *  página do site — num `Suspense`). Recalcula a cada troca de `pathname`
+   *  porque é isso que muda quando `/gestao` redireciona de volta para
+   *  `/workspace` com a aba na querystring. */
+  const [tabAtivo, setTabAtivo] = useState<string | null>(null);
+  useEffect(() => {
+    setTabAtivo(new URLSearchParams(window.location.search).get('tab'));
+  }, [pathname]);
+
   const [token, setToken] = useState<string | null>(null);
   const [userTier, setUserTier] = useState<string>('1');
   const [userData, setUserData] = useState<{name?: string, email?: string, avatar_url?: string | null} | null>(null);
@@ -289,11 +306,11 @@ export default function Header() {
             ))
           ) : (
             <>
-              <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+              <Link href="/workspace" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' && tabAtivo !== 'gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
                 Área de trabalho
               </Link>
               {token && (
-                <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
+                <Link href="/gestao" className={`text-sm font-bold pb-1 border-b-2 transition-all ${pathname === '/workspace' && tabAtivo === 'gestao' ? 'text-emerald-700 border-emerald-600' : 'text-slate-500 border-transparent hover:text-slate-900'}`}>
                   Gestão
                 </Link>
               )}
