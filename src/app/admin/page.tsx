@@ -678,6 +678,9 @@ export default function AdminDashboard() {
   const [stripeLiveSecretMasked, setStripeLiveSecretMasked] = useState('');
   const [stripeLiveSecretInput, setStripeLiveSecretInput] = useState('');
   const [stripeLivePublishable, setStripeLivePublishable] = useState('');
+  const [stripeLiveWebhookSecretSet, setStripeLiveWebhookSecretSet] = useState(false);
+  const [stripeLiveWebhookSecretMasked, setStripeLiveWebhookSecretMasked] = useState('');
+  const [stripeLiveWebhookSecretInput, setStripeLiveWebhookSecretInput] = useState('');
   const [stripeConfigUpdatedAt, setStripeConfigUpdatedAt] = useState('');
   const [stripeConfigUpdatedBy, setStripeConfigUpdatedBy] = useState('');
   const [savingStripeConfig, setSavingStripeConfig] = useState(false);
@@ -828,6 +831,8 @@ export default function AdminDashboard() {
           setStripeLiveSecretSet(!!stripeData.live_secret_key_set);
           setStripeLiveSecretMasked(stripeData.live_secret_key_masked || '');
           setStripeLivePublishable(stripeData.live_publishable_key || '');
+          setStripeLiveWebhookSecretSet(!!stripeData.live_webhook_secret_set);
+          setStripeLiveWebhookSecretMasked(stripeData.live_webhook_secret_masked || '');
           setStripeConfigUpdatedAt(stripeData.updated_at || '');
           setStripeConfigUpdatedBy(stripeData.updated_by || '');
         }
@@ -1580,12 +1585,14 @@ export default function AdminDashboard() {
           mode: targetMode,
           live_secret_key: stripeLiveSecretInput,
           live_publishable_key: stripeLivePublishable,
+          live_webhook_secret: stripeLiveWebhookSecretInput,
         }),
       });
       const data = await res.json().catch(() => null);
       if (res.ok) {
         setStripeMode(targetMode);
         setStripeLiveSecretInput('');
+        setStripeLiveWebhookSecretInput('');
         setStripeConfigMsg({ text: data?.message || 'Configuração salva.', ok: true });
         // Recarrega o estado mascarado da chave para refletir o que foi salvo
         const refreshed = await apiFetch(`${API_URL}/api/billing/admin/stripe-config`);
@@ -1593,6 +1600,8 @@ export default function AdminDashboard() {
           const rd = await refreshed.json();
           setStripeLiveSecretSet(!!rd.live_secret_key_set);
           setStripeLiveSecretMasked(rd.live_secret_key_masked || '');
+          setStripeLiveWebhookSecretSet(!!rd.live_webhook_secret_set);
+          setStripeLiveWebhookSecretMasked(rd.live_webhook_secret_masked || '');
           setStripeConfigUpdatedAt(rd.updated_at || '');
           setStripeConfigUpdatedBy(rd.updated_by || '');
         }
@@ -3582,6 +3591,10 @@ export default function AdminDashboard() {
                       setStripeConfigMsg({ text: 'Cole a chave secreta live abaixo antes de ativar o modo oficial.', ok: false });
                       return;
                     }
+                    if (!stripeLiveWebhookSecretSet && !stripeLiveWebhookSecretInput.trim()) {
+                      setStripeConfigMsg({ text: 'Cole o webhook secret live abaixo antes de ativar o modo oficial - sem ele o Stripe cobra o cartao e o servidor rejeita a confirmacao.', ok: false });
+                      return;
+                    }
                     handleSaveStripeConfig('live');
                   }}
                   className={`px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:cursor-not-allowed ${
@@ -3640,12 +3653,31 @@ export default function AdminDashboard() {
                     </span>
                     <ExternalLink size={15} className="shrink-0 text-slate-500" />
                   </a>
+                  <a
+                    href="https://dashboard.stripe.com/webhooks"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3 transition-all hover:border-slate-600 hover:bg-slate-900"
+                  >
+                    <span>
+                      <span className="block text-sm font-black text-slate-200">Webhook secret no Stripe</span>
+                      <span className="block text-[11px] text-slate-500">crie o endpoint e copie o Signing secret</span>
+                    </span>
+                    <ExternalLink size={15} className="shrink-0 text-slate-500" />
+                  </a>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
                   No Stripe, desligue o <strong className="text-slate-400">modo de teste</strong> antes de copiar —
                   com ele ligado a página mostra <code className="text-slate-400">pk_test_</code> e{' '}
                   <code className="text-slate-400">sk_test_</code>. A chave secreta aparece uma única vez:
                   copie direto de lá e não a reaproveite em outro ambiente.
+                </p>
+                <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+                  O webhook é uma URL, não uma chave: em <strong className="text-slate-400">Webhooks → Add endpoint</strong>,
+                  cole <code className="text-slate-400 break-all">{API_URL}/api/billing/webhook</code> e selecione os
+                  eventos de checkout/assinatura. Depois de criado, o Stripe mostra o{' '}
+                  <strong className="text-slate-400">Signing secret</strong> (começa com{' '}
+                  <code className="text-slate-400">whsec_</code>) uma única vez — cole-o no campo abaixo.
                 </p>
               </div>
 
@@ -3675,6 +3707,23 @@ export default function AdminDashboard() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <Lock size={14} /> Webhook secret live (whsec_...)
+                </label>
+                <input
+                  type="password"
+                  value={stripeLiveWebhookSecretInput}
+                  onChange={(e) => setStripeLiveWebhookSecretInput(e.target.value)}
+                  placeholder={stripeLiveWebhookSecretSet ? stripeLiveWebhookSecretMasked : 'Cole o webhook secret live'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Sem isto o Stripe cobra o cartão de verdade e o servidor rejeita a confirmação por assinatura
+                  inválida — nenhum crédito é lançado ao cliente. Deixe em branco para manter o já salvo.
+                </p>
               </div>
 
               {stripeConfigMsg && (
