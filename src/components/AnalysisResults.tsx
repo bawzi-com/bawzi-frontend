@@ -1125,7 +1125,7 @@ function DecisionSnapshot({
                 title={
                   `Percentual de campos críticos do edital (objeto, valores, prazos, garantias etc.) que a IA conseguiu localizar, mais quanto dos documentos oficiais foi efetivamente lido. ${
                     result.qualidade_extracao.campos_faltantes?.length
-                      ? `Não localizados: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
+                      ? `Para chegar a 100%, localizar: ${result.qualidade_extracao.campos_faltantes.join(', ')}`
                       : 'Todos os campos críticos foram localizados no material.'
                   }`
                 }
@@ -1186,10 +1186,15 @@ function DecisionSnapshot({
               <strong className="text-slate-800">
                 Confiança {decision.confianca == null ? '(não informada)' : `(${decision.confianca}%${decision.confianca_informada ? '' : ', estimada'})`}
               </strong> — o quanto a IA está segura <em>desta decisão</em>, pela quantidade e qualidade das evidências
-              encontradas. Cai quando há lacunas no material — não é a mesma coisa que viabilidade.
+              encontradas. Cai quando há lacunas no material — não é a mesma coisa que viabilidade. O teto desta
+              régua é <strong>95%</strong> — não existe confiança de 100%, mesmo com o material perfeito.
               {decision.confianca != null && !decision.confianca_informada && (
                 <> <span className="text-slate-500">Nesta análise o valor foi <strong>derivado do score</strong> e ajustado
                 por lacunas e cobertura, porque a leitura não devolveu um número próprio.</span></>
+              )}
+              {result.qualidade_extracao?.nivel && result.qualidade_extracao.nivel !== 'alta' && (
+                <> <span className="text-slate-500">A cobertura desta análise não é alta — isso também reduz o teto
+                que a confiança consegue alcançar aqui.</span></>
               )}
             </p>
             <p>
@@ -1198,8 +1203,12 @@ function DecisionSnapshot({
               </strong> — quanto do edital esta análise de facto usou: os campos críticos (objeto, valores,
               prazos, garantias…) que foram localizados, mais a proporção dos documentos oficiais que foi lida.
               {result.qualidade_extracao?.campos_faltantes?.length
-                ? <> Não localizados: {result.qualidade_extracao.campos_faltantes.join(', ')}.</>
-                : null}
+                ? <> Para chegar a 100%: localizar {result.qualidade_extracao.campos_faltantes.join(', ')}.</>
+                : typeof result.qualidade_extracao?.documentos_lidos === 'number'
+                  && typeof result.qualidade_extracao?.documentos_publicados === 'number'
+                  && result.qualidade_extracao.documentos_lidos < result.qualidade_extracao.documentos_publicados
+                  ? <> Campos críticos completos; para chegar a 100%, falta ler os documentos oficiais restantes.</>
+                  : null}
               {typeof result.qualidade_extracao?.documentos_lidos === 'number'
                 && typeof result.qualidade_extracao?.documentos_publicados === 'number' && (
                 <> <span className="text-slate-500">Documentos oficiais lidos: <strong>
@@ -1455,32 +1464,52 @@ function DecisionSnapshot({
         )}
 
         {/* ── Base da confiança ──────────────────────────────────────────── */}
-        {decision.fatores_confianca.length > 0 && (
-          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-            <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
-              <FileText size={14} className="text-slate-400" />
-              Base da confiança
-            </p>
-            <Timeline
-              dense
-              items={decision.fatores_confianca.slice(0, 5).map((factor, index) => {
-                const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
-                const tone: TimelineTone =
-                  factor.status === 'confirmado' ? 'emerald'
-                  : factor.status === 'risco' ? 'red'
-                  : factor.status === 'ausente' ? 'slate'
-                  : 'amber';
-                return {
-                  key: `${factor.criterio}-${index}`,
-                  tone,
-                  title: factor.criterio,
-                  badge: { label: status.label, tone },
-                  description: factor.detalhe,
-                };
-              })}
-            />
-          </div>
-        )}
+        {decision.fatores_confianca.length > 0 && (() => {
+          // ⚠️ PENDÊNCIA NÃO PODE SUMIR NO CORTE. `.slice(0, 5)` na ordem
+          // original escondia 'ausente'/'parcial' sempre que os 5 primeiros
+          // fatores da IA vinham 'confirmado' — exatamente o que o usuário
+          // mais precisa ver primeiro, porque é o que dá para fazer algo a
+          // respeito. A ordenação não muda o que a IA disse, só a prioridade
+          // de exibição quando há mais de 5 fatores.
+          const PRIORIDADE: Record<string, number> = { ausente: 0, parcial: 1, risco: 2, confirmado: 3 };
+          const fatoresPendentes = decision.fatores_confianca.filter(
+            (f) => f.status === 'ausente' || f.status === 'parcial'
+          );
+          const fatoresOrdenados = [...decision.fatores_confianca].sort(
+            (a, b) => (PRIORIDADE[a.status || ''] ?? 4) - (PRIORIDADE[b.status || ''] ?? 4)
+          );
+          return (
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+                <FileText size={14} className="text-slate-400" />
+                Base da confiança
+                {fatoresPendentes.length > 0 && (
+                  <span className="font-medium normal-case tracking-normal text-slate-400">
+                    · {fatoresPendentes.length} pendente{fatoresPendentes.length === 1 ? '' : 's'} de {decision.fatores_confianca.length}
+                  </span>
+                )}
+              </p>
+              <Timeline
+                dense
+                items={fatoresOrdenados.slice(0, 5).map((factor, index) => {
+                  const status = confidenceStatusUi[factor.status] || confidenceStatusUi.parcial;
+                  const tone: TimelineTone =
+                    factor.status === 'confirmado' ? 'emerald'
+                    : factor.status === 'risco' ? 'red'
+                    : factor.status === 'ausente' ? 'slate'
+                    : 'amber';
+                  return {
+                    key: `${factor.criterio}-${index}`,
+                    tone,
+                    title: factor.criterio,
+                    badge: { label: status.label, tone },
+                    description: factor.detalhe,
+                  };
+                })}
+              />
+            </div>
+          );
+        })()}
         </details>
 
         {/* ── Próxima ação ──────────────────────────────────────────────── */}
