@@ -2162,6 +2162,7 @@ export default function AdminDashboard() {
                   <th className="pb-4 pl-4 font-black"><div className="flex items-center gap-2"><Mail size={14}/> E-mail da Conta</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><Briefcase size={14}/> Workspace</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><CalendarDays size={14}/> Cadastro</div></th>
+                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><Clock size={14}/> Acessos</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><ShieldAlert size={14}/> Nível Atual</div></th>
                   <th className="pb-4 font-black"><div className="flex items-center gap-2"><Activity size={14}/> Consumo</div></th>
                   <th className="pb-4 pr-4 font-black text-right">Ação Administrativa</th>
@@ -2170,7 +2171,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-slate-800/50">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-10 text-center text-slate-500 font-medium">
+                    <td colSpan={7} className="py-10 text-center text-slate-500 font-medium">
                       Nenhum usuário encontrado com este e-mail.
                     </td>
                   </tr>
@@ -2215,6 +2216,14 @@ export default function AdminDashboard() {
                                 BLOQUEADO {user.blocked_at ? `· ${fmtData(user.blocked_at)}` : ''}
                               </span>
                             )}
+                            {(user.risco_cadastro?.score ?? 0) >= 40 && (
+                              <span
+                                className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                title={`Sinal de cadastro suspeito (score ${user.risco_cadastro.score}/100) — não bloqueia a conta, só marca para revisão: ${(user.risco_cadastro.motivos || []).join('; ')}`}
+                              >
+                                ⚠ SUSPEITO · {user.risco_cadastro.score}
+                              </span>
+                            )}
                           </div>
                           {isBanned && user.ban_reason && (
                             <p className="text-xs text-red-400/60 mt-1 pl-0.5">Motivo: {user.ban_reason}</p>
@@ -2232,6 +2241,17 @@ export default function AdminDashboard() {
                           <span className="text-slate-300 text-sm font-medium">{fmtData(user.created_at)}</span>
                           <span className="block text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5">
                             {tempoDesde(user.created_at)}
+                          </span>
+                        </td>
+                        <td className="py-5">
+                          <span className="text-slate-300 text-sm font-medium">
+                            {user.login_count || 0} {user.login_count === 1 ? 'acesso' : 'acessos'}
+                          </span>
+                          <span
+                            className="block text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5"
+                            title={user.last_login_at ? `Último acesso: ${fmtDataHora(user.last_login_at)}` : 'Nenhum acesso registado desde que passámos a contar'}
+                          >
+                            {user.last_login_at ? tempoDesde(user.last_login_at) : 'nunca registado'}
                           </span>
                         </td>
                         <td className="py-5">
@@ -6108,6 +6128,11 @@ export default function AdminDashboard() {
                         nota={tempoDesde(detailsData.datas?.ultima_atividade) || 'nunca analisou'}
                       />
                       <CampoFicha
+                        rotulo="Último acesso"
+                        valor={fmtDataHora(detailsData.datas?.ultimo_login)}
+                        nota={tempoDesde(detailsData.datas?.ultimo_login) || 'nenhum acesso registado'}
+                      />
+                      <CampoFicha
                         rotulo="Bloqueio"
                         valor={fmtDataHora(detailsData.moderacao?.blocked_at)}
                         nota={detailsData.moderacao?.blocked_by ? `por ${detailsData.moderacao.blocked_by}` : ''}
@@ -6119,6 +6144,14 @@ export default function AdminDashboard() {
                         nota={detailsData.moderacao?.banned_by ? `por ${detailsData.moderacao.banned_by}` : ''}
                         destaque={detailsData.moderacao?.banned ? 'red' : undefined}
                       />
+                      {detailsData.antifraude && (
+                        <CampoFicha
+                          rotulo="Sinal de risco no cadastro"
+                          valor={`${detailsData.antifraude.score}/100`}
+                          nota={(detailsData.antifraude.motivos || []).join('; ') || 'não bloqueia a conta — só marca para revisão'}
+                          destaque={detailsData.antifraude.score >= 70 ? 'red' : 'amber'}
+                        />
+                      )}
                     </div>
                     {detailsData.moderacao?.banned && detailsData.moderacao?.ban_reason && (
                       <p className="text-xs text-red-400/70 mt-3">
@@ -6228,6 +6261,7 @@ export default function AdminDashboard() {
                     <SecaoTitulo icon={<Activity size={15} className="text-amber-400" />} texto="Uso" />
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                       <CampoFicha rotulo="Análises totais" valor={String(detailsData.uso?.analises_total ?? 0)} />
+                      <CampoFicha rotulo="Acessos" valor={String(detailsData.acesso?.login_count ?? 0)} />
                       <CampoFicha rotulo="Login" valor={detailsData.identidade?.auth_provider || '—'} />
                       <CampoFicha rotulo="Tier do usuário" valor={`TIER ${detailsData.acesso?.tier_usuario ?? 0}`} />
                       <CampoFicha rotulo="Cliente Stripe" valor={detailsData.acesso?.stripe_customer_id ? 'Sim' : '—'} />
