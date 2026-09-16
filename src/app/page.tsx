@@ -2048,8 +2048,21 @@ function FAQ() {
       a: 'Não. A Bawzi faz triagem — mapeia riscos, aponta cláusulas sensíveis e organiza documentos críticos. Decisões contratuais complexas ainda exigem revisão jurídica especializada. O objetivo é eliminar o trabalho repetitivo e dar à sua equipe um ponto de partida qualificado.',
     },
     {
+      // Motor: backend/app/services/pncp/juridico.py (guarda contra
+      // confundir 8.666/93 com 14.133/2021) + models.py (fundamentacao_legal
+      // obrigatoria) + analysis_quality.py (valida formato da citacao TCU).
+      q: 'O motor está atualizado com a Lei 14.133/2021 e a jurisprudência do TCU?',
+      a: 'Sim. O motor jurídico da Bawzi é parametrizado especificamente pela Nova Lei de Licitações (Lei 14.133/2021), com validação para não confundir com a lei antiga (8.666/93), e cita o artigo ou acórdão do TCU que fundamenta cada risco apontado.',
+    },
+    {
       q: 'Preciso enviar documentos internos ou sigilosos?',
       a: 'Não. A análise é feita sobre o edital público e os dados do PNCP, que são fontes abertas do governo federal. Nenhum documento interno da empresa precisa ser enviado.',
+    },
+    {
+      // Mesma politica ja publicada em /docs e /privacidade -- so faltava
+      // aparecer aqui, que e onde o visitante cetico realmente le.
+      q: 'Meus editais e dados de qualificação são usados para treinar alguma IA?',
+      a: 'Não. A Bawzi não usa documentos de clientes para treinar modelo público próprio, nem vende dados a terceiros. Provedores externos de IA, quando usados, seguem contratos e configurações compatíveis com uso empresarial e restrição de treinamento — os mesmos termos detalhados na nossa página de privacidade.',
     },
     {
       q: 'Funciona com qualquer modalidade de licitação?',
