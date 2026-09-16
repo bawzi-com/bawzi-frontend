@@ -2159,19 +2159,20 @@ export default function AdminDashboard() {
             <table className="w-full text-left border-collapse min-w-[980px]">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase tracking-widest">
-                  <th className="pb-4 pl-4 font-black"><div className="flex items-center gap-2"><Mail size={14}/> E-mail da Conta</div></th>
-                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><Briefcase size={14}/> Workspace</div></th>
-                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><CalendarDays size={14}/> Cadastro</div></th>
-                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><Clock size={14}/> Acessos</div></th>
-                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><ShieldAlert size={14}/> Nível Atual</div></th>
-                  <th className="pb-4 font-black"><div className="flex items-center gap-2"><Activity size={14}/> Consumo</div></th>
-                  <th className="pb-4 pr-4 font-black text-right">Ação Administrativa</th>
+                  <th className="pb-3 pl-4 font-black"><div className="flex items-center gap-2"><Mail size={14}/> E-mail da Conta</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><AlertTriangle size={14}/> Status</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><Briefcase size={14}/> Workspace</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><CalendarDays size={14}/> Cadastro</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><Clock size={14}/> Acessos</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><ShieldAlert size={14}/> Nível Atual</div></th>
+                  <th className="pb-3 font-black"><div className="flex items-center gap-2"><Activity size={14}/> Consumo</div></th>
+                  <th className="pb-3 pr-4 font-black text-right">Ação Administrativa</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-500 font-medium">
+                    <td colSpan={8} className="py-10 text-center text-slate-500 font-medium">
                       Nenhum usuário encontrado com este e-mail.
                     </td>
                   </tr>
@@ -2187,11 +2188,12 @@ export default function AdminDashboard() {
 
                     const isBanned = Boolean(user.banned);
                     const isBlocked = Boolean(user.blocked) && !isBanned;
+                    const isSuspeito = (user.risco_cadastro?.score ?? 0) >= 40;
 
                     return (
                       <tr key={user.id} className={`hover:bg-slate-800/20 transition-colors group ${isBanned ? 'opacity-60' : ''}`}>
-                        <td className="py-5 pl-4">
-                          <div className="flex items-center gap-2 flex-wrap">
+                        <td className="py-3 pl-4 align-top">
+                          <div className="flex items-center gap-2">
                             <span className="font-medium text-slate-200">{user.email}</span>
                             <button
                               onClick={() => handleEmailChange(user.id, user.email)}
@@ -2200,50 +2202,65 @@ export default function AdminDashboard() {
                             >
                               <Edit2 size={14} />
                             </button>
-                            {isBanned && (
-                              <span
-                                className="px-2 py-0.5 rounded-full text-xs font-black bg-red-500/20 text-red-400 border border-red-500/30"
-                                title={`Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` por ${user.banned_by}` : ''}`}
-                              >
-                                BANIDO {user.banned_at ? `· ${fmtData(user.banned_at)}` : ''}
-                              </span>
-                            )}
-                            {isBlocked && (
-                              <span
-                                className="px-2 py-0.5 rounded-full text-xs font-black bg-orange-500/20 text-orange-400 border border-orange-500/30"
-                                title={`Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` por ${user.blocked_by}` : ''}`}
-                              >
-                                BLOQUEADO {user.blocked_at ? `· ${fmtData(user.blocked_at)}` : ''}
-                              </span>
-                            )}
-                            {(user.risco_cadastro?.score ?? 0) >= 40 && (
-                              <span
-                                className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                                title={`Sinal de cadastro suspeito (score ${user.risco_cadastro.score}/100) — não bloqueia a conta, só marca para revisão: ${(user.risco_cadastro.motivos || []).join('; ')}`}
-                              >
-                                ⚠ SUSPEITO · {user.risco_cadastro.score}
-                              </span>
-                            )}
                           </div>
-                          {isBanned && user.ban_reason && (
-                            <p className="text-xs text-red-400/60 mt-1 pl-0.5">Motivo: {user.ban_reason}</p>
-                          )}
-                          {(isBanned || isBlocked) && (
-                            <p className="text-[11px] text-slate-500 mt-1 pl-0.5">
-                              {isBanned
-                                ? `Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` · por ${user.banned_by}` : ''}`
-                                : `Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` · por ${user.blocked_by}` : ''}`}
-                            </p>
+                        </td>
+                        {/* Coluna Status: os 3 selos + motivo + "banido/bloqueado em"
+                            moraram na célula de e-mail até aqui — cada selo
+                            extra esticava SÓ essa célula, e o e-mail virava de
+                            1 a 4+ linhas dependendo da conta. Concentrados
+                            numa coluna própria, o e-mail fica sempre 1 linha
+                            e quem varre a tabela vê o problema numa coluna
+                            fixa, não misturado ao texto do e-mail. */}
+                        <td className="py-3 align-top">
+                          {!isBanned && !isBlocked && !isSuspeito ? (
+                            <span className="text-slate-700 text-xs">—</span>
+                          ) : (
+                            <div className="flex flex-col items-start gap-1">
+                              {isBanned && (
+                                <span
+                                  className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-black bg-red-500/20 text-red-400 border border-red-500/30 whitespace-nowrap"
+                                  title={`Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` por ${user.banned_by}` : ''}`}
+                                >
+                                  BANIDO {user.banned_at ? `· ${fmtData(user.banned_at)}` : ''}
+                                </span>
+                              )}
+                              {isBlocked && (
+                                <span
+                                  className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-black bg-orange-500/20 text-orange-400 border border-orange-500/30 whitespace-nowrap"
+                                  title={`Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` por ${user.blocked_by}` : ''}`}
+                                >
+                                  BLOQUEADO {user.blocked_at ? `· ${fmtData(user.blocked_at)}` : ''}
+                                </span>
+                              )}
+                              {isSuspeito && (
+                                <span
+                                  className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap"
+                                  title={`Sinal de cadastro suspeito (score ${user.risco_cadastro.score}/100) — não bloqueia a conta, só marca para revisão: ${(user.risco_cadastro.motivos || []).join('; ')}`}
+                                >
+                                  ⚠ SUSPEITO · {user.risco_cadastro.score}
+                                </span>
+                              )}
+                              {isBanned && user.ban_reason && (
+                                <p className="text-[11px] text-red-400/60">Motivo: {user.ban_reason}</p>
+                              )}
+                              {(isBanned || isBlocked) && (
+                                <p className="text-[11px] text-slate-500">
+                                  {isBanned
+                                    ? `Banido em ${fmtDataHora(user.banned_at)}${user.banned_by ? ` · por ${user.banned_by}` : ''}`
+                                    : `Bloqueado em ${fmtDataHora(user.blocked_at)}${user.blocked_by ? ` · por ${user.blocked_by}` : ''}`}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </td>
-                        <td className="py-5 text-slate-400 text-sm">{user.workspace_name}</td>
-                        <td className="py-5">
+                        <td className="py-3 align-top text-slate-400 text-sm">{user.workspace_name}</td>
+                        <td className="py-3 align-top">
                           <span className="text-slate-300 text-sm font-medium">{fmtData(user.created_at)}</span>
                           <span className="block text-[10px] text-slate-600 font-bold uppercase tracking-wider mt-0.5">
                             {tempoDesde(user.created_at)}
                           </span>
                         </td>
-                        <td className="py-5">
+                        <td className="py-3 align-top">
                           <span className="text-slate-300 text-sm font-medium">
                             {user.login_count || 0} {user.login_count === 1 ? 'acesso' : 'acessos'}
                           </span>
@@ -2254,7 +2271,7 @@ export default function AdminDashboard() {
                             {user.last_login_at ? tempoDesde(user.last_login_at) : 'nunca registado'}
                           </span>
                         </td>
-                        <td className="py-5">
+                        <td className="py-3 align-top">
                           <span className={`px-3 py-1.5 rounded-full text-xs font-black border tracking-wider ${tierColor}`}>
                             TIER {currentTier}
                           </span>
@@ -2273,7 +2290,7 @@ export default function AdminDashboard() {
                           const c = user.consumo;
                           if (!c || c.erro) {
                             return (
-                              <td className="py-5 pr-4 min-w-[170px]">
+                              <td className="py-3 pr-4 align-top min-w-[170px]">
                                 <span
                                   className="text-xs font-bold text-amber-500/80"
                                   title={c?.erro || 'A API não enviou o campo `consumo` — provavelmente o backend não foi reiniciado após a atualização.'}
@@ -2288,7 +2305,7 @@ export default function AdminDashboard() {
                           const total = Number(c.total_analises || 0);
                           const pct = saldo > 0 ? Math.round((usado / saldo) * 100) : 0;
                           return (
-                            <td className="py-5 pr-4 min-w-[170px]">
+                            <td className="py-3 pr-4 align-top min-w-[170px]">
                               {c.ilimitado ? (
                                 <span className="text-xs font-black text-amber-400 tracking-wider">ILIMITADO</span>
                               ) : saldo > 0 ? (
@@ -2331,8 +2348,13 @@ export default function AdminDashboard() {
                             </td>
                           );
                         })()}
-                        <td className="py-5 pr-4 text-right">
-                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                        <td className="py-3 pr-4 align-top text-right">
+                          {/* Sem `flex-wrap`: o wrapper já tem overflow-x-auto e
+                              a tabela já cresce além de min-w-[980px] quando
+                              precisa (mesmo mecanismo do min-w-[170px] do
+                              Consumo) — cresce e rola pro lado, em vez de
+                              quebrar em 2 linhas sem aviso. */}
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => openUserDetails(user.id, user.email)}
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-xs font-bold transition-all border border-slate-700 hover:border-blue-500"
