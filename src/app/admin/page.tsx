@@ -2211,7 +2211,7 @@ export default function AdminDashboard() {
                             numa coluna própria, o e-mail fica sempre 1 linha
                             e quem varre a tabela vê o problema numa coluna
                             fixa, não misturado ao texto do e-mail. */}
-                        <td className="py-3 align-top">
+                        <td className="py-3 align-top min-w-[130px]">
                           {!isBanned && !isBlocked && !isSuspeito ? (
                             <span className="text-slate-700 text-xs">—</span>
                           ) : (
@@ -2271,8 +2271,8 @@ export default function AdminDashboard() {
                             {user.last_login_at ? tempoDesde(user.last_login_at) : 'nunca registado'}
                           </span>
                         </td>
-                        <td className="py-3 align-top">
-                          <span className={`px-3 py-1.5 rounded-full text-xs font-black border tracking-wider ${tierColor}`}>
+                        <td className="py-3 align-top min-w-[90px]">
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-black border tracking-wider whitespace-nowrap ${tierColor}`}>
                             TIER {currentTier}
                           </span>
                         </td>
@@ -2348,12 +2348,14 @@ export default function AdminDashboard() {
                             </td>
                           );
                         })()}
-                        <td className="py-3 pr-4 align-top text-right">
-                          {/* Sem `flex-wrap`: o wrapper já tem overflow-x-auto e
-                              a tabela já cresce além de min-w-[980px] quando
-                              precisa (mesmo mecanismo do min-w-[170px] do
-                              Consumo) — cresce e rola pro lado, em vez de
-                              quebrar em 2 linhas sem aviso. */}
+                        <td className="py-3 pr-4 align-top text-right min-w-[440px]">
+                          {/* Sem `flex-wrap` E com min-w explícito — visto ao vivo
+                              que só tirar o wrap não bastava: o layout `auto`
+                              da tabela ficava livre pra espremer OUTRAS colunas
+                              (o selo TIER chegou a quebrar em 2 linhas) em vez
+                              de crescer. min-w força esse orçamento, mesmo
+                              mecanismo que o min-w-[170px] do Consumo já usa
+                              sem problema nenhum. */}
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() => openUserDetails(user.id, user.email)}
