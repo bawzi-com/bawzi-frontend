@@ -777,11 +777,26 @@ export default function AdminDashboard() {
 
   // Estados do Cupom por E-mail (disparo em massa pra base)
   const [cupomCodigo, setCupomCodigo] = useState('');
+  // "nunca_assinou" e "cancelado_ou_inativo" -- ver _TEMPLATE_POR_SEGMENTO no
+  // backend (router_admin.py). Cada segmento dispara um template diferente.
+  const [cupomSegmento, setCupomSegmento] = useState<'nunca_assinou' | 'cancelado_ou_inativo'>('nunca_assinou');
+  const [cupomDiasInativo, setCupomDiasInativo] = useState('30');
   const [cupomChecking, setCupomChecking] = useState(false);
   const [cupomInfo, setCupomInfo] = useState<any>(null);
   const [cupomPublico, setCupomPublico] = useState<number | null>(null);
   const [cupomEnviando, setCupomEnviando] = useState(false);
   const [cupomMsg, setCupomMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  // Estados da Régua de Onboarding (sem análise) -- roda sozinha no
+  // scheduler do backend; o painel só lê/grava a config em system_settings.
+  const [onbConfig, setOnbConfig] = useState({
+    ativo: false,
+    dias: [2, 5, 10] as number[],
+    cupom_dia_10: '',
+  });
+  const [onbLoading, setOnbLoading] = useState(false);
+  const [onbSaving, setOnbSaving] = useState(false);
+  const [onbMsg, setOnbMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Estados de Tiers
   const [tierConfigs, setTierConfigs] = useState<any[]>([]);
@@ -1202,6 +1217,54 @@ export default function AdminDashboard() {
     }
   };
 
+  const loadOnboardingSemAnalise = async () => {
+    setOnbLoading(true);
+    const base = API_URL;
+    try {
+      const res = await apiFetch(`${base}/api/admin/onboarding-sem-analise`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) {
+          setOnbConfig(prev => ({
+            ativo: !!data.ativo,
+            dias: Array.isArray(data.dias) && data.dias.length === 3 ? data.dias : prev.dias,
+            cupom_dia_10: data.cupom_dia_10 || '',
+          }));
+        }
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+    } finally {
+      setOnbLoading(false);
+    }
+  };
+
+  const saveOnboardingSemAnalise = async () => {
+    if (onbConfig.ativo && !confirm(
+      'Isso liga o envio automático de e-mail pra quem se cadastrar e não rodar nenhuma análise, nos dias configurados abaixo. Confirma?',
+    )) return;
+    setOnbSaving(true);
+    setOnbMsg(null);
+    const base = API_URL;
+    try {
+      const res = await apiFetch(`${base}/api/admin/onboarding-sem-analise`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(onbConfig),
+      });
+      setOnbMsg(res.ok
+        ? { text: '✅ Configuração salva.', ok: true }
+        : { text: 'Erro ao salvar.', ok: false },
+      );
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setOnbMsg({ text: 'Erro de conexão.', ok: false });
+    } finally {
+      setOnbSaving(false);
+      setTimeout(() => setOnbMsg(null), 4000);
+    }
+  };
+
   const loadPromoList = async () => {
     setPromoListLoading(true);
     const base  = API_URL;
@@ -1296,6 +1359,10 @@ export default function AdminDashboard() {
     }
   };
 
+  // Número de dias inativo, com fallback -- o campo é texto (pra aceitar o
+  // usuário apagando/digitando), então nunca fica preso num NaN silencioso.
+  const cupomDiasInativoNum = () => Math.max(1, parseInt(cupomDiasInativo, 10) || 30);
+
   const handleVerificarCupom = async () => {
     const codigo = cupomCodigo.trim().toUpperCase();
     if (!codigo) return;
@@ -1307,7 +1374,7 @@ export default function AdminDashboard() {
     try {
       const [infoRes, publicoRes] = await Promise.all([
         apiFetch(`${base}/api/admin/promo-cupom/verificar?codigo=${encodeURIComponent(codigo)}`),
-        apiFetch(`${base}/api/admin/promo-cupom/publico?tiers=1`),
+        apiFetch(`${base}/api/admin/promo-cupom/publico?segmento=${cupomSegmento}&dias_inativo=${cupomDiasInativoNum()}`),
       ]);
       const info = await infoRes.json();
       const publico = await publicoRes.json();
@@ -1324,8 +1391,11 @@ export default function AdminDashboard() {
 
   const handleDispararCupom = async () => {
     if (!cupomInfo?.valid || cupomPublico === null) return;
+    const publicoTexto = cupomSegmento === 'nunca_assinou'
+      ? 'que ainda não assinaram'
+      : `que cancelaram ou estão há ${cupomDiasInativoNum()}+ dias sem usar`;
     if (!confirm(
-      `Enviar o cupom ${cupomInfo.codigo} por e-mail para ${cupomPublico} usuário(s) que ainda não assinaram?\n\nEsta ação não pode ser desfeita.`,
+      `Enviar o cupom ${cupomInfo.codigo} por e-mail para ${cupomPublico} usuário(s) ${publicoTexto}?\n\nEsta ação não pode ser desfeita.`,
     )) return;
     setCupomEnviando(true);
     setCupomMsg(null);
@@ -1334,7 +1404,7 @@ export default function AdminDashboard() {
       const res = await apiFetch(`${base}/api/admin/promo-cupom/disparar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo: cupomInfo.codigo, tiers: [1] }),
+        body: JSON.stringify({ codigo: cupomInfo.codigo, segmento: cupomSegmento, dias_inativo: cupomDiasInativoNum() }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -2228,7 +2298,7 @@ export default function AdminDashboard() {
             passado antes pela aba Tiers — e quem fosse direto para Promoções
             configuraria no escuro. */}
         <button
-          onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); loadCampanhas();
+          onClick={() => { setActiveTab('promo'); loadPromoList(); loadBanner(); loadCampanhas(); loadOnboardingSemAnalise();
                            if (!tierConfigs.length) loadTierConfigs(); }}
           className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'promo' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
@@ -5691,7 +5761,7 @@ export default function AdminDashboard() {
           <div>
             <h3 className="text-lg font-black text-white tracking-tight">Cupom por E-mail</h3>
             <p className="text-slate-500 text-sm mt-1">
-              Envia o cupom promocional por e-mail para quem ainda não assinou, com convite para experimentar a análise completa.
+              Envia o cupom promocional por e-mail pra quem nunca assinou, ou pra quem cancelou / está inativo -- com convite para voltar.
             </p>
           </div>
 
@@ -5699,6 +5769,37 @@ export default function AdminDashboard() {
             <h3 className="text-sm font-black text-sky-300 uppercase tracking-widest flex items-center gap-2">
               <Mail size={13} /> Disparo em massa
             </h3>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex bg-slate-800 border border-slate-700 rounded-xl p-1 gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setCupomSegmento('nunca_assinou'); setCupomInfo(null); setCupomPublico(null); setCupomMsg(null); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${cupomSegmento === 'nunca_assinou' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Nunca assinaram
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setCupomSegmento('cancelado_ou_inativo'); setCupomInfo(null); setCupomPublico(null); setCupomMsg(null); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-colors ${cupomSegmento === 'cancelado_ou_inativo' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  Cancelaram ou inativos
+                </button>
+              </div>
+              {cupomSegmento === 'cancelado_ou_inativo' && (
+                <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 shrink-0">
+                  <span className="text-xs text-slate-400 font-bold whitespace-nowrap">Dias sem usar:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={cupomDiasInativo}
+                    onChange={e => { setCupomDiasInativo(e.target.value); setCupomInfo(null); setCupomPublico(null); setCupomMsg(null); }}
+                    className="w-16 bg-transparent text-white text-sm font-bold focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
               <input
@@ -5719,6 +5820,11 @@ export default function AdminDashboard() {
               </button>
             </div>
 
+            <p className="text-xs text-slate-600 flex items-start gap-1.5">
+              <Info size={13} className="shrink-0 mt-0.5" />
+              Isto é um <strong className="text-slate-500">Cupom</strong> (código do Stripe, desconto no checkout) -- não confundir com uma <strong className="text-slate-500">Campanha de Crédito</strong> (bônus de cadastro, seção acima). Se o código existir só como campanha, ele não vai ser encontrado aqui.
+            </p>
+
             {cupomInfo && (
               cupomInfo.valid ? (
                 <div className="bg-slate-950/60 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
@@ -5727,7 +5833,7 @@ export default function AdminDashboard() {
                     <p><strong className="text-emerald-300">{cupomInfo.codigo}</strong> — {cupomInfo.desconto}{cupomInfo.duracao ? ` (${cupomInfo.duracao})` : ''}.</p>
                     {cupomInfo.validade_linha && <p className="text-xs text-slate-500 mt-1">{cupomInfo.validade_linha.trim()}</p>}
                     <p className="text-xs text-slate-500 mt-1">
-                      Vai para <strong className="text-slate-300">{cupomPublico ?? '…'}</strong> usuário(s) que ainda não assinaram.
+                      Vai para <strong className="text-slate-300">{cupomPublico ?? '…'}</strong> usuário(s) {cupomSegmento === 'nunca_assinou' ? 'que ainda não assinaram' : `que cancelaram ou estão há ${cupomDiasInativoNum()}+ dias sem usar`}.
                     </p>
                   </div>
                 </div>
@@ -5741,7 +5847,9 @@ export default function AdminDashboard() {
 
             <div className="flex items-center justify-between gap-4 pt-1">
               <p className="text-xs text-slate-500 max-w-md">
-                O e-mail convida para experimentar a análise completa e inclui link de descadastro.
+                {cupomSegmento === 'nunca_assinou'
+                  ? 'O e-mail convida para experimentar a análise completa e inclui link de descadastro.'
+                  : 'O e-mail convida para voltar a assinar com o cupom e inclui link de descadastro.'}
               </p>
               <div className="flex items-center gap-3 shrink-0">
                 {cupomMsg && (
@@ -5760,6 +5868,92 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* ── ONBOARDING: RÉGUA DE ATIVAÇÃO ────────────────────────────── */}
+          <div>
+            <h3 className="text-lg font-black text-white tracking-tight">Onboarding — Régua de Ativação</h3>
+            <p className="text-slate-500 text-sm mt-1">
+              Quem se cadastra e nunca roda uma análise recebe até 3 e-mails automáticos, nos dias configurados abaixo. Roda sozinho todo dia; o conteúdo de cada e-mail se edita na aba "Templates de E-mail" (onboarding_ativacao_1/2/3).
+            </p>
+          </div>
+
+          <div className="bg-slate-900 border border-violet-800/40 rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-black text-violet-300 uppercase tracking-widest flex items-center gap-2">
+              <Zap size={13} /> Configuração da régua
+            </h3>
+
+            {onbLoading ? (
+              <div className="flex items-center gap-2 text-slate-500 text-sm"><Loader2 size={14} className="animate-spin" /> Carregando…</div>
+            ) : (
+              <>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={onbConfig.ativo}
+                    onChange={e => setOnbConfig(prev => ({ ...prev, ativo: e.target.checked }))}
+                    className="w-4 h-4 accent-violet-600"
+                  />
+                  <span className="text-sm font-bold text-white">Régua ativa (envia e-mail de verdade)</span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {['Passo 1', 'Passo 2', 'Passo 3 (com cupom)'].map((label, i) => (
+                    <div key={i} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+                      <label className="text-xs text-slate-400 font-bold block mb-1">{label} · dias após cadastro</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={onbConfig.dias[i] ?? ''}
+                        onChange={e => {
+                          const v = parseInt(e.target.value, 10);
+                          setOnbConfig(prev => {
+                            const dias = [...prev.dias];
+                            dias[i] = Number.isFinite(v) ? v : dias[i];
+                            return { ...prev, dias };
+                          });
+                        }}
+                        className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1.5 text-sm font-bold focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Cupom usado no passo 3 (dia {onbConfig.dias[2]})</label>
+                  <input
+                    type="text"
+                    placeholder="CÓDIGO DO CUPOM"
+                    value={onbConfig.cupom_dia_10}
+                    onChange={e => setOnbConfig(prev => ({ ...prev, cupom_dia_10: e.target.value.toUpperCase() }))}
+                    className="w-full sm:w-64 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold tracking-wider focus:outline-none focus:border-violet-500 transition-colors placeholder:text-slate-500 placeholder:font-normal placeholder:tracking-normal"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Se ficar vazio, ou o cupom não existir mais no Stripe, o passo 3 é pulado -- sem quebrar os passos 1 e 2.</p>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 pt-1">
+                  <p className="text-xs text-slate-500 max-w-md">
+                    Só considera quem se cadastrar a partir de quando esta régua for ativada por aqui -- cadastro antigo não recebe nada do nada.
+                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {onbMsg && (
+                      <span className={`text-xs font-bold ${onbMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {onbMsg.text}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={saveOnboardingSemAnalise}
+                      disabled={onbSaving}
+                      className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-colors"
+                    >
+                      {onbSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                      Salvar
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* ── CONVITES PROMO ──────────────────────────────────────────── */}
