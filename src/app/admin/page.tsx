@@ -531,6 +531,28 @@ export default function AdminDashboard() {
   // `verificar_coerencia.py` que apontou. O backend já manda `padrao` com o
   // tipo certo — usar ele faz o próximo campo booleano funcionar sozinho.
   const ehBooleano = (c: { padrao: unknown }) => typeof c.padrao === 'boolean';
+  // IDs de objetos do Stripe (price_/prod_) pertencem a um MODO: um criado em
+  // teste não existe em live. Por isso NÃO entram na lista genérica deste
+  // card — moram no card "Modo de Pagamento", ao lado do toggle que decide o
+  // modo, com um lado por modo. Detectado pelo PREFIXO da chave, não por lista
+  // de nomes (mesma lição do `ehBooleano` acima): um plano novo em
+  // `billing_config.CAMPOS` entra sozinho, e o par `x` / `x_live` é derivado.
+  const ehIdStripePorModo = (chave: string) =>
+    chave.startsWith('stripe_price_id_') || chave.startsWith('stripe_product_id_');
+  // Rótulo humano por chave — cosmético. Chave desconhecida cai no próprio
+  // nome: o campo continua aparecendo, só sem apelido.
+  const rotuloIdStripe = (chave: string): { nome: string; detalhe: string; placeholder: string } => {
+    const base = chave.replace(/_live$/, '');
+    const conhecidos: Record<string, { nome: string; detalhe: string }> = {
+      stripe_price_id_essencial: { nome: 'Essencial', detalhe: 'assinatura · Tier 2' },
+      stripe_price_id_profissional: { nome: 'Profissional', detalhe: 'assinatura · Tier 3' },
+      stripe_price_id_avancado: { nome: 'Avançado', detalhe: 'assinatura · Tier 4' },
+      stripe_product_id_creditos: { nome: 'Créditos avulsos', detalhe: 'product ID · compras avulsas' },
+    };
+    const placeholder = base.startsWith('stripe_product_id_') ? 'prod_...' : 'price_...';
+    const k = conhecidos[base];
+    return k ? { ...k, placeholder } : { nome: base, detalhe: '', placeholder };
+  };
   const [billingEdit, setBillingEdit] = useState<Record<string, string>>({});
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingSaving, setBillingSaving] = useState(false);
@@ -617,6 +639,9 @@ export default function AdminDashboard() {
     try {
       const payload: Record<string, unknown> = {};
       for (const c of billingCampos) {
+        // Os IDs do Stripe têm bloco e botão próprios (card Modo de Pagamento);
+        // salvar aqui não pode gravar por tabela o que o operador editou lá.
+        if (ehIdStripePorModo(c.chave)) continue;
         const bruto = billingEdit[c.chave] ?? '';
         /* ⚠️ `parseFloat("1,15")` É `1`, E O BACKEND ACEITA 1.
            `cortesia_fator` é campo de TEXTO livre, e 1,15 é como se escreve
@@ -685,6 +710,14 @@ export default function AdminDashboard() {
   const [stripeConfigUpdatedBy, setStripeConfigUpdatedBy] = useState('');
   const [savingStripeConfig, setSavingStripeConfig] = useState(false);
   const [stripeConfigMsg, setStripeConfigMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // IDs do Stripe por modo (price IDs dos planos + product ID dos créditos).
+  // `idsStripeLado` é o lado VISTO/EDITADO, não o modo ativo: abre no ativo e
+  // acompanha o toggle (effect abaixo), mas pode ser trocado à mão — os IDs
+  // live precisam existir ANTES de o modo Live ligar.
+  const [idsStripeLado, setIdsStripeLado] = useState<'test' | 'live'>('test');
+  const [savingIdsStripe, setSavingIdsStripe] = useState(false);
+  const [idsStripeMsg, setIdsStripeMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => { setIdsStripeLado(stripeMode); }, [stripeMode]);
 
   // Estados PNCP
   const [pncpStats, setPncpStats] = useState<any>(null);
@@ -1575,6 +1608,26 @@ export default function AdminDashboard() {
   // MODO DE PAGAMENTO (Stripe teste x oficial/live)
   // ==========================================
   const handleSaveStripeConfig = async (targetMode: 'test' | 'live') => {
+    // O que estiver DIGITADO nos campos de chave vai para o backend em QUALQUER
+    // troca de modo ("campo preenchido = usa o novo valor"). O Chrome preenche
+    // sozinho, neste card, o par usuário+senha salvo do login — o campo de
+    // senha atrai o autofill e o estado do React recebe o valor. Sem esta
+    // checagem, clicar em "Teste" com o campo preenchido pelo navegador
+    // gravaria a senha do login como chave secreta live. Visto ao vivo.
+    const digitadas: Array<[string, string, string]> = [
+      [stripeLiveSecretInput.trim(), 'sk_live_', 'A chave secreta'],
+      [stripeLivePublishable.trim(), 'pk_live_', 'A chave publicável'],
+      [stripeLiveWebhookSecretInput.trim(), 'whsec_', 'O webhook secret'],
+    ];
+    for (const [valor, prefixo, nome] of digitadas) {
+      if (valor && !valor.startsWith(prefixo)) {
+        setStripeConfigMsg({
+          text: `${nome} no campo abaixo não começa com ${prefixo}. Se o navegador preencheu esse campo sozinho, apague-o — em branco, a chave já salva é mantida.`,
+          ok: false,
+        });
+        return;
+      }
+    }
     setSavingStripeConfig(true);
     setStripeConfigMsg(null);
     try {
@@ -1613,6 +1666,51 @@ export default function AdminDashboard() {
       setStripeConfigMsg({ text: 'Erro ao comunicar com o servidor.', ok: false });
     } finally {
       setSavingStripeConfig(false);
+    }
+  };
+
+  // ==========================================
+  // IDS DO STRIPE POR MODO (price IDs dos planos + product ID dos créditos)
+  // ==========================================
+  // Manda SÓ estes campos ao PUT /billing-config (o backend aceita parcial) e
+  // depois recarrega SÓ eles. Recarregar tudo, como o salvar de "Parâmetros
+  // comerciais" faz, descartaria o que o operador ainda não salvou lá em cima.
+  const saveIdsStripe = async () => {
+    setSavingIdsStripe(true);
+    setIdsStripeMsg(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const c of billingCampos) {
+        if (ehIdStripePorModo(c.chave)) payload[c.chave] = (billingEdit[c.chave] ?? '').trim();
+      }
+      const res = await apiFetch(`${API_URL}/api/admin/billing-config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // O 422 diz QUAL campo e por quê (ex.: product ID com prefixo price_).
+        setIdsStripeMsg({ text: typeof data?.detail === 'string' ? data.detail : 'Não foi possível salvar.', ok: false });
+        return;
+      }
+      const refreshed = await apiFetch(`${API_URL}/api/admin/billing-config`);
+      if (refreshed.ok) {
+        const rd = await refreshed.json();
+        const campos = rd?.campos || [];
+        setBillingCampos(campos);
+        setBillingEdit((prev) => {
+          const next = { ...prev };
+          for (const c of campos) if (ehIdStripePorModo(c.chave)) next[c.chave] = String(c.valor ?? '');
+          return next;
+        });
+      }
+      setIdsStripeMsg({ text: 'IDs salvos. Valem no próximo checkout.', ok: true });
+    } catch (e) {
+      if (e instanceof SessionExpiredError) return;
+      setIdsStripeMsg({ text: e instanceof Error ? e.message : 'Não foi possível salvar.', ok: false });
+    } finally {
+      setSavingIdsStripe(false);
     }
   };
 
@@ -3284,7 +3382,9 @@ export default function AdminDashboard() {
                 <h2 className="text-2xl font-black tracking-tight">Parâmetros comerciais</h2>
                 <p className="text-sm text-slate-400 font-medium">
                   Valem imediatamente, sem deploy nem reinício. O que estiver salvo aqui
-                  vence o <code className="text-slate-300">.env</code>.
+                  vence o <code className="text-slate-300">.env</code>. Os IDs do Stripe
+                  (price/product) ficam no card <strong className="text-slate-300">Modo de Pagamento</strong>,
+                  abaixo — cada modo tem os seus.
                 </p>
               </div>
             </div>
@@ -3293,7 +3393,7 @@ export default function AdminDashboard() {
 
             {!billingLoading && billingCampos.length > 0 && (
               <div className="mt-8 space-y-6">
-                {billingCampos.map((c) => (
+                {billingCampos.filter((c) => !ehIdStripePorModo(c.chave)).map((c) => (
                   <div key={c.chave} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
                     <div className="flex items-start justify-between gap-4 mb-2">
                       <label className="text-[11px] font-black uppercase tracking-widest text-slate-300">
@@ -3639,6 +3739,22 @@ export default function AdminDashboard() {
                       setStripeConfigMsg({ text: 'Cole o webhook secret live abaixo antes de ativar o modo oficial - sem ele o Stripe cobra o cartao e o servidor rejeita a confirmacao.', ok: false });
                       return;
                     }
+                    // Price IDs live SALVOS — não só digitados: eles vão por outro
+                    // PUT, no bloco "IDs do Stripe por modo". Sem eles, todo
+                    // checkout em live morre com "No such price" (o sintoma que
+                    // abriu esta frente, no sentido inverso). O product ID dos
+                    // créditos é opcional (cai em product_data) e não trava.
+                    const priceIdsLiveFaltando = billingCampos.filter((c) =>
+                      c.chave.startsWith('stripe_price_id_') && c.chave.endsWith('_live') && !String(c.valor ?? '').trim()
+                    );
+                    if (billingCampos.length > 0 && priceIdsLiveFaltando.length > 0) {
+                      setIdsStripeLado('live');
+                      setStripeConfigMsg({
+                        text: `Salve os price IDs live dos planos (${priceIdsLiveFaltando.map((c) => rotuloIdStripe(c.chave).nome).join(', ')}) no bloco "IDs do Stripe por modo" antes de ativar o modo oficial — sem eles todo checkout falha com "No such price".`,
+                        ok: false,
+                      });
+                      return;
+                    }
                     handleSaveStripeConfig('live');
                   }}
                   className={`px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:cursor-not-allowed ${
@@ -3654,6 +3770,134 @@ export default function AdminDashboard() {
                   {stripeConfigUpdatedAt ? ` · ${new Date(stripeConfigUpdatedAt).toLocaleString('pt-BR')}` : ''}
                 </p>
               )}
+            </div>
+
+            {/* ── IDs do Stripe por modo ──────────────────────────────────
+                Price IDs dos 3 planos + product ID dos créditos avulsos. São
+                objetos do Stripe e pertencem a um modo: um `price_`/`prod_`
+                criado em teste não existe em live. Antes eram 8 linhas iguais
+                no card "Parâmetros comerciais", sem relação visual com o
+                toggle que decide o modo. Aqui: um lado por modo, no card do
+                modo. Os campos vêm de `billing_config.CAMPOS` (via GET
+                /admin/billing-config), pareados por sufixo `_live`.
+
+                O seletor escolhe o lado VISTO, não o modo ativo — abre no
+                ativo e acompanha o toggle, mas pode ser trocado à mão. É de
+                propósito: os IDs live precisam existir ANTES de o modo Live
+                ligar (a trava no botão "Oficial (Live)" exige isso). */}
+            <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">IDs do Stripe por modo</p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Price IDs das assinaturas e product ID dos créditos avulsos. Cada modo tem os seus —
+                    um ID criado em teste não existe em live. O checkout usa o conjunto do modo ativo.
+                  </p>
+                </div>
+                <div className="inline-flex shrink-0 rounded-xl border border-slate-800 bg-slate-950 p-1">
+                  {(['test', 'live'] as const).map((lado) => (
+                    <button
+                      key={lado}
+                      type="button"
+                      onClick={() => setIdsStripeLado(lado)}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                        idsStripeLado === lado
+                          ? (lado === 'live' ? 'bg-red-500 text-red-950' : 'bg-emerald-500 text-emerald-950')
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {lado === 'live' ? 'Live' : 'Teste'}
+                      {stripeMode === lado && (
+                        <span className="ml-1.5 text-[9px] uppercase tracking-widest opacity-80">· ativo</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {idsStripeLado !== stripeMode && (
+                <p className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-medium text-amber-200">
+                  Você está vendo os IDs do modo {idsStripeLado === 'live' ? 'Live' : 'Teste'}, que{' '}
+                  <strong>não</strong> é o ativo agora. Salvar aqui não troca o modo — só deixa este lado pronto.
+                </p>
+              )}
+
+              {billingCampos.length === 0 ? (
+                <p className="text-sm text-slate-400">{billingLoading ? 'Carregando…' : 'Parâmetros comerciais não carregados.'}</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {billingCampos
+                    .filter((c) => ehIdStripePorModo(c.chave) && !c.chave.endsWith('_live'))
+                    .map((base) => {
+                      const chave = idsStripeLado === 'live' ? `${base.chave}_live` : base.chave;
+                      const campo = billingCampos.find((c) => c.chave === chave);
+                      const rotulo = rotuloIdStripe(base.chave);
+                      const origem = !campo ? 'sem campo no backend'
+                        : campo.origem === 'admin' ? 'definido aqui'
+                        : campo.env ? `vem do .env (${campo.env})`
+                        : 'não definido';
+                      return (
+                        <div key={chave} className="space-y-2">
+                          <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex flex-wrap items-center gap-2">
+                            {rotulo.nome}
+                            {rotulo.detalhe && (
+                              <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">{rotulo.detalhe}</span>
+                            )}
+                            <span className={`ml-auto rounded-full px-2 py-0.5 text-[9px] ${
+                              campo?.origem === 'admin'
+                                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                                : 'bg-slate-700/40 text-slate-400 border border-slate-600/40'
+                            }`}>
+                              {origem}
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={billingEdit[chave] ?? ''}
+                            onChange={(e) => setBillingEdit({ ...billingEdit, [chave]: e.target.value })}
+                            placeholder={rotulo.placeholder}
+                            autoComplete="off"
+                            spellCheck={false}
+                            className={`w-full bg-slate-950 border border-slate-800 rounded-xl py-3 px-4 font-mono text-[13px] text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 transition-all ${
+                              idsStripeLado === 'live' ? 'focus:border-red-500 focus:ring-red-500' : 'focus:border-emerald-500 focus:ring-emerald-500'
+                            }`}
+                          />
+                          {campo?.descricao && (
+                            <p className="text-[10px] text-slate-500 leading-relaxed">{campo.descricao}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
+              <div className="mt-4 pt-4 border-t border-slate-800/50 flex flex-wrap items-center justify-between gap-3">
+                <a
+                  href="https://dashboard.stripe.com/products"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-[11px] text-slate-400 hover:text-slate-200"
+                >
+                  <ExternalLink size={13} />
+                  Produtos no Stripe — {idsStripeLado === 'live' ? 'desligue' : 'ligue'} o modo de teste lá antes de copiar
+                </a>
+                <div className="flex flex-wrap items-center gap-4">
+                  {idsStripeMsg && (
+                    <p className={`text-sm font-bold ${idsStripeMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {idsStripeMsg.text}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={savingIdsStripe || billingCampos.length === 0}
+                    onClick={saveIdsStripe}
+                    className="flex items-center gap-2 bg-slate-100 hover:bg-white text-slate-900 font-black px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Save size={16} />
+                    {savingIdsStripe ? 'A guardar...' : 'Salvar IDs'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Chaves live */}
@@ -3732,6 +3976,7 @@ export default function AdminDashboard() {
                   </label>
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={stripeLiveSecretInput}
                     onChange={(e) => setStripeLiveSecretInput(e.target.value)}
                     placeholder={stripeLiveSecretSet ? stripeLiveSecretMasked : 'Cole a chave secreta live'}
@@ -3745,6 +3990,7 @@ export default function AdminDashboard() {
                   </label>
                   <input
                     type="text"
+                    autoComplete="off"
                     value={stripeLivePublishable}
                     onChange={(e) => setStripeLivePublishable(e.target.value)}
                     placeholder="pk_live_..."
@@ -3759,6 +4005,7 @@ export default function AdminDashboard() {
                 </label>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   value={stripeLiveWebhookSecretInput}
                   onChange={(e) => setStripeLiveWebhookSecretInput(e.target.value)}
                   placeholder={stripeLiveWebhookSecretSet ? stripeLiveWebhookSecretMasked : 'Cole o webhook secret live'}
