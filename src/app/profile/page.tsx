@@ -581,7 +581,9 @@ function ProfileContent() {
   };
 
   const handleCancelSubscription = async () => {
-    setShowCancelModal(false);
+    // So fecha DEPOIS da chamada terminar -- mesma razao da troca de plano:
+    // fechar antes soltava a pessoa sem nenhum indicio de que o cancelamento
+    // estava rodando.
     setBillingAction('cancel');
     try {
       const res = await apiFetch(`${API_URL}/api/billing/cancel-subscription`, { method: 'POST' });
@@ -593,6 +595,7 @@ function ProfileContent() {
     } finally {
       setBillingAction(null);
     }
+    setShowCancelModal(false);
   };
 
   const handleReactivateSubscription = async () => {
@@ -1976,7 +1979,7 @@ function ProfileContent() {
             {/* ── Modal: Cancelamento de assinatura ── */}
             {showCancelModal && (
               <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
-                <div className="absolute inset-0" onClick={() => setShowCancelModal(false)} aria-hidden />
+                <div className="absolute inset-0" onClick={billingAction === 'cancel' ? undefined : () => setShowCancelModal(false)} aria-hidden />
                 <div
                   className="relative bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
                   style={{ animation: 'modalIn 0.25s cubic-bezier(0.16,1,0.3,1)' }}
@@ -2012,7 +2015,8 @@ function ProfileContent() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => setShowCancelModal(false)}
-                        className="h-11 flex-1 rounded-lg bg-emerald-600 text-sm font-black text-white transition hover:bg-emerald-700"
+                        disabled={billingAction === 'cancel'}
+                        className="h-11 flex-1 rounded-lg bg-emerald-600 text-sm font-black text-white transition hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Manter plano
                       </button>
@@ -2021,7 +2025,15 @@ function ProfileContent() {
                         disabled={!!billingAction}
                         className="h-11 flex-1 rounded-lg border border-red-200 bg-red-50 text-sm font-black text-red-600 transition hover:bg-red-100 disabled:opacity-50"
                       >
-                        {billingAction === 'cancel' ? 'Cancelando...' : 'Cancelar renovação'}
+                        {billingAction === 'cancel' ? (
+                          <span className="flex items-center justify-center gap-2">
+                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Cancelando...
+                          </span>
+                        ) : 'Cancelar renovação'}
                       </button>
                     </div>
                   </div>
