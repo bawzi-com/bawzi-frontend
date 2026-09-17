@@ -2035,8 +2035,12 @@ function ProfileContent() {
               targetTier={changePlanModal?.tier ?? null}
               onClose={() => setChangePlanModal(null)}
               onConfirm={async (tier, coupon) => {
-                setChangePlanModal(null);
+                // So fecha DEPOIS da chamada terminar -- ate la o modal e o
+                // unico lugar que mostra "Alterando...". Fechar antes soltava
+                // a pessoa nos 3 cartoes sem nenhum indicio de que algo
+                // rodava (a chamada ao Stripe pode levar ate 15s).
                 await handleChangePlan(tier, coupon);
+                setChangePlanModal(null);
               }}
               isConfirming={billingAction?.startsWith('tier-') ?? false}
             />

@@ -175,7 +175,7 @@ export default function ChangePlanModal({
 
   return (
     <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6 bg-slate-950/70 backdrop-blur-sm">
-      <div className="absolute inset-0" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0" onClick={isConfirming ? undefined : onClose} aria-hidden />
       <div
         // `max-h` + rolagem no corpo: sem isso, num celular de 640px de altura
         // o conteúdo (~647px) era CORTADO nas duas pontas pelo `items-center`,
@@ -334,7 +334,8 @@ export default function ChangePlanModal({
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="h-11 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-black uppercase tracking-widest text-slate-600 transition hover:bg-slate-50"
+              disabled={isConfirming}
+              className="h-11 flex-1 rounded-lg border border-slate-200 bg-white text-sm font-black uppercase tracking-widest text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancelar
             </button>
@@ -345,7 +346,13 @@ export default function ChangePlanModal({
                 ${isUp ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-800 hover:bg-slate-700'}`}
             >
               {isConfirming ? (
-                'Alterando...'
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Alterando...
+                </span>
               ) : (
                 <span className="flex flex-col items-center leading-tight">
                   <span>Confirmar {isUp ? 'upgrade' : 'downgrade'}</span>
