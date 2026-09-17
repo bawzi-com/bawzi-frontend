@@ -478,7 +478,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'settings' | 'tiers' | 'billing' | 'promo' | 'analytics' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'pncp' | 'templates' | 'email' | 'tiers' | 'billing' | 'promo' | 'analytics' | 'logs'>('overview');
   const [analyticsData, setAnalyticsData] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   // ── Funil do taster ────────────────────────────────────────────────────
@@ -512,6 +512,15 @@ export default function AdminDashboard() {
   const [smtpName, setSmtpName] = useState('Bawzi');
   const [smtpFromEmail, setSmtpFromEmail] = useState('');
   const [savingSmtp, setSavingSmtp] = useState(false);
+  // ── Aba E-mail: sub-abas (configuração | log de envio) ────────────────────
+  const [emailSubTab, setEmailSubTab] = useState<'config' | 'log'>('config');
+  const [emailLog, setEmailLog] = useState<any[]>([]);
+  const [emailLogResumo, setEmailLogResumo] = useState<{ enviados: number; falhou: number }>({ enviados: 0, falhou: 0 });
+  const [emailLogLoading, setEmailLogLoading] = useState(false);
+  const [emailLogErro, setEmailLogErro] = useState<string | null>(null);
+  const [emailLogStatus, setEmailLogStatus] = useState<'' | 'enviado' | 'falhou'>('');
+  const [emailLogDias, setEmailLogDias] = useState<7 | 30 | 90>(30);
+  const [emailLogQ, setEmailLogQ] = useState('');
 
   // ─── Parâmetros comerciais (billing_config no backend) ──────────────────
   // Tudo que decide dinheiro e não deveria exigir deploy: price ID do pacote,
@@ -1609,6 +1618,40 @@ export default function AdminDashboard() {
   };
 
   // ==========================================
+  // ABA E-MAIL — LOG DE ENVIO
+  // ==========================================
+  // Lê /api/email/log: uma linha por tentativa, sucesso ou falha, com o motivo.
+  // Os filtros vão como parâmetro; o resumo vem do backend sobre o MESMO
+  // filtro e sem o limite da lista — "3 falhas em 300 linhas" não é "3 falhas
+  // no mês". `opts` existe porque o setState ainda não valeu no clique.
+  const loadEmailLog = async (opts?: { status?: '' | 'enviado' | 'falhou'; dias?: 7 | 30 | 90; q?: string }) => {
+    const status = opts?.status ?? emailLogStatus;
+    const dias = opts?.dias ?? emailLogDias;
+    const q = (opts?.q ?? emailLogQ).trim();
+    setEmailLogLoading(true);
+    setEmailLogErro(null);
+    try {
+      const qs = new URLSearchParams({ limit: '300', status, dias: String(dias), q });
+      const res = await apiFetch(`${API_URL}/api/email/log?${qs.toString()}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEmailLogErro(typeof data?.detail === 'string' ? data.detail : 'Não foi possível carregar o log.');
+        return;
+      }
+      setEmailLog(Array.isArray(data?.itens) ? data.itens : []);
+      setEmailLogResumo({
+        enviados: Number(data?.resumo?.enviados || 0),
+        falhou: Number(data?.resumo?.falhou || 0),
+      });
+    } catch (e) {
+      if (e instanceof SessionExpiredError) return;
+      setEmailLogErro('Erro ao comunicar com o servidor.');
+    } finally {
+      setEmailLogLoading(false);
+    }
+  };
+
+  // ==========================================
   // MODO DE PAGAMENTO (Stripe teste x oficial/live)
   // ==========================================
   const handleSaveStripeConfig = async (targetMode: 'test' | 'live') => {
@@ -2091,10 +2134,10 @@ export default function AdminDashboard() {
           <LayoutTemplate size={18} /> Templates de E-mail
         </button>
         <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'settings' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
+          onClick={() => { setActiveTab('email'); if (emailSubTab === 'log') loadEmailLog(); }}
+          className={`flex items-center gap-2 px-6 py-4 font-bold border-b-2 transition-all whitespace-nowrap ${activeTab === 'email' ? 'border-violet-500 text-violet-400' : 'border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-700'}`}
         >
-          <Settings size={18} /> Configurações
+          <Mail size={18} /> E-mail
         </button>
         <button
           onClick={() => { setActiveTab('tiers'); if (!tierConfigs.length) loadTierConfigs(); }}
@@ -3253,8 +3296,37 @@ export default function AdminDashboard() {
       {/* ========================================== */}
       {/* ABA 5 (antiga 4): CONFIGURAÇÕES GERAIS  */}
       {/* ========================================== */}
-      {activeTab === 'settings' && (
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-3xl">
+      {activeTab === 'email' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+
+          {/* Sub-abas. O selo de falhas no botão do log existe para que um
+              envio falhando não fique escondido enquanto o operador está na
+              sub-aba de configuração. */}
+          <div className="inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
+            {([
+              { id: 'config', rotulo: 'Configurações' },
+              { id: 'log', rotulo: 'Log de envio' },
+            ] as const).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => { setEmailSubTab(s.id); if (s.id === 'log') loadEmailLog(); }}
+                className={`flex items-center px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
+                  emailSubTab === s.id ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {s.rotulo}
+                {s.id === 'log' && emailLogResumo.falhou > 0 && (
+                  <span className="ml-2 rounded-full bg-red-500/20 px-2 py-0.5 text-[9px] uppercase tracking-widest text-red-300">
+                    {emailLogResumo.falhou} falha{emailLogResumo.falhou > 1 ? 's' : ''}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {emailSubTab === 'config' && (
+          <div className="max-w-3xl">
           
           {/* 🟢 FORMULÁRIO DO SERVIDOR DE E-MAIL (SMTP) */}
           <div className="bg-slate-900/40 border border-slate-800/60 rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl">
@@ -3365,7 +3437,165 @@ export default function AdminDashboard() {
               </div>
             </form>
           </div>
+          </div>
+          )}
 
+          {emailSubTab === 'log' && (
+          <div className="rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border bg-slate-900/40 border-slate-800/60">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-2xl bg-amber-500/10"><Mail size={24} className="text-amber-400" /></div>
+                <div>
+                  <h2 className="text-2xl font-black tracking-tight">Log de envio</h2>
+                  <p className="text-slate-500 text-sm mt-1">
+                    Uma linha por tentativa, sucesso ou falha · últimos {emailLogDias} dias · retenção de 90 dias
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex gap-1">
+                  {(['', 'enviado', 'falhou'] as const).map((st) => (
+                    <button
+                      key={st || 'todos'}
+                      type="button"
+                      onClick={() => { setEmailLogStatus(st); loadEmailLog({ status: st }); }}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
+                        emailLogStatus === st
+                          ? st === 'falhou' ? 'bg-red-600 text-white'
+                            : st === 'enviado' ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-600 text-white'
+                          : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {st === '' ? 'Todos' : st === 'enviado' ? 'Enviados' : 'Falhas'}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  {([7, 30, 90] as const).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => { setEmailLogDias(d); loadEmailLog({ dias: d }); }}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all ${
+                        emailLogDias === d ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadEmailLog()}
+                  disabled={emailLogLoading}
+                  className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-2 rounded-lg bg-slate-800/50"
+                >
+                  <RefreshCw size={13} className={emailLogLoading ? 'animate-spin' : ''} /> Atualizar
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); loadEmailLog(); }} className="flex flex-col sm:flex-row gap-3 mb-6">
+              <input
+                type="text"
+                value={emailLogQ}
+                onChange={(e) => setEmailLogQ(e.target.value)}
+                placeholder="Buscar por destinatário, assunto, template ou motivo"
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-xl py-2.5 px-4 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+              />
+              <button
+                type="submit"
+                className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm font-black text-slate-200 hover:bg-slate-800"
+              >
+                <Search size={14} /> Buscar
+              </button>
+            </form>
+
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              {[
+                { rotulo: 'Tentativas', valor: emailLogResumo.enviados + emailLogResumo.falhou, cor: 'text-slate-100' },
+                { rotulo: 'Enviados', valor: emailLogResumo.enviados, cor: 'text-emerald-300' },
+                { rotulo: 'Falhas', valor: emailLogResumo.falhou, cor: emailLogResumo.falhou > 0 ? 'text-red-300' : 'text-slate-400' },
+              ].map((k) => (
+                <div key={k.rotulo} className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">{k.rotulo}</p>
+                  <p className={`text-2xl font-black ${k.cor}`}>{k.valor}</p>
+                </div>
+              ))}
+            </div>
+
+            {emailLogErro && <p className="mb-4 text-sm font-bold text-red-400">{emailLogErro}</p>}
+
+            {emailLogLoading && (
+              <div className="flex items-center justify-center py-16 text-slate-500 gap-3">
+                <Loader2 size={20} className="animate-spin" /> Carregando log...
+              </div>
+            )}
+
+            {!emailLogLoading && !emailLogErro && emailLog.length === 0 && (
+              <div className="text-center py-16 text-slate-600">
+                <Mail size={40} className="mx-auto mb-4 text-slate-700" />
+                <p className="font-bold text-slate-500">Nenhuma tentativa registrada neste filtro</p>
+                <p className="text-sm mt-1 max-w-xl mx-auto">
+                  O log é gravado a partir desta versão. O histórico anterior (só sucessos, por usuário)
+                  entra com <code className="text-slate-400">scripts/backfill_email_log.py --aplicar</code>.
+                </p>
+              </div>
+            )}
+
+            {!emailLogLoading && emailLog.length > 0 && (
+              <div className="overflow-x-auto rounded-2xl border border-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-950/70 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Quando</th>
+                      <th className="px-4 py-3">Destinatário</th>
+                      <th className="px-4 py-3">Assunto</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Via</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {emailLog.map((l: any) => {
+                      const falhou = l.status === 'falhou';
+                      const quando = l.criado_em
+                        ? new Date(l.criado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
+                        : '—';
+                      return (
+                        <tr key={l._id} className={falhou ? 'bg-red-950/20' : ''}>
+                          <td className="px-4 py-3 whitespace-nowrap font-mono text-[12px] text-slate-400">{quando}</td>
+                          <td className="px-4 py-3 font-bold text-slate-200 break-all">{l.para}</td>
+                          <td className="px-4 py-3 text-slate-300">
+                            <span className="block">{l.assunto}</span>
+                            {l.slug && (
+                              <span className="mt-1 inline-block rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+                                {l.slug}
+                              </span>
+                            )}
+                            {falhou && l.motivo && <span className="mt-1 block text-[12px] text-red-300/90">{l.motivo}</span>}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                              falhou ? 'bg-red-500/15 text-red-300 border-red-500/30' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            }`}>
+                              {falhou ? 'falhou' : 'enviado'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-[11px] text-slate-500">
+                            {l.provider || '—'}{l.origem === 'email_history' ? ' · histórico' : ''}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          )}
 
         </div>
       )}
