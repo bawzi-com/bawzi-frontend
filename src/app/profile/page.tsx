@@ -1089,7 +1089,7 @@ function ProfileContent() {
                       <div className="pointer-events-none absolute -right-6 -top-6 h-32 w-32 rounded-full bg-white/5" />
                       <div className="pointer-events-none absolute -bottom-4 right-8 h-20 w-20 rounded-full bg-white/5" />
 
-                      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         {/* Tier + nome + preço */}
                         <div className="flex items-center gap-4">
                           <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-2xl bg-white/15 backdrop-blur-sm">
@@ -1113,8 +1113,8 @@ function ProfileContent() {
                                   Separado noutro canto da tela, viraria um
                                   número que ninguém soma na hora de decidir. */}
                               {quota?.creditos_extras > 0 && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-black text-violet-700">
-                                  <Coins size={11} />
+                                <span className="inline-flex items-center gap-1 rounded-full border border-violet-300/40 bg-violet-500/25 px-2.5 py-0.5 text-[11px] font-black text-violet-100">
+                                  <Coins size={11} className="text-violet-200" />
                                   +{Number(quota.creditos_extras).toLocaleString('pt-BR')} adicionais
                                 </span>
                               )}
