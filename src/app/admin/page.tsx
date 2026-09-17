@@ -775,6 +775,14 @@ export default function AdminDashboard() {
   const [savingCampanha, setSavingCampanha] = useState(false);
   const [campanhaMsg, setCampanhaMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
+  // Estados do Cupom por E-mail (disparo em massa pra base)
+  const [cupomCodigo, setCupomCodigo] = useState('');
+  const [cupomChecking, setCupomChecking] = useState(false);
+  const [cupomInfo, setCupomInfo] = useState<any>(null);
+  const [cupomPublico, setCupomPublico] = useState<number | null>(null);
+  const [cupomEnviando, setCupomEnviando] = useState(false);
+  const [cupomMsg, setCupomMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
   // Estados de Tiers
   const [tierConfigs, setTierConfigs] = useState<any[]>([]);
   const [tierEdits, setTierEdits] = useState<Record<number, any>>({});
@@ -1285,6 +1293,66 @@ export default function AdminDashboard() {
       loadPromoList();
     } else {
       alert(`Erro: ${data.detail}`);
+    }
+  };
+
+  const handleVerificarCupom = async () => {
+    const codigo = cupomCodigo.trim().toUpperCase();
+    if (!codigo) return;
+    setCupomChecking(true);
+    setCupomInfo(null);
+    setCupomPublico(null);
+    setCupomMsg(null);
+    const base = API_URL;
+    try {
+      const [infoRes, publicoRes] = await Promise.all([
+        apiFetch(`${base}/api/admin/promo-cupom/verificar?codigo=${encodeURIComponent(codigo)}`),
+        apiFetch(`${base}/api/admin/promo-cupom/publico?tiers=1`),
+      ]);
+      const info = await infoRes.json();
+      const publico = await publicoRes.json();
+      setCupomInfo(info);
+      setCupomPublico(typeof publico.total === 'number' ? publico.total : 0);
+      if (!info.valid) setCupomMsg({ text: info.error || 'Cupom inválido.', ok: false });
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setCupomMsg({ text: 'Erro de conexão ao verificar o cupom.', ok: false });
+    } finally {
+      setCupomChecking(false);
+    }
+  };
+
+  const handleDispararCupom = async () => {
+    if (!cupomInfo?.valid || cupomPublico === null) return;
+    if (!confirm(
+      `Enviar o cupom ${cupomInfo.codigo} por e-mail para ${cupomPublico} usuário(s) que ainda não assinaram?\n\nEsta ação não pode ser desfeita.`,
+    )) return;
+    setCupomEnviando(true);
+    setCupomMsg(null);
+    const base = API_URL;
+    try {
+      const res = await apiFetch(`${base}/api/admin/promo-cupom/disparar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: cupomInfo.codigo, tiers: [1] }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCupomMsg({
+          text: `✅ Envio iniciado: ${data.vao_receber} usuário(s) vão receber (${data.pulados_recentes} já tinham recebido recentemente).`,
+          ok: true,
+        });
+        setCupomCodigo('');
+        setCupomInfo(null);
+        setCupomPublico(null);
+      } else {
+        setCupomMsg({ text: data.detail || 'Erro ao disparar campanha.', ok: false });
+      }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setCupomMsg({ text: 'Erro de conexão.', ok: false });
+    } finally {
+      setCupomEnviando(false);
     }
   };
 
@@ -5614,6 +5682,81 @@ export default function AdminDashboard() {
                 >
                   {bannerSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   Salvar banner
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── CUPOM POR E-MAIL ────────────────────────────────────────── */}
+          <div>
+            <h3 className="text-lg font-black text-white tracking-tight">Cupom por E-mail</h3>
+            <p className="text-slate-500 text-sm mt-1">
+              Envia o cupom promocional por e-mail para quem ainda não assinou, com convite para experimentar a análise completa.
+            </p>
+          </div>
+
+          <div className="bg-slate-900 border border-sky-800/40 rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-black text-sky-300 uppercase tracking-widest flex items-center gap-2">
+              <Mail size={13} /> Disparo em massa
+            </h3>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                placeholder="CÓDIGO DO CUPOM"
+                value={cupomCodigo}
+                onChange={e => { setCupomCodigo(e.target.value.toUpperCase()); setCupomInfo(null); setCupomPublico(null); }}
+                className="flex-1 bg-slate-800 border border-slate-700 text-white rounded-xl px-4 py-2.5 text-sm font-bold tracking-wider focus:outline-none focus:border-sky-500 transition-colors placeholder:text-slate-500 placeholder:font-normal placeholder:tracking-normal"
+              />
+              <button
+                type="button"
+                onClick={handleVerificarCupom}
+                disabled={cupomChecking || !cupomCodigo.trim()}
+                className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-colors border border-slate-700"
+              >
+                {cupomChecking ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                Verificar
+              </button>
+            </div>
+
+            {cupomInfo && (
+              cupomInfo.valid ? (
+                <div className="bg-slate-950/60 border border-emerald-700/30 rounded-xl p-4 flex items-start gap-3">
+                  <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="text-sm text-slate-300">
+                    <p><strong className="text-emerald-300">{cupomInfo.codigo}</strong> — {cupomInfo.desconto}{cupomInfo.duracao ? ` (${cupomInfo.duracao})` : ''}.</p>
+                    {cupomInfo.validade_linha && <p className="text-xs text-slate-500 mt-1">{cupomInfo.validade_linha.trim()}</p>}
+                    <p className="text-xs text-slate-500 mt-1">
+                      Vai para <strong className="text-slate-300">{cupomPublico ?? '…'}</strong> usuário(s) que ainda não assinaram.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-slate-950/60 border border-red-700/30 rounded-xl p-4 flex items-start gap-3">
+                  <XCircle size={18} className="text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-300">{cupomInfo.error || 'Cupom inválido.'}</p>
+                </div>
+              )
+            )}
+
+            <div className="flex items-center justify-between gap-4 pt-1">
+              <p className="text-xs text-slate-500 max-w-md">
+                O e-mail convida para experimentar a análise completa e inclui link de descadastro.
+              </p>
+              <div className="flex items-center gap-3 shrink-0">
+                {cupomMsg && (
+                  <span className={`text-xs font-bold ${cupomMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {cupomMsg.text}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDispararCupom}
+                  disabled={!cupomInfo?.valid || cupomEnviando}
+                  className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-black rounded-xl text-sm transition-colors"
+                >
+                  {cupomEnviando ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                  {cupomEnviando ? 'Enviando…' : 'Disparar'}
                 </button>
               </div>
             </div>
