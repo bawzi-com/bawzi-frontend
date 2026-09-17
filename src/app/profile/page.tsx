@@ -1197,8 +1197,9 @@ function ProfileContent() {
                                 <button
                                   onClick={handleReactivateSubscription}
                                   disabled={!!billingAction}
-                                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-white px-3 text-[11px] font-bold text-emerald-700 transition hover:bg-white/90 disabled:opacity-50"
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white px-4 text-xs font-black text-emerald-700 shadow-lg shadow-emerald-950/30 transition hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0"
                                 >
+                                  <RefreshCw size={13} className={billingAction === 'reactivate' ? 'animate-spin' : ''} />
                                   {billingAction === 'reactivate' ? 'Reativando...' : 'Reativar renovação'}
                                 </button>
                               ) : (
