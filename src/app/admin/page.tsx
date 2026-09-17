@@ -557,6 +557,10 @@ export default function AdminDashboard() {
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingSaving, setBillingSaving] = useState(false);
   const [billingMsg, setBillingMsg] = useState<string | null>(null);
+  // Sub-aba da aba Billing. Os dois cards são longos e independentes (cada
+  // um com o próprio salvar); empilhados, achar o segundo exigia rolar a
+  // lista inteira do primeiro.
+  const [billingSubTab, setBillingSubTab] = useState<'parametros' | 'pagamento'>('parametros');
 
   const loadBillingConfig = async () => {
     setBillingLoading(true);
@@ -3372,7 +3376,34 @@ export default function AdminDashboard() {
       {activeTab === 'billing' && (
         <div className="space-y-8">
 
+          {/* Sub-abas. O selo "live" no botão de Modo de Pagamento existe
+              para que o modo oficial ativo não fique escondido enquanto o
+              operador está na outra sub-aba — é o card vermelho, em miniatura. */}
+          <div className="inline-flex rounded-2xl border border-slate-800 bg-slate-950 p-1">
+            {([
+              { id: 'parametros', rotulo: 'Parâmetros comerciais' },
+              { id: 'pagamento', rotulo: 'Modo de Pagamento (Stripe)' },
+            ] as const).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setBillingSubTab(s.id)}
+                className={`flex items-center px-5 py-2.5 rounded-xl text-sm font-black transition-all ${
+                  billingSubTab === s.id ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {s.rotulo}
+                {s.id === 'pagamento' && stripeMode === 'live' && (
+                  <span className="ml-2 rounded-full bg-red-500/20 px-2 py-0.5 text-[9px] uppercase tracking-widest text-red-300">
+                    live
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
           {/* ── Parâmetros comerciais ─────────────────────────────────── */}
+          {billingSubTab === 'parametros' && (
           <div className="rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border bg-slate-900/40 border-slate-800/60">
             <div className="flex items-center gap-4 mb-2">
               <div className="p-3 rounded-2xl bg-amber-500/10">
@@ -3383,8 +3414,15 @@ export default function AdminDashboard() {
                 <p className="text-sm text-slate-400 font-medium">
                   Valem imediatamente, sem deploy nem reinício. O que estiver salvo aqui
                   vence o <code className="text-slate-300">.env</code>. Os IDs do Stripe
-                  (price/product) ficam no card <strong className="text-slate-300">Modo de Pagamento</strong>,
-                  abaixo — cada modo tem os seus.
+                  (price/product) ficam na sub-aba{' '}
+                  <button
+                    type="button"
+                    onClick={() => setBillingSubTab('pagamento')}
+                    className="font-black text-slate-300 underline decoration-slate-600 underline-offset-2 hover:text-white"
+                  >
+                    Modo de Pagamento
+                  </button>
+                  {' '}— cada modo tem os seus.
                 </p>
               </div>
             </div>
@@ -3675,9 +3713,11 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+          )}
 
           {/* 💳 MODO DE PAGAMENTO (STRIPE TESTE x OFICIAL/LIVE) */}
-          <div className={`mt-8 rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border ${
+          {billingSubTab === 'pagamento' && (
+          <div className={`rounded-[2.5rem] p-8 md:p-10 backdrop-blur-md shadow-2xl border ${
             stripeMode === 'live' ? 'bg-red-950/30 border-red-500/40' : 'bg-slate-900/40 border-slate-800/60'
           }`}>
             <div className="flex items-center gap-4 mb-6">
@@ -4036,6 +4076,7 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+          )}
 
         </div>
       )}
