@@ -39,6 +39,13 @@ const GENERICOS_CNAE = new Set([
   'referencia', 'referente',
   'termo', 'termos', 'condicoes', 'condicao', 'atender', 'atendendo',
   'serem', 'sendo', 'sejam',
+  // ⚠️ 18/09/2026: sincronizado com router_analyses._GENERICOS_CNAE e
+  // fit_negocio.GENERICOS_CNAE (backend) — a própria descrição oficial do
+  // CNAE de software ("Desenvolvimento de programas de computador sob
+  // encomenda", 6201-5/01) tinha três palavras genéricas demais para
+  // provarem ramo sozinhas. Ver o comentário datado nos arquivos Python
+  // para o caso real que motivou (laudo PNCP 26/2026, Viana/ES).
+  'desenvolvimento', 'programas', 'encomenda',
 ]);
 
 function normalizar(texto: string): string {
@@ -92,8 +99,18 @@ for (const grupo of GRUPOS_SINONIMOS) {
   for (const radical of grupo) RADICAL_PARA_GRUPO.set(radical, grupo);
 }
 
+// ⚠️ 18/09/2026: sincronizado com radicais.py (backend). "siste"
+// (sistema/sistemas) abria a ponte sozinho, e "sistema" não é palavra de
+// TI — é o substantivo genérico para qualquer conjunto de partes que
+// funcionam juntas (sistema hidráulico, elétrico, de filtragem...). Continua
+// DENTRO do grupo (cobre "sistema de gestão" ao lado de vocabulário de TI
+// genuíno), só não abre mais a ponte sozinho. Ver o comentário completo em
+// radicais.py (`_RADICAIS_AMBIGUOS_COMO_FONTE`) para o caso real.
+const RADICAIS_AMBIGUOS_COMO_FONTE = new Set(['siste']);
+
 /** Devolve o próprio radical + sinônimos de setor conhecidos (ou só ele, se não houver grupo). */
 function radicaisEquivalentes(radical: string): string[] {
+  if (RADICAIS_AMBIGUOS_COMO_FONTE.has(radical)) return [radical];
   return RADICAL_PARA_GRUPO.get(radical) ?? [radical];
 }
 

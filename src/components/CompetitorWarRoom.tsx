@@ -75,6 +75,44 @@ export interface ConcorrenteData {
   [key: string]: any;
 }
 
+/** Uma evidência de preço homologado usada na comparação POR ITEM (23/09/2026). */
+export interface ItemComparadoEvidencia {
+  valor: number;
+  descricao?: string;
+  fornecedor?: string;
+  orgao?: string;
+  uf?: string;
+  data?: string;
+  fonte?: string;
+  /** Linhas do mesmo contrato colapsadas nesta observação (coerencia.agrupar_por_contrato). */
+  linhas?: number;
+}
+
+/** Um item do edital comparado com o SEU mercado — por CATMAT quando o item
+ *  tem código, por descrição quando não tem. Mediana, coerência e selo são
+ *  calculados no backend só sobre as evidências deste item. */
+export interface ItemComparado {
+  numero_item?: number | string | null;
+  descricao: string;
+  quantidade?: number;
+  unidade?: string;
+  valor_estimado?: number | null;
+  valor_total_estimado?: number | null;
+  catmat_codigo?: string | null;
+  metodo: 'catmat' | 'descricao' | 'sem_busca';
+  linhas?: number;
+  amostra: number;
+  mediana?: number | null;
+  minimo?: number | null;
+  maximo?: number | null;
+  /** (mediana / estimativa do órgão − 1) × 100. Negativo = mercado abaixo da estimativa. */
+  delta_vs_estimado_pct?: number | null;
+  coerencia?: { veredito: string; razao: number | null; amostra: number; motivo: string };
+  selo?: { nivel: 'forte' | 'bom' | 'parcial' | 'fraco'; texto: string; detalhe?: string };
+  evidencias?: ItemComparadoEvidencia[];
+  tempo_esgotado?: boolean;
+}
+
 export interface PricingIntelligenceData {
   valor_estimado_raw?: number | string;
   valor_estimado_sigiloso?: boolean;
@@ -128,6 +166,13 @@ export interface PricingIntelligenceData {
   /** Contratos distintos na amostra (antes contava LINHAS de contrato). */
   linhasPrecosUnitarios?: number;
   coerenciaAmostra?: { veredito: string; razao: number | null; amostra: number; motivo: string };
+  /** Itens do edital (PNCP) — nº, descrição, quantidade, estimativa do órgão, CATMAT. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  itensEdital?: Array<Record<string, any>>;
+  /** Comparação por item (23/09/2026) — ver ItemComparado. */
+  itensComparados?: ItemComparado[];
+  /** Itens do edital que ficaram fora da comparação por causa do teto por análise. */
+  itensNaoComparados?: number;
   /** Distribuição completa das fontes, para responder "quantos dos N vieram de onde". */
   fonteConfiabilidadeDetalhe?: {
     dominante: string;
@@ -237,6 +282,18 @@ interface CompetitorWarRoomProps {
   atualizadoEm?: string;
 }
 
+/** Nome de empresa reduzido ao que identifica: sem acento, sem sufixo societário
+ *  (LTDA, ME, EPP, S/A...), sem pontuação — para cruzar o FORNECEDOR de uma
+ *  evidência de preço com os concorrentes já mapeados no radar. */
+const normalizarNomeEmpresa = (s: unknown): string =>
+  String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/\b(LTDA|LIMITADA|ME|EPP|EIRELI|S\/A|SA|SS|CIA|COMERCIO|COMERCIAL|E|DE|DO|DA|DOS|DAS)\b/g, ' ')
+    .replace(/[^A-Z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 export default function CompetitorWarRoom({
   competitorsNacionais = [],
   competitorsRegionais = [],
@@ -266,6 +323,8 @@ export default function CompetitorWarRoom({
 
   // Feedback de cópia — guarda o key do botão que acabou de copiar por 2s
   const [copiadoKey, setCopiadoKey] = useState<string | null>(null);
+  // Itens do edital × mercado — quais itens estão com a lista de comparáveis aberta.
+  const [itensExpandidos, setItensExpandidos] = useState<Record<number, boolean>>({});
   const copiar = (texto: string, key: string) => {
     navigator.clipboard.writeText(texto).then(() => {
       setCopiadoKey(key);
@@ -1423,6 +1482,159 @@ export default function CompetitorWarRoom({
                     );
                   })}
                 </div>
+              </div>
+            );
+          })()}
+
+          {/* ━━━ ITENS DO EDITAL × MERCADO (por item, com coerência) ━━━
+              Cada item do edital comparado com o SEU mercado — CATMAT quando o
+              item tem código, descrição quando não tem — com agrupamento por
+              contrato, coerência e selo calculados item a item no backend.
+              Antes só existia a mediana do bolo, que misturava itens de
+              natureza diferente do mesmo edital com o que a busca textual
+              trouxesse (caso real PNCP 63/2026: AutoCAD + SSD + cadeira +
+              tablet numa mediana só). Só aparece quando a análise veio do
+              PNCP (é de lá que os itens estruturados vêm). */}
+          {(() => {
+            const itens: ItemComparado[] = Array.isArray(pricing?.itensComparados) ? pricing.itensComparados : [];
+            if (itens.length === 0) return null;
+            const naoComparados = Number(pricing?.itensNaoComparados) || 0;
+            const fmtBRL = (v: unknown) => Number(v) > 0
+              ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+              : '—';
+            const fmtQtd = (v: unknown) => {
+              const n = Number(v);
+              if (!(n > 0)) return '';
+              return Number.isInteger(n) ? String(n) : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+            };
+            const seloCls: Record<string, string> = {
+              forte: 'bg-emerald-100 text-emerald-700',
+              bom: 'bg-teal-100 text-teal-700',
+              parcial: 'bg-amber-100 text-amber-700',
+              fraco: 'bg-rose-100 text-rose-700',
+            };
+            const nomesConcorrentes = new Set(
+              [...listaNacional, ...listaRegional]
+                .map(c => normalizarNomeEmpresa(c?.nome))
+                .filter(n => n.length >= 4)
+            );
+            const ehConcorrenteMapeado = (fornecedor: unknown): boolean => {
+              const f = normalizarNomeEmpresa(fornecedor);
+              if (f.length < 4) return false;
+              if (nomesConcorrentes.has(f)) return true;
+              for (const n of nomesConcorrentes) {
+                if (n.length >= 8 && f.length >= 8 && (f.includes(n) || n.includes(f))) return true;
+              }
+              return false;
+            };
+            const comMediana = itens.filter(i => i.mediana != null).length;
+            return (
+              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <ClipboardList size={18} className="text-slate-700" />
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Itens do Edital × Mercado</h3>
+                  <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                    {comMediana} de {itens.length} ite{itens.length > 1 ? 'ns' : 'm'} com preço de mercado
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-5">
+                  Cada item comparado com o seu próprio mercado — pelo código CATMAT quando o item tem um, pela descrição quando não tem.
+                  Coerência e selo são calculados item a item: preços que variam mais de 6× entre si são marcados como objetos divergentes e não formam referência.
+                </p>
+                <div className="space-y-3">
+                  {itens.map((it, idx) => {
+                    const nivel = it.selo?.nivel || 'fraco';
+                    const aberto = !!itensExpandidos[idx];
+                    const evs: ItemComparadoEvidencia[] = Array.isArray(it.evidencias) ? it.evidencias : [];
+                    const delta = typeof it.delta_vs_estimado_pct === 'number' ? it.delta_vs_estimado_pct : null;
+                    const deltaCls = delta == null ? 'text-slate-400' : delta <= 0 ? 'text-emerald-600' : 'text-rose-600';
+                    const deltaTxt = delta == null
+                      ? null
+                      : `${delta > 0 ? '+' : ''}${delta.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs. estimativa do órgão`;
+                    const qtdTxt = [fmtQtd(it.quantidade), it.unidade].filter(Boolean).join(' ');
+                    const metodoTxt = it.metodo === 'catmat'
+                      ? `CATMAT ${it.catmat_codigo || ''}`.trim()
+                      : it.metodo === 'descricao' ? 'por descrição' : 'sem busca';
+                    return (
+                      <div key={idx} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                        <div className="flex flex-col md:flex-row md:items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                              Item {it.numero_item ?? idx + 1}{qtdTxt ? ` · ${qtdTxt}` : ''} · {metodoTxt}
+                            </p>
+                            <p className="text-[12px] font-bold text-slate-800 leading-snug" title={it.descricao}>{it.descricao || 'Item sem descrição'}</p>
+                            <p className="text-[10px] text-slate-500 font-medium mt-1">
+                              Estimativa do órgão: <span className="font-black text-slate-700">{fmtBRL(it.valor_estimado)}</span>{it.valor_estimado ? '/un' : ''}
+                              {it.valor_total_estimado ? <> · total <span className="font-black text-slate-700">{fmtBRL(it.valor_total_estimado)}</span></> : null}
+                            </p>
+                          </div>
+                          <div className="md:w-64 shrink-0 bg-white rounded-xl border border-white/60 p-3">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mediana de mercado</p>
+                              {it.selo && (
+                                <span title={it.selo.detalhe || undefined} className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${seloCls[nivel] || seloCls.fraco}`}>
+                                  {it.selo.texto}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-lg font-black text-slate-900 leading-none">{fmtBRL(it.mediana)}</p>
+                            <p className="text-[10px] text-slate-400 font-medium mt-1">
+                              {it.amostra > 0 ? `${it.amostra} contrato${it.amostra > 1 ? 's' : ''}` : 'sem comparável'}
+                              {it.minimo != null && it.amostra > 1 ? ` · mín ${fmtBRL(it.minimo)}` : ''}
+                            </p>
+                            {deltaTxt && <p className={`text-[10px] font-black mt-1 ${deltaCls}`}>{deltaTxt}</p>}
+                          </div>
+                        </div>
+                        {it.coerencia?.motivo && it.coerencia.veredito !== 'coerente' && (
+                          <p className="mt-2 text-[10px] font-bold leading-relaxed text-amber-700">{it.coerencia.motivo}</p>
+                        )}
+                        {it.amostra === 0 && it.selo?.detalhe && (
+                          <p className="mt-2 text-[10px] font-medium leading-relaxed text-slate-500">{it.selo.detalhe}</p>
+                        )}
+                        {evs.length > 0 && (
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => setItensExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                            >
+                              {aberto ? 'Ocultar' : 'Ver'} {evs.length} comparáve{evs.length > 1 ? 'is' : 'l'}
+                            </button>
+                            {aberto && (
+                              <div className="mt-2 divide-y divide-slate-100 rounded-xl bg-white border border-slate-100">
+                                {evs.map((ev, j) => {
+                                  const concorrente = ehConcorrenteMapeado(ev.fornecedor);
+                                  const dataFmt = String(ev.data || '').slice(0, 7) || null;
+                                  return (
+                                    <div key={j} className="flex items-start gap-3 px-3 py-2">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-[11px] font-semibold text-slate-700 leading-snug truncate">
+                                          {ev.fornecedor || 'Fornecedor não informado'}
+                                          {concorrente && (
+                                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase bg-rose-100 text-rose-700 align-middle">concorrente mapeado</span>
+                                          )}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate" title={ev.descricao || undefined}>
+                                          {[ev.orgao, ev.uf, dataFmt, ev.descricao].filter(Boolean).join(' · ')}
+                                        </p>
+                                      </div>
+                                      <span className="text-sm font-black text-slate-900 shrink-0">{fmtBRL(ev.valor)}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {naoComparados > 0 && (
+                  <p className="mt-4 text-[10px] text-slate-400 font-medium leading-relaxed">
+                    Mais {naoComparados} ite{naoComparados > 1 ? 'ns' : 'm'} do edital não entraram na comparação (teto de {itens.length} itens por análise).
+                  </p>
+                )}
               </div>
             );
           })()}
