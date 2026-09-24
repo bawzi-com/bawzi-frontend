@@ -14,6 +14,7 @@ import {
   linkExternoValido,
   type ContratoDoConcorrente,
 } from '@/lib/perfilConcorrente';
+import { montarSecaoDeEvidencias, resumoDaMediana } from '@/lib/evidenciasPreco';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -86,6 +87,10 @@ export interface ItemComparadoEvidencia {
   fonte?: string;
   /** Linhas do mesmo contrato colapsadas nesta observação (coerencia.agrupar_por_contrato). */
   linhas?: number;
+  /** Unidade do preço (24/09/2026): por item, preço por UST só se compara com preço por UST. */
+  unidade?: string;
+  /** Objeto do contrato de onde a linha saiu — em serviço, é ele que diz do que se trata. */
+  objeto?: string;
 }
 
 /** Um item do edital comparado com o SEU mercado — por CATMAT quando o item
@@ -102,9 +107,15 @@ export interface ItemComparado {
   metodo: 'catmat' | 'descricao' | 'sem_busca';
   linhas?: number;
   amostra: number;
+  /** Média, mínimo e máximo sobre TODOS os contratos do item (24/09/2026). */
+  media?: number | null;
   mediana?: number | null;
   minimo?: number | null;
   maximo?: number | null;
+  /** "UST", "PF", "HORA" ou "MES" quando a unidade decide a ordem de grandeza do preço. */
+  familia_unidade?: string | null;
+  /** O que foi procurado quando o método é "descricao" (ex.: "fábrica de software"). */
+  consulta?: string | null;
   /** (mediana / estimativa do órgão − 1) × 100. Negativo = mercado abaixo da estimativa. */
   delta_vs_estimado_pct?: number | null;
   coerencia?: { veredito: string; razao: number | null; amostra: number; motivo: string };
@@ -154,6 +165,13 @@ export interface PricingIntelligenceData {
   amostraPrecosUnitariosRegional?: number;
   evidenciasPrecosUnitarios?: Array<Record<string, any>>;
   evidenciasPrecosUnitariosRegionais?: Array<Record<string, any>>;
+  /** Média, mediana, mínimo e máximo da busca pelo objeto, sobre todos os
+   *  contratos da amostra (24/09/2026). Só é exibido quando o edital não tem
+   *  lista de itens do PNCP. */
+  estatisticasPrecosUnitarios?: {
+    media?: number | null; mediana?: number | null; minimo?: number | null;
+    maximo?: number | null; amostra?: number; linhas?: number;
+  } | null;
   /**
    * Fonte DOMINANTE dos preços unitários (a que mais contribuiu para a amostra).
    * Antes era "a melhor fonte presente": uma única evidência CATMAT entre 50
@@ -1277,8 +1295,14 @@ export default function CompetitorWarRoom({
             };
             const nc = nivelCfg[nivel] ?? { bg: 'bg-slate-50 border-slate-200', badge: 'bg-slate-100 text-slate-600', label: nivel || '—', dotColor: 'bg-slate-400' };
             const desagio = Number(pricing.desagioPreditivoOrgao) || 0;
-            const precoUnitarioMercado = Number(pricing.valorMedioUnitarioMercado) || 0;
-            const amostraUnitarios = Number(pricing.amostraPrecosUnitarios) || 0;
+            // O cartão segue a seção de evidências logo abaixo (24/09/2026):
+            // com itens do PNCP, é a mediana do item (edital de um item) ou
+            // "varia por item" (vários). A mediana da busca geral misturava
+            // objetos diferentes e contradiria a seção, que agora é só por item.
+            const cartaoMediana = resumoDaMediana(pricing);
+            const seloDoCartao = cartaoMediana.selo;
+            const precoUnitarioMercado = cartaoMediana.valor ?? 0;
+            const amostraUnitarios = cartaoMediana.amostra;
             const perfilIcon: Record<string, React.ReactNode> = { Tubarão: <Zap size={20} className="text-red-500" />, Agressivo: <Target size={20} className="text-orange-500" />, Conservador: <Shield size={20} className="text-blue-500" />, Iniciante: <Activity size={20} className="text-green-500" /> };
             const perfilNode = perfilIcon[String(pricing.perfilVencedor ?? '')] || <Bot size={20} className="text-slate-500" />;
             return (
@@ -1344,36 +1368,36 @@ export default function CompetitorWarRoom({
                         apresenta como conferido, então era o mais perigoso.
                         Agora o backend responde O QUE conferiu, considerando
                         origem, coerência da amostra e tamanho dela. */}
-                    {pricing.seloVerificacao && (
+                    {seloDoCartao && (
                       <div
-                        title={pricing.seloVerificacao.detalhe || undefined}
+                        title={seloDoCartao.detalhe || undefined}
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase mb-2 ${
-                          pricing.seloVerificacao.nivel === 'forte' ? 'bg-emerald-100 text-emerald-700' :
-                          pricing.seloVerificacao.nivel === 'bom' ? 'bg-teal-100 text-teal-700' :
-                          pricing.seloVerificacao.nivel === 'parcial' ? 'bg-amber-100 text-amber-700' :
+                          seloDoCartao.nivel === 'forte' ? 'bg-emerald-100 text-emerald-700' :
+                          seloDoCartao.nivel === 'bom' ? 'bg-teal-100 text-teal-700' :
+                          seloDoCartao.nivel === 'parcial' ? 'bg-amber-100 text-amber-700' :
                           'bg-rose-100 text-rose-700'
                         }`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                          pricing.seloVerificacao.nivel === 'forte' ? 'bg-emerald-500' :
-                          pricing.seloVerificacao.nivel === 'bom' ? 'bg-teal-500' :
-                          pricing.seloVerificacao.nivel === 'parcial' ? 'bg-amber-500' :
+                          seloDoCartao.nivel === 'forte' ? 'bg-emerald-500' :
+                          seloDoCartao.nivel === 'bom' ? 'bg-teal-500' :
+                          seloDoCartao.nivel === 'parcial' ? 'bg-amber-500' :
                           'bg-rose-500'
                         }`} />
-                        {pricing.seloVerificacao.texto}
+                        {seloDoCartao.texto}
                       </div>
                     )}
                     {/* O motivo por extenso, quando há ressalva — o selo cabe
                         em duas palavras, a explicação não. */}
-                    {pricing.seloVerificacao?.detalhe
-                      && pricing.seloVerificacao.nivel !== 'forte'
-                      && pricing.seloVerificacao.nivel !== 'bom' && (
+                    {seloDoCartao?.detalhe
+                      && seloDoCartao.nivel !== 'forte'
+                      && seloDoCartao.nivel !== 'bom' && (
                       <p className="mb-1.5 text-[9px] font-bold leading-relaxed text-amber-700">
-                        {pricing.seloVerificacao.detalhe}
+                        {seloDoCartao.detalhe}
                       </p>
                     )}
                     {/* Composição completa da amostra por fonte */}
-                    {pricing.fonteConfiabilidadeDetalhe &&
+                    {cartaoMediana.modo === 'geral' && pricing.fonteConfiabilidadeDetalhe &&
                      Object.keys(pricing.fonteConfiabilidadeDetalhe.distribuicao || {}).length > 1 && (
                       <p className="text-[9px] text-slate-500 font-bold mb-1.5 leading-relaxed">
                         Composição:{' '}
@@ -1390,12 +1414,19 @@ export default function CompetitorWarRoom({
                     )}
                     <div>
                       <span className="text-xl font-black text-slate-900">
-                        {precoUnitarioMercado > 0 ? precoUnitarioMercado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
+                        {cartaoMediana.modo === 'varia'
+                          ? 'Varia por item'
+                          : precoUnitarioMercado > 0 ? precoUnitarioMercado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}
                       </span>
-                      {/* Preço mínimo do mercado */}
-                      {Number(pricing.valorMinimoUnitarioMercado) > 0 && precoUnitarioMercado > 0 && (
+                      {cartaoMediana.modo === 'varia' && (
                         <p className="text-[10px] text-slate-500 font-bold mt-0.5">
-                          Mín: {Number(pricing.valorMinimoUnitarioMercado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          Cada item tem o seu preço: veja em Evidências de Preço Unitário, abaixo.
+                        </p>
+                      )}
+                      {/* Preço mínimo do mercado */}
+                      {(cartaoMediana.minimo ?? 0) > 0 && precoUnitarioMercado > 0 && (
+                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                          Mín: {(cartaoMediana.minimo ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </p>
                       )}
                       {/* Amostra com intervalo de datas */}
@@ -1410,10 +1441,11 @@ export default function CompetitorWarRoom({
                       {amostraUnitarios > 0 && (
                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">
                           {amostraUnitarios} contrato{amostraUnitarios > 1 ? 's' : ''}
-                          {Number(pricing.linhasPrecosUnitarios) > amostraUnitarios && (
+                          {cartaoMediana.modo === 'item' && <> · item do edital</>}
+                          {cartaoMediana.modo === 'geral' && Number(pricing.linhasPrecosUnitarios) > amostraUnitarios && (
                             <> · {pricing.linhasPrecosUnitarios} itens</>
                           )}
-                          {pricing.intervaloAmostral?.inicio && (
+                          {cartaoMediana.modo === 'geral' && pricing.intervaloAmostral?.inicio && (
                             <> · {pricing.intervaloAmostral.inicio} → {pricing.intervaloAmostral.fim}</>
                           )}
                         </p>
@@ -1433,79 +1465,34 @@ export default function CompetitorWarRoom({
             );
           })()}
 
-          {/* ━━━ EVIDÊNCIAS DE PREÇO POR CONTRATO ━━━ */}
+          {/* ━━━ EVIDÊNCIAS DE PREÇO UNITÁRIO: SÓ OS ITENS DO EDITAL ━━━
+              24/09/2026, pedido do dono: uma seção só, por item do edital,
+              com preço médio, mínimo e máximo. Antes eram duas: a lista da
+              busca geral pelo objeto (os 12 preços mais baratos, sem filtro
+              por item; num edital de fábrica de software ela mostrou manta,
+              TNT, licença de Office, bolsa de massagista e fogão industrial)
+              e "Itens do Edital × Mercado", que no mesmo laudo dizia "sem
+              comparável". O backend agora passa cada evidência pela régua do
+              item (descrição, trecho específico e unidade) e reaproveita o
+              que a busca geral trouxe. Sem itens do PNCP (texto colado, PDF),
+              a seção mostra a busca pelo objeto e diz que é isso. A montagem
+              fica em `lib/evidenciasPreco.ts`, com testes. */}
           {(() => {
-            const evs: Array<Record<string, any>> = pricing?.evidenciasPrecosUnitarios || [];
-            if (evs.length === 0) return null;
-
+            const secao = montarSecaoDeEvidencias(pricing);
+            if (secao.modo === 'vazio') return null;
+            const fmtBRL = (v: number | null | undefined) => (v != null && v > 0
+              ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+              : '—');
             const fonteCfg: Record<string, { bg: string; dot: string; label: string }> = {
               PNCP_HOMOLOGADO: { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: '✓ PNCP' },
               PNCP_ESTRUTURADO:{ bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: 'PNCP direto' },
               PNCP_ESTIMADO:   { bg: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500',   label: 'PNCP estimado' },
               PNCP_CALCULADO:  { bg: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-500',  label: 'PNCP calc.' },
+              CATMAT_COMPRAS:  { bg: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500', label: 'CATMAT' },
+              PAINEL_PRECOS:   { bg: 'bg-teal-100 text-teal-700',       dot: 'bg-teal-500',    label: 'Painel de Preços' },
               DB_ESTRUTURADO:  { bg: 'bg-blue-100 text-blue-700',       dot: 'bg-blue-500',    label: 'Campo direto' },
               DB_CALCULADO:    { bg: 'bg-yellow-100 text-yellow-700',   dot: 'bg-yellow-500',  label: 'Calculado' },
               ESTIMADO:        { bg: 'bg-amber-100 text-amber-700',     dot: 'bg-amber-500',   label: 'Estimado' },
-            };
-
-            return (
-              <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
-                <div className="flex items-center gap-2 mb-5">
-                  <DollarSign size={18} className="text-slate-700" />
-                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Evidências de Preço Unitário</h3>
-                  <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-widest">{evs.length} contrato{evs.length > 1 ? 's' : ''}</span>
-                </div>
-                <div className="divide-y divide-slate-50">
-                  {evs.map((ev, idx) => {
-                    const cfg = fonteCfg[ev.fonte as string] ?? fonteCfg.ESTIMADO;
-                    const valorFmt = Number(ev.valor) > 0
-                      ? Number(ev.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                      : '—';
-                    const dataFmt = String(ev.data || '').slice(0, 7) || null;
-                    return (
-                      <div key={idx} className="flex items-start gap-3 py-3">
-                        {/* Badge de fonte */}
-                        <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black uppercase shrink-0 mt-0.5 ${cfg.bg}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-                          {cfg.label}
-                        </div>
-                        {/* Descrição e meta */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-semibold text-slate-700 leading-snug truncate">{ev.descricao || 'Item sem descrição'}</p>
-                          <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate">
-                            {[ev.orgao, ev.uf, dataFmt].filter(Boolean).join(' · ')}
-                          </p>
-                        </div>
-                        {/* Valor */}
-                        <span className="text-sm font-black text-slate-900 shrink-0">{valorFmt}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ━━━ ITENS DO EDITAL × MERCADO (por item, com coerência) ━━━
-              Cada item do edital comparado com o SEU mercado — CATMAT quando o
-              item tem código, descrição quando não tem — com agrupamento por
-              contrato, coerência e selo calculados item a item no backend.
-              Antes só existia a mediana do bolo, que misturava itens de
-              natureza diferente do mesmo edital com o que a busca textual
-              trouxesse (caso real PNCP 63/2026: AutoCAD + SSD + cadeira +
-              tablet numa mediana só). Só aparece quando a análise veio do
-              PNCP (é de lá que os itens estruturados vêm). */}
-          {(() => {
-            const itens: ItemComparado[] = Array.isArray(pricing?.itensComparados) ? pricing.itensComparados : [];
-            if (itens.length === 0) return null;
-            const naoComparados = Number(pricing?.itensNaoComparados) || 0;
-            const fmtBRL = (v: unknown) => Number(v) > 0
-              ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-              : '—';
-            const fmtQtd = (v: unknown) => {
-              const n = Number(v);
-              if (!(n > 0)) return '';
-              return Number.isInteger(n) ? String(n) : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
             };
             const seloCls: Record<string, string> = {
               forte: 'bg-emerald-100 text-emerald-700',
@@ -1527,112 +1514,138 @@ export default function CompetitorWarRoom({
               }
               return false;
             };
-            const comMediana = itens.filter(i => i.mediana != null).length;
+            const VISIVEIS = 5;
+            const contagem = secao.modo === 'itens'
+              ? `${secao.itensComEvidencia} de ${secao.totalItens} ite${secao.totalItens > 1 ? 'ns' : 'm'} com preço`
+              : `${secao.blocos[0].amostra} contrato${secao.blocos[0].amostra === 1 ? '' : 's'}`;
             return (
               <div className="bg-white border border-slate-200 rounded-[2rem] p-6 md:p-8 shadow-sm">
                 <div className="flex items-center gap-2 mb-1">
-                  <ClipboardList size={18} className="text-slate-700" />
-                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Itens do Edital × Mercado</h3>
-                  <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                    {comMediana} de {itens.length} ite{itens.length > 1 ? 'ns' : 'm'} com preço de mercado
-                  </span>
+                  <DollarSign size={18} className="text-slate-700 shrink-0" />
+                  <h3 className="text-xs font-black text-slate-700 uppercase tracking-widest">Evidências de Preço Unitário</h3>
+                  <span className="ml-auto text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">{contagem}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-5">
-                  Cada item comparado com o seu próprio mercado — pelo código CATMAT quando o item tem um, pela descrição quando não tem.
-                  Coerência e selo são calculados item a item: preços que variam mais de 6× entre si são marcados como objetos divergentes e não formam referência.
+                  {secao.modo === 'itens'
+                    ? 'Só preços dos itens deste edital. Cada item é comparado com o próprio mercado: pelo código CATMAT quando tem um; pela descrição e pela unidade quando não tem (preço por UST só se compara com preço por UST). Preços que variam mais de 6× entre si são marcados como objetos divergentes.'
+                    : 'O edital não trouxe a lista de itens do PNCP, então a busca foi pelo objeto do edital. Confira se as descrições abaixo são do mesmo produto ou serviço antes de usar os números.'}
                 </p>
                 <div className="space-y-3">
-                  {itens.map((it, idx) => {
-                    const nivel = it.selo?.nivel || 'fraco';
+                  {secao.blocos.map((b, idx) => {
+                    const nivel = b.selo?.nivel || 'fraco';
                     const aberto = !!itensExpandidos[idx];
-                    const evs: ItemComparadoEvidencia[] = Array.isArray(it.evidencias) ? it.evidencias : [];
-                    const delta = typeof it.delta_vs_estimado_pct === 'number' ? it.delta_vs_estimado_pct : null;
-                    const deltaCls = delta == null ? 'text-slate-400' : delta <= 0 ? 'text-emerald-600' : 'text-rose-600';
-                    const deltaTxt = delta == null
+                    const visiveis = aberto ? b.evidencias : b.evidencias.slice(0, VISIVEIS);
+                    const porUnidade = b.unidadeDoPreco ? `/${b.unidadeDoPreco}` : '/un';
+                    const deltaTxt = b.deltaPct == null
                       ? null
-                      : `${delta > 0 ? '+' : ''}${delta.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs. estimativa do órgão`;
-                    const qtdTxt = [fmtQtd(it.quantidade), it.unidade].filter(Boolean).join(' ');
-                    const metodoTxt = it.metodo === 'catmat'
-                      ? `CATMAT ${it.catmat_codigo || ''}`.trim()
-                      : it.metodo === 'descricao' ? 'por descrição' : 'sem busca';
+                      : `Mediana ${b.deltaPct > 0 ? '+' : ''}${b.deltaPct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% vs. estimativa do órgão`;
+                    const deltaCls = b.deltaPct != null && b.deltaPct <= 0 ? 'text-emerald-600' : 'text-rose-600';
+                    const colunas: Array<[string, number | null]> = [
+                      ['Preço médio', b.media],
+                      ['Preço mínimo', b.minimo],
+                      ['Preço máximo', b.maximo],
+                    ];
                     return (
-                      <div key={idx} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
-                        <div className="flex flex-col md:flex-row md:items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                              Item {it.numero_item ?? idx + 1}{qtdTxt ? ` · ${qtdTxt}` : ''} · {metodoTxt}
-                            </p>
-                            <p className="text-[12px] font-bold text-slate-800 leading-snug" title={it.descricao}>{it.descricao || 'Item sem descrição'}</p>
-                            <p className="text-[10px] text-slate-500 font-medium mt-1">
-                              Estimativa do órgão: <span className="font-black text-slate-700">{fmtBRL(it.valor_estimado)}</span>{it.valor_estimado ? '/un' : ''}
-                              {it.valor_total_estimado ? <> · total <span className="font-black text-slate-700">{fmtBRL(it.valor_total_estimado)}</span></> : null}
-                            </p>
-                          </div>
-                          <div className="md:w-64 shrink-0 bg-white rounded-xl border border-white/60 p-3">
-                            <div className="flex items-center justify-between gap-2 mb-1">
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mediana de mercado</p>
-                              {it.selo && (
-                                <span title={it.selo.detalhe || undefined} className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${seloCls[nivel] || seloCls.fraco}`}>
-                                  {it.selo.texto}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-lg font-black text-slate-900 leading-none">{fmtBRL(it.mediana)}</p>
-                            <p className="text-[10px] text-slate-400 font-medium mt-1">
-                              {it.amostra > 0 ? `${it.amostra} contrato${it.amostra > 1 ? 's' : ''}` : 'sem comparável'}
-                              {it.minimo != null && it.amostra > 1 ? ` · mín ${fmtBRL(it.minimo)}` : ''}
-                            </p>
-                            {deltaTxt && <p className={`text-[10px] font-black mt-1 ${deltaCls}`}>{deltaTxt}</p>}
-                          </div>
-                        </div>
-                        {it.coerencia?.motivo && it.coerencia.veredito !== 'coerente' && (
-                          <p className="mt-2 text-[10px] font-bold leading-relaxed text-amber-700">{it.coerencia.motivo}</p>
-                        )}
-                        {it.amostra === 0 && it.selo?.detalhe && (
-                          <p className="mt-2 text-[10px] font-medium leading-relaxed text-slate-500">{it.selo.detalhe}</p>
-                        )}
-                        {evs.length > 0 && (
-                          <div className="mt-3">
-                            <button
-                              type="button"
-                              onClick={() => setItensExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                              className="text-[10px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
-                            >
-                              {aberto ? 'Ocultar' : 'Ver'} {evs.length} comparáve{evs.length > 1 ? 'is' : 'l'}
-                            </button>
-                            {aberto && (
-                              <div className="mt-2 divide-y divide-slate-100 rounded-xl bg-white border border-slate-100">
-                                {evs.map((ev, j) => {
-                                  const concorrente = ehConcorrenteMapeado(ev.fornecedor);
-                                  const dataFmt = String(ev.data || '').slice(0, 7) || null;
-                                  return (
-                                    <div key={j} className="flex items-start gap-3 px-3 py-2">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-[11px] font-semibold text-slate-700 leading-snug truncate">
-                                          {ev.fornecedor || 'Fornecedor não informado'}
-                                          {concorrente && (
-                                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase bg-rose-100 text-rose-700 align-middle">concorrente mapeado</span>
-                                          )}
-                                        </p>
-                                        <p className="text-[10px] text-slate-400 font-medium mt-0.5 truncate" title={ev.descricao || undefined}>
-                                          {[ev.orgao, ev.uf, dataFmt, ev.descricao].filter(Boolean).join(' · ')}
-                                        </p>
-                                      </div>
-                                      <span className="text-sm font-black text-slate-900 shrink-0">{fmtBRL(ev.valor)}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                      <div key={b.chave} className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 break-words">{b.rotulo}</p>
+                            {b.descricao && (
+                              <p className="text-[12px] font-bold text-slate-800 leading-snug" title={b.descricao}>{b.descricao}</p>
+                            )}
+                            {b.estimativaUnitaria != null && (
+                              <p className="text-[10px] text-slate-500 font-medium mt-1">
+                                Estimativa do órgão: <span className="font-black text-slate-700">{fmtBRL(b.estimativaUnitaria)}</span>{porUnidade}
+                                {b.estimativaTotal != null && (
+                                  <> · total <span className="font-black text-slate-700">{fmtBRL(b.estimativaTotal)}</span></>
+                                )}
+                              </p>
                             )}
                           </div>
+                          {b.selo && (
+                            <span
+                              title={b.selo.detalhe || undefined}
+                              className={`inline-flex shrink-0 items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${seloCls[nivel] || seloCls.fraco}`}
+                            >
+                              {b.selo.texto}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* As três colunas pedidas, sobre TODOS os contratos do item. */}
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {colunas.map(([rotulo, valor]) => (
+                            <div key={rotulo} className="min-w-0 rounded-xl border border-slate-100 bg-white p-3">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{rotulo}</p>
+                              <p className="mt-1 break-words text-sm md:text-base font-black leading-tight text-slate-900">{fmtBRL(valor)}</p>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-[10px] text-slate-500 font-medium">
+                          {b.amostra > 0 ? `${b.amostra} contrato${b.amostra > 1 ? 's' : ''}` : 'Sem comparável'}
+                          {b.linhas > b.amostra ? ` · ${b.linhas} itens` : ''}
+                          {b.mediana != null ? ` · mediana ${fmtBRL(b.mediana)}` : ''}
+                          {b.unidadeDoPreco && b.amostra > 0 ? ` · preço por ${b.unidadeDoPreco}` : ''}
+                        </p>
+                        {deltaTxt && <p className={`mt-1 text-[10px] font-black ${deltaCls}`}>{deltaTxt}</p>}
+                        {b.avisoCoerencia && (
+                          <p className="mt-2 text-[10px] font-bold leading-relaxed text-amber-700">{b.avisoCoerencia}</p>
+                        )}
+                        {b.semComparavel && (
+                          <p className="mt-2 text-[10px] font-medium leading-relaxed text-slate-500">{b.semComparavel}</p>
+                        )}
+                        {visiveis.length > 0 && (
+                          <div className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-white">
+                            {visiveis.map((ev, j) => {
+                              const cfg = fonteCfg[ev.fonte || ''] ?? fonteCfg.ESTIMADO;
+                              const concorrente = ehConcorrenteMapeado(ev.fornecedor);
+                              const dataFmt = String(ev.data || '').slice(0, 7) || null;
+                              return (
+                                <div key={j} className="flex items-start gap-3 px-3 py-2">
+                                  <div className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${cfg.bg}`}>
+                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${cfg.dot}`} />
+                                    {cfg.label}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[11px] font-semibold leading-snug text-slate-700" title={ev.descricao || undefined}>
+                                      {ev.descricao || 'Item sem descrição'}
+                                    </p>
+                                    {ev.objeto && ev.objeto !== ev.descricao && (
+                                      <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500" title={ev.objeto}>
+                                        Contrato: {ev.objeto}
+                                      </p>
+                                    )}
+                                    <p className="mt-0.5 truncate text-[10px] font-medium text-slate-400">
+                                      {[ev.orgao, ev.uf, dataFmt, ev.fornecedor].filter(Boolean).join(' · ')}
+                                    </p>
+                                    {concorrente && (
+                                      <span className="mt-1 inline-flex items-center rounded-md bg-rose-100 px-1.5 py-0.5 text-[8px] font-black uppercase text-rose-700">
+                                        concorrente mapeado
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="shrink-0 text-sm font-black text-slate-900">{fmtBRL(ev.valor)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {b.evidencias.length > VISIVEIS && (
+                          <button
+                            type="button"
+                            onClick={() => setItensExpandidos(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                            className="mt-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:underline"
+                          >
+                            {aberto ? 'Mostrar menos' : `Ver as ${b.evidencias.length} evidências`}
+                          </button>
                         )}
                       </div>
                     );
                   })}
                 </div>
-                {naoComparados > 0 && (
-                  <p className="mt-4 text-[10px] text-slate-400 font-medium leading-relaxed">
-                    Mais {naoComparados} ite{naoComparados > 1 ? 'ns' : 'm'} do edital não entraram na comparação (teto de {itens.length} itens por análise).
+                {secao.naoComparados > 0 && (
+                  <p className="mt-4 text-[10px] font-medium leading-relaxed text-slate-400">
+                    Mais {secao.naoComparados} ite{secao.naoComparados > 1 ? 'ns' : 'm'} do edital não entraram na comparação (teto de {secao.totalItens} itens por análise).
                   </p>
                 )}
               </div>
