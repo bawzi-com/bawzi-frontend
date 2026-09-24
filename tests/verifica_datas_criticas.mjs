@@ -24,6 +24,7 @@ import { execSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const RAIZ = new URL('..', import.meta.url).pathname;
 let ok = true;
@@ -38,16 +39,16 @@ function checa(rotulo, obtido, esperado) {
 // ── Transpila o módulo TS para ESM executável ────────────────────────────────
 const dir = mkdtempSync(join(tmpdir(), 'datas-'));
 const fonte = readFileSync(join(RAIZ, 'src/lib/datasCriticas.ts'), 'utf-8');
-// O módulo é TS só na superfície (tipos e interfaces). Retirar as anotações é
-// suficiente e evita arrastar um transpiler para dentro do teste.
-const js = fonte
-  .replace(/^export interface [\s\S]*?^}/gm, '')
-  .replace(/: Intl\.DateTimeFormatOptions/g, '')
-  .replace(/: DataCriticaPartes \| null/g, '')
-  .replace(/: 'curto' \| 'longo' \| 'numerico' = 'curto'/g, "= 'curto'")
-  .replace(/iso: string \| null \| undefined/g, 'iso')
-  .replace(/agora: Date = new Date\(\)/g, 'agora = new Date()')
-  .replace(/\): (boolean|number \| null|Date \| null|string \| null) \{/g, ') {');
+// O módulo é TS só na superfície (tipos e interfaces), mas apagar as anotações
+// com uma lista de regex quebrava a cada anotação nova: em 24/09/2026
+// `prazoDePropostasEncerrado` trouxe uma interface não exportada e parâmetros
+// tipados, e o verificador morria com SyntaxError antes de testar qualquer
+// coisa. O `typescript` já é devDependency (é o `tsc` do projeto), então
+// `transpileModule` só apaga os tipos — não checa nada e não traz dependência nova.
+const js = ts.transpileModule(fonte, {
+  fileName: 'datasCriticas.ts',
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
 const arq = join(dir, 'datasCriticas.mjs');
 writeFileSync(arq, js);
 const M = await import(arq);

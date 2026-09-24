@@ -216,3 +216,103 @@ export function venceHoje(
     && agoraBr.getUTCDate() === p.diaDoMes
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// O PRAZO DE PROPOSTAS JÁ PASSOU? — a régua do banner "Edital encerrado"
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ── 3. O "ENCERRADO" PELO INÍCIO DA JANELA (24/09/2026) ────────────────────
+//
+// A régua antiga (em AnalysisResults.tsx) aceitava qualquer rótulo com
+// 'recebimento' e pegava a PRIMEIRA data vencida. "Início do Recebimento das
+// Propostas" tem 'recebimento' — e início passado quer dizer que as propostas
+// estão ABERTAS. Medido com o código de então: um edital com a janela de
+// 21/09 a 02/10, aberto no dia 24/09, recebia o banner preto "EDITAL
+// ENCERRADO · A Início do Recebimento das Propostas ocorreu em 21 de setembro"
+// — o defeito pessimista do item 1, por outro caminho. E havia uma TERCEIRA
+// cópia da régua, em exportPdf.ts, com outra lista de palavras ('proposta',
+// 'abertura'…) e um comentário dizendo que era a mesma.
+//
+// Agora a régua é uma só, aqui, e usada pelas três telas (banner, impressão
+// e PDF):
+//   1. Data OFICIAL do PNCP (`pncp_prazo_propostas.fim`, gravada pelo backend
+//      quando a análise vem do Radar) decide sozinha quando existe.
+//   2. Sem ela, o cronograma extraído do edital — mas só marcos do FIM da
+//      janela (ou de algo que só acontece depois dele: sessão, disputa),
+//      nunca do início, e fica a data MAIS TARDIA: basta um marco no futuro
+//      para o edital seguir vivo.
+
+/** Rótulo sem acento e em minúsculas — "INÍCIO" e "inicio" são o mesmo marco. */
+function _rotuloNormalizado(rotulo: string): string {
+  return rotulo.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** Marcas do FIM da janela de propostas, ou de um evento posterior a ele. */
+const _MARCAS_FIM_DA_JANELA = /encerramento|recebimento|envio|limite|prazo|sessao|disputa|lance/;
+
+/** Prazo de OUTRA coisa, mesmo contendo uma das marcas acima ("Prazo de
+ *  impugnação", "Prazo de entrega", "Validade da proposta"). "Entrega" só
+ *  sai quando não é das propostas. */
+const _OUTRO_PRAZO =
+  /impugna|esclarec|recurso|vigenc|pagamento|validade|assinatura|garantia|execuc|amostra|homologa|adjudica|visita|vistoria|publicac|entrega(?!\s+(d[ao]s?\s+)?(proposta|envelope|lance))/;
+
+/** "Início do recebimento", "Abertura das propostas", "A partir de…": o COMEÇO
+ *  da janela. ("Abertura das propostas" é ambígua — no PNCP é o início — e
+ *  fica de fora por isso.) Não vale para sessão/disputa: "Início da sessão
+ *  pública" acontece depois do prazo, e esse É um marco de encerramento. */
+function _marcaInicioDaJanela(r: string): boolean {
+  return /\b(inicio|abertura|a partir)\b/.test(r)
+    && /(recebimento|envio|cadastr|acolhimento|proposta)/.test(r)
+    && !/(sessao|disputa|lance)/.test(r);
+}
+
+function _ehMarcoDoFimDaJanela(rotulo: string): boolean {
+  const r = _rotuloNormalizado(rotulo);
+  return _MARCAS_FIM_DA_JANELA.test(r) && !_OUTRO_PRAZO.test(r) && !_marcaInicioDaJanela(r);
+}
+
+export interface PrazoDePropostas {
+  /** Como a tela deve chamar a data ("Fim do recebimento de propostas"). */
+  label: string;
+  data_iso: string;
+  /** 'pncp' = data oficial; 'edital' = extraída do texto pela IA. */
+  fonte: 'pncp' | 'edital';
+}
+
+interface _ResultadoComPrazo {
+  datas_criticas?: ReadonlyArray<{ label?: string | null; data_iso?: string | null } | null> | null;
+  pncp_prazo_propostas?: { fim?: string | null } | null;
+}
+
+/** O prazo de propostas que PROVA que o edital encerrou, ou `null`.
+ *
+ *  `null` é "não dá para afirmar que encerrou" — inclusive sem data nenhuma.
+ *  Na dúvida, o edital segue vivo: esconder um aviso custa menos do que
+ *  fazer alguém desistir de uma disputa aberta. */
+export function prazoDePropostasEncerrado(
+  result: _ResultadoComPrazo | null | undefined,
+  agora: Date = new Date(),
+): PrazoDePropostas | null {
+  if (!result) return null;
+
+  const fimOficial = result.pncp_prazo_propostas?.fim;
+  if (fimOficial && instanteLimite(fimOficial)) {
+    return dataCriticaExpirada(fimOficial, agora)
+      ? { label: 'Fim do recebimento de propostas', data_iso: fimOficial, fonte: 'pncp' }
+      : null;
+  }
+
+  let maisTardio: { label: string; data_iso: string; instante: number } | null = null;
+  for (const dc of result.datas_criticas ?? []) {
+    const label = String(dc?.label ?? '').trim();
+    const iso = dc?.data_iso;
+    if (!label || !iso || !_ehMarcoDoFimDaJanela(label)) continue;
+    const limite = instanteLimite(iso);
+    if (!limite) continue;
+    if (!maisTardio || limite.getTime() > maisTardio.instante) {
+      maisTardio = { label, data_iso: iso, instante: limite.getTime() };
+    }
+  }
+  if (!maisTardio || maisTardio.instante >= agora.getTime()) return null;
+  return { label: maisTardio.label, data_iso: maisTardio.data_iso, fonte: 'edital' };
+}

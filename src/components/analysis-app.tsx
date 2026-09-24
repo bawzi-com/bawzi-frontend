@@ -330,6 +330,8 @@ export default function AnalysisApp() {
     impugnacaoText, setImpugnacaoText,
     loadingStep, loadingProgress, loadingRemainingSeconds, loadingEstimateSeconds, progressoAoVivo,
     progressoAuditoria,
+    analiseReanexada, cancelando,
+    editalEncerrado, dispensarEditalEncerrado,
     getEstimateSeconds,
     handleAnalyze,
     handleCancelAnalysis,
@@ -395,82 +397,11 @@ export default function AnalysisApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // ─── Retomada de análise em andamento (sobrevive a F5) ─────────────────────
-  // Uma auditoria profunda leva até 15 minutos e o resultado vivia só no
-  // estado React: recarregar a página no meio jogava tudo fora. O useAnalysis
-  // grava um marcador (bawzi_analise_em_curso) ao iniciar; aqui, no remount,
-  // ele é reencontrado e o progresso REAL segue pelo mesmo canal de polling
-  // que o overlay usa. Quando o backend conclui (`done` + `resultado_id`), o
-  // banner oferece abrir o laudo direto no histórico.
-  const [analiseRetomada, setAnaliseRetomada] = useState<
-    null | { estado: 'rodando' | 'concluida' | 'perdida'; etapa?: number; total?: number; label?: string; resultadoId?: string | null }
-  >(null);
-  const retomadaDispensadaRef = useRef(false);
-
-  useEffect(() => {
-    if (!token) return;
-    let raw: string | null = null;
-    try { raw = localStorage.getItem('bawzi_analise_em_curso'); } catch { return; }
-    if (!raw) return;
-    let marker: { progressToken?: string; startedAt?: number } = {};
-    try { marker = JSON.parse(raw); } catch {
-      try { localStorage.removeItem('bawzi_analise_em_curso'); } catch { /* sem storage */ }
-      return;
-    }
-    const idade = Date.now() - Number(marker.startedAt || 0);
-    // 20 min cobre a pior auditoria (15) + folga; mais velho que isso é lixo.
-    if (!marker.progressToken || !(idade >= 0) || idade > 20 * 60 * 1000) {
-      try { localStorage.removeItem('bawzi_analise_em_curso'); } catch { /* sem storage */ }
-      return;
-    }
-    let ativo = true;
-    let semSinal = 0;
-    let vistoRodando = false;   // já houve sinal de progresso NESTA retomada
-    const encerrar = () => {
-      // ⚠️ Só remove o marcador se ele ainda for DESTA análise. Sem a guarda,
-      // a conclusão da análise A apagaria o marcador que a análise B acabou
-      // de gravar — e um F5 durante B perderia a retomada dela.
-      try {
-        const atual = localStorage.getItem('bawzi_analise_em_curso');
-        if (atual && JSON.parse(atual)?.progressToken === marker.progressToken) {
-          localStorage.removeItem('bawzi_analise_em_curso');
-        }
-      } catch { /* sem storage ou marcador ilegível: nada a preservar */ }
-      clearInterval(intervalo);
-    };
-    const tick = async () => {
-      if (!ativo || retomadaDispensadaRef.current) return;
-      try {
-        const r = await fetch(`${API_URL}/api/analyze/progress/${marker.progressToken}`);
-        if (!r.ok) return;
-        const p = await r.json();
-        if (!ativo || retomadaDispensadaRef.current) return;
-        if (p.status === 'ok') {
-          semSinal = 0;
-          if (p.done) {
-            encerrar();
-            setAnaliseRetomada({ estado: 'concluida', resultadoId: p.resultado_id || null });
-          } else {
-            vistoRodando = true;
-            setAnaliseRetomada({ estado: 'rodando', etapa: p.etapa, total: p.total, label: p.label });
-          }
-        } else {
-          // "desconhecido" 3 vezes seguidas: ou o registro expirou (o laudo
-          // está no histórico) ou a análise morreu com o servidor. As duas
-          // verdades cabem na mesma mensagem honesta — confira em Decisões.
-          semSinal += 1;
-          if (semSinal >= 3) {
-            encerrar();
-            setAnaliseRetomada(vistoRodando || idade > 90_000 ? { estado: 'perdida' } : null);
-          }
-        }
-      } catch { /* melhor esforço — a rede volta e o próximo tick resolve */ }
-    };
-    const intervalo = setInterval(tick, 3000);
-    tick();
-    return () => { ativo = false; clearInterval(intervalo); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  // ─── Retomada de análise em andamento ──────────────────────────────────────
+  // Morava aqui, como uma faixa sobre o formulário que só cobria o F5 e mandava
+  // o laudo para o Histórico. Mudou-se para o `useAnalysis` (ver "Retomada"
+  // lá): a tela reencontra a análise no MESMO overlay, na etapa real, e abre
+  // o laudo ao concluir — no F5 e na troca de rota, que é o caso comum.
 
   // ─── Inactividade: timeout de sessão ────────────────────────────────────────
   const handleInactivityExpire = useCallback(() => {
@@ -1221,6 +1152,7 @@ export default function AnalysisApp() {
         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
         colapsado={sidebarHidden}
         isCheckingAuth={isCheckingAuth}
+        analiseEmAndamento={isAnalyzing ? { etapa: loadingStep, total: LOADING_MESSAGES.length } : null}
       />
     </div>
   );
@@ -1344,67 +1276,6 @@ export default function AnalysisApp() {
               `false` no `finally` da cadeia, depois de `/workspace/details`. */}
           {token && !isCheckingAuth && contextCompanies.length === 0 && <ActiveCompanyBanner />}
 
-          {/* ── Retomada de análise (pós-reload) ── */}
-          {analiseRetomada && !isAnalyzing && (
-            <div className={`mb-6 flex flex-wrap items-center gap-3 rounded-2xl border px-5 py-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 ${
-              analiseRetomada.estado === 'concluida'
-                ? 'border-emerald-200 bg-emerald-50'
-                : analiseRetomada.estado === 'rodando'
-                  ? 'border-sky-200 bg-sky-50'
-                  : 'border-amber-200 bg-amber-50'
-            }`}>
-              {analiseRetomada.estado === 'rodando' && (
-                <>
-                  <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
-                  <p className="flex-1 min-w-0 text-sm font-semibold text-sky-900">
-                    Sua análise continua rodando no servidor
-                    {typeof analiseRetomada.etapa === 'number' && typeof analiseRetomada.total === 'number' && (
-                      <> — etapa {Math.min(analiseRetomada.etapa + 1, analiseRetomada.total)} de {analiseRetomada.total}</>
-                    )}
-                    {analiseRetomada.label ? <span className="font-medium text-sky-700"> · {analiseRetomada.label}</span> : null}
-                  </p>
-                </>
-              )}
-              {analiseRetomada.estado === 'concluida' && (
-                <p className="flex-1 min-w-0 text-sm font-semibold text-emerald-900">
-                  ✅ A análise que estava em andamento terminou — o laudo está salvo.
-                </p>
-              )}
-              {analiseRetomada.estado === 'perdida' && (
-                <p className="flex-1 min-w-0 text-sm font-semibold text-amber-900">
-                  Não encontramos a análise que estava em andamento. Se ela chegou ao fim,
-                  o laudo está em <strong>Decisões</strong>; senão, rode novamente — créditos
-                  só são debitados quando a análise conclui.
-                </p>
-              )}
-              <div className="flex shrink-0 items-center gap-2">
-                {analiseRetomada.estado !== 'rodando' && (
-                  <button
-                    onClick={() => {
-                      retomadaDispensadaRef.current = true;
-                      if (analiseRetomada.estado === 'concluida' && analiseRetomada.resultadoId) {
-                        setAnaliseParaAbrir(analiseRetomada.resultadoId);
-                      }
-                      setActiveTab('history');
-                      setAnaliseRetomada(null);
-                    }}
-                    className={`rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors ${
-                      analiseRetomada.estado === 'concluida' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
-                    }`}
-                  >
-                    {analiseRetomada.estado === 'concluida' ? 'Abrir laudo' : 'Ver Decisões'}
-                  </button>
-                )}
-                <button
-                  onClick={() => { retomadaDispensadaRef.current = true; setAnaliseRetomada(null); }}
-                  aria-label="Dispensar aviso"
-                  className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-white/60 hover:text-slate-700"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            </div>
-          )}
           {/* ⚠️ 350px → 288px. A faixa usual de barra lateral rotulada é
               220–300; 350 vinha de quando ela hospedava o cartão de identidade
               de 250px de altura com avatar de 56px, barra de vagas e seletor de
@@ -1451,6 +1322,65 @@ export default function AnalysisApp() {
               {/* Abas workspace / análise / concorrentes */}
               {(activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes') && (
                 <div className="animate-in fade-in duration-500 flex flex-col gap-8 w-full print:m-0">
+
+                  {/* ── Edital encerrado: a recusa do servidor (409) ──────────
+                      Data oficial do PNCP barra de vez; data lida do texto
+                      deixa seguir. Nada foi cobrado em nenhum dos dois casos:
+                      a recusa acontece antes de cota, crédito e IA. */}
+                  {editalEncerrado && !isAnalyzing && !result && (
+                    <div role="alert" className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 sm:flex-row sm:items-start">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-700">
+                          {editalEncerrado.titulo}
+                        </p>
+                        <p className="mt-1 text-sm font-semibold leading-relaxed text-amber-950">
+                          {editalEncerrado.mensagem}
+                        </p>
+                        {editalEncerrado.trecho && (
+                          <p className="mt-2 text-xs leading-relaxed text-amber-800">
+                            Trecho em que nos baseamos: <span className="italic">“{editalEncerrado.trecho}”</span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {editalEncerrado.podeProsseguir && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const aviso = editalEncerrado;
+                              dispensarEditalEncerrado();
+                              void handleAnalyze(aviso.motor, {
+                                aprofundarDe: aviso.aprofundarDe,
+                                ignorarPrazoEncerrado: true,
+                              });
+                            }}
+                            className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-amber-700"
+                          >
+                            Analisar mesmo assim
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            dispensarEditalEncerrado();
+                            setPncpData(null);
+                            handleResetAnalysis();
+                          }}
+                          className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs font-black uppercase tracking-wider text-amber-800 transition-colors hover:bg-amber-100"
+                        >
+                          Buscar outro edital
+                        </button>
+                        <button
+                          type="button"
+                          onClick={dispensarEditalEncerrado}
+                          aria-label="Dispensar aviso"
+                          className="rounded-lg p-1 text-amber-500 transition-colors hover:bg-white/70 hover:text-amber-800"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {!isAnalyzing && !result ? (
                     <>
@@ -1557,7 +1487,12 @@ export default function AnalysisApp() {
                       estimatedSeconds={loadingEstimateSeconds}
                       isLive={progressoAoVivo}
                       progressoAuditoria={progressoAuditoria}
-                      onCancel={handleCancelAnalysis}
+                      onCancel={() => { void handleCancelAnalysis(); }}
+                      cancelando={cancelando}
+                      semCobrancaAoCancelar={Boolean(token)}
+                      nota={analiseReanexada
+                        ? 'Retomamos esta análise: ela continuou rodando no servidor enquanto você esteve fora. O laudo abre aqui quando terminar.'
+                        : null}
                     />
                   ) : result ? (
                     <AnalysisResults
@@ -1903,6 +1838,7 @@ export default function AnalysisApp() {
                       onNotifCountChange={setNotifCount}
                       onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); setSidebarMobileOpen(false); }}
                       isCheckingAuth={isCheckingAuth}
+                      analiseEmAndamento={isAnalyzing ? { etapa: loadingStep, total: LOADING_MESSAGES.length } : null}
                     />
                   </div>
                 </div>

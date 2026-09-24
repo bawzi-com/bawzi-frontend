@@ -1,6 +1,6 @@
 import type { AnalysisResult } from '@/components/analysis-types';
 import { textoDoItem } from '@/components/analysis-types';
-import { formatarDataCritica, dataCriticaExpirada, dataCriticaUrgente } from './datasCriticas';
+import { formatarDataCritica, dataCriticaExpirada, dataCriticaUrgente, prazoDePropostasEncerrado } from './datasCriticas';
 
 export function exportPdf(result: AnalysisResult, onError: (msg: string) => void): void {
   const printWindow = window.open('', '_blank');
@@ -154,18 +154,15 @@ export function exportPdf(result: AnalysisResult, onError: (msg: string) => void
       </div>`);
     }
 
-    // Mesmos rótulos-chave que `getDataExpirada` usa na tela, mesma régua de
-    // expiração — um PDF gerado depois do prazo precisa dizer isso na cara.
-    const encerrada = (result.datas_criticas || []).find((d) => {
-      const l = String(d.label || '').toLowerCase();
-      const chave = ['proposta', 'sessão', 'sessao', 'abertura', 'limite', 'encerramento'].some((k) => l.includes(k));
-      const excluido = ['impugna', 'esclarec', 'recurso', 'entrega', 'vigenc', 'pagamento'].some((k) => l.includes(k));
-      return chave && !excluido && dataCriticaExpirada(d.data_iso);
-    });
+    // A MESMA régua da tela (`prazoDePropostasEncerrado`). Aqui morava uma
+    // terceira cópia, com outra lista de palavras ('proposta', 'abertura'…) e
+    // um comentário dizendo que era a mesma: "Início do Recebimento das
+    // Propostas" no passado imprimia EDITAL ENCERRADO com o edital aberto.
+    const encerrada = prazoDePropostasEncerrado(result);
     if (encerrada) {
       avisos.push(`<div style="border-left:4px solid #334155;background:#f1f5f9;padding:10px 14px;margin-bottom:8px">
         <strong style="color:#0f172a">EDITAL ENCERRADO</strong>
-        <p style="margin:4px 0 0 0;font-size:11px;color:#334155">A ${esc(encerrada.label)} ocorreu em ${esc(formatarDataCritica(encerrada.data_iso, 'longo') ?? '—')}. Laudo válido apenas como referência e estudo de mercado.</p>
+        <p style="margin:4px 0 0 0;font-size:11px;color:#334155">O prazo de propostas terminou — ${esc(encerrada.label)}: ${esc(formatarDataCritica(encerrada.data_iso, 'longo') ?? '—')}${encerrada.fonte === 'pncp' ? ' (data oficial do PNCP)' : ''}. Laudo válido apenas como referência e estudo de mercado.</p>
       </div>`);
     }
 

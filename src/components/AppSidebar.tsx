@@ -93,6 +93,10 @@ interface AppSidebarProps {
    *  teriam de ser mantidos em dois lugares. Aqui é a mesma `NavRow`, com
    *  menos coisa visível. */
   colapsado?: boolean;
+  /** Análise rodando no servidor (viva ou retomada). O botão "Analisar" vira
+   *  o caminho de volta para ela: em qualquer outra aba, é aqui que a pessoa
+   *  vê que a análise segue — e clica para reencontrar o progresso. */
+  analiseEmAndamento?: { etapa: number; total: number } | null;
 }
 
 // ─── Componentes internos ──────────────────────────────────────────────────────
@@ -294,6 +298,7 @@ export default function AppSidebar({
   onShowAuthModal,
   colapsado = false,
   isCheckingAuth = false,
+  analiseEmAndamento = null,
 }: AppSidebarProps) {
   const router = useRouter();
 
@@ -402,14 +407,18 @@ export default function AppSidebar({
         <button
           onClick={() => onSetActiveTab('workspace')}
           aria-current={isAnalise ? 'page' : undefined}
-          title={colapsado ? 'Analisar — buscar no PNCP ou enviar o seu' : undefined}
-          aria-label={colapsado ? 'Analisar' : undefined}
+          title={colapsado
+            ? (analiseEmAndamento ? 'Analisar — análise em andamento' : 'Analisar — buscar no PNCP ou enviar o seu')
+            : undefined}
+          aria-label={colapsado ? (analiseEmAndamento ? 'Analisar — análise em andamento' : 'Analisar') : undefined}
           className={`mb-1.5 flex w-full items-center rounded-xl bg-emerald-600 text-left shadow-sm shadow-emerald-600/25 transition-all hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30 active:scale-[0.99] ${
             colapsado ? 'justify-center p-1.5' : 'gap-3 px-3.5 py-3'
           } ${isAnalise ? 'ring-2 ring-emerald-600/25 ring-offset-2 ring-offset-white' : ''}`}
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20">
-            <Zap size={17} strokeWidth={2.4} className="text-white" />
+            {analiseEmAndamento
+              ? <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              : <Zap size={17} strokeWidth={2.4} className="text-white" />}
           </span>
           {!colapsado && (
           <span className="min-w-0 flex-1">
@@ -417,7 +426,9 @@ export default function AppSidebar({
               Analisar
             </span>
             <span className="mt-1 block truncate text-[10px] font-medium leading-none text-white/70">
-              Buscar no PNCP ou enviar o seu
+              {analiseEmAndamento
+                ? `Analisando · etapa ${Math.min(analiseEmAndamento.etapa + 1, analiseEmAndamento.total)} de ${analiseEmAndamento.total}`
+                : 'Buscar no PNCP ou enviar o seu'}
             </span>
           </span>
           )}

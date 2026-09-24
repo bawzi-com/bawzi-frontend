@@ -17,6 +17,7 @@ import {
   formatarDataCritica,
   instanteLimite,
   partesDaDataCritica,
+  prazoDePropostasEncerrado,
   venceHoje,
 } from './datasCriticas';
 
@@ -144,5 +145,106 @@ describe('vence hoje', () => {
 
   it('o que já expirou não vence hoje', () => {
     expect(venceHoje('2026-09-15T09:00', AGORA)).toBe(false);
+  });
+});
+
+describe('prazo de propostas encerrado (o banner "Edital encerrado")', () => {
+  // O caso real (Itabira, Pregão Eletrônico 63/2026): janela de 21/09 a 02/10,
+  // olhada no dia 24/09. A régua antiga acendia "EDITAL ENCERRADO · A Início do
+  // Recebimento das Propostas ocorreu em 21 de setembro".
+  const DIA_24 = new Date('2026-09-24T15:00:00Z'); // 12h em Brasília
+  const ITABIRA = [
+    { label: 'Início do Recebimento das Propostas', data_iso: '2026-09-21T08:00:00Z' },
+    { label: 'Fim do Recebimento das Propostas', data_iso: '2026-10-02T08:00:00Z' },
+    { label: 'Abertura da Sessão Pública', data_iso: '2026-10-02T08:30:00Z' },
+  ];
+
+  it('início da janela no passado NÃO encerra (o defeito medido)', () => {
+    expect(prazoDePropostasEncerrado({ datas_criticas: ITABIRA }, DIA_24)).toBeNull();
+    expect(prazoDePropostasEncerrado({ datas_criticas: [ITABIRA[0]] }, DIA_24)).toBeNull();
+  });
+
+  it('acento e caixa não mudam o marco', () => {
+    const r = prazoDePropostasEncerrado(
+      { datas_criticas: [{ label: 'INICIO DO RECEBIMENTO', data_iso: '2026-09-21T08:00:00Z' }] }, DIA_24);
+    expect(r).toBeNull();
+  });
+
+  it('encerra só depois do ÚLTIMO marco de fim, e cita esse marco', () => {
+    const depois = new Date('2026-10-02T11:01:00Z'); // 08:01 em Brasília
+    const r = prazoDePropostasEncerrado({ datas_criticas: ITABIRA }, depois);
+    expect(r).toBeNull(); // a sessão (08:30) ainda não aconteceu: marco futuro mantém vivo
+    const r2 = prazoDePropostasEncerrado({ datas_criticas: ITABIRA }, new Date('2026-10-02T12:00:00Z'));
+    expect(r2?.label).toBe('Abertura da Sessão Pública');
+    expect(r2?.fonte).toBe('edital');
+  });
+
+  it('fica com a data MAIS TARDIA entre os marcos de fim', () => {
+    const r = prazoDePropostasEncerrado({
+      datas_criticas: [
+        { label: 'Data limite para envio das propostas', data_iso: '2026-09-10T09:00:00Z' },
+        { label: 'Sessão pública', data_iso: '2026-09-12T09:00:00Z' },
+      ],
+    }, DIA_24);
+    expect(r?.label).toBe('Sessão pública');
+  });
+
+  it('um marco de fim no futuro basta para o edital seguir vivo', () => {
+    expect(prazoDePropostasEncerrado({
+      datas_criticas: [
+        { label: 'Data limite para envio das propostas', data_iso: '2026-09-10T09:00:00Z' },
+        { label: 'Sessão pública (remarcada)', data_iso: '2026-09-30T09:00:00Z' },
+      ],
+    }, DIA_24)).toBeNull();
+  });
+
+  it('prazo de outra coisa não encerra (impugnação, entrega, validade…)', () => {
+    for (const label of [
+      'Prazo para impugnação', 'Data limite para esclarecimentos', 'Prazo de entrega dos produtos',
+      'Prazo de validade da proposta', 'Prazo para recurso', 'Visita técnica até',
+    ]) {
+      expect(prazoDePropostasEncerrado({ datas_criticas: [{ label, data_iso: '2026-09-10T00:00:00Z' }] }, DIA_24))
+        .toBeNull();
+    }
+  });
+
+  it('"entrega das propostas" é prazo de proposta', () => {
+    const r = prazoDePropostasEncerrado(
+      { datas_criticas: [{ label: 'Prazo de entrega das propostas', data_iso: '2026-09-10T09:00:00Z' }] }, DIA_24);
+    expect(r?.label).toBe('Prazo de entrega das propostas');
+  });
+
+  it('"início da sessão pública" acontece DEPOIS do prazo — é marco de fim', () => {
+    const r = prazoDePropostasEncerrado(
+      { datas_criticas: [{ label: 'Início da sessão pública', data_iso: '2026-09-10T09:00:00Z' }] }, DIA_24);
+    expect(r?.label).toBe('Início da sessão pública');
+  });
+
+  it('data OFICIAL do PNCP decide sozinha — aberta, o cronograma da IA não encerra', () => {
+    const r = prazoDePropostasEncerrado({
+      pncp_prazo_propostas: { fim: '2026-10-02T08:00:00' },
+      datas_criticas: [{ label: 'Fim do Recebimento das Propostas', data_iso: '2026-09-10T08:00:00Z' }],
+    }, DIA_24);
+    expect(r).toBeNull();
+  });
+
+  it('data OFICIAL vencida encerra, com a fonte dita', () => {
+    const r = prazoDePropostasEncerrado({ pncp_prazo_propostas: { fim: '2026-09-10T08:00:00' } }, DIA_24);
+    expect(r).toEqual({ label: 'Fim do recebimento de propostas', data_iso: '2026-09-10T08:00:00', fonte: 'pncp' });
+  });
+
+  it('data oficial ilegível cai no cronograma', () => {
+    const r = prazoDePropostasEncerrado({
+      pncp_prazo_propostas: { fim: 'a apurar' },
+      datas_criticas: [{ label: 'Sessão pública', data_iso: '2026-09-10T09:00:00Z' }],
+    }, DIA_24);
+    expect(r?.fonte).toBe('edital');
+  });
+
+  it('sem data nenhuma não afirma encerramento', () => {
+    expect(prazoDePropostasEncerrado({}, DIA_24)).toBeNull();
+    expect(prazoDePropostasEncerrado(null, DIA_24)).toBeNull();
+    expect(prazoDePropostasEncerrado({ datas_criticas: [{ label: 'Sessão pública', data_iso: null }] }, DIA_24))
+      .toBeNull();
   });
 });

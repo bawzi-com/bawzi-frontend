@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { CreditCard, LogOut, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
 import { apiFetch, SessionExpiredError, encerrarSessao, API_URL, getAuthToken, initSession, urlDoAvatar } from '@/lib/apiClient';
 import { useTierConfig } from '@/Contexts/TierContext';
+import { useAnaliseEmCurso } from '@/hooks/useAnaliseEmCurso';
 import type { BawziUpdateEvent } from '@/lib/types';
 import PromoBanner from './PromoBanner';
 import TabQueryWatcher from './TabQueryWatcher';
@@ -49,6 +50,14 @@ export default function Header() {
   // "Nível 4" — um número que não diz nada sozinho e que obriga a pessoa a
   // lembrar a tabela. O nome é o que ela reconhece.
   const { tierNames } = useTierConfig();
+
+  /** ⚠️ O CAMINHO DE VOLTA PARA A ANÁLISE. Planos, Documentação, Perfil e
+   *  Admin são rotas próprias: entrar nelas desmonta o app de análise, e a
+   *  pessoa perdia de vista a análise que seguia rodando no servidor. Fora do
+   *  /workspace o chip mostra que ela continua (e a etapa) e leva de volta —
+   *  onde o overlay a retoma ou o laudo abre. Dentro do /workspace quem mostra
+   *  é o botão "Analisar" da barra lateral. */
+  const analiseEmCurso = useAnaliseEmCurso(Boolean(token) && pathname !== '/workspace');
 
   useEffect(() => {
 
@@ -335,6 +344,31 @@ export default function Header() {
         <div>
           {token ? (
             <div className="flex items-center gap-3 sm:gap-4">
+              {analiseEmCurso && (
+                <Link
+                  href="/workspace"
+                  title={analiseEmCurso.concluida
+                    ? 'A análise terminou — abrir o laudo'
+                    : 'Sua análise continua rodando — voltar para ela'}
+                  className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black uppercase tracking-wider transition-colors ${
+                    analiseEmCurso.concluida
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'
+                  }`}
+                >
+                  {analiseEmCurso.concluida ? (
+                    <>Laudo pronto</>
+                  ) : (
+                    <>
+                      <span aria-hidden className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-500 border-t-transparent" />
+                      <span className="hidden sm:inline">Analisando</span>
+                      {typeof analiseEmCurso.etapa === 'number' && typeof analiseEmCurso.total === 'number' && (
+                        <span>{Math.min(analiseEmCurso.etapa + 1, analiseEmCurso.total)}/{analiseEmCurso.total}</span>
+                      )}
+                    </>
+                  )}
+                </Link>
+              )}
               {isGlobalAdmin && (
                 <Link
                   href="/admin"

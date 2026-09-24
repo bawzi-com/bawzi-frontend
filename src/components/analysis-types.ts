@@ -588,6 +588,17 @@ export interface AnalysisResult {
    *  (`"ia"`). Vazio quando o documento não identifica o comprador. */
   orgao_nome?: string;
   orgao_nome_fonte?: string;
+  /** Janela OFICIAL de propostas no PNCP (horário de Brasília,
+   *  'YYYY-MM-DDTHH:MM:SS'), gravada pelo backend quando a análise vem do
+   *  Radar e renovada a cada acerto de cache. Quando presente, decide sozinha
+   *  o banner "Edital encerrado" (`prazoDePropostasEncerrado`); a data
+   *  extraída pela IA em `datas_criticas` vira plano B. */
+  pncp_prazo_propostas?: {
+    inicio?: string | null;
+    fim?: string | null;
+    fonte?: string;
+    consultado_em?: string;
+  } | null;
   orgao_cnpj?: string;
   /** Linhagem do "Aprofundar este laudo": id da rápida de origem e créditos
    *  abatidos. Só existem quando o desconto foi aplicado. */

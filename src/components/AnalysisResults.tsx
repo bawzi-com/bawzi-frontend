@@ -39,6 +39,7 @@ import {
   formatarDataCritica,
   dataCriticaExpirada,
   dataCriticaUrgente,
+  prazoDePropostasEncerrado,
   venceHoje,
 } from '@/lib/datasCriticas';
 import { contarCriterios, todosOsCriteriosAtendidos } from '@/lib/criteriosDaEmpresa';
@@ -4219,33 +4220,13 @@ function StepHeadline({
   );
 }
 
-// ─── Helper: detecta se o edital já expirou ───────────────────────────────────
-
-// Só 'encerramento' e 'recebimento' indicam prazo de submissão.
-// 'abertura' = sessão de análise (ocorre APÓS o prazo) — não é indicador de expiração.
-const LABELS_CHAVE_EXPIRACAO = ['encerramento', 'recebimento', 'prazo', 'limite'];
-
-// 'prazo' e 'limite' são genéricos demais — batem também em datas que
-// acontecem ANTES da abertura (ex.: "Prazo de Impugnação", que por lei ocorre
-// dias antes do encerramento) ou DEPOIS dela (ex.: "Prazo de recurso"). Sem
-// esta exclusão, o banner "Edital Encerrado" disparava assim que a janela de
-// impugnação passava — bem antes do edital realmente fechar para propostas —
-// fazendo editais totalmente abertos aparecerem como vencidos.
-const LABELS_EXCLUIDOS_EXPIRACAO = ['impugna', 'esclarec', 'recurso', 'entrega', 'vigenc', 'pagamento'];
-
+// ─── Helper: o prazo de propostas já passou? ──────────────────────────────────
+// A régua mora em `lib/datasCriticas.ts` (`prazoDePropostasEncerrado`) e é a
+// MESMA do PDF (`exportPdf.ts`). A que morava aqui aceitava qualquer rótulo com
+// 'recebimento' e pegava a primeira data vencida — "Início do Recebimento das
+// Propostas" no passado acendia "Edital encerrado" com as propostas ABERTAS.
 function getDataExpirada(result: AnalysisResult) {
-  if (!result.datas_criticas?.length) return null;
-  const agora = new Date();
-  return result.datas_criticas.find(dc => {
-    if (!dc.data_iso) return false;
-    const labelLower = dc.label.toLowerCase();
-    const isChave = LABELS_CHAVE_EXPIRACAO.some(k => labelLower.includes(k));
-    const isExcluido = LABELS_EXCLUIDOS_EXPIRACAO.some(k => labelLower.includes(k));
-    // ⚠️ `new Date(iso) < agora` acendia o banner "Edital encerrado" às 21h do
-    // dia ANTERIOR ao prazo (T00:00:00Z lido no fuso de Brasília). Um prazo
-    // sem hora só vence no fim do dia — ver `instanteLimite`.
-    return isChave && !isExcluido && dataCriticaExpirada(dc.data_iso, agora);
-  }) ?? null;
+  return prazoDePropostasEncerrado(result);
 }
 
 // ─── Banner edital expirado ───────────────────────────────────────────────────
@@ -4260,7 +4241,9 @@ function ExpiredBanner({ result }: { result: AnalysisResult }) {
       <div className="flex-1 min-w-0">
         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-[0.09em]">Edital encerrado</span>
         <p className="text-sm font-medium text-slate-300 leading-snug mt-0.5">
-          A <strong className="text-white">{dataExpirada.label}</strong> ocorreu em <strong className="text-white">{formatted}</strong>.{' '}
+          O prazo de propostas terminou — <strong className="text-white">{dataExpirada.label}</strong>:{' '}
+          <strong className="text-white">{formatted}</strong>
+          {dataExpirada.fonte === 'pncp' ? ' (data oficial do PNCP)' : ''}.{' '}
           <span className="text-slate-400">Análise disponível apenas para referência e estudo de mercado.</span>
         </p>
       </div>
@@ -6776,7 +6759,8 @@ function PrintLayout({ result }: { result: AnalysisResult }) {
               <div className="border-l-4 border-slate-900 bg-slate-100 px-4 py-2">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-slate-700">Edital encerrado</p>
                 <p className="text-xs text-slate-800">
-                  A {encerrada.label} ocorreu em {formatarDataCritica(encerrada.data_iso, 'longo') ?? '—'}.
+                  O prazo de propostas terminou — {encerrada.label}: {formatarDataCritica(encerrada.data_iso, 'longo') ?? '—'}
+                  {encerrada.fonte === 'pncp' ? ' (data oficial do PNCP)' : ''}.
                   {' '}Laudo válido apenas como referência e estudo de mercado.
                 </p>
               </div>

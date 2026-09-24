@@ -40,7 +40,7 @@
  * não por mais uma moldura.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { CheckCircle2, FileSearch, Gauge, Loader2, Radar, Scale, X } from 'lucide-react';
 
@@ -64,6 +64,18 @@ interface AnalysisLoadingOverlayProps {
     fase?: string; blocos_concluidos?: number; blocos_total?: number; achados?: number;
   } | null;
   onCancel: () => void;
+  /** Rótulo do botão de baixo. Na análise RETOMADA (a tela reencontrou uma
+   *  análise que já rodava no servidor) não há o que cancelar — o servidor
+   *  não para —, e o botão vira "Parar de acompanhar". */
+  cancelLabel?: string;
+  /** Linha de contexto sob a descrição da etapa (ex.: "retomamos…"). */
+  nota?: string | null;
+  /** Pedido de cancelar enviado; esperando o servidor parar. */
+  cancelando?: boolean;
+  /** Quem tem conta não paga análise cancelada (o laudo não é gravado). Para
+   *  o convidado, cancelar depois de a leitura começar ainda gasta a cota —
+   *  então a confirmação só promete "nada é cobrado" quando é verdade. */
+  semCobrancaAoCancelar?: boolean;
 }
 
 // Ordem REAL do pipeline (reportada pelo backend etapa a etapa).
@@ -93,7 +105,16 @@ export default function AnalysisLoadingOverlay({
   isLive = false,
   progressoAuditoria = null,
   onCancel,
+  cancelLabel = 'Cancelar análise',
+  nota = null,
+  cancelando = false,
+  semCobrancaAoCancelar = false,
 }: AnalysisLoadingOverlayProps) {
+  // ⚠️ CANCELAR PARA NO SERVIDOR (antes só fechava a conexão, e a análise
+  // terminava e era cobrada). Por isso pede confirmação — e a confirmação
+  // oferece a alternativa que quase sempre é a desejada: sair da tela não
+  // perde nada, a análise continua e é retomada na volta.
+  const [confirmandoCancelamento, setConfirmandoCancelamento] = useState(false);
   const totalSteps = Math.max(loadingMessages.length, 1);
   const safeStep = Math.min(Math.max(loadingStep, 0), totalSteps - 1);
   const currentMessage = loadingMessages[safeStep] ?? {
@@ -283,6 +304,11 @@ export default function AnalysisLoadingOverlay({
               <p className="mx-auto mt-3 max-w-md text-sm font-medium leading-relaxed text-slate-600">
                 {descricao}
               </p>
+              {nota && (
+                <p className="mx-auto mt-3 max-w-md rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold leading-relaxed text-sky-800">
+                  {nota}
+                </p>
+              )}
 
               {/* A auditoria roda em PARALELO com as etapas da fila — linha
                   própria, não uma etapa, para os dois textos não brigarem. */}
@@ -386,13 +412,45 @@ export default function AnalysisLoadingOverlay({
               um respiro mínimo quando ela não estica (empilhado, no celular). */}
           <div aria-hidden className="min-h-4 flex-1" />
 
-          <button
-            onClick={onCancel}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
-          >
-            <X size={13} />
-            Cancelar análise
-          </button>
+          {cancelando ? (
+            <p
+              role="status"
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[11px] font-bold leading-relaxed text-slate-500"
+            >
+              Cancelando… a análise para assim que o passo atual terminar.
+            </p>
+          ) : confirmandoCancelamento ? (
+            <div role="alertdialog" aria-label="Cancelar a análise?" className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs font-black text-rose-900">Cancelar esta análise?</p>
+              <p className="mt-1 text-[11px] font-medium leading-relaxed text-rose-800">
+                Ela para no servidor e o laudo não é gerado{semCobrancaAoCancelar ? ' — nada é cobrado' : ''}.
+                Se quiser só sair desta tela, pode navegar à vontade: a análise continua e o laudo
+                aparece aqui quando terminar.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => { setConfirmandoCancelamento(false); onCancel(); }}
+                  className="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-rose-700"
+                >
+                  Sim, cancelar
+                </button>
+                <button
+                  onClick={() => setConfirmandoCancelamento(false)}
+                  className="flex-1 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-rose-700 transition-colors hover:bg-rose-100"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmandoCancelamento(true)}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 transition-all hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 active:scale-[0.98]"
+            >
+              <X size={13} />
+              {cancelLabel}
+            </button>
+          )}
         </aside>
       </div>
     </div>
