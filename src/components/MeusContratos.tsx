@@ -37,9 +37,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   TrendingUp,
   FolderOpen, RefreshCw, Loader2, AlertTriangle, Building2, MapPin,
-  CalendarClock, CircleSlash, Search, Download, Users,
+  CalendarClock, CircleSlash, Search, Download, Users, ArrowUpRight, FileSearch, Layers,
 } from 'lucide-react';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { promptDeRenovacao, type CampoDoFiltro, type SinalDeProrrogacao } from '@/lib/renovacoes';
+import {
+  estiloDaProrrogacaoPropria, faixaDeVencimentos, filtroParaPipeline, mesDaData, valorCurto,
+  type FiltroParaPipeline, type MesDaFaixa,
+} from '@/lib/meusContratos';
 
 /** ⚠️ `renovar` (91–180 dias) existe porque 90 dias é tarde demais para um
  *  contrato público. Ver `DIAS_ALERTA_RENOVACAO` no backend. */
@@ -60,6 +65,10 @@ interface Contrato {
   data_vigencia_fim?: string | null;
   total_itens: number;
   situacao: Situacao;
+  /** De qual estabelecimento é a linha — importa quando a tela mostra o grupo. */
+  fornecedor_cnpj?: string;
+  /** Ainda cabe prorrogação, ou chegou ao teto da lei? Só em contrato vivo. */
+  prorrogacao?: SinalDeProrrogacao | null;
 }
 
 interface Resumo {
@@ -81,6 +90,8 @@ interface Sincronizacao {
   atualizando: boolean;
   nunca: boolean;
   erro: string | null;
+  /** No grupo: o estado de cada estabelecimento. */
+  por_cnpj?: { cnpj: string; atualizado_em: string | null; atualizando: boolean; nunca: boolean; erro: string | null }[];
 }
 
 /** Vagas de CNPJ do plano. Ver `_vagas_de_cnpj` no backend.
@@ -123,6 +134,11 @@ interface Filial {
 interface Escopo {
   raiz: string;
   cnpj_consultado: string;
+  /** "cnpj" (um estabelecimento) ou "grupo" (os do workspace, somados). */
+  modo?: 'cnpj' | 'grupo';
+  cnpjs_consultados?: string[];
+  /** No grupo: estabelecimentos cuja consulta falhou — a soma não os tem. */
+  cnpjs_com_falha?: string[];
   no_workspace: { cnpj: string; nome: string; consultado: boolean }[];
   fora_do_workspace: number;
   fonte: string;
@@ -153,6 +169,11 @@ interface Oportunidade {
   numeroControlePNCP: string | null;
   objeto: string;
   orgao_nome: string;
+  /** Para o atalho "ver este órgão no Pipeline". */
+  orgao_cnpj?: string;
+  /** A compra que gerou o contrato, quando o documento tem: é o que
+   *  "Analisar edital de origem" abre. */
+  compra_origem?: { cnpj: string; ano: string; sequencial: string; numero_controle?: string } | null;
   uf: string;
   concorrente_cnpj: string;
   concorrente_nome: string;
@@ -371,11 +392,14 @@ function ganhoPorAditivo(c: Contrato): number {
  *  exatamente a mesma linha ao expandir — se o grupo desenhasse a sua própria
  *  versão simplificada, expandir mostraria menos do que a lista normal e a
  *  pessoa perderia informação justamente ao pedir mais detalhe. */
-function LinhaContrato({ c, compacta = false, onOrgao }: {
+function LinhaContrato({ c, compacta = false, onOrgao, mostrarCnpj = false }: {
   c: Contrato; compacta?: boolean; onOrgao?: (nome: string) => void;
+  /** No grupo: de qual estabelecimento é a linha. */
+  mostrarCnpj?: boolean;
 }) {
   const dias = diasAte(c.data_vigencia_fim);
   const est = ESTILO[c.situacao];
+  const prorrogacao = c.situacao !== 'encerrado' ? estiloDaProrrogacaoPropria(c.prorrogacao) : null;
   const progresso = progressoVigencia(c.data_vigencia_ini, c.data_vigencia_fim);
   const dur = duracao(c.data_vigencia_ini, c.data_vigencia_fim);
   return (
@@ -404,6 +428,28 @@ function LinhaContrato({ c, compacta = false, onOrgao }: {
           {ganhoPorAditivo(c) > 0 && (
             <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-800">
               <TrendingUp size={9} />+{brl(ganhoPorAditivo(c))} por aditivo
+            </span>
+          )}
+          {/* Ainda cabe prorrogação? (25/09/2026) A mesma régua do Pipeline,
+              lida do lado de quem tem o contrato: teto atingido é alerta,
+              "cabe prorrogação" é o caso comum. A lei inteira fica no title. */}
+          {prorrogacao && (
+            <span
+              title={c.prorrogacao?.texto}
+              className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                prorrogacao.tom === 'vermelho' ? 'border-red-200 bg-red-50 text-red-800'
+                  : prorrogacao.tom === 'ambar' ? 'border-amber-200 bg-amber-50 text-amber-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-600'
+              }`}
+            >
+              {prorrogacao.rotulo}
+              <span className="font-bold normal-case tracking-normal opacity-80">· {prorrogacao.texto}</span>
+            </span>
+          )}
+          {mostrarCnpj && c.fornecedor_cnpj && (
+            <span className="rounded-md bg-violet-50 px-1.5 py-0.5 font-mono text-[9px] font-bold text-violet-700"
+                  title="Estabelecimento do grupo que detém este contrato">
+              {cnpjBr(c.fornecedor_cnpj) || c.fornecedor_cnpj}
             </span>
           )}
         </div>
@@ -482,12 +528,13 @@ function LinhaContrato({ c, compacta = false, onOrgao }: {
  *  linhas para a segunda lista. Duas cópias do mesmo cartão significam que a
  *  próxima mudança precisa ser lembrada duas vezes — e é exatamente assim que
  *  uma das cópias deixa de ser corrigida. Um componente, dois usos. */
-function LinhaGrupo({ chave, itens, aberto, onAlternar, onOrgao }: {
+function LinhaGrupo({ chave, itens, aberto, onAlternar, onOrgao, mostrarCnpj = false }: {
   chave: string;
   itens: Contrato[];
   aberto: boolean;
   onAlternar: (chave: string) => void;
   onOrgao?: (nome: string) => void;
+  mostrarCnpj?: boolean;
 }) {
   const total = itens.reduce((s, x) => s + (x.valor || 0), 0);
   const est = ESTILO[itens[0].situacao];
@@ -551,7 +598,7 @@ function LinhaGrupo({ chave, itens, aberto, onAlternar, onOrgao }: {
       {aberto && (
         <ul className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50/60 p-3">
           {itens.map((c, j) => (
-            <LinhaContrato key={c.numeroControlePNCP || `g-${j}`} c={c} compacta onOrgao={onOrgao} />
+            <LinhaContrato key={c.numeroControlePNCP || `g-${j}`} c={c} compacta onOrgao={onOrgao} mostrarCnpj={mostrarCnpj} />
           ))}
         </ul>
       )}
@@ -626,7 +673,113 @@ function agrupar(contratos: Contrato[]): Linha[] {
   return saida;
 }
 
-export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | null }) {
+/** Quanto da carteira vence em cada um dos próximos 12 meses. Clicar num
+ *  mês filtra a lista para o que vence nele; clicar de novo desfaz.
+ *
+ *  ⚠️ O CARTÃO "EM DECISÃO · 180 DIAS" DIZ QUANTO, NÃO QUANDO. Dois contratos
+ *  de R$ 20 mi em decisão são uma coisa se vencem no mesmo mês e outra se um
+ *  vence agora e o outro em maio. A faixa põe as datas na frente. */
+export function LinhaDoTempo({ faixa, selecionado, onSelecionar }: {
+  faixa: MesDaFaixa[];
+  selecionado: string | null;
+  onSelecionar: (chave: string | null) => void;
+}) {
+  const maior = Math.max(0, ...faixa.map((m) => m.valor));
+  const total = faixa.reduce((s, m) => s + m.quantidade, 0);
+  if (!total) return null;
+  return (
+    <div className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+          <CalendarClock size={11} className="text-slate-400" />
+          Vencimentos nos próximos 12 meses
+        </span>
+        <span className="text-[10px] font-bold text-slate-500">
+          {total} contrato{total === 1 ? '' : 's'} · {brl(faixa.reduce((s, m) => s + m.valor, 0))}
+          {selecionado && (
+            <button type="button" onClick={() => onSelecionar(null)}
+                    className="ml-2 font-black text-emerald-700 underline-offset-2 hover:underline">
+              ver todos os meses
+            </button>
+          )}
+        </span>
+      </div>
+      <div className="grid grid-cols-12 gap-1">
+        {faixa.map((m) => {
+          const ativo = selecionado === m.chave;
+          const altura = maior > 0 ? Math.max(m.valor > 0 ? 8 : 0, Math.round((m.valor / maior) * 40)) : 0;
+          return (
+            <button
+              key={m.chave}
+              type="button"
+              disabled={!m.quantidade}
+              aria-pressed={ativo}
+              onClick={() => onSelecionar(ativo ? null : m.chave)}
+              title={m.quantidade
+                ? `${m.rotulo}: ${m.quantidade} contrato${m.quantidade === 1 ? '' : 's'} · ${brl(m.valor)}`
+                : `${m.rotulo}: nenhum vencimento`}
+              className={`group flex flex-col items-center justify-end gap-1 rounded-md px-0.5 pb-1 pt-2 transition-colors ${
+                m.quantidade ? 'cursor-pointer hover:bg-slate-50' : 'cursor-default'
+              } ${ativo ? 'bg-slate-900 hover:bg-slate-900' : ''}`}
+            >
+              <span className={`text-[9px] font-black leading-none ${ativo ? 'text-white' : 'text-slate-600'} ${m.quantidade ? '' : 'invisible'}`}>
+                {m.quantidade}
+              </span>
+              <span
+                className={`w-full rounded-sm ${ativo ? 'bg-emerald-400' : m.quantidade ? 'bg-emerald-500' : 'bg-slate-100'}`}
+                style={{ height: `${Math.max(altura, m.quantidade ? 4 : 2)}px` }}
+              />
+              <span className={`text-[9px] font-bold leading-none ${ativo ? 'text-white' : 'text-slate-400'}`}>
+                {m.rotulo}
+              </span>
+              <span className={`hidden text-[8px] font-bold leading-none sm:block ${ativo ? 'text-white/80' : 'text-slate-400'} ${m.valor ? '' : 'invisible'}`}>
+                {valorCurto(m.valor)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** O atalho para o Pipeline de renovações já filtrado. Sem CNPJ nem nome, não
+ *  aparece — um botão que abre o Pipeline vazio seria pior que nenhum. */
+export function AtalhoPipeline({ campo, nome, cnpj, onAbrir, rotulo, className = '' }: {
+  campo: CampoDoFiltro;
+  nome?: string | null;
+  cnpj?: string | null;
+  onAbrir?: (f: FiltroParaPipeline) => void;
+  rotulo?: string;
+  className?: string;
+}) {
+  const filtro = filtroParaPipeline(campo, nome, cnpj);
+  if (!filtro || !onAbrir) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onAbrir(filtro)}
+      title={campo === 'orgao'
+        ? 'Abre o Pipeline de renovações com tudo o que vence neste órgão'
+        : 'Abre o Pipeline de renovações com os contratos deste fornecedor que estão vencendo'}
+      className={`inline-flex items-center gap-0.5 whitespace-nowrap text-[10px] font-black text-violet-700 hover:underline ${className}`}
+    >
+      {rotulo || 'Pipeline'} <ArrowUpRight size={10} />
+    </button>
+  );
+}
+
+export default function MeusContratos({ activeCnpj, onAbrirPipeline, onAnalyzeEdital }: {
+  activeCnpj?: string | null;
+  /** Abre o Pipeline de renovações já filtrado por um órgão ou fornecedor. */
+  onAbrirPipeline?: (filtro: FiltroParaPipeline) => void;
+  /** Dispara a análise Bawzi do edital que originou um contrato de concorrente. */
+  onAnalyzeEdital?: (
+    texto: string,
+    termo: string,
+    editalDados: { cnpj: string; ano: number; sequencial: number; uf?: string },
+  ) => void;
+}) {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [contratos, setContratos] = useState<Contrato[]>([]);
@@ -681,6 +834,14 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   // Ministério da Justiça" é a pergunta que decide uma renovação, e ela precisa
   // dos dois filtros ao mesmo tempo.
   const [filtroOrgao, setFiltroOrgao] = useState<string | null>(null);
+  // Mês da faixa de vencimentos (25/09/2026): "o que vence em novembro".
+  const [filtroMes, setFiltroMes] = useState<string | null>(null);
+  // "Este CNPJ" ou o grupo inteiro (os estabelecimentos do mesmo CNPJ raiz
+  // que estão no workspace). Volta a um CNPJ quando a empresa ativa muda.
+  const [escopoPedido, setEscopoPedido] = useState<'cnpj' | 'grupo'>('cnpj');
+  useEffect(() => { setEscopoPedido('cnpj'); setFiltroMes(null); }, [activeCnpj]);
+  const queryEscopo = `${activeCnpj ? `active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}${
+    escopoPedido === 'grupo' ? `${activeCnpj ? '&' : ''}escopo=grupo` : ''}`;
 
   // ⚠️ RECARREGAR EM SEGUNDO PLANO NÃO PODE APAGAR A TELA.
   // Enquanto a busca no PNCP roda, o polling chama `carregar()` de 8 em 8
@@ -700,7 +861,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       setErro(null);
     }
     try {
-      const url = `${API_URL}/api/pncp/meus-contratos${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`;
+      const url = `${API_URL}/api/pncp/meus-contratos${queryEscopo ? `?${queryEscopo}` : ''}`;
       const res = await apiFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -747,13 +908,13 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
     } finally {
       if (!silencioso) setCarregando(false);
     }
-  }, [activeCnpj]);
+  }, [queryEscopo]);
 
   const carregarArena = useCallback(async () => {
     setArenaFalhou(false);
     setDisputasFalharam(false);
     try {
-      const url = `${API_URL}/api/pncp/meus-contratos/concorrentes${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`;
+      const url = `${API_URL}/api/pncp/meus-contratos/concorrentes${queryEscopo ? `?${queryEscopo}` : ''}`;
       const res = await apiFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -773,7 +934,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       // resto continua funcionando.
       setArenaFalhou(true);
     }
-  }, [activeCnpj]);
+  }, [queryEscopo]);
 
   useEffect(() => { carregar(); }, [carregar]);
   useEffect(() => { carregarArena(); }, [carregarArena]);
@@ -815,7 +976,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   const sincronizar = useCallback(async () => {
     try {
       await apiFetch(
-        `${API_URL}/api/pncp/meus-contratos/sincronizar${activeCnpj ? `?active_cnpj=${encodeURIComponent(activeCnpj)}` : ''}`,
+        `${API_URL}/api/pncp/meus-contratos/sincronizar${queryEscopo ? `?${queryEscopo}` : ''}`,
         { method: 'POST' },
       );
       // Marca "atualizando" na hora, sem esperar o próximo carregamento: é o
@@ -828,7 +989,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
       if (e instanceof SessionExpiredError) return;
       setErro('Não foi possível iniciar a atualização agora.');
     }
-  }, [activeCnpj, carregar]);
+  }, [queryEscopo, carregar]);
 
 
   const incluirFilial = useCallback(async (cnpj: string) => {
@@ -897,6 +1058,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
     if (filtro && c.situacao !== filtro) return false;
     if (soAditivo && ganhoPorAditivo(c) <= 0) return false;
     if (filtroOrgao && c.orgao_nome !== filtroOrgao) return false;
+    if (filtroMes && mesDaData(c.data_vigencia_fim) !== filtroMes) return false;
     if (!termo) return true;
     return (`${c.objeto} ${c.orgao_nome}`).toLowerCase().includes(termo);
   });
@@ -951,6 +1113,61 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
   // `cobertura.encerrados` falava dos 35 mil encerrados de todo mundo, número
   // que não tem nada a ver com a pessoa que está lendo.
   const encerrados = resumo?.encerrados ?? 0;
+  // A faixa mensal sai da carteira inteira, não da lista filtrada: é o mapa;
+  // o filtro é o zoom. Só existe depois da resposta (nunca no HTML do servidor).
+  const faixa = contratos.length ? faixaDeVencimentos(contratos) : [];
+  const modoGrupo = escopo?.modo === 'grupo';
+  const grupoDisponivel = (escopo?.no_workspace.length ?? 0) > 1;
+
+  // ── "Analisar edital de origem" numa disputa que vai abrir ───────────────
+  // O mesmo prompt do Pipeline (`promptDeRenovacao`), com o contrato do
+  // concorrente no lugar do contrato vencendo.
+  const [analisandoNcp, setAnalisandoNcp] = useState<string | null>(null);
+  const analisarDisputa = useCallback(async (o: Oportunidade) => {
+    const origem = o.compra_origem;
+    if (!origem || !onAnalyzeEdital) return;
+    const chave = o.numeroControlePNCP || `${origem.cnpj}-${origem.sequencial}`;
+    // Para a média de preços, o que casou com a carteira; sem isso, nada.
+    const termoMercado = (o.comuns || []).slice(0, 3).join(' ');
+    setAnalisandoNcp(chave);
+    try {
+      const [resTexto, resMedia] = await Promise.all([
+        apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${origem.cnpj}&ano=${origem.ano}&seq=${origem.sequencial}`),
+        termoMercado
+          ? apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termoMercado)}${o.uf ? `&uf=${o.uf}` : ''}`).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      if (!resTexto.ok) throw new Error('Falha ao carregar o edital de origem no PNCP.');
+      const dataTexto = await resTexto.json();
+      const historicoPrecos = resMedia && resMedia.ok
+        ? (await resMedia.json()).texto || 'Sem histórico recente para estabelecer média.'
+        : 'Sem histórico recente para estabelecer média.';
+      onAnalyzeEdital(promptDeRenovacao({
+        diasRestantes: o.dias,
+        fimVigencia: dataBr(o.data_vigencia_fim),
+        orgao: o.orgao_nome,
+        uf: o.uf,
+        fornecedor: o.concorrente_nome,
+        fornecedorCnpj: o.concorrente_cnpj,
+        objeto: o.objeto,
+        valor: brl(o.valor),
+        inicioVigencia: o.data_vigencia_ini ? dataBr(o.data_vigencia_ini) : null,
+        teveAditivo: o.prorrogavel === true,
+        textoDoEdital: dataTexto.texto,
+        historicoPrecos,
+      }), termoMercado, {
+        cnpj: origem.cnpj,
+        ano: parseInt(origem.ano, 10),
+        sequencial: parseInt(origem.sequencial, 10),
+        uf: o.uf || undefined,
+      });
+    } catch (e: any) {
+      if (e instanceof SessionExpiredError) return;
+      setErro(e.message || 'Erro ao carregar o edital de origem.');
+    } finally {
+      setAnalisandoNcp(null);
+    }
+  }, [onAnalyzeEdital]);
 
   return (
     <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
@@ -1006,6 +1223,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
         </div>
       </div>
 
+      {/* No grupo, o botão do topo atualiza todos; a idade do dado é a do mais velho. */}
       {/* ── O estado da busca, em português ───────────────────────────────── */}
       {/* ⚠️ AQUI SÓ ENTRA O QUE MUDA A DECISÃO DE QUEM LÊ.
           A faixa anterior tinha até seis frases empilhadas e nenhuma delas era
@@ -1123,7 +1341,45 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
             {escopo && (
               <p className="mb-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-500">
                 <Building2 size={12} className="shrink-0 text-slate-400" />
-                {escopo.no_workspace.length <= 1 ? (
+                {/* Mais de um estabelecimento do grupo no workspace: a pessoa
+                    escolhe entre um e todos (25/09/2026). O seletor não existe
+                    com um só, porque as duas escolhas seriam a mesma. */}
+                {grupoDisponivel && (
+                  <span className="mr-1 inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5">
+                    {([['cnpj', 'Este CNPJ'], ['grupo', `Grupo · ${escopo.no_workspace.length} CNPJs`]] as Array<['cnpj' | 'grupo', string]>).map(([modo, rotulo]) => (
+                      <button
+                        key={modo}
+                        type="button"
+                        aria-pressed={escopoPedido === modo}
+                        onClick={() => { setEscopoPedido(modo); setFiltroMes(null); setFiltroOrgao(null); }}
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-black transition-colors ${
+                          escopoPedido === modo ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        {modo === 'grupo' && <Layers size={10} />}{rotulo}
+                      </button>
+                    ))}
+                  </span>
+                )}
+                {modoGrupo ? (
+                  <>
+                    Somando os{' '}
+                    <strong className="font-black text-slate-700">
+                      {escopo.cnpjs_consultados?.length ?? escopo.no_workspace.length} estabelecimentos
+                    </strong>{' '}
+                    do grupo que estão na sua carteira; cada linha diz de qual CNPJ é.
+                    {escopo.fora_do_workspace > 0
+                      ? ` Ainda há ${escopo.fora_do_workspace} fora da carteira.`
+                      : ''}
+                    {(escopo.cnpjs_com_falha?.length ?? 0) > 0 && (
+                      <strong className="font-black text-amber-700">
+                        {' '}A consulta de {escopo.cnpjs_com_falha!.map((c) => cnpjBr(c) || c).join(' e ')} falhou:
+                        a soma não inclui esse{escopo.cnpjs_com_falha!.length === 1 ? '' : 's'} estabelecimento
+                        {escopo.cnpjs_com_falha!.length === 1 ? '' : 's'}.
+                      </strong>
+                    )}
+                  </>
+                ) : escopo.no_workspace.length <= 1 ? (
                   <>
                     Mostrando os contratos de{' '}
                     <strong className="font-black text-slate-700">
@@ -1322,6 +1578,11 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
               </div>
             )}
 
+            {/* ── Vencimentos mês a mês (25/09/2026) ─────────────────────── */}
+            {faixa.length > 0 && (
+              <LinhaDoTempo faixa={faixa} selecionado={filtroMes} onSelecionar={setFiltroMes} />
+            )}
+
             {/* ── Filtros por situação + busca ───────────────────────────── */}
             {resumo.total > 0 && (
               <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -1370,6 +1631,18 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                   >
                     <Building2 size={11} className="shrink-0" />
                     <span className="truncate">{filtroOrgao}</span>
+                    <span className="shrink-0 text-white/70">×</span>
+                  </button>
+                )}
+                {filtroMes && (
+                  <button
+                    type="button"
+                    onClick={() => setFiltroMes(null)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 px-2.5 py-1.5 text-[11px] font-black text-white"
+                    title="Remover o filtro de mês"
+                  >
+                    <CalendarClock size={11} className="shrink-0" />
+                    vence em {faixa.find((m) => m.chave === filtroMes)?.rotulo || filtroMes}
                     <span className="shrink-0 text-white/70">×</span>
                   </button>
                 )}
@@ -1494,7 +1767,7 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
             ) : visiveis.length === 0 ? (
               <p className="py-8 text-center text-sm font-semibold text-slate-400">
                 Nenhum contrato com esse recorte.{' '}
-                <button onClick={() => { setFiltro(null); setBusca(''); setSoAditivo(false); setFiltroOrgao(null); }}
+                <button onClick={() => { setFiltro(null); setBusca(''); setSoAditivo(false); setFiltroOrgao(null); setFiltroMes(null); }}
                         className="font-black text-emerald-700 underline">limpar filtros</button>
               </p>
             ) : (
@@ -1510,12 +1783,12 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                 {agrupar(visiveis).filter((l) => (l.tipo === 'un' ? l.c.situacao : l.itens[0].situacao) !== 'encerrado').map((linha, i) => {
                   if (linha.tipo === 'un') {
                     return <LinhaContrato key={linha.c.numeroControlePNCP || `u-${i}`} c={linha.c}
-                                          onOrgao={setFiltroOrgao} />;
+                                          onOrgao={setFiltroOrgao} mostrarCnpj={modoGrupo} />;
                   }
                   return (
                     <LinhaGrupo key={linha.chave} chave={linha.chave} itens={linha.itens}
                                 aberto={gruposAbertos.has(linha.chave)}
-                                onAlternar={alternarGrupo} onOrgao={setFiltroOrgao} />
+                                onAlternar={alternarGrupo} onOrgao={setFiltroOrgao} mostrarCnpj={modoGrupo} />
                   );
                 })}
                 </ul>
@@ -1753,6 +2026,13 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                               {o.concorrente_nome || cnpjBr(o.concorrente_cnpj) || 'fornecedor não identificado'}
                             </strong>
                           </span>
+                          {/* O que mais este concorrente está para perder, e o que
+                              mais vence neste órgão: o Pipeline de renovações já
+                              filtrado (25/09/2026). */}
+                          <AtalhoPipeline campo="fornecedor" nome={o.concorrente_nome} cnpj={o.concorrente_cnpj}
+                                          onAbrir={onAbrirPipeline} rotulo="outros contratos dele" />
+                          <AtalhoPipeline campo="orgao" nome={o.orgao_nome} cnpj={o.orgao_cnpj}
+                                          onAbrir={onAbrirPipeline} rotulo="tudo que vence no órgão" />
                         </p>
 
                         {/* ── Quanto do contrato do concorrente já correu ────
@@ -1800,6 +2080,23 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                              className="mt-2 inline-block text-[10px] font-black uppercase tracking-wider text-emerald-700 hover:underline">
                             Ver no PNCP ↗
                           </a>
+                        )}
+                        {/* A análise do edital que originou o contrato do
+                            concorrente: o que foi exigido, a que preço venceu,
+                            e o que falta para bater quem está lá. Só quando o
+                            documento traz a compra de origem. */}
+                        {o.compra_origem && onAnalyzeEdital && (
+                          <button
+                            type="button"
+                            onClick={() => analisarDisputa(o)}
+                            disabled={!!analisandoNcp}
+                            title="Roda a análise Bawzi completa no edital que originou este contrato — exigências, preços vencedores e como bater o fornecedor atual."
+                            className="mt-2 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white shadow-sm transition-all hover:from-emerald-600 hover:to-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {analisandoNcp === (o.numeroControlePNCP || `${o.compra_origem.cnpj}-${o.compra_origem.sequencial}`)
+                              ? (<><Loader2 size={10} className="animate-spin" /> Carregando…</>)
+                              : (<><FileSearch size={10} /> Analisar edital de origem</>)}
+                          </button>
                         )}
                       </div>
                     </li>
@@ -1853,12 +2150,12 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                     {agrupar(visiveis).filter((l) => (l.tipo === 'un' ? l.c.situacao : l.itens[0].situacao) === 'encerrado').map((linha, i) => {
                       if (linha.tipo === 'un') {
                         return <LinhaContrato key={linha.c.numeroControlePNCP || `e-${i}`} c={linha.c}
-                                              onOrgao={setFiltroOrgao} />;
+                                              onOrgao={setFiltroOrgao} mostrarCnpj={modoGrupo} />;
                       }
                       return (
                         <LinhaGrupo key={linha.chave} chave={linha.chave} itens={linha.itens}
                                     aberto={gruposAbertos.has(linha.chave)}
-                                    onAlternar={alternarGrupo} onOrgao={setFiltroOrgao} />
+                                    onAlternar={alternarGrupo} onOrgao={setFiltroOrgao} mostrarCnpj={modoGrupo} />
                       );
                     })}
                   </ul>
@@ -1887,8 +2184,12 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                 <div className="grid gap-3 md:grid-cols-2">
                   {arena.map((o) => (
                     <div key={o.orgao_cnpj} className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <p className="truncate text-[12px] font-black text-slate-800" title={o.orgao_nome}>
-                        {o.orgao_nome || 'Órgão não identificado'}
+                      <p className="flex items-baseline gap-2 text-[12px] font-black text-slate-800">
+                        <span className="min-w-0 flex-1 truncate" title={o.orgao_nome}>
+                          {o.orgao_nome || 'Órgão não identificado'}
+                        </span>
+                        <AtalhoPipeline campo="orgao" nome={o.orgao_nome} cnpj={o.orgao_cnpj}
+                                        onAbrir={onAbrirPipeline} rotulo="o que vence aqui" className="shrink-0" />
                       </p>
                       <p className="mt-1 text-[11px] font-semibold text-slate-500">
                         {o.minha_fatia != null ? (
@@ -1912,6 +2213,8 @@ export default function MeusContratos({ activeCnpj }: { activeCnpj?: string | nu
                               <span className="min-w-0 flex-1 truncate font-bold text-slate-600" title={m.nome}>
                                 {m.nome}
                               </span>
+                              <AtalhoPipeline campo="fornecedor" nome={m.nome} cnpj={m.cnpj}
+                                              onAbrir={onAbrirPipeline} className="shrink-0" />
                               <span className="shrink-0 font-black text-slate-800">{brl(m.valor)}</span>
                               <span className="shrink-0 text-[10px] font-medium text-slate-400">
                                 {m.contratos}x

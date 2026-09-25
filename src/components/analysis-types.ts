@@ -183,6 +183,9 @@ export interface PrazoImpugnacaoCalculado {
   origem: 'calculado' | 'divergente' | 'confirmado' | string;
   data_extraida_edital_iso?: string;
   mensagem: string;
+  /** A data de onde a conta partiu (25/09/2026). `ambigua` = veio de um rótulo
+   *  como "Abertura das Propostas", que no PNCP é o início da janela. */
+  referencia?: { label: string; data_iso: string; fonte: 'pncp' | 'edital' | string; ambigua?: boolean };
 }
 
 /** Data-limite em que a empresa fica vinculada à proposta enviada (Lei 14.133/2021, art. 90, §3º). */

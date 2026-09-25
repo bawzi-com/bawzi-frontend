@@ -11,6 +11,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
 import { debitadoNaLeitura, precoAprofundar } from '@/lib/aprofundar';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { pedirRevisaoDaDecisao, TempoEsgotadoError } from '@/lib/revisaoDecisao';
+import { riscosDaPeca, type RiscoParaImpugnar, type TipoDePeca } from '@/lib/impugnacao';
 import {
   Radar, Printer, Mail, Zap, Target,
   Gauge, Settings2, Banknote, Scale, FolderOpen,
@@ -107,12 +109,14 @@ interface AnalysisResultsProps {
   /** Abre a compra de pacote avulso. O aviso de laudo degradado é o momento
    *  de maior intenção que existe: o cliente acabou de VER o que perdeu. */
   onComprarPacote?: () => void;
-  /** Redige a peça de impugnação sobre as cláusulas marcadas e abre o modal.
-   *  Ausente quando o texto do edital não está carregado (laudo aberto do
-   *  histórico) — é a mesma condição do `onAprofundar`, e pela mesma razão: o
-   *  backend redige SOBRE o texto, não sobre o laudo. */
-  onGerarImpugnacao?: (riscos: Array<{ titulo: string; descricao: string }>) => void;
-  gerandoImpugnacao?: boolean;
+  /** Redige a peça (impugnação ou pedido de esclarecimento) sobre as
+   *  cláusulas marcadas com aquela ação e abre o modal. Ausente quando o texto
+   *  do edital não está carregado (laudo aberto do histórico) — é a mesma
+   *  condição do `onAprofundar`, e pela mesma razão: o backend redige SOBRE o
+   *  texto, não sobre o laudo. */
+  onGerarPeca?: (tipo: TipoDePeca, riscos: RiscoParaImpugnar[]) => void;
+  /** Qual peça está sendo redigida agora, ou null. */
+  gerandoPeca?: TipoDePeca | null;
 }
 
 type LearningStats = {
@@ -158,8 +162,8 @@ export default function AnalysisResults({
   unidadeCobranca,
   saldoCreditos,
   onTrackedChange,
-  onGerarImpugnacao,
-  gerandoImpugnacao,
+  onGerarPeca,
+  gerandoPeca,
 }: AnalysisResultsProps) {
   const [copied, setCopied] = useState(false);
   const [liveResult, setLiveResult] = useState(result);
@@ -763,8 +767,8 @@ export default function AnalysisResults({
                             que este laudo passou a semana a desfazer. */}
                         <EnderecoDasAcoes
                           result={liveResult}
-                          onGerarImpugnacao={onGerarImpugnacao}
-                          gerandoImpugnacao={gerandoImpugnacao}
+                          onGerarPeca={onGerarPeca}
+                          gerandoPeca={gerandoPeca}
                         />
                         <OportunidadesSection result={liveResult} />
                       </>
@@ -1561,14 +1565,14 @@ function DecisionSnapshot({
  * estão marcadas independentemente do que a IA escreveu no plano — então elas
  * viram um bloco próprio, sempre verdadeiro, logo abaixo das ações.
  */
-function EnderecoDasAcoes({
+export function EnderecoDasAcoes({
   result,
-  onGerarImpugnacao,
-  gerandoImpugnacao,
+  onGerarPeca,
+  gerandoPeca,
 }: {
   result: AnalysisResult;
-  onGerarImpugnacao?: (riscos: Array<{ titulo: string; descricao: string }>) => void;
-  gerandoImpugnacao?: boolean;
+  onGerarPeca?: (tipo: TipoDePeca, riscos: RiscoParaImpugnar[]) => void;
+  gerandoPeca?: TipoDePeca | null;
 }) {
   const flags = result.red_flags || [];
   const aImpugnar = flags.filter((f) => f.acao_sugerida === 'impugnar');
@@ -1577,7 +1581,20 @@ function EnderecoDasAcoes({
   if (alvos.length === 0) return null;
 
   const prazo = result.prazo_impugnacao_calculado;
-  const podeGerar = Boolean(onGerarImpugnacao) && aImpugnar.length > 0;
+  const referencia = prazo?.referencia;
+  const prazoPassou = Boolean(prazo?.data_iso) && dataCriticaExpirada(prazo?.data_iso);
+  // ⚠️ O BOTÃO SUMIA QUANDO SÓ HAVIA PONTOS A ESCLARECER (25/09/2026). Ele
+  // exigia ao menos uma cláusula IMPUGNAR, e a peça só sabia redigir
+  // impugnação: um laudo com duas cláusulas ESCLARECER mostrava a seção inteira,
+  // com prazo e aviso de minuta, e nenhuma ferramenta. Cada ação tem agora a
+  // sua peça, e cada peça leva só as cláusulas da sua ação.
+  const pecas: Array<{ tipo: TipoDePeca; rotulo: string; redigindo: string }> = [];
+  if (aImpugnar.length > 0) {
+    pecas.push({ tipo: 'impugnacao', rotulo: 'Gerar peça de impugnação', redigindo: 'Redigindo a peça…' });
+  }
+  if (aEsclarecer.length > 0) {
+    pecas.push({ tipo: 'esclarecimento', rotulo: 'Gerar pedido de esclarecimento', redigindo: 'Redigindo o pedido…' });
+  }
 
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-5 py-4">
@@ -1626,6 +1643,18 @@ function EnderecoDasAcoes({
               Protocolar até {formatarDataCritica(prazo.data_iso)}
             </strong>
             {prazo.base_legal ? ` · ${prazo.base_legal}` : ''}
+            {/* De onde a conta partiu (25/09/2026). A régua antiga contava do
+                INÍCIO da janela de propostas e ninguém tinha como perceber:
+                a tela mostrava só o resultado. */}
+            {referencia?.data_iso && (
+              <span className="mt-1 block">
+                Abertura usada na conta: {referencia.label} ({formatarDataCritica(referencia.data_iso)}
+                {referencia.fonte === 'pncp' ? ', data oficial do PNCP' : ''}).
+                {referencia.ambigua
+                  ? ' Confira no edital se esta é a data da sessão pública: "abertura das propostas" também pode ser o início do recebimento.'
+                  : ''}
+              </span>
+            )}
             {/* `origem: 'divergente'` significa que a data calculada por lei NÃO
                 é a que o edital declara. Omitir isso aqui, na linha em que a
                 pessoa vai marcar a agenda, seria esconder o conflito no
@@ -1635,47 +1664,49 @@ function EnderecoDasAcoes({
                 Esta data diverge da declarada no edital — {prazo.mensagem}
               </span>
             )}
+            {prazoPassou && (
+              <span className="mt-1 block text-amber-700">
+                Pela conta acima, esse prazo já passou. Confira a data de abertura no edital antes de protocolar:
+                pedido fora do prazo pode não ser conhecido pelo órgão.
+              </span>
+            )}
           </p>
         </div>
       )}
 
-      {podeGerar ? (
-        <button
-          type="button"
-          disabled={gerandoImpugnacao}
-          onClick={() =>
-            onGerarImpugnacao!(
-              aImpugnar.map((f) => ({
-                titulo: f.tipo_label || f.tipo || 'Cláusula restritiva',
-                descricao: [f.descricao, f.trecho ? `Trecho do edital: "${f.trecho}"` : '']
-                  .filter(Boolean)
-                  .join(' '),
-              })),
-            )
-          }
-          className="mt-4 flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {gerandoImpugnacao ? (
-            <>
-              <RefreshCw size={14} className="animate-spin" />
-              Redigindo a peça…
-            </>
-          ) : (
-            <>
-              <Scale size={14} />
-              Gerar peça de impugnação
-            </>
-          )}
-        </button>
-      ) : aImpugnar.length > 0 ? (
+      {onGerarPeca ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {pecas.map((p) => (
+            <button
+              key={p.tipo}
+              type="button"
+              disabled={Boolean(gerandoPeca)}
+              onClick={() => onGerarPeca(p.tipo, riscosDaPeca(flags, p.tipo))}
+              className="flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {gerandoPeca === p.tipo ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  {p.redigindo}
+                </>
+              ) : (
+                <>
+                  <Scale size={14} />
+                  {p.rotulo}
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
         /* Sem o texto do edital carregado não dá para redigir — o endpoint
            precisa dele. Dizer isso é melhor do que esconder a existência da
            ferramenta ou oferecer um botão que volta 400. */
         <p className="mt-4 border-t border-slate-100 pt-3.5 text-[12px] font-medium leading-relaxed text-slate-400">
-          A Bawzi redige a peça de impugnação a partir do texto do edital. Este laudo foi aberto do histórico, sem o
-          texto carregado — abra o edital numa análise nova para gerar a peça.
+          A Bawzi redige a impugnação e o pedido de esclarecimento a partir do texto do edital. Este laudo foi aberto do
+          histórico, sem o texto carregado — abra o edital numa análise nova para gerar a peça.
         </p>
-      ) : null}
+      )}
 
       <p className="mt-3 text-[11px] font-medium leading-relaxed text-slate-400">
         A peça sai como minuta de trabalho: não é parecer jurídico e deve ser revista por advogado habilitado antes
@@ -1743,17 +1774,14 @@ function DecisionVersionMonitor({
     setReviewingIndex(index);
     setNotice(null);
     try {
-      const response = await apiFetch(`${API_URL}/api/analyses/${analysisId}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tipo: String(payload.tipo || 'alteracao_edital'),
-          titulo: String(payload.titulo || event.titulo || 'Mudança detectada no PNCP'),
-          conteudo: String(payload.conteudo || fallbackContent),
-        }),
+      // `lib/revisaoDecisao.ts`: a revisão roda o motor de novo e leva minutos;
+      // o corte padrão de 20 s do apiFetch a interrompia no meio (25/09/2026).
+      const { ok, dados: data } = await pedirRevisaoDaDecisao(analysisId, {
+        tipo: String(payload.tipo || 'alteracao_edital'),
+        titulo: String(payload.titulo || event.titulo || 'Mudança detectada no PNCP'),
+        conteudo: String(payload.conteudo || fallbackContent),
       });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
+      if (!ok) {
         setNotice(data?.detail || 'Não foi possível revisar a decisão.');
         return;
       }
@@ -1761,7 +1789,7 @@ function DecisionVersionMonitor({
       setNotice('Decisão revisada e versão salva no laudo.');
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
-      setNotice('Erro de conexão ao revisar a decisão.');
+      setNotice(err instanceof TempoEsgotadoError ? err.message : 'Erro de conexão ao revisar a decisão.');
     } finally {
       setReviewingIndex(null);
     }

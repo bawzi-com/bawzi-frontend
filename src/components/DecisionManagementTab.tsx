@@ -12,9 +12,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
-  Clock3,
   DollarSign,
+  ExternalLink,
+  EyeOff,
   FileText,
+  Filter,
   Loader2,
   Maximize2,
   Minimize2,
@@ -26,11 +28,11 @@ import {
   Search,
   SlidersHorizontal,
   Trophy,
-  UserRound,
   X,
   XCircle,
 } from 'lucide-react';
 import { API_URL, apiFetch, clearSession, SessionExpiredError, startSessionKeepAlive } from '@/lib/apiClient';
+import { pedirRevisaoDaDecisao, TempoEsgotadoError } from '@/lib/revisaoDecisao';
 import { getCachedTier } from '@/lib/tier';
 import type { Empresa, SavedAnalysis } from '@/lib/types';
 import type { AnalysisResult } from './analysis-types';
@@ -46,6 +48,19 @@ import {
   type DecisionQueueKey,
   type DecisionQueueTask,
 } from '@/lib/decisionQueue';
+// As abas além do quadro (25/09/2026): Agenda, Tabela, Desempenho e
+// Responsáveis. O cálculo mora em `lib/gestao`; os componentes, em
+// `GestaoAbas` — os dois sem hook, para os testes rodarem no servidor.
+import {
+  acaoDaSugestao, acoesPorResponsavel, csvDaTabela, datasDoEdital, desempenhoDaGestao, diasAte, FILTRO_DA_AGENDA_VAZIO, fraseDosDias,
+  inicioDoMes, itensDaAgenda, linhasDaTabela, linkDoPncp, ordenarLinhas, prazoCritico, situacaoDoEdital, tituloAmigavel,
+  type AbaDaGestao, type ColunaDaTabela, type DirecaoDaOrdem, type FiltroDaAgenda, type SelecaoDaAgenda,
+} from '@/lib/gestao';
+import { AbaAgenda, AbaDesempenho, AbaResponsaveis, AbaTabela, BarraDeAbas } from './GestaoAbas';
+// O resumo do edital (25/09/2026): a situação em uma frase, a linha de
+// etapas, a próxima ação em destaque e as datas — peças sem hook, em
+// `ResumoDoEdital`; o modal só liga cada uma ao que grava.
+import { DatasDoEdital, LinhaDeEtapas, ProximaAcaoCard, SeletorDeDesfecho, SituacaoDoEditalBanner } from './ResumoDoEdital';
 
 type LearningStats = {
   go: {
@@ -93,6 +108,7 @@ export default function DecisionManagementTab({
   onToggleSidebar,
   foco = null,
   onFocoConsumido,
+  onForaDaGestao,
 }: {
   token: string;
   userTier?: number;
@@ -107,6 +123,10 @@ export default function DecisionManagementTab({
   /** Avisa a casca que o alvo foi consumido, para ela zerar. Sem isto o efeito
    *  reabriria o modal a cada re-render desta aba. */
   onFocoConsumido?: () => void;
+  /** O alvo não está na Gestão (não foi acompanhado): a casca abre o laudo
+   *  em Decisões. Sem isto, o "Abrir este edital" do sino terminava num
+   *  aviso de "não encontrei" — um beco. */
+  onForaDaGestao?: (analysisId: string) => void;
 }) {
   const router = useRouter();
   const [analyses, setAnalyses] = useState<SavedAnalysis[]>([]);
@@ -163,6 +183,7 @@ export default function DecisionManagementTab({
   const [learningModal, setLearningModal] = useState<DecisionQueueCardModel | null>(null);
   const [savingReviewId, setSavingReviewId] = useState<string | null>(null);
   const [savingLearningId, setSavingLearningId] = useState<string | null>(null);
+  const [removendoDaGestaoId, setRemovendoDaGestaoId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'analise' | 'concorrentes'>('analise');
   const boardScrollRef = useRef<HTMLDivElement | null>(null);
   const [boardScroll, setBoardScroll] = useState({ left: false, right: false });
@@ -189,6 +210,25 @@ export default function DecisionManagementTab({
       document.exitFullscreen?.().catch(() => {});
     }
   };
+
+  // Qual visão está aberta. O quadro é a primeira; as outras leem os mesmos
+  // editais, já filtrados pela busca e pelo painel de filtros.
+  const [abaAtiva, setAbaAtiva] = useState<AbaDaGestao>('quadro');
+  // A tabela abre pelo prazo: a tela é sobre prazo, e o quadro já ordena por
+  // "recente". Clicar na mesma coluna inverte; noutra, começa crescente.
+  const [ordemDaTabela, setOrdemDaTabela] = useState<{ coluna: ColunaDaTabela; direcao: DirecaoDaOrdem }>({ coluna: 'prazo', direcao: 'asc' });
+  const ordenarTabela = (coluna: ColunaDaTabela) => setOrdemDaTabela((atual) => (
+    atual.coluna === coluna
+      ? { coluna, direcao: atual.direcao === 'asc' ? 'desc' : 'asc' }
+      : { coluna, direcao: coluna === 'valor' || coluna === 'score' || coluna === 'atualizado' ? 'desc' : 'asc' }
+  ));
+
+  // A agenda: o mês aberto no calendário, o que o painel lista (próximos 7
+  // dias, vencidos ou um dia) e se as datas informativas entram.
+  const [mesDaAgenda, setMesDaAgenda] = useState<Date>(() => inicioDoMes(new Date()));
+  const [selecaoDaAgenda, setSelecaoDaAgenda] = useState<SelecaoDaAgenda>('proximos');
+  const [soDecisivos, setSoDecisivos] = useState(true);
+  const [filtroDaAgenda, setFiltroDaAgenda] = useState<FiltroDaAgenda>(FILTRO_DA_AGENDA_VAZIO);
 
   const CARDS_PER_COLUMN = 20;
   const [expandedColumns, setExpandedColumns] = useState<Partial<Record<DecisionQueueKey, boolean>>>({});
@@ -477,6 +517,10 @@ export default function DecisionManagementTab({
       setFocoDoResumo('plano');
       setTarefaEmFoco(foco.taskId ?? null);
       setSummaryModal(alvo);
+    } else if (onForaDaGestao && !analyses.some((a) => String(a.id) === String(foco.analysisId))) {
+      // Não está em acompanhamento: o laudo existe em Decisões, e é para lá
+      // que o pedido vai — em vez de um aviso que deixava a pessoa no beco.
+      onForaDaGestao(String(foco.analysisId));
     } else {
       // ⚠️ NÃO ACHAR TEM DE DOER. Se o pedido chega e a análise não está na
       // lista (não foi adicionada à Gestão, ou um filtro de texto a escondeu),
@@ -518,6 +562,43 @@ export default function DecisionManagementTab({
     abandoned: 0,
     executed: 0,
   }), [allQueueCards]);
+
+  // ── As abas além do quadro ────────────────────────────────────────────
+  // Leem `queueCards` (o recorte atual) para os filtros valerem em todas; o
+  // Desempenho lê a carteira inteira (`allQueueCards`), porque o recorte
+  // padrão esconde as etapas finais, e são elas que têm resultado.
+  const agenda = useMemo(() => itensDaAgenda(queueCards, new Date(), soDecisivos), [queueCards, soDecisivos]);
+  const linhasDaTabelaOrdenadas = useMemo(
+    () => ordenarLinhas(linhasDaTabela(queueCards), ordemDaTabela.coluna, ordemDaTabela.direcao),
+    [queueCards, ordemDaTabela],
+  );
+  const desempenho = useMemo(() => desempenhoDaGestao(allQueueCards), [allQueueCards]);
+  const cargas = useMemo(() => acoesPorResponsavel(queueCards), [queueCards]);
+  const contagensDasAbas = useMemo(() => ({
+    quadro: queueCards.length,
+    agenda: agenda.length,
+    tabela: queueCards.length,
+    desempenho: desempenho.ganhos.quantidade + desempenho.perdidos.quantidade,
+    responsaveis: cargas.length,
+  }), [queueCards.length, agenda, desempenho, cargas]);
+
+  /** Abre o resumo (e o plano) de um edital a partir de qualquer aba. */
+  const abrirResumoPorId = (analysisId: string, taskId?: string) => {
+    const alvo = allQueueCards.find((c) => String(c.analysis.id) === String(analysisId));
+    if (!alvo) return;
+    setFocoDoResumo(taskId ? 'plano' : null);
+    setTarefaEmFoco(taskId ?? null);
+    setSummaryModal(alvo);
+  };
+
+  const exportarTabela = () => {
+    const url = URL.createObjectURL(new Blob([csvDaTabela(linhasDaTabelaOrdenadas)], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gestao-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   /** ⚠️ O QUADRO ABRIA COM QUATRO COLUNAS QUE NÃO PODIAM CONTER NADA.
    *
@@ -913,19 +994,15 @@ export default function DecisionManagementTab({
 
     setSavingReviewId(card.analysis.id);
     try {
-      const res = await apiFetch(`${API_URL}/api/analyses/${card.analysis.id}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      // `lib/revisaoDecisao.ts`: a revisão roda o motor de novo e leva minutos;
+      // o corte padrão de 20 s do apiFetch a interrompia no meio (25/09/2026).
+      const { ok, dados: data } = await pedirRevisaoDaDecisao(card.analysis.id, payload);
 
-      if (!res.ok) {
-        const error = await res.json().catch(() => null);
-        setNotice({ type: 'error', message: error?.detail || 'Não foi possível revisar a decisão.' });
+      if (!ok) {
+        setNotice({ type: 'error', message: data?.detail || 'Não foi possível revisar a decisão.' });
         return;
       }
 
-      const data = await res.json().catch(() => null);
       const updated = data?.analysis as SavedAnalysis | undefined;
       if (updated) {
         setAnalyses((prev) => prev.map((item) => (
@@ -940,7 +1017,7 @@ export default function DecisionManagementTab({
       });
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
-      setNotice({ type: 'error', message: 'Erro de conexão ao revisar a decisão.' });
+      setNotice({ type: 'error', message: err instanceof TempoEsgotadoError ? err.message : 'Erro de conexão ao revisar a decisão.' });
     } finally {
       setSavingReviewId(null);
     }
@@ -988,6 +1065,36 @@ export default function DecisionManagementTab({
       setNotice({ type: 'error', message: 'Erro de conexão ao registrar o resultado.' });
     } finally {
       setSavingLearningId(null);
+    }
+  };
+
+  /** Tira o edital da Gestão pelo mesmo interruptor do laudo
+   *  (`tracked_in_gestao = false`). O laudo continua em Decisões, e de lá
+   *  volta para cá com um clique — por isso não há confirmação. */
+  const removerDaGestao = async (analysis: SavedAnalysis) => {
+    if (!analysis.id || removendoDaGestaoId) return;
+    setRemovendoDaGestaoId(analysis.id);
+    try {
+      const res = await apiFetch(`${API_URL}/api/analyses/${analysis.id}/track`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ track: false }),
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => null);
+        setNotice({ type: 'error', message: error?.detail || 'Não foi possível tirar o edital da Gestão.' });
+        return;
+      }
+      setSummaryModal(null);
+      setFocoDoResumo(null);
+      setTarefaEmFoco(null);
+      setAnalyses((prev) => prev.filter((item) => item.id !== analysis.id));
+      setNotice({ type: 'info', message: 'Removido da Gestão. O laudo continua disponível em Decisões.' });
+    } catch (err) {
+      if (err instanceof SessionExpiredError) return;
+      setNotice({ type: 'error', message: 'Erro de conexão ao tirar o edital da Gestão.' });
+    } finally {
+      setRemovendoDaGestaoId(null);
     }
   };
 
@@ -1132,6 +1239,8 @@ export default function DecisionManagementTab({
           tarefaEmFoco={tarefaEmFoco}
           savingTaskId={savingTaskId}
           savingStageId={savingStageId}
+          removendoDaGestao={removendoDaGestaoId === activeSummaryCard.analysis.id}
+          onUntrack={removerDaGestao}
           onClose={() => { setSummaryModal(null); setFocoDoResumo(null); setTarefaEmFoco(null); }}
           onOpenLaudo={(analysis) => {
             setSummaryModal(null);
@@ -1293,7 +1402,23 @@ export default function DecisionManagementTab({
           )}
         </div>
 
-        {/* ⚠️ AS NOVE ETAPAS EM UMA LINHA SÓ, e para isso a faixa precisou sair
+
+        {/* ⚠️ A VISÃO VEM ANTES DO FILTRO. A faixa de etapas ficava aqui, acima
+            das abas, e as duas fileiras — rótulos em caixa alta com um número
+            ao lado — pareciam a mesma coisa (Marcelo: "os filtros e abas
+            parecem a mesma coisa"). Primeiro escolhe-se COMO ver (as abas);
+            o que filtrar mora no bloco de filtros, logo abaixo, junto da busca.
+            A taxa de acerto da Bawzi (veredito × resultado) morava aqui, numa
+            faixa; foi para a aba Desempenho, junto do resto dos números. */}
+        {analyses.length > 0 && (
+          <BarraDeAbas ativa={abaAtiva} contagens={contagensDasAbas} onTrocar={setAbaAtiva} />
+        )}
+
+        {/* Sete controlos para filtrar coisa nenhuma, mais o selo "0 de 0",
+            é o que o utilizador via ao chegar aqui pela primeira vez. */}
+        {analyses.length > 0 && (
+        <div className="border-t border-slate-100 bg-white p-4">
+          {/* ⚠️ AS NOVE ETAPAS EM UMA LINHA SÓ, e para isso a faixa precisou sair
             de dentro da coluna direita do cabeçalho.
             Ela morava numa grade `grid-cols-2 / sm:3 / xl:5` espremida ao lado
             do título: nove itens em cinco colunas viram duas fileiras
@@ -1304,8 +1429,17 @@ export default function DecisionManagementTab({
             fileira só.
             `overflow-x-auto` + `shrink-0`: no celular nove fichas não cabem de
             jeito nenhum, e rolar a faixa preserva a leitura em sequência —
-            quebrar em duas linhas é o que se está corrigindo aqui. */}
-        <div className="flex items-stretch gap-2 overflow-x-auto border-t border-slate-100 bg-white px-5 py-3 md:px-7">
+            quebrar em duas linhas é o que se está corrigindo aqui.
+            ⚠️ E SÃO CHIPS DE FILTRO, NÃO FICHAS DE PAINEL. Eram cartões com
+            o número grande e o rótulo miúdo em caixa alta — a cara de um
+            indicador, não de algo que se marca. Agora: pílula com o nome da
+            etapa em frase, a contagem num selo, ✓ na marcada, e o rótulo
+            "Etapa" com o ícone de filtro na frente, dentro do bloco de filtros. */}
+          <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-0.5">
+            <span className="inline-flex shrink-0 items-center gap-1.5 pr-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              <Filter size={12} />
+              Etapa
+            </span>
           {columnOrder.map((key) => {
             const stage = decisionQueueStages[key];
             const noRecorte = colunasVisiveis.includes(key);
@@ -1336,23 +1470,23 @@ export default function DecisionManagementTab({
                         ? `${stage.label} selecionada — clique para tirar do filtro`
                         : `${stage.helper} — clique para somar ao filtro`
                   }
-                  className={`flex shrink-0 items-center gap-2 rounded-xl border py-2 pr-3 shadow-sm transition-all ${stage.className} ${
+                  className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1.5 pr-1.5 text-[11px] font-bold transition-all ${stage.className} ${
                     selecionada
                       ? 'pl-2 ring-2 ring-slate-900 ring-offset-1'
                       : counts[key] === 0
                         ? 'cursor-not-allowed pl-3 opacity-40'
                         : noRecorte
-                          ? 'pl-3 hover:-translate-y-0.5 hover:shadow-md'
+                          ? 'pl-3 hover:-translate-y-0.5 hover:shadow-sm'
                           : 'pl-3 opacity-40 hover:opacity-100'
                   }`}
                 >
                   {/* O check só aparece na selecionada. Com várias marcadas, o
-                      anel sozinho obriga a comparar bordas de fichas coloridas
+                      anel sozinho obriga a comparar bordas de chips coloridos
                       para saber quais entraram — o ✓ responde item a item. */}
-                  {selecionada && <Check size={13} strokeWidth={3.5} className="shrink-0" />}
-                  <span className="text-lg font-black leading-none tabular-nums">{counts[key]}</span>
-                  <span className="text-[9px] font-black uppercase leading-tight tracking-wide opacity-70">
-                    {stage.label}
+                  {selecionada && <Check size={12} strokeWidth={3.5} className="shrink-0" />}
+                  {stage.label}
+                  <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-black leading-none tabular-nums">
+                    {counts[key]}
                   </span>
                 </button>
               </React.Fragment>
@@ -1360,23 +1494,14 @@ export default function DecisionManagementTab({
           })}
           {/* Estava na legenda; vem para cá junto com ela. É o caminho de volta
               para as etapas esmaecidas ao lado. */}
-          <button
-            type="button"
-            onClick={() => setActivityFilter(activityFilter === 'active' ? 'finalized' : 'active')}
-            className="ml-1 shrink-0 self-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] font-black uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
-          >
-            {activityFilter === 'active' ? 'Ver encerrados' : 'Ver fluxo ativo'}
-          </button>
-        </div>
-
-        {/* Métrica que exige 5 resultados registados: com zero editais o
-            utilizador está a seis passos disto e o aviso só rouba atenção. */}
-        {analyses.length > 0 && <LearningStatsBanner stats={learningStats} />}
-
-        {/* Sete controlos para filtrar coisa nenhuma, mais o selo "0 de 0",
-            é o que o utilizador via ao chegar aqui pela primeira vez. */}
-        {analyses.length > 0 && (
-        <div className="border-t border-slate-100 bg-white p-4">
+            <button
+              type="button"
+              onClick={() => setActivityFilter(activityFilter === 'active' ? 'finalized' : 'active')}
+              className="ml-1 shrink-0 rounded-full border border-dashed border-slate-300 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-500 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-800"
+            >
+              {activityFilter === 'active' ? 'Ver encerrados' : 'Ver fluxo ativo'}
+            </button>
+          </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -1582,7 +1707,7 @@ export default function DecisionManagementTab({
             Tentar de novo
           </button>
         </div>
-      ) : queueCards.length === 0 ? (
+      ) : queueCards.length === 0 && abaAtiva !== 'desempenho' ? (
         <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
             <Search size={24} />
@@ -1616,6 +1741,37 @@ export default function DecisionManagementTab({
             </>
           )}
         </div>
+      ) : abaAtiva === 'agenda' ? (
+        <AbaAgenda
+          itens={agenda}
+          mes={mesDaAgenda}
+          selecao={selecaoDaAgenda}
+          soDecisivos={soDecisivos}
+          filtro={filtroDaAgenda}
+          onMes={setMesDaAgenda}
+          onSelecionar={setSelecaoDaAgenda}
+          onSoDecisivos={setSoDecisivos}
+          onFiltro={setFiltroDaAgenda}
+          onAbrir={(id) => abrirResumoPorId(id)}
+        />
+      ) : abaAtiva === 'tabela' ? (
+        <AbaTabela
+          linhas={linhasDaTabelaOrdenadas}
+          coluna={ordemDaTabela.coluna}
+          direcao={ordemDaTabela.direcao}
+          onOrdenar={ordenarTabela}
+          onAbrir={(id) => abrirResumoPorId(id)}
+          onExportar={exportarTabela}
+        />
+      ) : abaAtiva === 'desempenho' ? (
+        <AbaDesempenho
+          desempenho={desempenho}
+          // Sem estatística carregada o painel some inteiro: `LearningStatsBanner`
+          // devolveria null e a seção ficaria com o título e nada dentro.
+          calibracao={learningStats ? <LearningStatsBanner stats={learningStats} /> : undefined}
+        />
+      ) : abaAtiva === 'responsaveis' ? (
+        <AbaResponsaveis cargas={cargas} onAbrir={abrirResumoPorId} />
       ) : (
         <div className="relative">
           {boardScroll.left && (
@@ -1992,12 +2148,15 @@ function DecisionQueueCard({
  *  O estado local existe para o campo não "pular" enquanto se digita: o valor
  *  vem do rascunho local se houver, senão do que está salvo, senão do default
  *  da tarefa. */
-function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, onSalvar }: {
+function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, onSalvar }: {
   card: DecisionQueueCardModel;
   savingTaskId: string | null;
   /** Passo que já deve nascer aberto — quem chegou aqui por um clique em
    *  "+ responsável e prazo" no laudo pediu ESTE passo, não a lista. */
   tarefaInicial?: string | null;
+  /** Conta os pedidos feitos DEPOIS de montar ("Editar no plano", no resumo).
+   *  Sobe a cada clique, para o mesmo passo pedido duas vezes valer as duas. */
+  pedido?: number;
   /** Devolve promessa: o editor precisa esperar a gravação terminar para só
    *  então descartar o rascunho e passar a ler o valor confirmado. */
   onSalvar: (
@@ -2022,7 +2181,15 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, onSalvar }: {
   useEffect(() => {
     if (!tarefaInicial) return;
     linhaEmFoco.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [tarefaInicial]);
+  }, [tarefaInicial, pedido]);
+
+  /** Um pedido posterior abre o passo pedido. O inicializador acima cuida da
+   *  primeira pintura; este efeito só reage ao que vem depois (`pedido > 0`),
+   *  por isso não cria o pulo de tela que o comentário acima descreve. */
+  useEffect(() => {
+    if (!tarefaInicial || !pedido) return;
+    setAberta(tarefaInicial);
+  }, [tarefaInicial, pedido]);
 
   if (!card.tasks.length) return null;
 
@@ -2079,6 +2246,19 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, onSalvar }: {
         <span className="text-[11px] font-black tabular-nums text-slate-400">
           {card.done}/{card.total} concluídas
         </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label="Ações do plano concluídas"
+        aria-valuemin={0}
+        aria-valuemax={card.total}
+        aria-valuenow={card.done}
+        className="mb-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-100"
+      >
+        <div
+          className={`h-full rounded-full transition-all ${card.done === card.total ? 'bg-emerald-500' : 'bg-emerald-400'}`}
+          style={{ width: `${card.progress}%` }}
+        />
       </div>
 
       <div className="divide-y divide-slate-100">
@@ -2180,6 +2360,7 @@ function OperationalSummaryModal({
   tarefaEmFoco,
   savingTaskId,
   savingStageId,
+  removendoDaGestao = false,
   onClose,
   onOpenLaudo,
   onComplete,
@@ -2187,6 +2368,7 @@ function OperationalSummaryModal({
   onStageChange,
   onReviewRequest,
   onLearningRequest,
+  onUntrack,
 }: {
   card: DecisionQueueCardModel;
   /** `'plano'` = abrir já no plano de execução, em vez do topo. */
@@ -2195,6 +2377,8 @@ function OperationalSummaryModal({
   tarefaEmFoco?: string | null;
   savingTaskId: string | null;
   savingStageId: string | null;
+  /** "Tirar da Gestão" em andamento: o botão trava até a resposta. */
+  removendoDaGestao?: boolean;
   onClose: () => void;
   onOpenLaudo: (analysis: SavedAnalysis) => void;
   onComplete: (analysis: SavedAnalysis, task: DecisionQueueTask) => void;
@@ -2206,6 +2390,8 @@ function OperationalSummaryModal({
   onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
   onReviewRequest: (card: DecisionQueueCardModel) => void;
   onLearningRequest: (card: DecisionQueueCardModel) => void;
+  /** Tira o edital da Gestão (o laudo continua em Decisões). */
+  onUntrack: (analysis: SavedAnalysis) => void;
 }) {
   const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
   const stage = decisionQueueStages[card.stage];
@@ -2229,9 +2415,39 @@ function OperationalSummaryModal({
   const workflowTaskId = `${card.analysis.id}-workflow`;
   const quickTaskId = card.nextTask ? `${card.analysis.id}-${card.nextTask.id}` : '';
   const isSavingStage = Boolean(savingStageId);
-  const isSavingTask = Boolean(savingTaskId);
   const headerOffset = useStickyHeaderOffset();
   const fecharPeloFundo = useDispensaDeModal(true, onClose);
+
+  // A situação em uma frase, o link do portal e as datas vêm de `lib/gestao`
+  // — a mesma régua da Agenda e da Tabela. O modal não recalcula nada.
+  const situacao = situacaoDoEdital(card);
+  const linkPncp = linkDoPncp(card.analysis);
+  const datas = datasDoEdital(card.analysis);
+  const prazo = prazoCritico(card.analysis, card.nextTask);
+  const diasDoPrazo = prazo.data ? diasAte(prazo.data, new Date()) : null;
+  const orgaoComUf = operational.uf ? `${operational.orgao} · ${operational.uf}` : operational.orgao;
+
+  /** O botão da situação faz o que ela sugere; `acaoDaSugestao` decide se
+   *  há com o que fazer (sem origem no PNCP, sem ação pendente, sem etapa
+   *  seguinte → sem botão). */
+  const acaoSugerida = acaoDaSugestao(situacao.sugestao, card);
+  const seguirSugestao = () => {
+    if (!acaoSugerida) return;
+    if (acaoSugerida.tipo === 'registrar_resultado') onLearningRequest(card);
+    else if (acaoSugerida.tipo === 'concluir_acao') onComplete(card.analysis, acaoSugerida.tarefa);
+    else if (acaoSugerida.tipo === 'avancar') onStageChange(card.analysis, acaoSugerida.etapa);
+    else window.open(acaoSugerida.url, '_blank', 'noopener,noreferrer');
+  };
+
+  /** "Editar no plano" abre o passo lá embaixo, já editando, e rola até ele.
+   *  O contador sobe a cada clique para o pedido valer de novo quando é o
+   *  mesmo passo (fechou o editor e pediu outra vez). */
+  const [pedidoDoPlano, setPedidoDoPlano] = useState<{ id: string; vez: number } | null>(null);
+  const editarNoPlano = () => {
+    if (!card.nextTask) return;
+    const id = card.nextTask.id;
+    setPedidoDoPlano((anterior) => ({ id, vez: (anterior?.vez ?? 0) + 1 }));
+  };
 
   /** ⚠️ "VER O PLANO INTEIRO →" PRECISA CAIR NO PLANO INTEIRO.
    *  O cartão abre este mesmo modal por dois caminhos: "Resumo do edital",
@@ -2259,7 +2475,7 @@ function OperationalSummaryModal({
       <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-2xl sm:rounded-[2rem]">
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 p-4 sm:p-5">
           <div className="min-w-0">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="mb-2.5 flex flex-wrap items-center gap-2">
               <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${stage.className}`}>
                 {stage.label}
               </span>
@@ -2270,9 +2486,8 @@ function OperationalSummaryModal({
                 {score === null ? 'Score não informado' : `Score ${score}`}
               </span>
             </div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resumo do edital</p>
-            <h3 className="mt-1 line-clamp-3 text-lg font-black leading-tight text-slate-950 sm:text-xl">
-              {card.analysis.title || 'Análise de edital'}
+            <h3 className="line-clamp-3 text-lg font-black leading-tight text-slate-950 sm:text-xl">
+              {tituloAmigavel(card.analysis.title || '') || 'Análise de edital'}
             </h3>
           </div>
           <button
@@ -2286,16 +2501,19 @@ function OperationalSummaryModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-          <div className="grid gap-3 md:grid-cols-2">
+          {/* A situação em uma frase — o que a pessoa vinha montando de cabeça
+              a partir de nove campos soltos. O botão faz o que ela sugere. */}
+          <SituacaoDoEditalBanner
+            situacao={situacao}
+            onSugestao={seguirSugestao}
+            sugestaoDisponivel={acaoSugerida !== null}
+          />
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
             <SummaryField
               icon={<Building2 size={16} />}
-              label="Órgão / Unidade"
-              value={operational.orgao}
-            />
-            <SummaryField
-              icon={<CalendarDays size={16} />}
-              label="UF / Resultado"
-              value={[operational.uf || 'UF não informada', operational.resultLabel || 'Resultado ainda não registrado'].join(' · ')}
+              label="Órgão / UF"
+              value={orgaoComUf}
             />
             <SummaryField
               icon={<DollarSign size={16} />}
@@ -2305,83 +2523,82 @@ function OperationalSummaryModal({
             <SummaryField
               icon={<AlertTriangle size={16} />}
               label="Prazo crítico"
-              value={operational.prazo}
+              value={diasDoPrazo === null ? prazo.rotulo : `${prazo.rotulo} · ${fraseDosDias(diasDoPrazo)}`}
               toneClass={operational.urgency.className}
-            />
-            <SummaryField
-              icon={<Clock3 size={16} />}
-              label="Próxima ação"
-              value={card.nextTask?.acao || 'Sem ação pendente no cockpit.'}
-              wide
-            />
-            <SummaryField
-              icon={<UserRound size={16} />}
-              label="Responsável / prazo da ação"
-              value={`${nextResponsible} · ${nextDeadline}`}
-            />
-            <SummaryField
-              icon={<ClipboardList size={16} />}
-              label="Progresso do cockpit"
-              value={`${card.done}/${card.total} ações concluídas`}
             />
             <SummaryField
               icon={<RefreshCw size={16} />}
               label="Última atualização"
               value={operational.lastUpdate}
             />
-            <SummaryField
-              icon={<FileText size={16} />}
-              label="Motivo do status"
-              value={operational.reason}
-              wide
+          </div>
+
+          {/* A próxima ação, em destaque: quem faz, até quando, e o botão de
+              concluir — antes ela era um campo entre nove, e o botão de
+              concluir ficava noutro bloco, sem dizer o que concluía. */}
+          <div className="mt-3">
+            <ProximaAcaoCard
+              tarefa={card.nextTask}
+              responsavel={nextResponsible}
+              prazo={nextDeadline}
+              feitas={card.done}
+              total={card.total}
+              salvando={Boolean(quickTaskId) && savingTaskId === quickTaskId}
+              onConcluir={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
+              onEditar={editarNoPlano}
             />
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Gestão do fluxo</p>
                 <p className="mt-1 text-sm font-bold text-slate-700">{stage.helper}</p>
               </div>
-              <span className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${stage.className}`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${stage.dotClass}`} />
-                {stage.label}
-              </span>
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-              <select
-                value={card.stage}
-                onChange={(event) => onStageChange(card.analysis, event.target.value as DecisionQueueKey)}
-                disabled={isSavingStage}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-black text-slate-800 outline-none transition-all focus:border-emerald-300 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {decisionQueueOrder.map((stageKey) => (
-                  <option key={stageKey} value={stageKey}>{decisionQueueStages[stageKey].label}</option>
-                ))}
-              </select>
-
               <button
                 type="button"
                 onClick={() => nextStage && onStageChange(card.analysis, nextStage)}
                 disabled={!nextStage || isSavingStage}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex w-fit items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {savingStageId === workflowTaskId ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
                 {nextStage ? `Avançar para ${decisionQueueStages[nextStage].label}` : 'Finalizado'}
               </button>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
-                disabled={!card.nextTask || isSavingTask}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 transition-all hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {savingTaskId === quickTaskId ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                Concluir ação
-              </button>
+            {/* A linha de etapas no lugar do <select>: mostra onde o edital
+                está e o que já passou; clicar numa etapa move. Os desfechos
+                (ganho, perdido, abandonado) não estão na linha porque entram
+                por "Registrar resultado", que grava o resultado junto. */}
+            <LinhaDeEtapas
+              stage={card.stage}
+              salvando={isSavingStage}
+              onEscolher={(etapa) => onStageChange(card.analysis, etapa)}
+            />
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10.5px] font-medium text-slate-400">
+                Clique numa etapa para mover o edital. Ganho, perdido e abandonado entram por "Registrar resultado".
+              </p>
+              <SeletorDeDesfecho
+                stage={card.stage}
+                salvando={isSavingStage}
+                onEscolher={(etapa) => onStageChange(card.analysis, etapa)}
+              />
             </div>
           </div>
+
+          {datas.length > 0 && (
+            <details className="group mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600">
+                <CalendarDays size={13} className="shrink-0" />
+                Todas as datas do edital · {datas.length}
+                <ChevronRight size={13} className="ml-auto shrink-0 transition-transform group-open:rotate-90" />
+              </summary>
+              <div className="mt-3">
+                <DatasDoEdital datas={datas} />
+              </div>
+            </details>
+          )}
 
           {/* PLANO COMPLETO, EDITÁVEL — o que o laudo deixou de fazer.
               Não é a "próxima ação" só: é a lista inteira, com responsável,
@@ -2391,44 +2608,72 @@ function OperationalSummaryModal({
             <PlanoEditavel
               card={card}
               savingTaskId={savingTaskId}
-              tarefaInicial={tarefaEmFoco ?? null}
+              tarefaInicial={pedidoDoPlano?.id ?? tarefaEmFoco ?? null}
+              pedido={pedidoDoPlano?.vez ?? 0}
               onSalvar={onSalvarTarefa}
             />
           </div>
         </div>
 
-        <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:justify-end sm:p-4">
-          <button
-            type="button"
-            onClick={onClose}
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
-          >
-            Fechar
-          </button>
-          <button
-            type="button"
-            onClick={() => onReviewRequest(card)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-black text-sky-700 transition-all hover:bg-sky-100"
-          >
-            <RotateCcw size={15} />
-            Revisar decisão
-          </button>
-          <button
-            type="button"
-            onClick={() => onLearningRequest(card)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 transition-all hover:bg-emerald-100"
-          >
-            <Trophy size={15} />
-            Registrar resultado
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenLaudo(card.analysis)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800"
-          >
-            Abrir laudo
-            <ArrowRight size={15} />
-          </button>
+        <div className="shrink-0 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-4">
+          {/* Atalhos: o portal e a saída. Ficam à esquerda, longe dos botões
+              que gravam, para um clique errado não tirar o edital do quadro. */}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap">
+            {linkPncp && (
+              <a
+                href={linkPncp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-black text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+              >
+                <ExternalLink size={15} />
+                Ver no PNCP
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => onUntrack(card.analysis)}
+              disabled={removendoDaGestao}
+              title="O laudo continua em Decisões; de lá dá para trazer de volta."
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-transparent px-3.5 py-2.5 text-sm font-black text-slate-500 transition-all hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {removendoDaGestao ? <Loader2 size={15} className="animate-spin" /> : <EyeOff size={15} />}
+              Tirar da Gestão
+            </button>
+          </div>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-black text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
+            >
+              Fechar
+            </button>
+            <button
+              type="button"
+              onClick={() => onReviewRequest(card)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-2.5 text-sm font-black text-sky-700 transition-all hover:bg-sky-100"
+            >
+              <RotateCcw size={15} />
+              Revisar decisão
+            </button>
+            <button
+              type="button"
+              onClick={() => onLearningRequest(card)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-black text-emerald-700 transition-all hover:bg-emerald-100"
+            >
+              <Trophy size={15} />
+              Registrar resultado
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenLaudo(card.analysis)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm font-black text-white transition-all hover:bg-slate-800"
+            >
+              Abrir laudo
+              <ArrowRight size={15} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

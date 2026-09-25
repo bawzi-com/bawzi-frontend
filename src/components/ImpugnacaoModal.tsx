@@ -2,7 +2,8 @@
 
 /**
  * ImpugnacaoModal.tsx
- * Modal de visualização e cópia da peça de impugnação gerada pela IA.
+ * Modal de visualização e cópia das peças do art. 164 geradas pela IA: a
+ * impugnação e o pedido de esclarecimento.
  */
 
 import React from 'react';
@@ -14,6 +15,8 @@ interface ImpugnacaoModalProps {
   impugnacaoText: string;
   copiado: boolean;
   onCopy: () => void;
+  /** "Peça de Impugnação" ou "Pedido de Esclarecimento" (25/09/2026). */
+  titulo?: string;
 }
 
 export default function ImpugnacaoModal({
@@ -22,6 +25,7 @@ export default function ImpugnacaoModal({
   impugnacaoText,
   copiado,
   onCopy,
+  titulo = 'Peça de Impugnação',
 }: ImpugnacaoModalProps) {
   if (!isOpen) return null;
 
@@ -36,7 +40,7 @@ export default function ImpugnacaoModal({
               <Scale size={18} />
             </div>
             <div>
-              <h3 className="text-lg font-black text-slate-900 leading-none truncate">Peça de Impugnação</h3>
+              <h3 className="text-lg font-black text-slate-900 leading-none truncate">{titulo}</h3>
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">Gerado pela Bawzi Legal AI</p>
             </div>
           </div>

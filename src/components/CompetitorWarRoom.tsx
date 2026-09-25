@@ -14,7 +14,7 @@ import {
   linkExternoValido,
   type ContratoDoConcorrente,
 } from '@/lib/perfilConcorrente';
-import { montarSecaoDeEvidencias, resumoDaMediana } from '@/lib/evidenciasPreco';
+import { fontesSemResposta, montarSecaoDeEvidencias, resumoDaMediana } from '@/lib/evidenciasPreco';
 
 // ─── Tipos do domínio ────────────────────────────────────────────────────────
 
@@ -144,6 +144,16 @@ export interface PricingIntelligenceData {
   perfilVencedor?: string | null;
   /** Motivo textual quando o deságio não pôde ser apurado. */
   desagioIndisponivelMotivo?: string | null;
+  /** O war room NÃO CONCLUIU nesta análise (estourou o teto ou falhou) —
+   *  não é falta de histórico, e o conselho de "termo mais específico" não
+   *  se aplica (25/09/2026). O backend também deixa de servir este laudo do
+   *  cache. */
+  warRoomIndisponivel?: boolean;
+  /** Fontes que ficaram sem resposta nesta execução do war room (cortadas
+   *  pelo orçamento de tempo ou com falha), em chaves estáveis; o texto sai de
+   *  `fontesSemResposta`. O backend também deixa de servir este laudo do cache
+   *  (25/09/2026). */
+  coletaIncompleta?: string[];
   /** Metadados do deságio quando ele existe (amostra e método). */
   desagioBase?: { amostra: number; amostra_dispersao: number; metodo: string };
   /** Base do valor mediano de mercado: amostra, método, min/max. */
@@ -910,6 +920,8 @@ export default function CompetitorWarRoom({
   );
   const evidenciasAlvo = useMemo(() => evidenciasDoPerfil(perfilAlvo), [perfilAlvo]);
 
+  const avisoDeFontes = fontesSemResposta(pricing);
+
   const vereditoCompetitivo = useMemo(() => {
     const principal = concorrentesRanqueadosTodos[0] || null;
     // ⚠️ ELEGER UM LÍDER EXIGE QUE HAJA UM. Com cinco empresas de 1 vitória
@@ -1263,6 +1275,17 @@ export default function CompetitorWarRoom({
             </div>
           </div>
 
+          {/* ━━━ FONTES QUE FICARAM SEM RESPOSTA (25/09/2026) ━━━
+              O war room corta a fonte que não responde no orçamento de tempo e
+              entrega o resto. O corte aparece aqui para "não chegou" não ficar
+              igual a "não existe preço". */}
+          {avisoDeFontes.aviso && (
+            <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-500" />
+              <p className="text-[11px] font-semibold leading-relaxed text-amber-900">{avisoDeFontes.aviso}</p>
+            </div>
+          )}
+
           {/* ━━━ SEM BASE PARA INTELIGÊNCIA DE PREÇO ━━━
               Quando o backend não consegue apurar deságio/perfil, os campos vêm
               null (antes vinham 18,5% / "MODERADO" / "Estratégico" hardcoded).
@@ -1278,9 +1301,11 @@ export default function CompetitorWarRoom({
                   || 'Não foi possível apurar deságio e perfil de disputa para este objeto.'}
               </p>
               <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                Preferimos não exibir um número sem base histórica a mostrar uma estimativa
-                que você usaria para precificar. Uma busca com termo mais específico do
-                objeto costuma encontrar contratos comparáveis.
+                {pricing.warRoomIndisponivel
+                  ? 'Nada foi estimado no lugar: sem a busca de mercado, esta tela não mostra deságio, perfil de disputa nem evidências de preço.'
+                  : avisoDeFontes.faltouComplementoDoDesagio
+                    ? 'A consulta de contratos no PNCP que completaria a amostra ficou sem resposta nesta análise. Nada foi estimado no lugar; refazer a análise pode completar.'
+                    : 'Preferimos não exibir um número sem base histórica a mostrar uma estimativa que você usaria para precificar. Uma busca com termo mais específico do objeto costuma encontrar contratos comparáveis.'}
               </p>
             </div>
           )}
@@ -1528,7 +1553,9 @@ export default function CompetitorWarRoom({
                 <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-5">
                   {secao.modo === 'itens'
                     ? 'Só preços dos itens deste edital. Cada item é comparado com o próprio mercado: pelo código CATMAT quando tem um; pela descrição e pela unidade quando não tem (preço por UST só se compara com preço por UST). Preços que variam mais de 6× entre si são marcados como objetos divergentes.'
-                    : 'O edital não trouxe a lista de itens do PNCP, então a busca foi pelo objeto do edital. Confira se as descrições abaixo são do mesmo produto ou serviço antes de usar os números.'}
+                    : avisoDeFontes.faltouListaDeItens
+                      ? 'A lista de itens do edital no PNCP não chegou nesta análise, então a busca foi pelo objeto do edital. Confira se as descrições abaixo são do mesmo produto ou serviço antes de usar os números.'
+                      : 'O edital não trouxe a lista de itens do PNCP, então a busca foi pelo objeto do edital. Confira se as descrições abaixo são do mesmo produto ou serviço antes de usar os números.'}
                 </p>
                 <div className="space-y-3">
                   {secao.blocos.map((b, idx) => {

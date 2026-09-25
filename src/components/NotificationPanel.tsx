@@ -1,39 +1,18 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, BellRing, CheckCheck, ShieldAlert, Zap, RefreshCw, Sparkles, ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
+import { X, BellRing, CheckCheck, CheckCircle2, Trash2 } from 'lucide-react';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import {
+  contagemDoSino, contagensPorTipo, filtrarPorTipo, rodapeDoRadar, secoesDoRadar, subtituloDoRadar,
+  type GrupoDeAlertas, type Notificacao, type TipoDeAlerta,
+} from '@/lib/radar';
+import { CardDeAlerta, ChipsDoRadar, SecaoVencidos, type EstadoDoCard } from './SinoDeAlertas';
 
-// ─────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────
-export interface Notificacao {
-  _id: string;
-  // ⚠️ FALTAVAM TRÊS. O catálogo (`catalogo_alertas.py`) tem dez tipos; esta
-  // união listava sete. `disputa_abrindo`, `pncp_resultado` e `radar_alerta`
-  // chegavam do servidor e caíam no rótulo genérico "Ver detalhes" porque
-  // nenhuma tabela desta tela os reconhecia.
-  tipo: 'compliance' | 'matchmaker' | 'renovacao' | 'oportunidade' | 'prazo'
-      | 'decisao' | 'pncp_mudanca' | 'disputa_abrindo' | 'pncp_resultado' | 'radar_alerta';
-  prioridade: 1 | 2 | 3;
-  icone: string;
-  titulo: string;
-  mensagem: string;
-  url: string;
-  lida: boolean;
-  criada_em?: string;
-  /** ⚠️ ISTO SEMPRE VEIO DO SERVIDOR E NINGUÉM LIA.
-   *  Todo alerta que aponta para a Gestão grava `dados.analysis_id` desde que
-   *  foi escrito, e `_serialize` no `router_notifications.py` devolve o
-   *  documento inteiro. O identificador do item estava no payload o tempo
-   *  todo — o que faltava era a tela usar, em vez de só trocar de aba. */
-  dados?: {
-    analysis_id?: string;
-    ncp?: string;
-    [k: string]: unknown;
-  };
-}
+// O modelo do alerta mora em `lib/radar` (25/09/2026), junto do que a tela
+// calcula a partir dele; fica exportado daqui para quem já importava.
+export type { Notificacao } from '@/lib/radar';
 
 /** Para onde um clique leva. `analysisId` é o que transforma "abrir a Gestão"
  *  em "abrir ESTE edital na Gestão". */
@@ -48,144 +27,9 @@ interface NotificationPanelProps {
   onCountChange?: (count: number) => void;
 }
 
-
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
-function timeAgo(iso?: string): string {
-  if (!iso) return '';
-  try {
-    const diff = Date.now() - new Date(iso).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return 'agora';
-    if (m < 60) return `${m}min`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h`;
-    return `${Math.floor(h / 24)}d`;
-  } catch { return ''; }
-}
-
-const TIPO_CONFIG: Record<string, {
-  accent: string;
-  badge: string;
-  iconBg: string;
-  cta: string;
-  ctaHover: string;
-  label: string;
-}> = {
-  compliance:   {
-    accent:   'border-red-400',
-    badge:    'bg-red-100 text-red-700',
-    iconBg:   'bg-red-500',
-    cta:      'bg-red-50 border-red-200 text-red-700',
-    ctaHover: 'hover:bg-red-100 hover:border-red-400',
-    label:    'Compliance',
-  },
-  matchmaker:   {
-    accent:   'border-indigo-400',
-    badge:    'bg-indigo-100 text-indigo-700',
-    iconBg:   'bg-indigo-500',
-    cta:      'bg-indigo-50 border-indigo-200 text-indigo-700',
-    ctaHover: 'hover:bg-indigo-100 hover:border-indigo-400',
-    label:    'Match',
-  },
-  renovacao:    {
-    accent:   'border-amber-400',
-    badge:    'bg-amber-100 text-amber-700',
-    iconBg:   'bg-amber-500',
-    cta:      'bg-amber-50 border-amber-200 text-amber-700',
-    ctaHover: 'hover:bg-amber-100 hover:border-amber-400',
-    label:    'Renovação',
-  },
-  oportunidade: {
-    accent:   'border-emerald-400',
-    badge:    'bg-emerald-100 text-emerald-700',
-    iconBg:   'bg-emerald-500',
-    cta:      'bg-emerald-50 border-emerald-200 text-emerald-700',
-    ctaHover: 'hover:bg-emerald-100 hover:border-emerald-400',
-    label:    'Oportunidade',
-  },
-  prazo: {
-    accent:   'border-red-400',
-    badge:    'bg-red-100 text-red-700',
-    iconBg:   'bg-red-500',
-    cta:      'bg-red-50 border-red-200 text-red-700',
-    ctaHover: 'hover:bg-red-100 hover:border-red-400',
-    label:    'Prazo crítico',
-  },
-  decisao: {
-    accent:   'border-sky-400',
-    badge:    'bg-sky-100 text-sky-700',
-    iconBg:   'bg-sky-500',
-    cta:      'bg-sky-50 border-sky-200 text-sky-700',
-    ctaHover: 'hover:bg-sky-100 hover:border-sky-400',
-    label:    'Decisão',
-  },
-  pncp_mudanca: {
-    accent:   'border-sky-400',
-    badge:    'bg-sky-100 text-sky-700',
-    iconBg:   'bg-sky-500',
-    cta:      'bg-sky-50 border-sky-200 text-sky-700',
-    ctaHover: 'hover:bg-sky-100 hover:border-sky-400',
-    label:    'PNCP',
-  },
-};
-
-function TipoIcon({ tipo }: { tipo: string }) {
-  const cls = 'text-white';
-  const sz  = 17;
-  if (tipo === 'compliance')   return <ShieldAlert size={sz} className={cls} />;
-  if (tipo === 'matchmaker')   return <Zap         size={sz} className={cls} />;
-  if (tipo === 'renovacao')    return <RefreshCw   size={sz} className={cls} />;
-  if (tipo === 'oportunidade') return <Sparkles    size={sz} className={cls} />;
-  if (tipo === 'prazo')        return <BellRing    size={sz} className={cls} />;
-  if (tipo === 'decisao')      return <CheckCircle2 size={sz} className={cls} />;
-  if (tipo === 'pncp_mudanca') return <RefreshCw   size={sz} className={cls} />;
-  return <ShieldAlert size={sz} className={cls} />;
-}
-
-// ─────────────────────────────────────────────
-// Status badge
-// ─────────────────────────────────────────────
-type StatusNotif = 'nao-lida' | 'lida' | 'aberto';
-
-function StatusBadge({ status }: { status: StatusNotif }) {
-  if (status === 'nao-lida') return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-100">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-      Não lida
-    </span>
-  );
-  if (status === 'aberto') return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
-      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-      Aberto
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-200">
-      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-      Lida
-    </span>
-  );
-}
-
-// ⚠️ O RÓTULO PROMETE O QUE O CLIQUE FAZ, e por isso os de Gestão mudaram.
-// "Abrir gestão" era literal — e era o problema: levava à lista e deixava a
-// pessoa procurar o edital cujo nome estava escrito na própria notificação.
-// Agora o clique abre o edital, então o rótulo diz isso.
-const CTA_LABEL: Record<string, string> = {
-  compliance:     'Verificar certidões',
-  matchmaker:     'Ver editais',
-  renovacao:      'Ver contratos',
-  oportunidade:   'Ver oportunidade',
-  prazo:          'Abrir este edital',
-  decisao:        'Revisar decisão',
-  pncp_mudanca:   'Abrir este edital',
-  pncp_resultado: 'Ver o resultado',
-  disputa_abrindo: 'Ver contrato',
-  radar_alerta:   'Ver editais',
-};
+/** O que o teto do servidor devolve no máximo (`_LIMITE_NAO_LIDAS`). Ao bater
+ *  nele o cabeçalho diz "100+", em vez de fingir que a conta é essa. */
+const TETO_DO_SERVIDOR = 100;
 
 // ─────────────────────────────────────────────
 // Hook reutilizável
@@ -195,6 +39,9 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
+  /** Quando o servidor respondeu pela última vez — é o que o rodapé mostra,
+   *  no lugar do "Atualização semanal" que não era verdade para nenhum tipo. */
+  const [ultimaVerificacao, setUltimaVerificacao] = useState<Date | null>(null);
   const intervalRef           = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const check = useCallback(async (silent = false) => {
@@ -217,7 +64,8 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
         return;
       }
       setNotifs(data as Notificacao[]);
-      onCountChange?.((data as Notificacao[]).filter(n => !n.lida).length);
+      setUltimaVerificacao(new Date());
+      onCountChange?.(contagemDoSino(data as Notificacao[]));
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       /* silencioso */
@@ -234,28 +82,33 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [token, check]);
 
-  // Marca como lida (mantém na lista)
-  const marcarLida = useCallback(async (id: string) => {
+  /** Marca lidas (mantém na lista até a próxima verificação). Uma chamada
+   *  para o grupo inteiro: tirar o card das três alterações tira as três. */
+  const marcarLidas = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
     try {
-      await apiFetch(`${API_URL}/api/notifications/${id}/read`, {
+      await apiFetch(`${API_URL}/api/notifications/read-many`, {
         method: 'PATCH',
-      });
-      setNotifs(prev => {
-        const updated = prev.map(n => n._id === id ? { ...n, lida: true } : n);
-        onCountChange?.(updated.filter(n => !n.lida).length);
-        return updated;
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
       });
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       /* silencioso */
     }
+    const marcados = new Set(ids);
+    setNotifs(prev => {
+      const updated = prev.map(n => marcados.has(n._id) ? { ...n, lida: true } : n);
+      onCountChange?.(contagemDoSino(updated));
+      return updated;
+    });
   }, [token, onCountChange]);
 
   // Marca como lida + registra como "aberto" (quando o CTA é clicado)
-  const abrirNotificacao = useCallback(async (id: string) => {
-    await marcarLida(id);
-    setAbertos(prev => new Set([...prev, id]));
-  }, [marcarLida]);
+  const abrirNotificacoes = useCallback(async (ids: string[]) => {
+    await marcarLidas(ids);
+    setAbertos(prev => new Set([...prev, ...ids]));
+  }, [marcarLidas]);
 
   // Marca todas como lidas (mantém na lista)
   const marcarTodasLidas = useCallback(async () => {
@@ -271,22 +124,27 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
     }
   }, [token, onCountChange]);
 
-  // Remove uma notificação individualmente
-  const remover = useCallback(async (id: string) => {
+  /** Tira da lista (o servidor só marca lida: o fingerprint fica, para o
+   *  alerta não renascer). Serve para um grupo e para "Limpar vencidos". */
+  const remover = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
     try {
-      await apiFetch(`${API_URL}/api/notifications/${id}`, {
-        method: 'DELETE',
+      await apiFetch(`${API_URL}/api/notifications/read-many`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
       });
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       /* silencioso */
     }
+    const removidos = new Set(ids);
     setNotifs(prev => {
-      const updated = prev.filter(n => n._id !== id);
-      onCountChange?.(updated.filter(n => !n.lida).length);
+      const updated = prev.filter(n => !removidos.has(n._id));
+      onCountChange?.(contagemDoSino(updated));
       return updated;
     });
-    setAbertos(prev => { const s = new Set(prev); s.delete(id); return s; });
+    setAbertos(prev => { const s = new Set(prev); ids.forEach((id) => s.delete(id)); return s; });
   }, [token, onCountChange]);
 
   // Remove todas as notificações
@@ -305,8 +163,8 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
   }, [token, onCountChange]);
 
   return {
-    notifs, abertos, loading, checked,
-    check, marcarLida, abrirNotificacao,
+    notifs, abertos, loading, checked, ultimaVerificacao,
+    check, marcarLidas, abrirNotificacoes,
     marcarTodasLidas, remover, removerTodas,
   };
 }
@@ -317,19 +175,34 @@ export function useNotificacoes(token: string, onCountChange?: (n: number) => vo
 export default function NotificationPanel({ token, onNavigate, onCountChange }: NotificationPanelProps) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [filtro, setFiltro] = useState<TipoDeAlerta | null>(null);
+  const [vencidosAbertos, setVencidosAbertos] = useState(false);
   const {
-    notifs, abertos, loading, checked,
-    abrirNotificacao, marcarTodasLidas, remover, removerTodas,
+    notifs, abertos, loading, checked, ultimaVerificacao,
+    abrirNotificacoes, marcarTodasLidas, remover, removerTodas,
   } = useNotificacoes(token, onCountChange);
 
   useEffect(() => { setMounted(true); }, []);
 
+  // ⚠️ RECALCULADO A CADA RENDER, DE PROPÓSITO: "vence hoje" tem de virar
+  // "venceu ontem" quando o dia vira, sem esperar o alerta mudar. A cada
+  // verificação (2 min) a lista é nova e tudo é reavaliado.
+  const hoje = new Date();
+  const secoes = useMemo(() => secoesDoRadar(notifs, hoje), [notifs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const contagens = useMemo(() => contagensPorTipo(secoes.ativos), [secoes]);
+  const ativosVisiveis = filtrarPorTipo(secoes.ativos, filtro);
+  const vencidosVisiveis = filtrarPorTipo(secoes.vencidos, filtro);
   const unread = notifs.filter(n => !n.lida).length;
+  /** O mesmo número que vai para o sino da barra lateral. */
+  const pendentes = useMemo(() => contagemDoSino(notifs, hoje), [notifs]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Se o tipo filtrado sumiu (apagou o último), o filtro volta para "Todos".
+  const filtroValido = filtro === null || contagens.some((c) => c.tipo === filtro);
+  const filtroAtivo = filtroValido ? filtro : null;
 
-  function getStatus(n: Notificacao): StatusNotif {
-    if (abertos.has(n._id)) return 'aberto';
-    if (n.lida) return 'lida';
-    return 'nao-lida';
+  function estadoDe(g: GrupoDeAlertas): EstadoDoCard {
+    if (g.ids.some((id) => abertos.has(id))) return 'aberto';
+    if (g.itens.every((n) => n.lida)) return 'lida';
+    return 'pendente';
   }
 
   /** ⚠️ O DESTINO É A ABA MAIS O ITEM — e o item já vinha junto.
@@ -348,6 +221,8 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
    *  para o que é genuinamente outra página (ex.: `/profile`). */
   const ABAS_INTERNAS = new Set([
     'workspace', 'gestao', 'renovacoes', 'radar', 'history', 'analise', 'concorrentes',
+    // O aviso de contrato próprio a vencer (25/09/2026) aponta para cá.
+    'meus-contratos',
   ]);
 
   function destinoDe(n: Notificacao): { aba: string; alvo?: AlvoNotificacao } | null {
@@ -365,8 +240,9 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
     return { aba, alvo: analysisId || ncp ? { analysisId, ncp } : undefined };
   }
 
-  function handleClick(n: Notificacao) {
-    abrirNotificacao(n._id);
+  function abrirGrupo(g: GrupoDeAlertas) {
+    const n = g.principal;
+    void abrirNotificacoes(g.ids);
     const destino = destinoDe(n);
     if (destino) {
       onNavigate?.(destino.aba, destino.alvo);
@@ -380,6 +256,11 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
     }
   }
 
+  const limparVencidos = () => {
+    void remover(secoes.vencidos.flatMap((g) => g.ids));
+    setVencidosAbertos(false);
+  };
+
   return (
     <>
       {/* ── Botão sino ─────────────────────────────────────────────────────── */}
@@ -388,10 +269,10 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
         className="relative flex items-center justify-center w-10 h-10 rounded-2xl text-slate-500 hover:bg-white hover:text-slate-900 hover:shadow-sm transition-all"
         aria-label="Notificações"
       >
-        <BellRing size={20} className={unread > 0 ? 'text-amber-500' : ''} />
-        {unread > 0 && (
+        <BellRing size={20} className={pendentes > 0 ? 'text-amber-500' : ''} />
+        {pendentes > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[9px] font-black rounded-full leading-none ring-2 ring-white">
-            {unread > 9 ? '9+' : unread}
+            {pendentes > 9 ? '9+' : pendentes}
           </span>
         )}
       </button>
@@ -429,7 +310,7 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
               {/* Ícone animado */}
               <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-lg shadow-orange-900/30 shrink-0">
                 <BellRing size={18} className="text-white" />
-                {unread > 0 && (
+                {pendentes > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-slate-900 animate-pulse" />
                 )}
               </div>
@@ -438,9 +319,7 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
                   Radar Estratégico
                 </h2>
                 <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                  {unread > 0
-                    ? `${unread} alerta${unread !== 1 ? 's' : ''} pendente${unread !== 1 ? 's' : ''}`
-                    : notifs.length > 0 ? `${notifs.length} notificaç${notifs.length !== 1 ? 'ões' : 'ão'}` : 'Tudo em dia'}
+                  {subtituloDoRadar(pendentes, secoes.vencidos.length, notifs.length >= TETO_DO_SERVIDOR)}
                 </p>
               </div>
             </div>
@@ -469,27 +348,18 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
               <button
                 onClick={() => setOpen(false)}
                 className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-all"
+                aria-label="Fechar"
               >
                 <X size={16} />
               </button>
             </div>
           </div>
 
-          {/* Pills de tipos com contagem */}
-          {unread > 0 && (
-            <div className="relative flex items-center gap-2 mt-4 flex-wrap">
-              {(['compliance','matchmaker','renovacao','oportunidade'] as const).map(tipo => {
-                const count = notifs.filter(n => n.tipo === tipo && !n.lida).length;
-                if (!count) return null;
-                const cfg = TIPO_CONFIG[tipo];
-                return (
-                  <span key={tipo} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${cfg.badge}`}>
-                    {count} {cfg.label}
-                  </span>
-                );
-              })}
-            </div>
-          )}
+          {/* Chips por tipo — clicáveis, filtram a lista. Antes eram quatro
+              pílulas fixas (compliance, match, renovação, oportunidade) que
+              não contavam prazos, mudanças nem disputas — os três tipos que
+              mais aparecem — e não faziam nada ao clicar. */}
+          <ChipsDoRadar contagens={contagens} ativo={filtroAtivo} onEscolher={setFiltro} />
         </div>
 
         {/* ── Lista ────────────────────────────────────────────────────────── */}
@@ -518,98 +388,34 @@ export default function NotificationPanel({ token, onNavigate, onCountChange }: 
             </div>
           )}
 
-          {/* Cards */}
-          {notifs.map((n) => {
-            const cfg    = TIPO_CONFIG[n.tipo] ?? TIPO_CONFIG.compliance;
-            const status = getStatus(n);
+          {/* Só vencidos: o que sobrou já passou. */}
+          {checked && notifs.length > 0 && secoes.ativos.length === 0 && (
+            <p className="px-3 pt-4 pb-2 text-center text-[11px] font-medium text-slate-400">
+              Nada em aberto — o que resta já venceu.
+            </p>
+          )}
 
-            return (
-              <div
-                key={n._id}
-                className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden border-l-4 ${cfg.accent} ${status === 'lida' || status === 'aberto' ? 'opacity-70' : ''}`}
-              >
-                {/* Topo do card.
-                    ⚠️ CLICÁVEL AGORA — e o próprio código já esperava isso: o
-                    botão de remover, logo abaixo, sempre teve
-                    `e.stopPropagation()`, que só faz sentido se houver um
-                    clique no pai para interromper. Ele nunca existiu. Quem lia
-                    a mensagem clicava nela, não acontecia nada, e o caminho
-                    real era um botão pequeno no rodapé do card.
-                    Não vira `<button>` porque há botão dentro (remover) —
-                    aninhar botão é HTML inválido e quebra o teclado. */}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => handleClick(n)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(n); }
-                  }}
-                  className="cursor-pointer px-4 pt-4 pb-3 transition-colors hover:bg-slate-50/70 focus:outline-none focus-visible:bg-slate-50"
-                >
-                  <div className="flex items-start gap-3">
-                    {/* Ícone */}
-                    <div className={`w-9 h-9 rounded-xl ${cfg.iconBg} flex items-center justify-center shrink-0`}>
-                      <TipoIcon tipo={n.tipo} />
-                    </div>
+          {/* Cards, um por grupo */}
+          {ativosVisiveis.map((g) => (
+            <CardDeAlerta key={g.chave} grupo={g} estado={estadoDe(g)} hoje={hoje} onAbrir={abrirGrupo} onRemover={(grupo) => void remover(grupo.ids)} />
+          ))}
 
-                    {/* Texto */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="text-[11px] font-black text-slate-900 uppercase tracking-tight leading-tight">
-                          {n.titulo}
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {n.criada_em && (
-                            <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-md">
-                              {timeAgo(n.criada_em)}
-                            </span>
-                          )}
-                          {/* Botão remover individual */}
-                          <button
-                            onClick={(e) => { e.stopPropagation(); remover(n._id); }}
-                            className="p-0.5 rounded-md text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                            title="Remover notificação"
-                          >
-                            <X size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Status badge */}
-                      <div className="mb-2">
-                        <StatusBadge status={status} />
-                      </div>
-
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
-                        {n.mensagem}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rodapé do card — CTA */}
-                <div className="px-4 py-2.5 border-t border-slate-100">
-                  <button
-                    onClick={() => handleClick(n)}
-                    className={`
-                      w-full flex items-center justify-between gap-2
-                      px-3 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest
-                      transition-all ${cfg.cta} ${cfg.ctaHover}
-                    `}
-                  >
-                    <span>{CTA_LABEL[n.tipo] ?? 'Ver detalhes'}</span>
-                    <ArrowRight size={13} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          <SecaoVencidos
+            grupos={vencidosVisiveis}
+            aberta={vencidosAbertos}
+            onAlternar={() => setVencidosAbertos((v) => !v)}
+            onLimpar={limparVencidos}
+            estadoDe={estadoDe}
+            hoje={hoje}
+            onAbrir={abrirGrupo}
+            onRemover={(grupo) => void remover(grupo.ids)}
+          />
         </div>
 
         {/* ── Rodapé ───────────────────────────────────────────────────────── */}
         <div className="px-5 py-3 border-t border-slate-200 bg-white">
           <p className="text-[10px] text-slate-400 font-medium text-center leading-relaxed">
-            Alertas gerados automaticamente · Atualização semanal
+            {rodapeDoRadar(ultimaVerificacao, hoje)}
           </p>
         </div>
       </div>

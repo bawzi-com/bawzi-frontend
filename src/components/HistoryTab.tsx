@@ -34,6 +34,7 @@ export default function HistoryTab({
   userTier = 1,
   onRedoAnalysis,
   abrirAnalysisId,
+  onAbrirConsumido,
   onAbrirComparar,
   onAprofundar,
   pesoProfunda,
@@ -56,6 +57,8 @@ export default function HistoryTab({
   /** Id de uma análise para abrir automaticamente assim que a lista carregar.
    *  Usado pelo badge "já analisado" do Radar, que leva direto ao laudo. */
   abrirAnalysisId?: string | null;
+  /** Avisa a casca que `abrirAnalysisId` foi atendido, para ela zerar. */
+  onAbrirConsumido?: () => void;
   /** Abre a comparação de laudos ("Priorizar"). No lançamento a comparação
    *  saiu da sidebar e vive aqui, onde os laudos já estão. */
   onAbrirComparar?: () => void;
@@ -166,6 +169,20 @@ export default function HistoryTab({
     if (token) loadData();
     else setIsLoading(false);
   }, [token, API_URL]);
+
+  /** ⚠️ ESTA PROP EXISTIA E NINGUÉM A LIA. `abrirAnalysisId` chega do Radar
+   *  ("já analisado → ver laudo") e, desde 25/09/2026, do sino (edital fora
+   *  da Gestão); a tela trocava de aba e parava na lista. Abre assim que a
+   *  lista carrega; se o laudo não está nela, abre pelo id mesmo — a rota
+   *  busca o documento inteiro. */
+  useEffect(() => {
+    if (!abrirAnalysisId || isLoading) return;
+    const alvo = analyses.find((a) => String(a.id) === String(abrirAnalysisId))
+      || ({ id: abrirAnalysisId } as SavedAnalysis);
+    void openAnalysisDetail(alvo);
+    onAbrirConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirAnalysisId, isLoading]);
 
   const toggleFavorite = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();

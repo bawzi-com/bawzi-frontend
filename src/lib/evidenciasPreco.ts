@@ -100,6 +100,7 @@ export interface EntradaDePreco {
   linhasPrecosUnitarios?: unknown;
   seloVerificacao?: unknown;
   coerenciaAmostra?: unknown;
+  coletaIncompleta?: unknown;
 }
 
 type Registro = Record<string, unknown>;
@@ -272,5 +273,53 @@ export function resumoDaMediana(pricing: EntradaDePreco | null | undefined): Res
     minimo: positivo(pricing?.valorMinimoUnitarioMercado),
     amostra: Math.max(0, Math.trunc(numero(pricing?.amostraPrecosUnitarios) ?? 0)),
     selo: comoSelo(pricing?.seloVerificacao),
+  };
+}
+
+/** Nome de cada fonte na frase do aviso. As chaves vêm do backend
+ *  (`coletaIncompleta`, pricing.py); chave nova sem nome aqui aparece crua. */
+const NOMES_DAS_FONTES: Record<string, string> = {
+  itens_edital: 'lista de itens do edital no PNCP',
+  busca_por_item: 'busca de preço por item do edital',
+  homologados: 'preços homologados do PNCP',
+  painel: 'Painel de Preços',
+  catmat: 'preços pelo código CATMAT',
+  base_local: 'base estruturada de contratos',
+  base_local_uf: 'base estruturada de contratos da UF',
+  complemento_desagio: 'contratos do PNCP para o deságio',
+};
+
+export interface FontesSemResposta {
+  /** Frase pronta para a tela, ou null quando nada faltou. */
+  aviso: string | null;
+  /** A lista de itens do edital não chegou: a seção caiu na busca pelo objeto
+   *  por falta de resposta, não porque o edital não tem itens. */
+  faltouListaDeItens: boolean;
+  /** O complemento do deságio pelo PNCP não chegou. */
+  faltouComplementoDoDesagio: boolean;
+}
+
+/**
+ * 25/09/2026: o war room passou a ter orçamento de tempo próprio. A fonte que
+ * não responde nele é cortada e o laudo sai com o resto, onde antes saía sem
+ * nada. O corte precisa aparecer na tela: sem o aviso, "não chegou" ficaria
+ * igual a "não existe preço", e o cartão sem base recomendaria "um termo mais
+ * específico".
+ */
+export function fontesSemResposta(pricing: EntradaDePreco | null | undefined): FontesSemResposta {
+  const bruto = pricing?.coletaIncompleta;
+  const chaves = Array.isArray(bruto) ? Array.from(new Set(bruto.map(texto).filter(Boolean))) : [];
+  if (chaves.length === 0) {
+    return { aviso: null, faltouListaDeItens: false, faltouComplementoDoDesagio: false };
+  }
+  const nomes = chaves.map(c => NOMES_DAS_FONTES[c] ?? c);
+  const lista = nomes.length === 1
+    ? nomes[0]
+    : `${nomes.slice(0, -1).join(', ')} e ${nomes[nomes.length - 1]}`;
+  return {
+    aviso: `Ficaram sem resposta nesta análise: ${lista}. Os números desta aba usam só o que chegou. `
+      + 'Refazer a análise pode completar, e o laudo refeito não reaproveita este.',
+    faltouListaDeItens: chaves.includes('itens_edital'),
+    faltouComplementoDoDesagio: chaves.includes('complemento_desagio'),
   };
 }

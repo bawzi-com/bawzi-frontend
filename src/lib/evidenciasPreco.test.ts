@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { montarSecaoDeEvidencias, resumoDaMediana } from './evidenciasPreco';
+import { fontesSemResposta, montarSecaoDeEvidencias, resumoDaMediana } from './evidenciasPreco';
 
 // A lista geral que a tela mostrava no edital de fábrica de software.
 const LISTA_GERAL_DO_LAUDO = [
@@ -154,5 +154,37 @@ describe('resumoDaMediana — o cartão acima da seção segue a mesma regra', (
     expect(r.modo).toBe('geral');
     expect([r.valor, r.minimo, r.amostra]).toEqual([504.75, 1.01, 12]);
     expect(r.selo?.nivel).toBe('fraco');
+  });
+});
+
+describe('fontesSemResposta — o que o war room cortou (25/09/2026)', () => {
+  it('sem corte, nada a dizer', () => {
+    for (const pricing of [undefined, null, {}, { coletaIncompleta: [] }, { coletaIncompleta: 'homologados' }]) {
+      expect(fontesSemResposta(pricing as never)).toEqual({
+        aviso: null, faltouListaDeItens: false, faltouComplementoDoDesagio: false,
+      });
+    }
+  });
+
+  it('nomeia as fontes em português, sem repetir, e diz que refazer pode completar', () => {
+    const r = fontesSemResposta({ coletaIncompleta: ['homologados', 'painel', 'homologados'] });
+    expect(r.aviso).toBe(
+      'Ficaram sem resposta nesta análise: preços homologados do PNCP e Painel de Preços. '
+      + 'Os números desta aba usam só o que chegou. Refazer a análise pode completar, '
+      + 'e o laudo refeito não reaproveita este.',
+    );
+    expect(r.faltouListaDeItens).toBe(false);
+  });
+
+  it('marca a lista de itens e o complemento do deságio, que mudam outros textos da aba', () => {
+    const r = fontesSemResposta({ coletaIncompleta: ['itens_edital', 'complemento_desagio', 'base_local'] });
+    expect(r.faltouListaDeItens).toBe(true);
+    expect(r.faltouComplementoDoDesagio).toBe(true);
+    expect(r.aviso).toContain(
+      'lista de itens do edital no PNCP, contratos do PNCP para o deságio e base estruturada de contratos');
+  });
+
+  it('chave que o front ainda não conhece aparece crua, não some', () => {
+    expect(fontesSemResposta({ coletaIncompleta: ['fonte_nova'] }).aviso).toContain('fonte_nova');
   });
 });

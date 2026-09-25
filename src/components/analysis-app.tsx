@@ -38,6 +38,7 @@ import AppSidebar from './AppSidebar';
 import ActiveCompanyBanner from './ActiveCompanyBanner';
 import ShareModal from './ShareModal';
 import ImpugnacaoModal from './ImpugnacaoModal';
+import { pedirPeca, TITULO_DA_PECA, type RiscoParaImpugnar, type TipoDePeca } from '@/lib/impugnacao';
 import TabQueryWatcher from './TabQueryWatcher';
 
 // Componentes externos (mantidos inalterados)
@@ -52,6 +53,7 @@ import ContratosVencendo from '../components/ContratosVencendo';
 import CapitalIntelligence from '../components/CapitalIntelligence';
 import CnaeOportunidades from '../components/CnaeOportunidades';
 import MeusContratos from '../components/MeusContratos';
+import type { FiltroInicial } from '../components/ContratosVencendo';
 import RadarAlertas from '../components/RadarAlertas';
 import OnboardingModal from '../components/OnboardingModal';
 import UpgradeModal from './UpgradeModal';
@@ -147,6 +149,13 @@ export default function AnalysisApp() {
   // Análise a abrir no histórico quando o usuário clica em "já analisado"
   // no Radar. Some depois de usada, para não reabrir ao voltar para a aba.
   const [analiseParaAbrir, setAnaliseParaAbrir] = useState<string | null>(null);
+  /** Leva ao laudo em Decisões: o Radar ("já analisado") e o sino (edital
+   *  fora da Gestão) usam o mesmo caminho. */
+  const abrirLaudoEmDecisoes = (analysisId: string) => {
+    setAnaliseParaAbrir(analysisId);
+    setActiveTab('history');
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 120);
+  };
   const [initialPncpQuery, setInitialPncpQuery] = useState('');
   const [initialPncpUf, setInitialPncpUf]       = useState('');
 
@@ -245,6 +254,15 @@ export default function AnalysisApp() {
   // Tabs e modais
   const [activeTab, setActiveTab]       = useState<string>('workspace');
 
+  /** O atalho de "Meus contratos" para o Pipeline de renovações: o filtro
+   *  (órgão ou fornecedor) que o Pipeline aplica ao abrir. Ele consome e
+   *  devolve `null`, senão voltar à aba reaplicaria o mesmo filtro. */
+  const [filtroDoPipeline, setFiltroDoPipeline] = useState<FiltroInicial | null>(null);
+  const abrirPipelineFiltrado = (filtro: FiltroInicial) => {
+    setFiltroDoPipeline(filtro);
+    setActiveTab('renovacoes');
+  };
+
   // Abre uma aba direto por URL: /workspace?tab=history
   // Sem isto, qualquer link vindo de fora — como o botão "Ir para Decisões" no
   // estado vazio da Gestão — só consegue largar o utilizador na aba padrão e
@@ -274,7 +292,9 @@ export default function AnalysisApp() {
     if (tabNaUrl === undefined) return;
     const ABAS_VALIDAS = [
       'workspace', 'analise', 'concorrentes', 'renovacoes',
-      'alertas', 'cnae', 'parametrizacao', 'history', 'gestao', 'comparar',
+      // 'meus-contratos' entrou em 25/09/2026: é para onde o e-mail de
+      // contrato próprio a vencer aponta (?tab=meus-contratos).
+      'alertas', 'cnae', 'parametrizacao', 'history', 'gestao', 'comparar', 'meus-contratos',
       // 'capital' só entra com a flag — um link antigo ?tab=capital não pode
       // abrir uma aba que a sidebar do lançamento esconde.
       ...(LAUNCH_FLAGS.capital ? ['capital'] : []),
@@ -672,11 +692,18 @@ export default function AnalysisApp() {
               // `cnpj` quando o endpoint exige `q` com o termo do segmento
               // (422), e lia `data.contratos`/`data.results` quando a resposta
               // é `{status, count, data: [...]}` — então mesmo um 200 daria 0.
-              // O termo vem do CNAE da empresa, igual ao ContratosVencendo.tsx.
-              const termoSegmento = (companies[0]?.cnae_descricao || '').trim();
-              if (termoSegmento.length >= 2) {
+              // ⚠️ E O TERMO NÃO ERA O DA TELA (25/09/2026). Aqui ia a descrição
+              // inteira do CNAE; a tela usava outro termo, derivado dela, e
+              // abria em 30 dias. O número do menu nunca batia com a lista.
+              // Agora os dois mandam o CNAE, o servidor resolve os termos do
+              // setor pela mesma tabela, e a tela abre nos mesmos 90 dias.
+              const cnaeEmpresa = String(companies[0]?.cnae_principal || '').trim();
+              const descricaoCnae = String(companies[0]?.cnae_descricao || '').trim();
+              if (cnaeEmpresa || descricaoCnae) {
                 try {
-                  const params = new URLSearchParams({ q: termoSegmento, dias: '90' });
+                  const params = new URLSearchParams({ dias: '90' });
+                  if (cnaeEmpresa) params.set('cnae', cnaeEmpresa);
+                  if (descricaoCnae) params.set('cnae_descricao', descricaoCnae);
                   const r = await apiFetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`);
                   if (r.ok) {
                     const data = await r.json();
@@ -817,45 +844,35 @@ export default function AnalysisApp() {
    * portão de Nível 4 na Gestão: recurso construído, pago, e sem caminho
    * até ele.
    */
-  const [gerandoImpugnacao, setGerandoImpugnacao] = useState(false);
+  // Qual peça está sendo redigida, e qual foi a última — o modal diz se é a
+  // impugnação ou o pedido de esclarecimento (25/09/2026).
+  const [gerandoPeca, setGerandoPeca] = useState<TipoDePeca | null>(null);
+  const [tipoDaPeca, setTipoDaPeca] = useState<TipoDePeca>('impugnacao');
 
-  const handleGerarImpugnacao = useCallback(async (
-    riscos: Array<{ titulo: string; descricao: string }>,
+  const handleGerarPeca = useCallback(async (
+    tipo: TipoDePeca,
+    riscos: RiscoParaImpugnar[],
   ) => {
     // O endpoint exige o texto do edital (`edital_texto`) e recusa com 400 sem
     // ele. Mesma condição do "Aprofundar": um laudo aberto pelo histórico não
     // tem o texto carregado. Quem chama já esconde o botão nesse caso — este
     // guarda é a rede, para o pedido não sair e voltar 400.
     if (!text.trim() || riscos.length === 0) return;
-    setGerandoImpugnacao(true);
+    setGerandoPeca(tipo);
     try {
-      const res = await apiFetch(`${API_URL}/api/gerar-impugnacao`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // ⚠️ `provedor` NÃO viaja daqui. O corpo do pedido aceita esse campo, e
-        // deixar o cliente escolher o provedor de um modelo caro é o defeito
-        // que o teto diário existe para conter. Sem o campo, o backend usa o
-        // seu default.
-        body: JSON.stringify({ edital_texto: text, riscos_identificados: riscos }),
-      });
-      if (!res.ok) {
-        const erro = await res.json().catch(() => null);
-        // O 429 da cota diária traz `{codigo, titulo, mensagem, uso_atual,
-        // limite}` — `mensagemDeErro` já lê `mensagem` de dentro do objeto, e
-        // é ela que diz "o contador zera amanhã", que é o que a pessoa
-        // precisa de saber.
-        throw new Error(mensagemDeErro(erro?.detail, 'Não foi possível gerar a peça de impugnação.'));
-      }
-      const dados = await res.json().catch(() => null);
-      const documento = String(dados?.documento_markdown || '').trim();
-      if (!documento) throw new Error('A peça voltou vazia. Tente novamente em instantes.');
+      // O pedido mora em `lib/impugnacao.ts` (25/09/2026): teto de tempo
+      // próprio — o padrão de 20 s do apiFetch cortava toda peça no meio,
+      // enquanto o servidor terminava a redação e descontava a cota — e as
+      // mensagens de erro, com testes.
+      const documento = await pedirPeca(tipo, text, riscos);
       setImpugnacaoText(documento);
+      setTipoDaPeca(tipo);
       setShowImpugnacaoModal(true);
     } catch (err: unknown) {
       if (err instanceof SessionExpiredError) return;
-      showError(err instanceof Error ? err.message : 'Erro ao gerar a peça de impugnação.');
+      showError(err instanceof Error ? err.message : 'Erro ao gerar a peça.');
     } finally {
-      setGerandoImpugnacao(false);
+      setGerandoPeca(null);
     }
   }, [text, setImpugnacaoText, showError]);
 
@@ -1399,11 +1416,7 @@ export default function AnalysisApp() {
                             }}
                             initialQuery={initialPncpQuery}
                             initialUf={initialPncpUf}
-                            onAbrirAnalise={(analysisId) => {
-                              setAnaliseParaAbrir(analysisId);
-                              setActiveTab('history');
-                              setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 120);
-                            }}
+                            onAbrirAnalise={abrirLaudoEmDecisoes}
                             // Sem a flag do Capital, o botão nem aparece no
                             // Radar (prop undefined) — melhor que aparecer e
                             // levar a uma aba em branco.
@@ -1527,8 +1540,8 @@ export default function AnalysisApp() {
                       // laudo mostra as cláusulas a impugnar e explica por que
                       // não pode redigir agora — em vez de oferecer um botão
                       // que volta 400.
-                      onGerarImpugnacao={token && text.trim().length >= 80 ? handleGerarImpugnacao : undefined}
-                      gerandoImpugnacao={gerandoImpugnacao}
+                      onGerarPeca={token && text.trim().length >= 80 ? handleGerarPeca : undefined}
+                      gerandoPeca={gerandoPeca}
                       // Só o MULTIPLICADOR do plano: a conta sai de
                       // `result.creditos × peso` dentro do banner. Estimar
                       // pelo texto da tela subestimava o preço (o backend
@@ -1592,6 +1605,8 @@ export default function AnalysisApp() {
                       token={token ?? ''}
                       companies={companies}
                       defaultUf={activeCompany?.uf || userData?.company?.uf || ''}
+                      filtroInicial={filtroDoPipeline}
+                      onFiltroInicialConsumido={() => setFiltroDoPipeline(null)}
                       onAnalyzeEdital={(textoExtraido, termoPesquisado, editalDados) => {
                         setResult(null);
                         setError(null);
@@ -1650,7 +1665,21 @@ export default function AnalysisApp() {
                   porque a API do PNCP não oferece esse recorte. */}
               {activeTab === 'meus-contratos' && token && (
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <MeusContratos activeCnpj={userData?.active_cnpj} />
+                  <MeusContratos
+                    activeCnpj={userData?.active_cnpj}
+                    onAbrirPipeline={abrirPipelineFiltrado}
+                    onAnalyzeEdital={(textoExtraido, termoPesquisado, editalDados) => {
+                      setResult(null);
+                      setError(null);
+                      setText(textoExtraido);
+                      setTermoAlvo(termoPesquisado);
+                      setPncpData(editalDados || null);
+                      setActiveTab('analise');
+                      setTimeout(() => {
+                        document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 200);
+                    }}
+                  />
                 </div>
               )}
 
@@ -1707,6 +1736,7 @@ export default function AnalysisApp() {
                       onToggleSidebar={() => setSidebarHidden((v) => !v)}
                       onAbrirNaGestao={abrirNaGestao}
                       abrirAnalysisId={analiseParaAbrir}
+                      onAbrirConsumido={() => setAnaliseParaAbrir(null)}
                       onRedoAnalysis={(analiseAntiga) => {
                         setText(typeof analiseAntiga.raw_text === 'string' ? analiseAntiga.raw_text : '');
                         setActiveTab('workspace');
@@ -1783,6 +1813,7 @@ export default function AnalysisApp() {
                       onToggleSidebar={() => setSidebarHidden((v) => !v)}
                       foco={focoGestao}
                       onFocoConsumido={() => setFocoGestao(null)}
+                      onForaDaGestao={abrirLaudoEmDecisoes}
                     />
                   )}
                 </div>
@@ -1969,6 +2000,7 @@ export default function AnalysisApp() {
         isOpen={showImpugnacaoModal}
         onClose={() => setShowImpugnacaoModal(false)}
         impugnacaoText={impugnacaoText}
+        titulo={TITULO_DA_PECA[tipoDaPeca]}
         copiado={copiadoImpugnacao}
         onCopy={() => {
           navigator.clipboard.writeText(impugnacaoText);

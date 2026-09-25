@@ -5,9 +5,15 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 // contrato, e um ícone de documento sendo examinado diz isso. Emoji também
 // destoava — o resto da interface usa lucide, e emoji num botão de ação num
 // produto vendido a analista lê como protótipo.
-import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe, FileSearch } from 'lucide-react';
+import { RefreshCw, Tag, Search, Loader2, Building2, MapPin, Globe, FileSearch, Plus, X, Landmark, Briefcase } from 'lucide-react';
 import MunicipioAutocomplete from './MunicipioAutocomplete';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import {
+  avisoFiltrosIgnorados, avisoNaoConferidos, contarFiltros, dicaSemResultado, estiloDaProrrogacao,
+  FILTROS_VAZIOS, filtrosIgnorados, NOME_DO_CAMPO, parametrosDaBusca, podeBuscar, promptDeRenovacao, rotuloDoFiltro,
+  separarTermos, valorParaFiltrar,
+  type CampoDoFiltro, type FiltrosAplicados, type FiltrosDeEntidade, type SinalDeProrrogacao,
+} from '@/lib/renovacoes';
 
 // ─────────────────────────────────────────────
 // Tipos
@@ -38,8 +44,12 @@ interface ContratoVencendo {
   data_vigencia_ini?: string;
   dias_restantes?: number | null;
   is_oportunidade?: boolean;
+  /** Se ainda pode ser prorrogado em vez de ir a nova disputa (25/09/2026). */
+  prorrogacao?: SinalDeProrrogacao | null;
   metadados?: {
     orgao_nome?: string | null;
+    /** Do cadastro ou do número de controle: é o que o clique no órgão filtra. */
+    orgao_cnpj?: string | null;
     uf?: string | null;
     municipio?: string | null;
     fornecedor_nome?: string | null;
@@ -56,10 +66,22 @@ interface ContratoVencendo {
   };
 }
 
+/** Um filtro que outra tela manda para cá (o atalho de "Meus contratos"):
+ *  o campo, o valor (CNPJ com máscara ou nome) e o nome para o chip. */
+export interface FiltroInicial {
+  campo: CampoDoFiltro;
+  valor: string;
+  nome?: string;
+}
+
 interface ContratosVencendoProps {
   token: string;
   companies?: Array<{ razao_social?: string; cnpj?: string; cnae_descricao?: string; cnae_principal?: string }>;
   defaultUf?: string;
+  /** Chega já filtrando por um órgão ou fornecedor, sem termo: tudo o que
+   *  vence deles na janela. Consumido uma vez; a tela avisa quem mandou. */
+  filtroInicial?: FiltroInicial | null;
+  onFiltroInicialConsumido?: () => void;
   /** Dispara a análise Bawzi completa do edital que originou o contrato */
   onAnalyzeEdital?: (
     texto: string,
@@ -87,35 +109,6 @@ function ncpParaUrl(ncp: string): string | null {
   if (!m) return null;
   const [, cnpj, seq, ano] = m;
   return `https://pncp.gov.br/app/contratos/${cnpj}/${ano}/${parseInt(seq, 10)}`;
-}
-
-/**
- * Extrai palavras-chave de busca a partir da descrição do CNAE.
- * Remove o "burocratês" dos prefixos de ação e qualificadores após vírgula,
- * ficando apenas com os substantivos core do segmento.
- * Ex: "Atividades de consultoria em gestão empresarial, exceto..." → "consultoria gestão"
- */
-const CNAE_PREFIXOS = /^(atividades?\s+de|com[eé]rcio\s+(varejista|atacadista)\s+de|fabrica[çc][aã]o\s+de|servi[çc]os?\s+de|presta[çc][aã]o\s+de\s+servi[çc]os?\s+de|manuten[çc][aã]o\s+(e\s+)?repar[aã][çc][aã]o\s+de|instala[çc][aã]o\s+de|transporte\s+(rodovi[aá]rio\s+)?de|aluguel\s+de|loca[çc][aã]o\s+de|desenvolvimento\s+de|gest[aã]o\s+de|fornecimento\s+de|produ[çc][aã]o\s+de|apoio\s+[aà]|suporte\s+[aà]|execu[çc][aã]o\s+de|elabora[çc][aã]o\s+de|constru[çc][aã]o\s+de|capta[çc][aã]o\s+de)\s+/i;
-
-const CNAE_STOPWORDS = new Set([
-  'de','da','do','das','dos','em','na','no','nas','nos','a','o','as','os',
-  'e','ou','que','para','com','por','sem','sob','sobre','ser','ter','ao',
-  'aos','pelo','pela','pelos','pelas','um','uma','uns','umas','esse','essa',
-  'este','esta','seu','sua','seus','suas','outro','outros','outra','outras',
-]);
-
-function derivarKeywordsCnae(descricao: string): string {
-  // Remove prefixo de ação boilerplate
-  let limpo = descricao.trim().replace(CNAE_PREFIXOS, '');
-  // Remove qualificadores após vírgula ou parênteses
-  limpo = limpo.split(',')[0].split('(')[0].trim();
-  // Filtra stopwords e palavras muito curtas
-  const palavras = limpo
-    .split(/\s+/)
-    .map(w => w.replace(/[^a-záéíóúâêôãõüçàèìòùA-ZÁÉÍÓÚÂÊÔÃÕÜÇÀÈÌÒÙ]/g, '').toLowerCase())
-    .filter(w => w.length >= 4 && !CNAE_STOPWORDS.has(w));
-  // Retorna as 2–3 palavras mais representativas
-  return palavras.slice(0, 3).join(' ');
 }
 
 function formatarValor(v?: number): string {
@@ -240,19 +233,155 @@ const EXPLICACAO_URGENCIA: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────
+// Filtros de órgão e fornecedor (25/09/2026)
+// ─────────────────────────────────────────────
+// Sem hooks, para os testes renderizarem no servidor e clicarem sem navegador.
+
+type AoFiltrar = (campo: CampoDoFiltro, valor: string, nome: string) => void;
+
+/** O nome do órgão ou do fornecedor no cartão. Clicar filtra por ele: pelo
+ *  documento quando o contrato traz um, senão pelo nome. `span` e não
+ *  `button`: na linha do órgão o nome precisa fluir com a UF e ser cortado
+ *  com reticências junto dela, e botão não se comporta como texto corrido. */
+export function NomeFiltravel({ campo, nome, documento, rotulo, onFiltrar, className = '' }: {
+  campo: CampoDoFiltro;
+  nome?: string | null;
+  documento?: string | number | null;
+  rotulo?: string;
+  onFiltrar?: AoFiltrar;
+  className?: string;
+}) {
+  const texto = rotulo ?? nome ?? '';
+  const valor = valorParaFiltrar(campo, nome, documento);
+  if (!valor || !onFiltrar) return <span className={className}>{texto}</span>;
+  const filtrar = () => onFiltrar(campo, valor, String(nome ?? '').trim());
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={`Ver só os contratos deste ${NOME_DO_CAMPO[campo]}`}
+      onClick={filtrar}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          filtrar();
+        }
+      }}
+      className={`${className} cursor-pointer rounded-sm decoration-dotted underline-offset-2 hover:text-indigo-700 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300`}
+    >
+      {texto}
+    </span>
+  );
+}
+
+/** Os campos atrás do "+ Filtros". */
+export function PainelDeFiltros({ filtros, onMudar, onEnter, onLimpar }: {
+  filtros: FiltrosDeEntidade;
+  onMudar: (campo: CampoDoFiltro, valor: string) => void;
+  onEnter: () => void;
+  onLimpar: () => void;
+}) {
+  const campos: Array<{ campo: CampoDoFiltro; rotulo: string; icone: React.ReactNode; placeholder: string }> = [
+    { campo: 'orgao', rotulo: 'Órgão contratante', icone: <Landmark size={11} className="text-indigo-500" />,
+      placeholder: 'Nome ou CNPJ (ex.: Prefeitura de Goiânia)' },
+    { campo: 'fornecedor', rotulo: 'Fornecedor atual', icone: <Briefcase size={11} className="text-indigo-500" />,
+      placeholder: 'Nome, CNPJ ou CPF de quem tem o contrato' },
+  ];
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {campos.map(({ campo, rotulo, icone, placeholder }) => (
+          <label key={campo} className="block min-w-0">
+            <span className="mb-1 inline-flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              {icone} {rotulo}
+            </span>
+            <input
+              type="text"
+              value={filtros[campo]}
+              onChange={(e) => onMudar(campo, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onEnter(); }}
+              placeholder={placeholder}
+              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none transition-all placeholder:font-normal placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+            />
+          </label>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] font-bold text-slate-400">
+        Com órgão ou fornecedor preenchido, o termo pode ficar vazio: aparecem todos os contratos deles que vencem na janela.
+        {contarFiltros(filtros) > 0 && (
+          <button type="button" onClick={onLimpar} className="ml-2 font-black text-indigo-600 underline-offset-2 hover:underline">
+            Limpar filtros
+          </button>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** Os filtros que valeram na última busca e o que ficou de fora deles. */
+export function FiltrosDaBusca({ aplicados, nomes, ignorados, naoConferidos, onTirar }: {
+  aplicados: FiltrosAplicados | null;
+  nomes: Partial<Record<CampoDoFiltro, string>>;
+  ignorados: CampoDoFiltro[];
+  naoConferidos: number;
+  onTirar: (campo: CampoDoFiltro) => void;
+}) {
+  const chips = (['orgao', 'fornecedor'] as CampoDoFiltro[])
+    .map((campo) => ({ campo, rotulo: rotuloDoFiltro(aplicados?.[campo], nomes[campo]) }))
+    .filter((c): c is { campo: CampoDoFiltro; rotulo: string } => !!c.rotulo);
+  const avisoIgnorados = avisoFiltrosIgnorados(ignorados);
+  const avisoConferencia = aplicados?.fornecedor ? avisoNaoConferidos(naoConferidos) : null;
+  if (!chips.length && !avisoIgnorados && !avisoConferencia) return null;
+  return (
+    <div className="mb-5 space-y-2">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {chips.map(({ campo, rotulo }) => (
+            <span key={campo} className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10.5px] font-bold text-indigo-800">
+              <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-indigo-500">
+                {campo === 'orgao' ? 'Órgão' : 'Fornecedor'}
+              </span>
+              <span className="truncate">{rotulo}</span>
+              <button
+                type="button"
+                onClick={() => onTirar(campo)}
+                aria-label={`Tirar o filtro de ${NOME_DO_CAMPO[campo]}`}
+                className="shrink-0 rounded p-0.5 text-indigo-400 hover:bg-indigo-100 hover:text-indigo-700"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {avisoIgnorados && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
+          {avisoIgnorados}
+        </p>
+      )}
+      {avisoConferencia && (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-medium text-slate-600">
+          {avisoConferencia}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Componente
 // ─────────────────────────────────────────────
-export default function ContratosVencendo({ token, companies = [], defaultUf, onAnalyzeEdital }: ContratosVencendoProps) {
+export default function ContratosVencendo({
+  token, companies = [], defaultUf, onAnalyzeEdital, filtroInicial, onFiltroInicialConsumido,
+}: ContratosVencendoProps) {
   const primeiraEmpresa = companies[0];
 
-  // Keyword inicial — SOMENTE do CNAE se já disponível; vazio caso contrário
-  const initialTermo = (() => {
-    if (!primeiraEmpresa?.cnae_descricao) return '';
-    const kw = derivarKeywordsCnae(primeiraEmpresa.cnae_descricao);
-    return kw.length >= 2 ? kw : '';
-  })();
-
-  const [termo, setTermo]             = useState(initialTermo);
+  // ⚠️ O TERMO VEM DO SERVIDOR (25/09/2026). A tela derivava o termo da
+  // DESCRIÇÃO do CNAE ("Desenvolvimento de programas de computador sob
+  // encomenda" → "programas computador encomenda"), enquanto as Sugestões já
+  // usavam a tabela curada do setor. Agora os dois usam a tabela
+  // (`/api/pncp/termos-renovacao`), e o número do menu lateral também.
+  const [termo, setTermo]             = useState('');
   const [termoEditado, setTermoEditado] = useState(false); // evita sobrescrever edição manual
 
   // Metadados CNAE para exibir hint ao utilizador
@@ -269,7 +398,9 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
   const [uf, setUf]                     = useState(''); // default: Brasil todo
   const [municipioId, setMunicipioId]   = useState('');
   const [municipioNome, setMunicipioNome] = useState('');
-  const [dias, setDias]   = useState<30 | 60 | 90 | 180 | 365 | 730>(30);
+  // 90 dias, não 30 (25/09/2026): a própria dica do botão chama 30 dias de
+  // "janela de reação, não de preparação", e a tela promete antecipar.
+  const [dias, setDias]   = useState<30 | 60 | 90 | 180 | 365 | 730>(90);
   const [loading, setLoading]           = useState(false);
   const [contratos, setContratos]       = useState<ContratoVencendo[]>([]);
   const [buscado, setBuscado]           = useState(false);
@@ -277,6 +408,21 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
   const [fallbackNacional, setFallback] = useState(false);
   const [ufSolicitada, setUfSolicitada] = useState('');
   const [municipioSolicitado, setMunicipioSolicitado] = useState('');
+  // Filtros de órgão e fornecedor, atrás do "+ Filtros" (25/09/2026).
+  const [filtros, setFiltros] = useState<FiltrosDeEntidade>(FILTROS_VAZIOS);
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  // Clicado no cartão, o campo recebe o CNPJ e o chip mostra o nome junto:
+  // ninguém precisa decorar CNPJ para saber o que está filtrando.
+  const [nomesDosFiltros, setNomesDosFiltros] = useState<Partial<Record<CampoDoFiltro, string>>>({});
+  // O que foi na última busca e o que o servidor entendeu disso.
+  const [filtrosEnviados, setFiltrosEnviados] = useState<FiltrosDeEntidade>(FILTROS_VAZIOS);
+  const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosAplicados | null>(null);
+  const [naoConferidos, setNaoConferidos] = useState(0);
+  // Os termos do setor como vieram do servidor: se a pessoa apagar o termo
+  // para filtrar só por órgão, "Analisar edital de origem" ainda tem um termo
+  // de mercado para a média de preços.
+  const [termosDoSetor, setTermosDoSetor] = useState<string[]>([]);
+  const resultadosRef = useRef<HTMLDivElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Paginação client-side
@@ -298,33 +444,63 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
         const desc = data.cnae_descricao || '';
         const cod  = data.cnae_principal  || '';
         if (desc) {
+          // Os termos do setor saem daqui pelo efeito de `/termos-renovacao`.
           setCnaeDescricao(desc);
           setCnaeCodigo(cod);
-          // Preenche o campo só se o utilizador ainda não digitou nada
-          if (!termoEditado) {
-            const kw = derivarKeywordsCnae(desc);
-            if (kw.length >= 2) setTermo(kw);
-          }
         }
       })
       .catch((err) => { if (err instanceof SessionExpiredError) return; })
       .finally(() => setCnaeLoading(false));
-  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, token, termoEditado]);
+  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, token]);
 
+  // Empresa trocou: o termo volta a ser o do setor dela, e a tela busca de
+  // novo sozinha. Edição manual da empresa anterior não vale para a nova.
+  const [termosCarregados, setTermosCarregados] = useState(false);
+  const autoBuscaFeita = useRef(false);
   useEffect(() => {
-    const nextTermo = (() => {
-      if (!primeiraEmpresa?.cnae_descricao) return '';
-      const kw = derivarKeywordsCnae(primeiraEmpresa.cnae_descricao);
-      return kw.length >= 2 ? kw : '';
-    })();
-
-    if (!termoEditado) setTermo(nextTermo);
     setCnaeDescricao(primeiraEmpresa?.cnae_descricao || '');
     setCnaeCodigo(primeiraEmpresa?.cnae_principal || '');
+    setTermoEditado(false);
+    setTermo('');
+    setTermosCarregados(false);
+    autoBuscaFeita.current = false;
     setContratos([]);
     setBuscado(false);
     setPagina(1);
-  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, primeiraEmpresa?.cnae_principal, termoEditado]);
+    setFiltros(FILTROS_VAZIOS);
+    setNomesDosFiltros({});
+    setFiltrosAplicados(null);
+    setNaoConferidos(0);
+    setTermosDoSetor([]);
+  }, [primeiraEmpresa?.cnpj, primeiraEmpresa?.cnae_descricao, primeiraEmpresa?.cnae_principal]);
+
+  // Os termos do setor: a mesma tabela das Sugestões, resolvida no servidor.
+  // A busca dos termos não depende de a pessoa ter editado o campo (senão
+  // `termosDoSetor` ficava vazio para quem chegou pelo atalho de "Meus
+  // contratos"); só o preenchimento do campo respeita a edição.
+  const termoEditadoRef = useRef(termoEditado);
+  useEffect(() => { termoEditadoRef.current = termoEditado; }, [termoEditado]);
+  useEffect(() => {
+    if (!token || (!cnaeCodigo && !cnaeDescricao)) return;
+    let cancelado = false;
+    const params = new URLSearchParams();
+    if (cnaeCodigo) params.set('cnae', cnaeCodigo);
+    if (cnaeDescricao) params.set('descricao', cnaeDescricao);
+    apiFetch(`${API_URL}/api/pncp/termos-renovacao?${params}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (cancelado) return;
+        const termos: string[] = Array.isArray(data?.termos) ? data.termos : [];
+        if (termos.length && !termoEditadoRef.current) setTermo(termos.join(', '));
+        setTermosDoSetor(termos);
+        setTermosCarregados(true);
+      })
+      .catch((err) => {
+        if (err instanceof SessionExpiredError || cancelado) return;
+        setTermosCarregados(true);
+      });
+    return () => { cancelado = true; };
+  }, [primeiraEmpresa?.cnpj, cnaeCodigo, cnaeDescricao, token]);
 
   const cancelar = useCallback(() => {
     abortRef.current?.abort();
@@ -339,11 +515,14 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
     if (!origem || !onAnalyzeEdital) return;
 
     const chave = c.numeroControlePNCP || `${origem.cnpj}-${origem.sequencial}`;
+    // A análise leva UM termo de mercado; com vários na busca, vai o primeiro.
+    // Sem termo (busca só por órgão ou fornecedor), o primeiro do setor.
+    const termoPrincipal = separarTermos(termo)[0] || termosDoSetor[0] || termo.trim();
     setAnalisandoNcp(chave);
     try {
       const [resTexto, resMedia] = await Promise.all([
         apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${origem.cnpj}&ano=${origem.ano}&seq=${origem.sequencial}`),
-        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termo.trim())}${uf ? `&uf=${uf}` : ''}`).catch(() => null),
+        apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(termoPrincipal)}${uf ? `&uf=${uf}` : ''}`).catch(() => null),
       ]);
       if (!resTexto.ok) throw new Error('Falha ao carregar o edital de origem no PNCP.');
       const dataTexto = await resTexto.json();
@@ -352,38 +531,26 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
         : 'Sem histórico recente para estabelecer média.';
 
       const det = c.metadados?.contrato_detalhe;
-      const fornecedorAtual = (c.metadados?.fornecedor_nome || (c as any).fornecedor_nome || 'Não identificado');
-      const promptRenovacao = `
-  DOCUMENTO OFICIAL PARA ANÁLISE DE RISCO E ESTRATÉGIA DE LICITAÇÃO
-  ===================================================================
-  ▸ CONTEXTO: RENOVAÇÃO DE CONTRATO — o contrato vigente vence em ${c.dias_restantes ?? '?'} dia(s)
-  (${formatarData(c.data_vigencia_fim)}). O órgão tende a abrir nova disputa em breve.
-  A IA deve analisar o EDITAL DE ORIGEM abaixo como referência do que será exigido
-  na provável relicitação, e orientar o cliente sobre como competir.
-  ===================================================================
+      const promptRenovacao = promptDeRenovacao({
+        diasRestantes: c.dias_restantes,
+        fimVigencia: formatarData(c.data_vigencia_fim),
+        orgao: c.metadados?.orgao_nome,
+        uf: c.metadados?.uf,
+        municipio: c.metadados?.municipio,
+        fornecedor: c.metadados?.fornecedor_nome || (c as any).fornecedor_nome,
+        fornecedorCnpj: c.metadados?.fornecedor_cnpj,
+        objeto: det?.objeto_contrato || c.objeto,
+        valor: formatarValor(getValorContrato(c)),
+        valorMensal: det?.valor_mensal_estimado ? formatarValor(det.valor_mensal_estimado) : null,
+        inicioVigencia: det?.vigencia_inicio ? formatarData(det.vigencia_inicio) : null,
+        duracaoMeses: det?.duracao_meses,
+        assinatura: det?.data_assinatura ? formatarData(det.data_assinatura) : null,
+        teveAditivo: det?.teve_aditivo,
+        textoDoEdital: dataTexto.texto,
+        historicoPrecos,
+      });
 
-  [1. CONTRATO VIGENTE (INTELIGÊNCIA DE RENOVAÇÃO)]
-  • Órgão: ${c.metadados?.orgao_nome || 'N/D'} (${c.metadados?.uf || ''}${c.metadados?.municipio ? ` / ${c.metadados?.municipio}` : ''})
-  • Fornecedor atual (incumbente): ${fornecedorAtual}${c.metadados?.fornecedor_cnpj ? ` — CNPJ ${c.metadados?.fornecedor_cnpj}` : ''}
-  • Objeto do contrato: ${det?.objeto_contrato || c.objeto || 'N/D'}
-  • Valor do contrato: ${formatarValor(getValorContrato(c))}${det?.valor_mensal_estimado ? ` (~${formatarValor(det.valor_mensal_estimado)}/mês)` : ''}
-  • Vigência: ${det?.vigencia_inicio ? formatarData(det.vigencia_inicio) : 'N/D'} → ${formatarData(c.data_vigencia_fim)}${det?.duracao_meses ? ` (${det.duracao_meses} meses)` : ''}
-  • Assinatura: ${det?.data_assinatura ? formatarData(det.data_assinatura) : 'N/D'}${det?.teve_aditivo ? ' | ⚠️ contrato já ADITIVADO (valor global > inicial)' : ''}
-
-  [2. EDITAL DE ORIGEM (ÍNTEGRA DA CONSULTA PNCP)]
-  ${dataTexto.texto || 'Detalhes não fornecidos pela API.'}
-
-  [3. INTELIGÊNCIA DE MERCADO E HISTÓRICO (PNCP)]
-  ${historicoPrecos}
-
-  ===================================================================
-  INSTRUÇÃO AO AVALIADOR: além da análise padrão, responda objetivamente —
-  o que o edital anterior exigiu (habilitação, atestados, prazos), qual preço
-  venceu, e o que a empresa do cliente precisa para bater o fornecedor atual
-  na renovação.
-  `;
-
-      onAnalyzeEdital(promptRenovacao, termo.trim(), {
+      onAnalyzeEdital(promptRenovacao, termoPrincipal, {
         cnpj: origem.cnpj,
         ano: parseInt(origem.ano, 10),
         sequencial: parseInt(origem.sequencial, 10),
@@ -395,14 +562,18 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
     } finally {
       setAnalisandoNcp(null);
     }
-  }, [onAnalyzeEdital, termo, uf]);
+  }, [onAnalyzeEdital, termo, uf, termosDoSetor]);
 
   const buscar = useCallback(async (
     ufOverride?: string,
     munIdOverride?: string,
     munNomeOverride?: string,
+    filtrosOverride?: FiltrosDeEntidade,
   ) => {
-    if (!termo.trim() || termo.trim().length < 2) return;
+    const termos = separarTermos(termo);
+    // Com órgão ou fornecedor, o termo é opcional (25/09/2026).
+    const filtrosAtivos = filtrosOverride ?? filtros;
+    if (!podeBuscar(termo, filtrosAtivos)) return;
 
     // Filtros efetivos: override (mudança de filtro recém-aplicada) ou estado atual
     const ufAtiva      = ufOverride      !== undefined ? ufOverride      : uf;
@@ -419,11 +590,12 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
     setBuscado(true);
 
     try {
-      const params = new URLSearchParams({ q: termo.trim(), dias: String(dias) });
-      if (ufAtiva && ufAtiva !== 'BR') params.set('uf', ufAtiva);
-      if (homeUf) params.set('home_uf', homeUf);
-      if (munIdAtivo) params.set('municipio_id', munIdAtivo);
-      if (munNomeAtivo) params.set('municipio_nome', munNomeAtivo);
+      // Um parâmetro por termo: cada termo é uma frase, e o contrato entra
+      // quando o objeto traz todas as palavras de um deles.
+      const params = parametrosDaBusca({
+        termos, dias, uf: ufAtiva, homeUf, municipioId: munIdAtivo, municipioNome: munNomeAtivo,
+        filtros: filtrosAtivos,
+      });
 
       const res = await apiFetch(`${API_URL}/api/pncp/contratos-vencendo?${params}`, {
         signal: controller.signal,
@@ -437,6 +609,9 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
       setFallback(!!data.fallback_nacional);
       setUfSolicitada(data.uf_solicitada || '');
       setMunicipioSolicitado(data.municipio_solicitado || '');
+      setFiltrosEnviados(filtrosAtivos);
+      setFiltrosAplicados(data.filtros || null);
+      setNaoConferidos(Number(data.fornecedor_nao_conferido) || 0);
       setPagina(1);
     } catch (e: any) {
       if (e instanceof SessionExpiredError) return;
@@ -464,17 +639,92 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
       // antiga terminando desliga o "Carregando" da que ainda está rodando.
       if (abortRef.current === controller) setLoading(false);
     }
-  }, [termo, uf, municipioId, municipioNome, dias, token]);
+  }, [termo, uf, municipioId, municipioNome, dias, token, filtros]);
+
+  // Veio de "Meus contratos" com um órgão ou fornecedor: o filtro entra, o
+  // termo sai (a pergunta é "tudo o que vence deles"), e a busca dispara na
+  // renderização seguinte, quando o estado já é o novo. A busca automática
+  // pelos termos do setor fica desligada para não passar por cima.
+  const [buscaInicialPendente, setBuscaInicialPendente] = useState(false);
+  useEffect(() => {
+    if (!filtroInicial) return;
+    autoBuscaFeita.current = true;
+    setTermoEditado(true);
+    setTermo('');
+    setFiltros({ ...FILTROS_VAZIOS, [filtroInicial.campo]: filtroInicial.valor });
+    setNomesDosFiltros({ [filtroInicial.campo]: filtroInicial.nome || undefined });
+    setFiltrosAbertos(true);
+    setBuscaInicialPendente(true);
+    onFiltroInicialConsumido?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtroInicial]);
+  useEffect(() => {
+    if (!buscaInicialPendente) return;
+    setBuscaInicialPendente(false);
+    buscar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buscaInicialPendente]);
+
+  // Abre buscando (25/09/2026): a tela abria vazia, pedindo um clique em
+  // Buscar para uma pergunta que ela já sabia fazer. Uma vez por empresa; a
+  // edição do termo espera o Enter ou o botão.
+  useEffect(() => {
+    if (autoBuscaFeita.current || !termosCarregados || buscado || loading) return;
+    if (separarTermos(termo).length === 0) return;
+    autoBuscaFeita.current = true;
+    buscar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termosCarregados, termo]);
 
   // Auto-busca quando a janela de dias muda — só se já houve uma busca prévia
   useEffect(() => {
-    if (buscado && termo.trim().length >= 2) buscar();
+    if (buscado && podeBuscar(termo, filtros)) buscar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dias]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') buscar();
   };
+
+  // Troca de filtro com a busca já feita: refaz a busca. Sem termo e sem
+  // filtro não há o que buscar, e a tela volta ao começo.
+  const trocarFiltros = (novos: FiltrosDeEntidade) => {
+    setFiltros(novos);
+    if (!buscado) return;
+    if (podeBuscar(termo, novos)) {
+      buscar(undefined, undefined, undefined, novos);
+      return;
+    }
+    abortRef.current?.abort();
+    setLoading(false);
+    setContratos([]);
+    setBuscado(false);
+    setFiltrosAplicados(null);
+    setNaoConferidos(0);
+  };
+
+  const tirarFiltro = (campo: CampoDoFiltro) => {
+    setNomesDosFiltros((n) => ({ ...n, [campo]: undefined }));
+    trocarFiltros({ ...filtros, [campo]: '' });
+  };
+
+  const limparFiltros = () => {
+    setNomesDosFiltros({});
+    trocarFiltros(FILTROS_VAZIOS);
+  };
+
+  // Clique no órgão ou no fornecedor de um cartão: filtra por ele e busca.
+  const aplicarFiltroDoCartao = (campo: CampoDoFiltro, valor: string, nome: string) => {
+    setNomesDosFiltros((n) => ({ ...n, [campo]: nome || undefined }));
+    setFiltrosAbertos(true);
+    trocarFiltros({ ...filtros, [campo]: valor });
+    resultadosRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+
+  const nFiltros = contarFiltros(filtros);
+  const temTermo = separarTermos(termo).length > 0;
+  // Para as frases da tela: sem termo, a busca é só pelo filtro.
+  const deTermo = temTermo ? ` de “${termo.trim()}”` : '';
 
   // ─────────────────────────────────────────────────────────────────
   const DIAS_OPTS: Array<30 | 60 | 90 | 180 | 365 | 730> = [30, 60, 90, 180, 365, 730];
@@ -573,11 +823,11 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                   setMunicipioId('');
                   setMunicipioNome('');
                   // 🔄 Nova requisição imediata com o novo estado (não apenas filtro local)
-                  if (buscado && termo.trim().length >= 2) buscar(novaUf, '', '');
+                  if (buscado && podeBuscar(termo, filtros)) buscar(novaUf, '', '');
                 }}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 outline-none transition-all cursor-pointer focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30 lg:w-32"
               >
-                <option value="">Todos UFs</option>
+                <option value="">Todas as UFs</option>
                 {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
@@ -592,14 +842,14 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                     setMunicipioId(id);
                     setMunicipioNome(nome);
                     // 🔄 Nova requisição imediata para a cidade escolhida
-                    if (buscado && termo.trim().length >= 2) buscar(uf, id, nome);
+                    if (buscado && podeBuscar(termo, filtros)) buscar(uf, id, nome);
                   }}
                   onClear={() => {
                     const tinhaCidade = !!municipioId;
                     setMunicipioId('');
                     setMunicipioNome('');
                     // Removeu a cidade → volta a buscar o estado inteiro
-                    if (tinhaCidade && buscado && termo.trim().length >= 2) buscar(uf, '', '');
+                    if (tinhaCidade && buscado && podeBuscar(termo, filtros)) buscar(uf, '', '');
                   }}
                   placeholder="Filtrar por cidade..."
                   className="w-full lg:w-56"
@@ -607,6 +857,24 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                   variant="slate"
                 />
               )}
+
+              <button
+                type="button"
+                onClick={() => setFiltrosAbertos((aberto) => !aberto)}
+                aria-expanded={filtrosAbertos}
+                title="Filtrar por órgão contratante ou pelo fornecedor atual do contrato"
+                className={`inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border px-4 text-xs font-black uppercase tracking-widest transition-all lg:w-auto ${
+                  filtrosAbertos || nFiltros > 0
+                    ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                }`}
+              >
+                <Plus size={13} className={`transition-transform ${filtrosAbertos ? 'rotate-45' : ''}`} />
+                Filtros
+                {nFiltros > 0 && (
+                  <span className="rounded-md bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black text-white">{nFiltros}</span>
+                )}
+              </button>
 
               {loading ? (
                 <button
@@ -619,7 +887,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
               ) : (
                 <button
                   onClick={() => buscar()}
-                  disabled={termo.trim().length < 2}
+                  disabled={!podeBuscar(termo, filtros)}
                   className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 text-xs font-black uppercase tracking-widest text-white shadow-md shadow-orange-200/60 transition-all hover:from-amber-600 hover:to-orange-600 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] lg:w-auto"
                 >
                   <Search size={13} /> Buscar
@@ -628,14 +896,38 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
             </div>
 
             <p className="mt-2 text-[10px] font-bold text-slate-400">
-              Use o termo derivado do CNAE ou ajuste manualmente para encontrar contratos próximos do vencimento.
+              Termos do seu setor, separados por vírgula. Um contrato entra quando o objeto traz todas as palavras de um dos termos.
             </p>
+
+            {filtrosAbertos && (
+              <PainelDeFiltros
+                filtros={filtros}
+                onMudar={(campo, valor) => {
+                  setFiltros((f) => ({ ...f, [campo]: valor }));
+                  // Digitou por cima: o nome que veio do clique no cartão não vale mais.
+                  setNomesDosFiltros((n) => ({ ...n, [campo]: undefined }));
+                }}
+                onEnter={() => buscar()}
+                onLimpar={limparFiltros}
+              />
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Resultados ── */}
-      <div className="p-8">
+      <div className="p-8" ref={resultadosRef}>
+
+        {/* Filtros que valeram na última busca (25/09/2026) */}
+        {buscado && (
+          <FiltrosDaBusca
+            aplicados={filtrosAplicados}
+            nomes={nomesDosFiltros}
+            ignorados={filtrosIgnorados(filtrosEnviados, filtrosAplicados)}
+            naoConferidos={naoConferidos}
+            onTirar={tirarFiltro}
+          />
+        )}
 
         {/* Estado inicial */}
         {!buscado && !loading && (
@@ -681,7 +973,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                 <p className="text-[12.5px] font-black text-amber-900">
                   {contratos.length > 0
                     ? 'Atualizando os resultados…'
-                    : `Consultando contratos de “${termo.trim()}” no PNCP…`}
+                    : `Consultando contratos${deTermo} no PNCP…`}
                 </p>
                 {/* Dizer o tempo esperado é o que separa "está lento" de "está
                     quebrado". A consulta nacional é a mais cara: sem UF, o
@@ -730,7 +1022,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
           <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
             <span className="text-4xl">🏙️</span>
             <p className="text-sm font-bold text-slate-700">
-              Nenhum contrato de &ldquo;{termo}&rdquo; vencendo em {municipioSolicitado}
+              Nenhum contrato{deTermo} vencendo em {municipioSolicitado}
             </p>
             <p className="text-[11px] text-slate-400 font-medium max-w-sm leading-relaxed">
               Não há contratos desse segmento com vencimento na janela selecionada para {municipioSolicitado}.
@@ -758,7 +1050,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
           <div className="flex flex-col items-center justify-center py-10 text-center gap-3">
             <span className="text-4xl">📍</span>
             <p className="text-sm font-bold text-slate-700">
-              Nenhum contrato de &ldquo;{termo}&rdquo; vencendo em {ufSolicitada}
+              Nenhum contrato{deTermo} vencendo em {ufSolicitada}
             </p>
             <p className="text-[11px] text-slate-400 font-medium max-w-sm leading-relaxed">
               Não há contratos desse segmento com vencimento na janela selecionada para {ufSolicitada}.
@@ -779,7 +1071,7 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
             <span className="text-4xl">🔎</span>
             <p className="text-sm font-bold text-slate-600">Nenhum contrato vencendo encontrado</p>
             <p className="text-[11px] text-slate-400 font-medium max-w-sm">
-              Tente outro termo de busca ou ampliar a janela de dias.
+              {dicaSemResultado(temTermo, !!(filtrosAplicados?.orgao || filtrosAplicados?.fornecedor))}
             </p>
           </div>
         )}
@@ -979,7 +1271,13 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                             className={`w-2 h-2 rounded-full shrink-0 cursor-help ${u.dot}`}
                           />
                           <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest truncate">
-                            {orgao}
+                            <NomeFiltravel
+                              campo="orgao"
+                              nome={c.metadados?.orgao_nome}
+                              documento={c.metadados?.orgao_cnpj}
+                              rotulo={orgao}
+                              onFiltrar={aplicarFiltroDoCartao}
+                            />
                             {ufContrato && <span className="ml-1.5 text-slate-400">· {ufContrato}</span>}
                             {municipio && <span className="ml-1.5 text-slate-400 font-medium normal-case">/ {municipio}</span>}
                           </span>
@@ -1019,9 +1317,13 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                         </span>
                         {fornecedor ? (
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[11px] font-bold text-slate-700 truncate">
-                              {fornecedor}
-                            </span>
+                            <NomeFiltravel
+                              campo="fornecedor"
+                              nome={fornecedor}
+                              documento={fornecedorCnpj}
+                              onFiltrar={aplicarFiltroDoCartao}
+                              className="text-[11px] font-bold text-slate-700 truncate"
+                            />
                             {fornecedorCnpj && (
                               <span className="text-[9px] font-mono text-slate-400 shrink-0 hidden sm:inline">
                                 {fornecedorCnpj}
@@ -1059,6 +1361,29 @@ export default function ContratosVencendo({ token, companies = [], defaultUf, on
                               </span>
                             ))}
                           </div>
+                        );
+                      })()}
+
+                      {/* Vencer não é o mesmo que voltar à disputa (25/09/2026):
+                          serviço contínuo costuma ser prorrogado. O sinal sai
+                          da vigência registrada no PNCP, com a lei que a data
+                          permite afirmar. */}
+                      {(() => {
+                        const estilo = estiloDaProrrogacao(c.prorrogacao);
+                        if (!estilo || !c.prorrogacao) return null;
+                        const cor = estilo.tom === 'verde'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : estilo.tom === 'ambar'
+                            ? 'bg-amber-50 border-amber-200 text-amber-800'
+                            : 'bg-slate-50 border-slate-200 text-slate-600';
+                        return (
+                          <p
+                            title={c.prorrogacao.texto}
+                            className={`mb-3 rounded-lg border px-2.5 py-1.5 text-[10.5px] font-medium leading-relaxed ${cor}`}
+                          >
+                            <span className="font-black uppercase tracking-wider">{estilo.rotulo}</span>
+                            {' · '}{estilo.texto}
+                          </p>
                         );
                       })()}
 
