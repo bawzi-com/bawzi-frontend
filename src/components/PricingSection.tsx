@@ -68,23 +68,15 @@ const DOSSIE_NIVEL_1: string = LAUNCH_FLAGS.minutaJuridicaOfensiva
 
 const tiers = [
   {
-    name: 'Teste', badge: 'NÍVEL 0', price: 'Grátis', period: '',
-    inherits: null,
-    quantidade: '1 análise rápida grátis por dia · sem cadastro',
-    features: [
-      'Nova Análise — score Go/No-Go',
-      'Resumo executivo do edital',
-      'Semáforo de viabilidade',
-    ],
-    limites: ['Editais até 10.000 caracteres', 'PDF até 3 MB'],
-    mbSufixo: '',
-    buttonText: 'Testar agora', tierLevel: -1, popular: false, label: null,
-  },
-  {
     name: 'Gratuito', badge: 'NÍVEL 1', price: 'Grátis', period: '',
     inherits: null,
     quantidade: '5 análises rápidas grátis por mês',   // reserva; o servidor manda
     features: [
+      // ⚠️ A BASE DE TODO PLANO. Morava no cartão "Teste · sem cadastro"
+      // (nível -1), que saiu em 26/09/2026 com a análise gratuita sem conta —
+      // e a tabela comparativa a lia de lá como piso universal. Agora é o
+      // primeiro item do primeiro plano, e os de cima a herdam pela cadeia.
+      'Nova Análise — score Go/No-Go, semáforo de viabilidade e resumo executivo',
       'Análise completa com matriz de riscos e exigências críticas',
       'Auditoria profunda — contradições entre o edital e o cadastro do PNCP',
       'Central de decisões, priorização e gestão do fluxo',
@@ -718,11 +710,9 @@ function SimuladorDePlano({
 
 /** Primeira linha do cartão: a quantidade de análises.
  *
- *  O tier -1 usa `monthly_limit` como cota DIÁRIA — o nome do campo no backend
- *  é herdado dos tiers pagos, mas a reposição do convidado é por dia (a tela de
- *  cota esgotada diz "volta amanhã"). Por isso o texto muda de "/mês" para
- *  "por dia" só nesse nível. `monthly_limit === 0` é ilimitado, mesma regra do
- *  `router_analyses.py`. */
+ *  `monthly_limit === 0` é ilimitado, mesma regra do `router_analyses.py`.
+ *  (O "por dia · sem cadastro" do nível -1 saiu em 26/09/2026, com a análise
+ *  gratuita sem conta.) */
 function linhaQuantidade(
   tier: { tierLevel: number; quantidade: string; price: string },
   lim: LimitePublico | undefined,
@@ -753,9 +743,6 @@ function linhaQuantidade(
   // diz que aqueles créditos são presente, não cota comprada.
   const gratis = tier.price === 'Grátis' ? ' grátis' : '';
 
-  if (tier.tierLevel === -1) {
-    return `${numeroBr(n)} ${palavra}${gratis} por dia · sem cadastro`;
-  }
   // A régua junto do número. "540 créditos" sozinho não significa nada para
   // quem lê; com "edital comum usa 2 a 3" o leitor faz a conta sozinho — e a
   // conta favorece o plano de cima, que é onde ela deveria ter sido feita
@@ -804,13 +791,13 @@ function linhasLimites(
     return tier.limites;
   }
   const linhaMb = `PDF até ${numeroBr(lim.max_mb)} MB${tier.mbSufixo}`;
-  // ⚠️ SÓ O VISITANTE (tier -1) TEM TETO DE CARACTERES DE VERDADE.
+  // ⚠️ NENHUM PLANO TEM TETO DE CARACTERES.
   // Era "Editais até X caracteres" para TODO plano — a mesma frase que
   // prometia um corte que a análise de fato fazia. Desde que o corte por
   // tier saiu da análise (router_analyses.py, commit "leitura completa em
-  // qualquer plano"), só o tier -1 ainda amostra por tamanho — a degustação
-  // gratuita, sem conta. Nos planos com conta o edital é lido por inteiro:
-  // a frase deixou de ser verdadeira e sai do card.
+  // qualquer plano"), só a degustação sem conta (tier -1) ainda amostrava
+  // por tamanho, e ela saiu em 26/09/2026. Em todo plano o edital é lido
+  // por inteiro.
   //
   // ⚠️ A RÉGUA MUDOU EM 07/09/2026
   // Era "1 crédito a cada 50.000 caracteres · auditoria profunda ×4",
@@ -818,9 +805,6 @@ function linhasLimites(
   // rápida mais cara observada foi US$ 0,038) e o MODO custa 21x. Hoje a
   // régua fixa cobra 1 crédito por análise e quem contém custo é o teto de
   // profundas — então é o teto que o card precisa dizer.
-  if (tier.tierLevel < 0) {
-    return [`Editais até ${numeroBr(lim.max_chars)} caracteres`, linhaMb];
-  }
   return ['Lê o edital inteiro, sem corte por tamanho', linhaMb];
 }
 
@@ -854,21 +838,6 @@ function brl(v: number): string {
 
 // Paleta visual por tier
 const tierStyle: Record<string, Record<string, string>> = {
-  '-1': {
-    strip:       'bg-slate-200',
-    card:        'bg-white border border-slate-200 hover:shadow-md hover:-translate-y-0.5',
-    badge:       'text-slate-400',
-    name:        'text-slate-700',
-    price:       'text-slate-800',
-    period:      'text-slate-400',
-    feature:     'text-slate-500',
-    check:       'text-slate-400',
-    inherit:     'text-slate-400 bg-slate-50 border-slate-200',
-    btn:         'bg-slate-800 text-white hover:bg-slate-700',
-    btnActive:   'bg-slate-200 text-slate-500 cursor-default',
-    btnOther:    'bg-slate-100 text-slate-500 hover:bg-slate-200',
-    divider:     'bg-slate-100',
-  },
   '1': {
     strip:       'bg-slate-300',
     card:        'bg-white border border-slate-200 hover:shadow-md hover:-translate-y-0.5',
@@ -951,14 +920,12 @@ const TIER_SHORT: Record<number, string> = { 1: 'Gratuito', 2: 'Essencial', 3: '
  * sendo a leitura rápida; a tabela é para quem precisa conferir um item
  * específico antes de pagar.
  *
- * ⚠️ O NÍVEL 0 É A BASE DE TODO MUNDO, e isso precisa de explicação.
- * No array `tiers`, o Teste tem `inherits: null` e o Gratuito TAMBÉM tem
- * `inherits: null` — a cadeia de herança só começa no Essencial. Se a tabela
- * lesse isso ao pé da letra, "Semáforo de viabilidade" apareceria com ✓ apenas
- * no Teste e com — no Avançado de R$ 497, o que é grosseiramente falso: o
- * semáforo é saída de toda análise em qualquer nível. O `null` do Gratuito
- * significa "não repita o óbvio no cartão", não "não tem". Por isso o que o
- * Teste lista entra como piso universal.
+ * ⚠️ A BASE DE TODO MUNDO MORA NO GRATUITO. Até 26/09/2026 ela morava no
+ * "Teste · sem cadastro" (nível -1), que tinha `inherits: null` como o
+ * Gratuito — e a tabela precisava tratar a lista dele como piso universal,
+ * senão "Semáforo de viabilidade" apareceria com ✓ só no Teste e com — no
+ * Avançado. Com a análise sem conta fora, a base virou o primeiro item do
+ * Gratuito, e os planos de cima a recebem pela cadeia de herança.
  */
 
 /** Recursos de um nível, já somando os herdados. Ordem: do mais básico ao
@@ -966,12 +933,8 @@ const TIER_SHORT: Record<number, string> = { 1: 'Gratuito', 2: 'Essencial', 3: '
 function featuresAcumuladas(nivel: number): string[] {
   const t = tiers.find((x) => x.tierLevel === nivel);
   if (!t) return [];
-  const base =
-    nivel > -1
-      ? [...(tiers.find((x) => x.tierLevel === -1)?.features ?? [])]
-      : [];
   const herdadas = t.inherits !== null ? featuresAcumuladas(t.inherits) : [];
-  const juntas = [...base, ...herdadas, ...t.features];
+  const juntas = [...herdadas, ...t.features];
   return juntas.filter((f, i) => juntas.indexOf(f) === i);
 }
 
@@ -1078,7 +1041,7 @@ function temRecursoVigente(nivel: number, recurso: string): boolean {
 /** Em que nível cada recurso APARECE pela primeira vez — é isso que decide
  *  onde a coluna ganha ✓ e onde ganha travessão. */
 function mapaDeRecursos(): { recurso: string; desde: number }[] {
-  const ordem = [-1, 1, 2, 3, 4];
+  const ordem = [1, 2, 3, 4];
   const visto = new Map<string, number>();
   for (const nivel of ordem) {
     for (const f of tiers.find((t) => t.tierLevel === nivel)?.features ?? []) {
@@ -1094,7 +1057,7 @@ function mapaDeRecursos(): { recurso: string; desde: number }[] {
   return [...visto.entries()].map(([recurso, desde]) => ({ recurso, desde }));
 }
 
-const NIVEIS_TABELA = [-1, 1, 2, 3, 4] as const;
+const NIVEIS_TABELA = [1, 2, 3, 4] as const;
 
 function CelulaTem({ tem, escuro }: { tem: boolean; escuro?: boolean }) {
   return tem ? (
@@ -1138,32 +1101,14 @@ function TabelaComparativa({
         const l = limites?.[String(n)];
         if (!l) return "—";
         if (l.ilimitado) return "Ilimitado";
-        // ⚠️ NO VISITANTE, `monthly_limit` GUARDA UMA COTA DIÁRIA.
-        // `LIMIT_TIER_MINUS_1 = 1` é 1 POR DIA (contada por cookie, com teto
-        // de rede em `LIMIT_GUEST_IP_DIARIO`) — o campo tem nome mensal e
-        // valor diário só naquele nível. A célula dizia "1 por dia" embaixo de
-        // um cabeçalho "por mês", e aí a única coluna que o leitor não
-        // consegue comparar é justamente a primeira: "1 por dia" ao lado de
-        // "60" não se lê como escada, se lê como erro de digitação.
-        //
-        // O equivalente mensal vem junto, e o mecanismo fica DITO entre
-        // parênteses — porque não existe contador mensal no Visitante: o
-        // portão é diário, e 30 é a consequência dele, não um número
-        // configurado. Prometer "30 por mês" sozinho seria vender uma cota
-        // acumulável que ninguém implementou (quem não usar hoje não leva
-        // duas para amanhã).
-        return n === -1
-          ? `${numeroBr(l.monthly_limit * 30)} (${numeroBr(l.monthly_limit)} por dia)`
-          : numeroBr(l.monthly_limit);
+        return numeroBr(l.monthly_limit);
       },
     },
-    {
-      rotulo: "Tamanho máximo do edital",
-      valor: (n: number) => {
-        const l = limites?.[String(n)];
-        return l?.max_chars ? `${numeroBr(l.max_chars)} car.` : "—";
-      },
-    },
+    // (A linha "Tamanho máximo do edital" saiu em 26/09/2026. Só o nível -1,
+    // a análise sem conta, cortava por tamanho — e ele saiu. Nos quatro planos
+    // o edital é lido inteiro, e uma linha com o mesmo valor em toda coluna
+    // não compara nada; com o número do plano, ela prometia um corte que não
+    // existe.)
     {
       rotulo: "PDF por envio",
       valor: (n: number) => {
@@ -1179,10 +1124,7 @@ function TabelaComparativa({
         const l = limites?.[String(n)];
         if (!l) return "—";
         const peso = l.peso_profunda ?? 1;
-        // O peso existe no config de todo nível, mas só é acionável onde há
-        // botão de modo (conta criada). Anunciar no Teste ensinaria uma regra
-        // que aquele nível não tem como usar.
-        return peso > 1 && n >= 1 ? `${peso} análises` : "—";
+        return peso > 1 ? `${peso} análises` : "—";
       },
     },
     // ⚠️ QUANTIDADE É LINHA ÚNICA COM UM NÚMERO POR COLUNA.
@@ -1196,11 +1138,11 @@ function TabelaComparativa({
     // Aqui embaixo elas viram o que sempre foram: limites.
     {
       rotulo: "Dossiês de concorrente por dia",
-      valor: (n: number) => ({ [-1]: "—", 1: "5", 2: "30", 3: "100", 4: "500" }[n] ?? "—"),
+      valor: (n: number) => ({ 1: "5", 2: "30", 3: "100", 4: "500" }[n] ?? "—"),
     },
     {
       rotulo: "Empresas cadastradas (CNPJ)",
-      valor: (n: number) => ({ [-1]: "—", 1: "—", 2: "1", 3: "2", 4: "3" }[n] ?? "—"),
+      valor: (n: number) => ({ 1: "—", 2: "1", 3: "2", 4: "3" }[n] ?? "—"),
     },
   ];
 
@@ -1214,7 +1156,8 @@ function TabelaComparativa({
       >
         <span className="min-w-0">
           <span className="block text-sm font-black text-slate-900">
-            Comparar os 5 planos lado a lado
+            {/* O número sai da tabela: eram 5 até o "Teste · sem cadastro" sair (26/09/2026). */}
+            Comparar os {NIVEIS_TABELA.length} planos lado a lado
           </span>
           <span className="mt-0.5 block text-xs font-medium text-slate-500">
             Cada recurso uma vez só, com uma coluna por plano — sem precisar
@@ -1296,10 +1239,10 @@ function TabelaComparativa({
               <tbody>
                 <tr className="bg-white [&>th]:border-b [&>th]:border-slate-100">
                   <th
-                    colSpan={6}
+                    colSpan={NIVEIS_TABELA.length + 1}
                     scope="colgroup"
                     /* Sem `sticky` aqui, ao contrário das linhas de recurso:
-                       esta célula tem colSpan={6} e portanto já ocupa a largura
+                       esta célula ocupa todas as colunas e portanto já ocupa a largura
                        inteira da tabela — não sobra deslocamento para ela
                        "grudar". A classe daria a impressão de fazer algo e não
                        faria nada. */
@@ -1342,10 +1285,10 @@ function TabelaComparativa({
 
                 <tr className="bg-white [&>th]:border-y [&>th]:border-slate-100">
                   <th
-                    colSpan={6}
+                    colSpan={NIVEIS_TABELA.length + 1}
                     scope="colgroup"
                     /* Sem `sticky` aqui, ao contrário das linhas de recurso:
-                       esta célula tem colSpan={6} e portanto já ocupa a largura
+                       esta célula ocupa todas as colunas e portanto já ocupa a largura
                        inteira da tabela — não sobra deslocamento para ela
                        "grudar". A classe daria a impressão de fazer algo e não
                        faria nada. */
@@ -1414,7 +1357,7 @@ function TabelaComparativa({
 
           <p className="border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-[11px] font-medium leading-relaxed text-slate-500">
             Os limites vêm da mesma fonte que o sistema aplica na hora de
-            cobrar. O que o Teste oferece é a base de todos os planos — os
+            cobrar. Cada plano inclui tudo o que os de baixo oferecem — os
             cartões acima só não repetem esses itens para não ficarem longos.
           </p>
         </div>
@@ -1427,8 +1370,16 @@ function TabelaComparativa({
 export default function PricingSection({ onRegister, onUpgrade, onChangePlan, currentTier: propCurrentTier, compact = false }: PricingSectionProps) {
   const router = useRouter();
 
-  const { tier: hookTier, isPromo, promoExpiresAt, refresh: refreshTier } = useTier();
-  const activeTier = propCurrentTier && propCurrentTier > 0 ? propCurrentTier : hookTier;
+  const { tier: hookTier, comSessao, isPromo, promoExpiresAt, refresh: refreshTier } = useTier();
+  // ⚠️ VISITANTE SEM CONTA NÃO TEM "PLANO ATUAL". O `useTier` nasce no tier 1
+  // (o padrão, sem nada no localStorage), e sem esta guarda a página pública
+  // de preços marcava o Gratuito como "✓ Plano Atual" — com o botão
+  // desativado — para quem nem conta tem. Com o cartão "Teste · sem
+  // cadastro" fora (26/09/2026), aquele botão virou a única entrada gratuita
+  // da página. `0` = nenhum plano: todos os botões ficam de escolha.
+  const activeTier = propCurrentTier && propCurrentTier > 0
+    ? propCurrentTier
+    : comSessao === false ? 0 : hookTier;
 
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isSyncing, setIsSyncing]                 = useState(false);
@@ -1561,7 +1512,6 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
 
   // Decide a ação do botão de cada card
   const handleCardButton = (tierLevel: number) => {
-    if (tierLevel === -1) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
     if (tierLevel === 1)  { handleRegisterClick(); return; }
 
     // Plano atual do assinante pago
@@ -1786,7 +1736,7 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
             <p className="mt-0.5 text-sm font-black text-slate-900">
               {activeTier > 0
                 ? `Nível ${activeTier} — ${tiers.find((t) => t.tierLevel === activeTier)?.name || ''}`
-                : 'Nível 0 — Teste gratuito'}
+                : 'Sem conta ainda'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1835,8 +1785,9 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
           GRADE DE PLANOS — AGRUPADA, NÃO MAIS CINCO COLUNAS IGUAIS
           ═══════════════════════════════════════════════════════════════════
 
-          ⚠️ NENHUM CARTÃO FOI REMOVIDO. Os cinco continuam, com exatamente o
-          mesmo conteúdo — mudou a diagramação.
+          (Eram cinco cartões. O "Teste · sem cadastro" saiu em 26/09/2026,
+          com a análise gratuita sem conta; a fileira de entrada ficou só com o
+          Gratuito, e a ponte para os pagos ocupa as outras duas colunas.)
 
           `lg:grid-cols-5` num contêiner de 1400px dava ~253px por cartão para
           ler recurso em `text-[11px]`, e punha lado a lado duas coisas que não
@@ -1867,16 +1818,15 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
             no canto. A terceira coluna carrega a ponte para os planos pagos,
             que é o que o leitor faz a seguir de qualquer forma — e alinha o
             ritmo das colunas entre as duas fileiras. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {tiers.filter((t) => t.tierLevel <= 1).map(renderCartao)}
-          <div className="hidden flex-col justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5 md:flex">
+          <div className="hidden flex-col justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-5 md:col-span-2 md:flex md:self-center">
             <p className="text-sm font-black text-slate-800">
               Testou e serviu?
             </p>
             <p className="mt-1.5 text-[12px] font-medium leading-5 text-slate-500">
               Os planos abaixo abrem os agentes de mercado, o parecer jurídico e
-              o cadastro de empresa — e sobem o tamanho de edital que cabe numa
-              análise.
+              o cadastro de empresa.
             </p>
           </div>
         </div>

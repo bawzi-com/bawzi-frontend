@@ -7,26 +7,19 @@ import {
   AlertTriangle,
   Building2,
   CalendarDays,
-  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  ClipboardList,
   DollarSign,
   ExternalLink,
   EyeOff,
-  FileText,
-  Filter,
   Loader2,
   Maximize2,
   Minimize2,
-  PanelRightClose,
-  PanelRightOpen,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
-  SlidersHorizontal,
   Trophy,
   X,
   XCircle,
@@ -57,6 +50,9 @@ import {
   type AbaDaGestao, type ColunaDaTabela, type DirecaoDaOrdem, type FiltroDaAgenda, type SelecaoDaAgenda,
 } from '@/lib/gestao';
 import { AbaAgenda, AbaDesempenho, AbaResponsaveis, AbaTabela, BarraDeAbas } from './GestaoAbas';
+// O quadro redesenhado (25/09/2026): cabeçalho compacto, uma faixa de
+// controles, colunas leves e cards calmos — peças sem hook, em `QuadroDaGestao`.
+import { CabecalhoDaGestao, CartaoDoEdital, ChipDeEtapa, ColunaDoQuadro, FaixaDeControles, PainelDeFiltros } from './QuadroDaGestao';
 // O resumo do edital (25/09/2026): a situação em uma frase, a linha de
 // etapas, a próxima ação em destaque e as datas — peças sem hook, em
 // `ResumoDoEdital`; o modal só liga cada uma ao que grava.
@@ -162,6 +158,9 @@ export default function DecisionManagementTab({
   // o trabalho dele. O toast de erro existia, mas some sozinho em 4s.
   const [erroDeCarga, setErroDeCarga] = useState<string | null>(null);
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
+  /** A faixa de controles fica presa ao topo ao rolar o quadro: abaixo do
+   *  cabeçalho do app, ou no topo da tela cheia. */
+  const alturaDoCabecalhoDoApp = useStickyHeaderOffset();
   /** Por onde o resumo operacional deve abrir. O cartão tem DOIS caminhos para
    *  o mesmo modal — "Resumo do edital" e "Ver o plano inteiro" — e eles
    *  prometem coisas diferentes. Abrir os dois no topo faz o segundo mentir. */
@@ -699,15 +698,6 @@ export default function DecisionManagementTab({
     });
   };
 
-  /** O seletor "Etapa" do painel é de escolha única (é um `<select>` nativo):
-   *  escolher por lá SUBSTITUI a seleção inteira, em vez de somar. Some com a
-   *  multi-seleção sem enganar — quem quer somar usa as fichas. */
-  const selecionarEtapaUnica = (key: DecisionQueueKey | 'all') => {
-    const proxima: Set<DecisionQueueKey> = key === 'all' ? new Set() : new Set([key]);
-    setEtapasSelecionadas(proxima);
-    reconciliarRecorte(proxima);
-  };
-
   const updateBoardScrollState = () => {
     const el = boardScrollRef.current;
     if (!el) return;
@@ -747,6 +737,10 @@ export default function DecisionManagementTab({
     window.setTimeout(updateBoardScrollState, 320);
   };
 
+  /** O que ESCONDE editais. A ordenação ficou de fora (25/09/2026): ela não
+   *  esconde nada, e os alertas do cabeçalho a mudam para "prazo" — depois de
+   *  "Ver todos", o botão Filtros ficava verde com "7 de 7" e um "Limpar
+   *  filtros" sem filtro nenhum. `resetFilters` continua desfazendo a ordem. */
   const hasActiveFilters = Boolean(
     searchText.trim()
     || companyFilter !== 'all'
@@ -754,8 +748,7 @@ export default function DecisionManagementTab({
     || verdictFilter !== 'all'
     || urgencyFilter !== 'all'
     || monitorFilter !== 'all'
-    || activityFilter !== 'active'
-    || sortFilter !== 'recent',
+    || activityFilter !== 'active',
   );
 
   /** Filtros que, se estiverem ligados, NÃO têm nenhum sinal fora do painel —
@@ -772,11 +765,16 @@ export default function DecisionManagementTab({
    *  pessoa vê uma lista curta sem nada em tela dizendo por quê. */
   const filtrosInvisiveisAtivos = Boolean(
     companyFilter !== 'all'
-    // `stageFilter` SAIU DAQUI ao virar clicável: a ficha selecionada agora
-    // fica com anel escuro na faixa, à vista. Mantê-lo forçaria o painel de
-    // sete seletores a escancarar toda vez que alguém clicasse numa etapa.
     || verdictFilter !== 'all'
-    || monitorFilter !== 'all',
+    || monitorFilter !== 'all'
+    // Os chips de etapa e o status moram no painel desde o redesenho
+    // (25/09/2026): ligados com o painel fechado, seriam um recorte sem nada
+    // na tela explicando por quê. (Antes a etapa ficava de fora porque a
+    // faixa, sempre visível, mostrava o anel da marcada.) A ordenação NÃO
+    // entra: não esconde nada — e os alertas do cabeçalho a mudam para
+    // "prazo", o que escancarava o painel a cada clique neles.
+    || etapasSelecionadas.size > 0
+    || activityFilter !== 'active',
   );
 
   const resetFilters = () => {
@@ -1098,13 +1096,6 @@ export default function DecisionManagementTab({
     }
   };
 
-  const scoreColors = (score: number) =>
-    score >= 70
-      ? { bar: 'bg-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-50', border: 'border-emerald-100', label: 'Go' }
-      : score >= 45
-        ? { bar: 'bg-amber-400', text: 'text-amber-700', light: 'bg-amber-50', border: 'border-amber-100', label: 'Atenção' }
-        : { bar: 'bg-red-500', text: 'text-red-700', light: 'bg-red-50', border: 'border-red-100', label: 'No-Go' };
-
   const renderNotice = () => notice && (
     <div className={`fixed bottom-5 right-5 z-[130] max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-xl ${
       notice.type === 'success'
@@ -1128,7 +1119,7 @@ export default function DecisionManagementTab({
   );
 
   if (isLoading) {
-    return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-widest text-xs">Carregando a gestão de decisões...</div>;
+    return <div className="animate-pulse p-20 text-center text-sm text-slate-400">Carregando a Gestão…</div>;
   }
 
   if (selectedAnalysis) {
@@ -1147,12 +1138,12 @@ export default function DecisionManagementTab({
               setDetailTab('analise');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
           >
             ← Voltar para gestão
           </button>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-700">
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
               Laudo aberto pela gestão
             </span>
             {/* ⚠️ O BOTÃO DE OCULTAR MENU SAIU DAQUI.
@@ -1166,7 +1157,7 @@ export default function DecisionManagementTab({
               type="button"
               onClick={() => toggleFullscreen(laudoRef)}
               title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-600 transition-all hover:border-slate-300 hover:text-slate-950"
             >
               {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
               {isFullscreen ? 'Sair da tela cheia' : 'Tela cheia'}
@@ -1276,410 +1267,168 @@ export default function DecisionManagementTab({
         />
       )}
 
-      <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
-        {/* ⚠️ SEM FAIXA PRÓPRIA. Este alerta já foi um bloco de largura inteira,
-            com fundo âmbar e o rótulo "PRECISA DE VOCÊ AGORA" em caixa alta —
-            uma banda de ~46px para exibir UM número. Desproporcional: o alerta
-            mais importante da tela não precisa da maior área, precisa do melhor
-            LUGAR. E o cabeçalho tinha o lado direito inteiro vazio, ao lado de
-            um título que ocupa 40% da linha.
-            Agora ele mora ali, na altura dos olhos junto do título, sem gastar
-            uma linha vertical sequer. O rótulo em caixa alta saiu junto: os
-            próprios chips já dizem "1 prazo vencido" — em vermelho, com ícone
-            de alerta. Repetir "precisa de você agora" antes disso era enfeite. */}
-        {/* ⚠️ `flex-col` ATÉ `md`, e isso não é preciosismo: medido.
-            Com `flex-wrap` + `shrink-0` nos chips, a 390px eles reservavam
-            ~150px e sobravam 176px para o título — que passava a quebrar em
-            quatro linhas e levava o cabeçalho de 596px para 710px. O alerta
-            economizava 55px no desktop e custava 114px no celular. Lado a lado
-            só onde há largura para os dois. */}
-        <div className="flex flex-col gap-3 bg-gradient-to-br from-white via-slate-50 to-emerald-50/40 p-5 md:flex-row md:items-start md:justify-between md:gap-6 md:p-7">
-          <div className="min-w-0 md:flex-1">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-[11px] font-black uppercase text-emerald-700 shadow-sm">
-                <ClipboardList size={13} />
-                Gestão de execução
-              </div>
-              {/* ⚠️ SÓ TELA CHEIA AQUI. O "Ocultar menu" foi para a casca
-                  (`analysis-app.tsx`) e vale para todas as abas — ver o
-                  comentário de lá. Os dois controles continuam sendo coisas
-                  diferentes: expandir devolve 288px e mantém a barra do
-                  navegador; tela cheia é a API do navegador e some com tudo. */}
-              {/* ⚠️ O BOTÃO DE OCULTAR MENU SAIU DAQUI.
-                  Existia neste cabeçalho, num segundo no quadro de colunas e num
-                  terceiro no painel de resultados — três posições para o mesmo
-                  efeito, e nenhuma nas demais abas. Agora há UM, na casca
-                  (`analysis-app.tsx`), no mesmo lugar em todas as telas.
-                  `onToggleSidebar` continua chegando porque o "Voltar" ainda
-                  restaura o menu: mudou quem OFERECE o controle, não quem reage. */}
-              <button
-                type="button"
-                onClick={() => toggleFullscreen(quadroRef)}
-                title={isFullscreen ? 'Sair da tela cheia' : 'Tela cheia — usar 100% da largura'}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-              >
-                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              </button>
-            </div>
-            <h2 className="text-2xl font-black tracking-tight text-slate-950 md:text-3xl">Fluxo completo dos editais</h2>
-            {/* ⚠️ O SUBTÍTULO ERA DECORAÇÃO PERMANENTE.
-                Dizia "acompanhe cada edital desde o primeiro contato
-                operacional até envio, resultado e execução/encerramento" — uma
-                descrição do produto, relida todo dia por quem já sabe o que a
-                tela faz, ocupando duas linhas no topo. Agora ele carrega
-                ESTADO: quantos editais existem aqui. A descrição do fluxo,
-                quem quer, lê na faixa de etapas logo abaixo, que mostra a
-                sequência inteira com os números reais.
-                E os dois parágrafos de ensino viraram um: o segundo explicava
-                o opt-in em três linhas; ele continua, resumido, na mesma
-                frase. */}
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              {analyses.length > 0 ? (
-                <>
-                  <strong className="font-black text-slate-800">
-                    {analyses.length} {analyses.length === 1 ? 'edital em acompanhamento' : 'editais em acompanhamento'}
-                  </strong>
-                  {' '}— só entram aqui os que você marcou com{' '}
-                  <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-700">+ Gestão</span>
-                  {' '}na análise. Os demais continuam em Decisões.
-                </>
-              ) : (
-                <>Acompanhe cada edital desde o primeiro contato operacional até envio, resultado e execução.</>
-              )}
-            </p>
-          </div>
+      <CabecalhoDaGestao
+        total={analyses.length}
+        vencidos={analyses.length > 0 ? risco.vencidos : 0}
+        hojeAmanha={analyses.length > 0 ? risco.hojeAmanha : 0}
+        urgencia={urgencyFilter}
+        telaCheia={isFullscreen}
+        onVencidos={() => { setUrgencyFilter('late'); setActivityFilter('active'); setSortFilter('deadline'); }}
+        onHojeAmanha={() => { setUrgencyFilter('urgent'); setActivityFilter('active'); setSortFilter('deadline'); }}
+        onVerTodos={() => setUrgencyFilter('all')}
+        onTelaCheia={() => toggleFullscreen(quadroRef)}
+      />
 
-          {analyses.length > 0 && (risco.vencidos > 0 || risco.hojeAmanha > 0) && (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {/* ⚠️ FUNDO SÓLIDO, NÃO TINTA CLARA. A primeira versão usava
-                  `bg-red-50` com texto `text-red-700` — o padrão de chip suave
-                  do resto da tela. Num cabeçalho que já é branco e claro, ele
-                  simplesmente sumia: o alerta mais importante da tela era o
-                  elemento menos visível dela.
-                  O número ganha caixa própria porque é ele que se lê primeiro:
-                  com cinco vencidos, "5" precisa saltar antes da palavra.
-
-                  ⚠️ E AS CORES SÃO AS QUE PASSAM NO CONTRASTE, não as óbvias.
-                  Branco sobre `amber-500` dá 2,15:1 e sobre `amber-600` dá
-                  3,19:1 — os dois reprovam no mínimo de 4,5:1 para texto de
-                  12px em negrito. Só `amber-700` passa (5,02:1). No vermelho,
-                  `red-500` também reprova (3,76:1); `red-600` passa (4,83:1).
-                  Medido antes de escolher. */}
-              {risco.vencidos > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setUrgencyFilter('late'); setActivityFilter('active'); setSortFilter('deadline'); }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3.5 py-2.5 text-xs font-black text-white shadow-md shadow-red-600/25 transition-all hover:bg-red-700"
-                >
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded-lg bg-white/20 px-1 text-sm font-black tabular-nums">
-                    {risco.vencidos}
-                  </span>
-                  {risco.vencidos === 1 ? 'prazo vencido' : 'prazos vencidos'}
-                </button>
-              )}
-              {risco.hojeAmanha > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setUrgencyFilter('urgent'); setActivityFilter('active'); setSortFilter('deadline'); }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-700 px-3.5 py-2.5 text-xs font-black text-white shadow-md shadow-amber-700/25 transition-all hover:bg-amber-800"
-                >
-                  <span className="flex h-6 min-w-6 items-center justify-center rounded-lg bg-white/20 px-1 text-sm font-black tabular-nums">
-                    {risco.hojeAmanha}
-                  </span>
-                  {risco.hojeAmanha === 1 ? 'vence hoje/amanhã' : 'vencem hoje/amanhã'}
-                </button>
-              )}
-              {urgencyFilter !== 'all' && (
-                <button
-                  type="button"
-                  onClick={() => setUrgencyFilter('all')}
-                  className="text-[11px] font-bold text-slate-500 underline underline-offset-2 transition-colors hover:text-slate-800"
-                >
-                  Ver todos
-                </button>
-              )}
-            </div>
-          )}
+      {/* ⚠️ UMA FAIXA, PRESA AO TOPO. Eram três fileiras antes do conteúdo
+          (faixa de etapas, abas, busca + filtros), e a faixa de etapas e as
+          abas pareciam a mesma coisa. Agora: abas + busca + "Filtros" numa
+          linha; os chips de etapa e os seletores moram no painel, que abre
+          sob demanda e fica aberto enquanto houver filtro sem sinal fora.
+          ⚠️ SÓ A LINHA GRUDA. O painel ficava dentro da faixa presa e, aberto
+          (150px), cobria os cards ao rolar — "o filtro e as abas estão
+          sobrepondo os cards". Ele vive abaixo, no fluxo da página. `z-30`
+          para ficar acima das setas do quadro (`z-20`), que rolam por baixo. */}
+      {analyses.length > 0 && (
+        <div
+          className="sticky z-30 -mx-1 bg-slate-50/95 px-1 py-2 backdrop-blur"
+          // `useStickyHeaderOffset` soma 8px de folga para os modais; aqui a
+          // faixa cola no cabeçalho, senão os cards espiam pela fresta.
+          style={{ top: isFullscreen ? 0 : Math.max(0, alturaDoCabecalhoDoApp - 8) }}
+        >
+          <FaixaDeControles
+            abas={<BarraDeAbas ativa={abaAtiva} contagens={contagensDasAbas} onTrocar={setAbaAtiva} />}
+            busca={searchText}
+            onBusca={setSearchText}
+            filtrosAbertos={filtrosAbertos || filtrosInvisiveisAtivos}
+            filtrosAtivos={hasActiveFilters}
+            visiveis={queueCards.length}
+            total={analyses.length}
+            onAlternarFiltros={() => setFiltrosAbertos((v) => !v)}
+          />
         </div>
+      )}
 
-
-        {/* ⚠️ A VISÃO VEM ANTES DO FILTRO. A faixa de etapas ficava aqui, acima
-            das abas, e as duas fileiras — rótulos em caixa alta com um número
-            ao lado — pareciam a mesma coisa (Marcelo: "os filtros e abas
-            parecem a mesma coisa"). Primeiro escolhe-se COMO ver (as abas);
-            o que filtrar mora no bloco de filtros, logo abaixo, junto da busca.
-            A taxa de acerto da Bawzi (veredito × resultado) morava aqui, numa
-            faixa; foi para a aba Desempenho, junto do resto dos números. */}
-        {analyses.length > 0 && (
-          <BarraDeAbas ativa={abaAtiva} contagens={contagensDasAbas} onTrocar={setAbaAtiva} />
-        )}
-
-        {/* Sete controlos para filtrar coisa nenhuma, mais o selo "0 de 0",
-            é o que o utilizador via ao chegar aqui pela primeira vez. */}
-        {analyses.length > 0 && (
-        <div className="border-t border-slate-100 bg-white p-4">
-          {/* ⚠️ AS NOVE ETAPAS EM UMA LINHA SÓ, e para isso a faixa precisou sair
-            de dentro da coluna direita do cabeçalho.
-            Ela morava numa grade `grid-cols-2 / sm:3 / xl:5` espremida ao lado
-            do título: nove itens em cinco colunas viram duas fileiras
-            desalinhadas (5 + 4), e a leitura de um fluxo — que é sequencial por
-            natureza — passava a exigir uma quebra de linha no meio da
-            sequência. Ocupando a largura inteira, e com número e rótulo lado a
-            lado dentro de cada ficha (em vez de empilhados), as nove cabem numa
-            fileira só.
-            `overflow-x-auto` + `shrink-0`: no celular nove fichas não cabem de
-            jeito nenhum, e rolar a faixa preserva a leitura em sequência —
-            quebrar em duas linhas é o que se está corrigindo aqui.
-            ⚠️ E SÃO CHIPS DE FILTRO, NÃO FICHAS DE PAINEL. Eram cartões com
-            o número grande e o rótulo miúdo em caixa alta — a cara de um
-            indicador, não de algo que se marca. Agora: pílula com o nome da
-            etapa em frase, a contagem num selo, ✓ na marcada, e o rótulo
-            "Etapa" com o ícone de filtro na frente, dentro do bloco de filtros. */}
-          <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-0.5">
-            <span className="inline-flex shrink-0 items-center gap-1.5 pr-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-              <Filter size={12} />
-              Etapa
-            </span>
-          {columnOrder.map((key) => {
-            const stage = decisionQueueStages[key];
-            const noRecorte = colunasVisiveis.includes(key);
-            const selecionada = etapasSelecionadas.has(key);
-            return (
-              <React.Fragment key={key}>
-                {/* A seta antes das etapas de RESULTADO marca onde o fluxo
-                    linear termina e vira desfecho — era o que a legenda
-                    separada fazia com uma segunda fileira e um "↳". */}
-                {key === 'won' && (
-                  <span className="flex shrink-0 items-center px-0.5 text-slate-300" aria-hidden="true">
-                    <ChevronRight size={14} />
-                  </span>
-                )}
-                {/* ⚠️ DESABILITADA COM ZERO. Contagem vazia é a única em que o
-                    clique tem resultado garantido e inútil: filtra para uma
-                    etapa que não tem nada e devolve "nada corresponde à busca".
-                    Desabilitar diz a mesma coisa antes do clique. */}
-                <button
-                  type="button"
-                  onClick={() => alternarEtapa(key)}
-                  disabled={counts[key] === 0}
-                  aria-pressed={selecionada}
-                  title={
-                    counts[key] === 0
-                      ? `${stage.label} — nenhum edital nesta etapa`
-                      : selecionada
-                        ? `${stage.label} selecionada — clique para tirar do filtro`
-                        : `${stage.helper} — clique para somar ao filtro`
-                  }
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full border py-1.5 pr-1.5 text-[11px] font-bold transition-all ${stage.className} ${
-                    selecionada
-                      ? 'pl-2 ring-2 ring-slate-900 ring-offset-1'
-                      : counts[key] === 0
-                        ? 'cursor-not-allowed pl-3 opacity-40'
-                        : noRecorte
-                          ? 'pl-3 hover:-translate-y-0.5 hover:shadow-sm'
-                          : 'pl-3 opacity-40 hover:opacity-100'
-                  }`}
-                >
-                  {/* O check só aparece na selecionada. Com várias marcadas, o
-                      anel sozinho obriga a comparar bordas de chips coloridos
-                      para saber quais entraram — o ✓ responde item a item. */}
-                  {selecionada && <Check size={12} strokeWidth={3.5} className="shrink-0" />}
-                  {stage.label}
-                  <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] font-black leading-none tabular-nums">
-                    {counts[key]}
-                  </span>
-                </button>
-              </React.Fragment>
-            );
-          })}
-          {/* Estava na legenda; vem para cá junto com ela. É o caminho de volta
-              para as etapas esmaecidas ao lado. */}
-            <button
-              type="button"
-              onClick={() => setActivityFilter(activityFilter === 'active' ? 'finalized' : 'active')}
-              className="ml-1 shrink-0 rounded-full border border-dashed border-slate-300 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-500 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-800"
-            >
-              {activityFilter === 'active' ? 'Ver encerrados' : 'Ver fluxo ativo'}
-            </button>
-          </div>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
-                placeholder="Buscar por título, órgão, UF, termo ou decisão..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-4 text-xs font-medium text-slate-800 outline-none transition-all placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              />
+      {analyses.length > 0 && (
+        <PainelDeFiltros aberto={filtrosAbertos || filtrosInvisiveisAtivos} filtrosAtivos={hasActiveFilters} onLimpar={resetFilters}>
+            {/* ⚠️ QUEBRA DE LINHA, NÃO ROLAGEM. Era `overflow-x-auto` para manter
+                as nove etapas numa linha só; na largura real (~990px) a linha
+                não cabia e rolava: "Executado" e "Ver encerrados" ficavam fora
+                da vista, e o anel do chip marcado era cortado pelo recorte da
+                rolagem. Numa tela larga as nove cabem numa linha; numa estreita,
+                quebram. O rótulo "Etapa" subiu para a linha de cima do painel.
+                "Ver encerrados" saiu: fazia o mesmo que o seletor "Status" logo
+                abaixo e que clicar numa etapa final (`reconciliarRecorte`).
+                A seta antes dos desfechos marca onde o fluxo linear termina.
+                Zero fica desabilitado: filtrar para uma etapa sem nada só
+                devolveria "nada corresponde à busca". */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {columnOrder.map((key) => (
+                <React.Fragment key={key}>
+                  {key === 'won' && (
+                    <span className="flex shrink-0 items-center px-0.5 text-slate-300" aria-hidden="true">
+                      <ChevronRight size={14} />
+                    </span>
+                  )}
+                  <ChipDeEtapa
+                    stage={key}
+                    n={counts[key]}
+                    selecionada={etapasSelecionadas.has(key)}
+                    noRecorte={colunasVisiveis.includes(key)}
+                    onClick={() => alternarEtapa(key)}
+                  />
+                </React.Fragment>
+              ))}
             </div>
 
-            {/* ⚠️ SETE SELETORES ABERTOS O TEMPO TODO, para uma carteira que
-                normalmente tem uma dúzia de itens. A busca por texto resolve a
-                maioria dos casos e continua sempre visível; o resto vira sob
-                demanda.
-                ⚠️ E NUNCA FECHA COM FILTRO ATIVO (`hasActiveFilters` força
-                aberto): esconder um recorte que está sendo aplicado faz o
-                usuário ver uma lista curta sem nada em tela explicando por quê
-                — o mesmo erro do filtro de órgão no Radar. */}
-            <button
-              type="button"
-              onClick={() => setFiltrosAbertos((v) => !v)}
-              aria-expanded={filtrosAbertos || filtrosInvisiveisAtivos}
-              className={`inline-flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-[11px] font-black uppercase transition-all ${
-                hasActiveFilters
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
-              }`}
-            >
-              <span className="inline-flex items-center gap-2">
-                <SlidersHorizontal size={13} className={hasActiveFilters ? 'text-emerald-600' : 'text-slate-400'} />
-                Filtros
-                <ChevronRight size={12} className={`transition-transform ${filtrosAbertos || filtrosInvisiveisAtivos ? 'rotate-90' : ''}`} />
-              </span>
-              <span className="rounded-full bg-white px-2 py-0.5 text-slate-700 shadow-sm">
-                {queueCards.length} de {analyses.length}
-              </span>
-            </button>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">Empresa</span>
+                <select
+                  value={companyFilter}
+                  onChange={(event) => setCompanyFilter(event.target.value as CompanyFilter)}
+                  disabled={companyOptions.length === 0}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  <option value="all">{companyOptions.length ? 'Todas' : 'Sem empresas'}</option>
+                  {companyOptions.map((company) => {
+                    const cnpj = company.cnpj || '';
+                    const nome = company.nome_fantasia || company.razao_social || cnpj || 'Empresa';
+                    return <option key={cnpj || nome} value={cnpj}>{nome}</option>;
+                  })}
+                </select>
+              </label>
 
-            {/* ⚠️ "Limpar filtros" ocupava uma LINHA INTEIRA só para ele,
-                alinhada à direita, abaixo dos sete seletores — e só aparecia
-                quando havia filtro ativo, ou seja, empurrava todo o quadro para
-                baixo justamente no momento em que a pessoa estava mexendo nos
-                filtros e queria ver o resultado.
-                Aqui, ao lado do botão que ele desfaz: mesma linha, zero altura
-                nova, e a relação entre os dois fica óbvia. `shrink-0` porque
-                ele nunca deve ser comprimido pela caixa de busca ao lado. */}
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-black uppercase text-slate-500 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <RotateCcw size={12} />
-                Limpar
-              </button>
-            )}
-          </div>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">Status</span>
+                <select
+                  value={activityFilter}
+                  onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="active">Ativos</option>
+                  <option value="finalized">Finalizados</option>
+                  <option value="all">Todos</option>
+                </select>
+              </label>
 
-          <div className={`mt-3 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 ${filtrosAbertos || filtrosInvisiveisAtivos ? 'grid' : 'hidden'}`}>
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Empresa</span>
-              <select
-                value={companyFilter}
-                onChange={(event) => setCompanyFilter(event.target.value as CompanyFilter)}
-                disabled={companyOptions.length === 0}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
-              >
-                <option value="all">{companyOptions.length ? 'Todas' : 'Sem empresas'}</option>
-                {companyOptions.map((company) => {
-                  const cnpj = cleanCnpj(company.cnpj);
-                  return (
-                    <option key={cnpj} value={cnpj}>
-                      {getCompanyLabel(company)}
-                    </option>
-                  );
-                })}
-                <option value="unlinked">Sem vínculo</option>
-              </select>
-            </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">Decisão</span>
+                <select
+                  value={verdictFilter}
+                  onChange={(event) => setVerdictFilter(event.target.value as VerdictFilter)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="all">Todas</option>
+                  <option value="go">Go</option>
+                  <option value="attention">Atenção</option>
+                  <option value="nogo">No-Go</option>
+                </select>
+              </label>
 
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Etapa</span>
-              {/* ⚠️ UM `<select>` NATIVO NÃO SABE MOSTRAR DUAS ETAPAS.
-                  Com várias marcadas nas fichas, exibir a primeira seria
-                  mentira ("Etapa: Proposta" com Enviado também ligado). A
-                  opção `__varias__` existe só para ele ter o que exibir nesse
-                  caso, e está desabilitada porque não é uma escolha — é um
-                  estado. Escolher qualquer outra substitui a seleção inteira. */}
-              <select
-                value={etapasSelecionadas.size === 0 ? 'all' : etapasSelecionadas.size === 1 ? [...etapasSelecionadas][0] : '__varias__'}
-                onChange={(event) => selecionarEtapaUnica(event.target.value as 'all' | DecisionQueueKey)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                {etapasSelecionadas.size > 1 && (
-                  <option value="__varias__" disabled>{etapasSelecionadas.size} etapas marcadas</option>
-                )}
-                <option value="all">Todas</option>
-                {columnOrder.map((key) => (
-                  <option key={key} value={key}>{decisionQueueStages[key].label}</option>
-                ))}
-              </select>
-            </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">Prazo</span>
+                <select
+                  value={urgencyFilter}
+                  onChange={(event) => setUrgencyFilter(event.target.value as UrgencyFilter)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="all">Todos</option>
+                  <option value="late">Vencidos</option>
+                  <option value="urgent">Hoje/amanhã</option>
+                  <option value="week">Próx. 7 dias</option>
+                </select>
+              </label>
 
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Status</span>
-              <select
-                value={activityFilter}
-                onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="active">Ativos</option>
-                <option value="finalized">Finalizados</option>
-                <option value="all">Todos</option>
-              </select>
-            </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">PNCP</span>
+                <select
+                  value={monitorFilter}
+                  onChange={(event) => setMonitorFilter(event.target.value as MonitorFilter)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="all">Todos</option>
+                  <option value="changed">Com mudança</option>
+                  <option value="monitored">Monitorados agora</option>
+                  <option value="unmonitored">Sem monitoramento</option>
+                </select>
+              </label>
 
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Decisão</span>
-              <select
-                value={verdictFilter}
-                onChange={(event) => setVerdictFilter(event.target.value as VerdictFilter)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="all">Todas</option>
-                <option value="go">Go</option>
-                <option value="attention">Atenção</option>
-                <option value="nogo">No-Go</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
-              <select
-                value={urgencyFilter}
-                onChange={(event) => setUrgencyFilter(event.target.value as UrgencyFilter)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="all">Todos</option>
-                <option value="late">Vencidos</option>
-                <option value="urgent">Hoje/amanhã</option>
-                <option value="week">Próx. 7 dias</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">PNCP</span>
-              <select
-                value={monitorFilter}
-                onChange={(event) => setMonitorFilter(event.target.value as MonitorFilter)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="all">Todos</option>
-                <option value="changed">Com mudança</option>
-                <option value="monitored">Monitorados agora</option>
-                <option value="unmonitored">Sem monitoramento</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Ordenar</span>
-              <select
-                value={sortFilter}
-                onChange={(event) => setSortFilter(event.target.value as SortFilter)}
-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
-              >
-                <option value="recent">Mais recentes</option>
-                <option value="deadline">Prazo crítico</option>
-                <option value="score_desc">Maior score</option>
-                <option value="score_asc">Menor score</option>
-              </select>
-            </label>
-          </div>
-
-        </div>
-        )}
-      </div>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-medium text-slate-500">Ordenar</span>
+                <select
+                  value={sortFilter}
+                  onChange={(event) => setSortFilter(event.target.value as SortFilter)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] font-medium text-slate-700 outline-none transition-all focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                >
+                  <option value="recent">Mais recentes</option>
+                  <option value="deadline">Prazo crítico</option>
+                  <option value="score_desc">Maior score</option>
+                  <option value="score_asc">Menor score</option>
+                </select>
+              </label>
+            </div>
+        </PainelDeFiltros>
+      )}
 
       {/* ⚠️ FALHA VEM ANTES DE VAZIO, e a ordem é o conserto.
           Enquanto este ramo não existia, um 500 ou um 403 produziam `[]` e a
@@ -1688,36 +1437,36 @@ export default function DecisionManagementTab({
           Agora a lista vazia só é interpretada como vazia quando a carga
           realmente deu certo. */}
       {erroDeCarga ? (
-        <div className="rounded-[2rem] border border-red-200 bg-red-50/60 py-16 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-red-500">
-            <AlertTriangle size={24} />
+        <div className="rounded-2xl border border-red-200 bg-red-50/60 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-white text-red-500">
+            <AlertTriangle size={22} />
           </div>
-          <h3 className="text-lg font-black text-red-900">Não consegui carregar seus editais</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm font-medium text-red-800/80">{erroDeCarga}</p>
-          <p className="mx-auto mt-1 max-w-md text-[11px] font-medium text-red-700/60">
+          <h3 className="text-base font-semibold text-red-900">Não consegui carregar seus editais</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm text-red-800/80">{erroDeCarga}</p>
+          <p className="mx-auto mt-1 max-w-md text-[12px] text-red-700/60">
             Isto é uma falha de carregamento — nada foi perdido. Seus editais em
             acompanhamento continuam salvos.
           </p>
           <button
             type="button"
             onClick={() => setRecarregar((n) => n + 1)}
-            className="mx-auto mt-5 inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-red-700"
+            className="mx-auto mt-5 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm transition-all hover:bg-red-700"
           >
             <RefreshCw size={14} />
             Tentar de novo
           </button>
         </div>
       ) : queueCards.length === 0 && abaAtiva !== 'desempenho' ? (
-        <div className="rounded-[2rem] border border-dashed border-slate-200 bg-white py-20 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-50 text-slate-300">
-            <Search size={24} />
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-slate-300">
+            <Search size={22} />
           </div>
           {analyses.length === 0 ? (
             <>
-              <h3 className="text-lg font-black text-slate-800">Nenhum edital na Gestão ainda</h3>
-              <p className="mx-auto mt-2 max-w-md text-sm font-medium text-slate-500">
+              <h3 className="text-base font-semibold text-slate-800">Nenhum edital na Gestão ainda</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm text-slate-500">
                 A Gestão só mostra editais adicionados de propósito. Abra uma análise em Decisões e clique em{' '}
-                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-black text-emerald-700">+ Gestão</span>{' '}
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-700">+ Gestão</span>{' '}
                 para trazê-la para cá.
               </p>
               {/* Sem isto a tela dá uma instrução e não oferece como cumpri-la:
@@ -1726,7 +1475,7 @@ export default function DecisionManagementTab({
               <button
                 type="button"
                 onClick={() => router.push('/workspace?tab=history')}
-                className="mx-auto mt-5 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-[11px] font-black uppercase tracking-widest text-white shadow-md transition-all hover:bg-slate-800"
+                className="mx-auto mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[12px] font-semibold text-white shadow-sm transition-all hover:bg-slate-800"
               >
                 Ir para Decisões
                 <ArrowRight size={14} />
@@ -1734,10 +1483,15 @@ export default function DecisionManagementTab({
             </>
           ) : (
             <>
-              <h3 className="text-lg font-black text-slate-800">Nada para gerir agora</h3>
-              <p className="mt-2 text-sm font-medium text-slate-500">
-                Nenhuma decisão salva corresponde à busca atual.
+              <h3 className="text-base font-semibold text-slate-800">Nada para gerir agora</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Nenhum edital corresponde à busca e aos filtros atuais.
               </p>
+              {hasActiveFilters && (
+                <button type="button" onClick={resetFilters} className="mt-4 text-[12px] font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900">
+                  Limpar filtros
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1804,13 +1558,6 @@ export default function DecisionManagementTab({
             </>
           )}
 
-          {/* A legenda de fluxo que ficava aqui foi FUNDIDA na faixa de
-              contadores, no topo da tela. Ela listava as mesmas nove etapas, na
-              mesma ordem, a duas telas de distância dos contadores que já
-              listavam as mesmas nove etapas com os números — duas fileiras
-              dizendo a mesma sequência. O que ela tinha de próprio (a seta
-              separando fluxo de resultado, e o botão "Ver encerrados") está
-              agora dentro da faixa. */}
           <div ref={boardScrollRef} className="overflow-x-auto scroll-smooth pb-3">
             {/* Grade por `style` e não por classe: `grid-cols-${n}` dinâmico
                 não existe para o Tailwind, que precisa da classe literal no
@@ -1822,57 +1569,43 @@ export default function DecisionManagementTab({
                 gridTemplateColumns: `repeat(${colunasVisiveis.length}, minmax(0, 1fr))`,
               }}
             >
-            {colunasVisiveis.map((stageKey) => {
-              const stage = decisionQueueStages[stageKey];
-              const cards = queueCards.filter((card) => card.stage === stageKey);
-              const isExpanded = expandedColumns[stageKey] ?? false;
-              const visibleCards = isExpanded ? cards : cards.slice(0, CARDS_PER_COLUMN);
-              const hiddenCount = cards.length - visibleCards.length;
-              const stageIndex = decisionQueueOrder.indexOf(stageKey) + 1;
-              const isFinalStage = ['won', 'lost', 'abandoned', 'executed'].includes(stageKey);
-
-              return (
-                <section key={stageKey} className={`min-w-0 rounded-[1.5rem] border p-3 ${isFinalStage ? 'border-zinc-200 bg-zinc-50/60' : 'border-slate-200 bg-slate-50/70'}`}>
-                  <div className="mb-3 flex items-center justify-between gap-2 px-1">
-                    <div>
-                      <p className="flex items-center gap-1.5 text-[11px] font-black uppercase text-slate-700">
-                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] font-black ${isFinalStage ? 'bg-slate-200 text-slate-500' : 'bg-slate-800 text-white'}`}>
-                          {stageIndex}
-                        </span>
-                        <span className={`h-2 w-2 rounded-full ${stage.dotClass}`} />
-                        {stage.label}
-                      </p>
-                      <p className="mt-1 text-[10px] font-semibold text-slate-500">{stage.helper}</p>
-                    </div>
-                    <span className="rounded-full bg-white px-2 py-1 text-[10px] font-black text-slate-500 shadow-sm">
-                      {cards.length}
-                    </span>
-                  </div>
-
-                  <div className="space-y-3">
-                    {cards.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-3 py-5 text-center text-[11px] font-bold text-slate-400">
-                        Sem itens nesta fase
-                      </div>
-                    ) : visibleCards.map((card) => (
-                      <DecisionQueueCard
-                        key={card.analysis.id}
-                        card={card}
-                        loadingDetailId={loadingDetailId}
-                        savingTaskId={savingTaskId}
-                        savingStageId={savingStageId}
-                        onOpen={openAnalysisDetail}
-                        onOpenSummary={(c, foco) => { setFocoDoResumo(foco ?? null); setSummaryModal(c); }}
-                        onComplete={(a, t) => salvarTarefa(a, t, { done: true })}
-                        onStageChange={updateWorkflowStage}
-                        scoreColors={scoreColors}
-                      />
-                    ))}
+              {colunasVisiveis.map((stageKey) => {
+                const cards = queueCards.filter((card) => card.stage === stageKey);
+                const isExpanded = expandedColumns[stageKey] ?? false;
+                const visibleCards = isExpanded ? cards : cards.slice(0, CARDS_PER_COLUMN);
+                const hiddenCount = cards.length - visibleCards.length;
+                return (
+                  <ColunaDoQuadro key={stageKey} stage={stageKey} n={cards.length}>
+                    {visibleCards.map((card) => {
+                      const monitor = asRecord(card.analysis.pncp_monitor);
+                      const mudouNoPncp = monitor.status === 'mudanca_detectada'
+                        || (Array.isArray(card.analysis.pncp_monitor_events) && card.analysis.pncp_monitor_events.length > 0);
+                      return (
+                        <CartaoDoEdital
+                          key={card.analysis.id}
+                          card={card}
+                          sinais={{
+                            resultado: getResultLabel(card.analysis),
+                            resultadoAutomatico: card.analysis.decision_learning?.origem === 'pncp_auto',
+                            vigencia: getVigenciaStatus(card.analysis),
+                            mudouNoPncp,
+                          }}
+                          salvandoTarefa={Boolean(card.nextTask) && savingTaskId === `${card.analysis.id}-${card.nextTask?.id}`}
+                          salvandoEtapa={savingStageId === `${card.analysis.id}-workflow`}
+                          abrindoLaudo={loadingDetailId === card.analysis.id}
+                          onAbrir={() => { setFocoDoResumo(null); setSummaryModal(card); }}
+                          onAbrirPlano={() => { setFocoDoResumo('plano'); setSummaryModal(card); }}
+                          onConcluir={() => card.nextTask && salvarTarefa(card.analysis, card.nextTask, { done: true })}
+                          onAvancar={(etapa) => updateWorkflowStage(card.analysis, etapa)}
+                          onLaudo={() => void openAnalysisDetail(card.analysis)}
+                        />
+                      );
+                    })}
                     {hiddenCount > 0 && (
                       <button
                         type="button"
                         onClick={() => toggleColumnExpand(stageKey)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white py-2 text-[11px] font-black text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                        className="w-full rounded-lg bg-white py-1.5 text-[11px] font-medium text-slate-500 shadow-sm ring-1 ring-slate-900/[0.06] transition-colors hover:text-slate-800"
                       >
                         Ver mais {hiddenCount} edita{hiddenCount === 1 ? 'l' : 'is'} ↓
                       </button>
@@ -1881,15 +1614,14 @@ export default function DecisionManagementTab({
                       <button
                         type="button"
                         onClick={() => toggleColumnExpand(stageKey)}
-                        className="w-full rounded-2xl border border-slate-200 bg-white py-2 text-[11px] font-black text-slate-400 transition-colors hover:bg-slate-50"
+                        className="w-full rounded-lg bg-white py-1.5 text-[11px] font-medium text-slate-400 shadow-sm ring-1 ring-slate-900/[0.06] transition-colors hover:text-slate-700"
                       >
                         Recolher ↑
                       </button>
                     )}
-                  </div>
-                </section>
-              );
-            })}
+                  </ColunaDoQuadro>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1898,256 +1630,6 @@ export default function DecisionManagementTab({
   );
 }
 
-function DecisionQueueCard({
-  card,
-  loadingDetailId,
-  savingTaskId,
-  savingStageId,
-  onOpen,
-  onOpenSummary,
-  onComplete,
-  onStageChange,
-  scoreColors,
-}: {
-  card: DecisionQueueCardModel;
-  loadingDetailId: string | null;
-  savingTaskId: string | null;
-  savingStageId: string | null;
-  onOpen: (analysis: SavedAnalysis) => void;
-  onOpenSummary: (card: DecisionQueueCardModel, foco?: 'plano') => void;
-  onComplete: (analysis: SavedAnalysis, task: DecisionQueueTask) => void;
-  onStageChange: (analysis: SavedAnalysis, status: DecisionQueueKey) => void;
-  scoreColors: (score: number) => { bar: string; text: string; light: string; border: string; label: string };
-}) {
-  // ⚠️ AUSÊNCIA NÃO É ZERO. `Number(x || 0)` desenhava "0 / score" em vermelho
-  // para um laudo que simplesmente não trouxe o número — indistinguível de um
-  // edital que a bawzi reprovou. Ver `scoreOuNulo` em lib/decisionQueue.
-  const score = scoreOuNulo(card.analysis.score);
-  const colors = scoreColors(score ?? 50);
-  const createdDate = card.analysis.created_at
-    ? new Date(card.analysis.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
-    : 'Sem data';
-  const quickTaskId = card.nextTask ? `${card.analysis.id}-${card.nextTask.id}` : '';
-  const workflowTaskId = `${card.analysis.id}-workflow`;
-  const nextStage = getNextDecisionQueueStage(card.stage);
-  const operational = getOperationalContext(card.analysis, card.stage, card.nextTask);
-  const learnedResult = getResultLabel(card.analysis);
-  const vigenciaStatus = getVigenciaStatus(card.analysis);
-  const resultadoAutomatico = card.analysis.decision_learning?.origem === 'pncp_auto';
-
-  return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className={`h-1 ${colors.bar}`} />
-      <div className="p-3">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[9px] font-bold text-slate-500">
-                <CalendarDays size={10} />
-                {createdDate}
-              </span>
-              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${colors.light} ${colors.text}`}>
-                {colors.label}
-              </span>
-            </div>
-            <h3 className="line-clamp-2 text-sm font-black leading-snug text-slate-950">
-              {card.analysis.title || 'Análise de edital'}
-            </h3>
-          </div>
-          <div className={`shrink-0 rounded-xl border px-2 py-1 text-center ${colors.light} ${colors.border}`}>
-            <p className={`text-lg font-black leading-none ${score === null ? 'text-slate-400' : colors.text}`}>
-              {score === null ? '—' : score}
-            </p>
-            <p className="mt-0.5 text-[8px] font-black uppercase text-slate-400">
-              {score === null ? 'sem score' : 'score'}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onOpenSummary(card)}
-          className="mb-3 flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition-all hover:border-slate-300 hover:bg-white hover:shadow-sm"
-        >
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-slate-500 shadow-sm">
-              <FileText size={15} />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[11px] font-black text-slate-800">Resumo do edital</span>
-              <span className="mt-0.5 block truncate text-[9px] font-bold uppercase tracking-widest text-slate-400">
-                Órgão, valor, prazo e status
-              </span>
-            </span>
-          </span>
-          <span className="flex w-full items-center justify-between gap-2">
-            <span className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${operational.urgency.className}`}>
-              {operational.urgency.label}
-            </span>
-            <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-slate-400">
-              Abrir
-              <ArrowRight size={13} />
-            </span>
-          </span>
-        </button>
-
-        {learnedResult && (
-          <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-[11px] font-black leading-snug text-emerald-800">
-            {resultadoAutomatico && (
-              <span
-                title="Resultado preenchido automaticamente a partir da homologação pública do PNCP. Use 'Registrar resultado' para ajustar — a edição manual substitui o automático."
-                className="mb-1.5 inline-flex cursor-help items-center gap-1 rounded-full border border-violet-200 bg-violet-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-violet-700"
-              >
-                Automático · PNCP
-              </span>
-            )}
-            {learnedResult}
-          </div>
-        )}
-
-        {vigenciaStatus && (
-          <div className={`mb-3 flex items-center gap-1.5 rounded-xl border p-2.5 text-[10px] font-black leading-snug ${vigenciaStatus.className}`}>
-            <CalendarDays size={11} className="shrink-0" />
-            {vigenciaStatus.label}
-          </div>
-        )}
-
-        {/* ⚠️ O BLOCO INTEIRO É O BOTÃO, e isso corrige duas gerações de erro
-            no mesmo lugar.
-            Primeiro era um ícone de 20px sem rótulo, com o texto só no `title`
-            — que não existe em toque, justamente onde o alvo já era pequeno
-            demais. Depois eu "consertei" o alvo com `box-content p-2`, e o
-            resultado foi pior: o fundo verde passou a pintar os 38px inteiros
-            com um ícone de 10px flutuando no meio, ocupando 26% da área. Virou
-            um selo decorativo — e um render lado a lado deixou isso óbvio.
-            O erro dos dois era o mesmo: tentar resolver por tamanho o que era
-            problema de RÓTULO. Concluir a ação é o verbo desta tela, e estava
-            escrito em lugar nenhum.
-            Alvo agora é a caixa toda (largura do cartão × ~64px) e o rótulo diz
-            o que o clique faz. Custo zero de altura: medido em 272px, o mesmo
-            do desenho anterior, então nenhum cartão a menos por coluna. */}
-        {/* ⚠️ DOIS ALVOS, PORQUE SÃO DUAS INTENÇÕES.
-            A versão anterior fazia a caixa inteira concluir a tarefa — e o
-            texto da ação é cortado em duas linhas (`line-clamp-2`). Uma ação
-            real como "Conferir habilitação, licença sanitária, autorizações
-            aplicáveis e atestado de capacidade técnica" não cabe, e o único
-            clique disponível marcava como feita em vez de deixar ler. Pedir
-            para concluir algo que a pessoa não conseguiu terminar de ler é o
-            oposto do que esta tela deveria fazer.
-            Agora o círculo conclui e o texto abre o plano inteiro (mesmo modal
-            do "Resumo do edital", onde a lista aparece sem corte e editável).
-            Irmãos e não aninhados: botão dentro de botão é HTML inválido e o
-            navegador desmonta a árvore. */}
-        {card.nextTask ? (
-          <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-white p-2.5 transition-all focus-within:border-emerald-200">
-            <button
-              type="button"
-              onClick={() => card.nextTask && onComplete(card.analysis, card.nextTask)}
-              disabled={savingTaskId === quickTaskId}
-              title={`Concluir: ${card.nextTask.acao}`}
-              aria-label={`Concluir ação: ${card.nextTask.acao}`}
-              /* `-m-1.5 p-1.5` no BOTÃO, com o círculo num `span` interno: a
-                 área de toque vai a 36px enquanto o desenho continua 24px. O
-                 truque só funciona porque quem pinta borda e fundo é o span —
-                 foi pôr o `bg` no próprio botão que produziu, da última vez, um
-                 quadrado verde de 38px com um ícone perdido no meio. */
-              className="-m-1.5 shrink-0 rounded-full p-1.5 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-emerald-300 text-emerald-600">
-                {savingTaskId === quickTaskId ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} strokeWidth={3} />}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenSummary(card, 'plano')}
-              className="group min-w-0 flex-1 text-left"
-            >
-              <span className="block text-[9px] font-black uppercase tracking-widest text-slate-400">
-                Próxima ação · {card.done} de {card.total}
-              </span>
-              {/* ⚠️ SEM `block` AQUI. `line-clamp-2` funciona definindo
-                  `display: -webkit-box`; a utilitária `block` define
-                  `display: block` e vence na cascata, matando o corte em
-                  silêncio. O original era um `<p>` (que já é bloco por
-                  padrão) e por isso funcionava — ao virar `<span>` eu
-                  acrescentei `block` por reflexo e o texto passou a
-                  ocupar cinco linhas. Só apareceu ao renderizar com uma
-                  ação longa de verdade. */}
-              <span className="mt-0.5 line-clamp-2 text-xs font-black leading-snug text-slate-800">
-                {card.nextTask.acao}
-              </span>
-              {/* O texto é cortado — então a saída para lê-lo por inteiro
-                  precisa estar escrita, não adivinhada. */}
-              <span className="mt-1 block text-[9px] font-black uppercase tracking-wider text-slate-400 transition-colors group-hover:text-emerald-700">
-                Ver o plano inteiro →
-              </span>
-            </button>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-2.5 text-xs font-black text-emerald-800">
-            Checklist concluído.
-          </div>
-        )}
-
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2">
-          <span className={`inline-flex min-w-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] font-black uppercase ${decisionQueueStages[card.stage].className}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${decisionQueueStages[card.stage].dotClass}`} />
-            {decisionQueueStages[card.stage].label}
-          </span>
-          <span className="text-[10px] font-black text-slate-500">
-            {card.done}/{card.total} ações
-          </span>
-        </div>
-
-        <div className="mt-2 flex items-center gap-2">
-          {nextStage ? (
-            /* Rotulado pelo mesmo motivo da próxima ação: era uma seta sozinha
-               cujo significado morava num `title`. Divide a linha com o Laudo. */
-            <button
-              type="button"
-              title={`Avançar para ${decisionQueueStages[nextStage].label}`}
-              onClick={() => onStageChange(card.analysis, nextStage)}
-              disabled={savingStageId === workflowTaskId}
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {savingStageId === workflowTaskId ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
-              Avançar
-            </button>
-          ) : (
-            <button
-              type="button"
-              title="Etapa final — não há para onde avançar"
-              disabled
-              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-slate-400"
-            >
-              <CheckCircle2 size={11} />
-              Etapa final
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onOpen(card.analysis)}
-            disabled={loadingDetailId === card.analysis.id}
-            className="inline-flex flex-1 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[9px] font-medium text-slate-400 transition-all hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loadingDetailId === card.analysis.id ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
-            Laudo
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-/** O plano de execução completo, editável — a casa nova da edição.
- *
- *  Cada passo tem responsável, prazo e nota. Grava no blur (não a cada tecla):
- *  a rota é um PATCH do mapa inteiro de tarefas, e disparar por tecla faria
- *  uma escrita por caractere, com corridas entre elas.
- *
- *  O estado local existe para o campo não "pular" enquanto se digita: o valor
- *  vem do rascunho local se houver, senão do que está salvo, senão do default
- *  da tarefa. */
 function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, onSalvar }: {
   card: DecisionQueueCardModel;
   savingTaskId: string | null;
@@ -2238,7 +1720,7 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, o
     <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Plano de execução</p>
+          <p className="text-[11px] font-semibold text-slate-400">Plano de execução</p>
           <p className="mt-1 text-sm font-bold text-slate-700">
             Responsável, prazo e conclusão de cada passo
           </p>
@@ -2308,7 +1790,7 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, o
                 <button
                   type="button"
                   onClick={() => setAberta(abertaAqui ? null : task.id)}
-                  className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
+                  className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10.5px] font-semibold text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-600"
                 >
                   {abertaAqui ? 'Fechar' : 'Editar'}
                 </button>
@@ -2317,7 +1799,7 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, o
               {abertaAqui && (
                 <div className="mt-3 grid gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-2">
                   <label className="block">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Responsável</span>
+                    <span className="mb-1 block text-[10.5px] font-semibold text-slate-400">Responsável</span>
                     <input
                       value={valor(task.id, 'responsavel', task.responsavel)}
                       onChange={(e) => editar(task.id, 'responsavel', e.target.value)}
@@ -2326,7 +1808,7 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, o
                     />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Prazo</span>
+                    <span className="mb-1 block text-[10.5px] font-semibold text-slate-400">Prazo</span>
                     <input
                       value={valor(task.id, 'prazo', task.prazo)}
                       onChange={(e) => editar(task.id, 'prazo', e.target.value)}
@@ -2335,7 +1817,7 @@ function PlanoEditavel({ card, savingTaskId, tarefaInicial = null, pedido = 0, o
                     />
                   </label>
                   <label className="block sm:col-span-2">
-                    <span className="mb-1 block text-[9px] font-black uppercase tracking-widest text-slate-400">Nota interna</span>
+                    <span className="mb-1 block text-[10.5px] font-semibold text-slate-400">Nota interna</span>
                     <input
                       value={valor(task.id, 'nota', '')}
                       onChange={(e) => editar(task.id, 'nota', e.target.value)}
@@ -2476,13 +1958,13 @@ function OperationalSummaryModal({
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 p-4 sm:p-5">
           <div className="min-w-0">
             <div className="mb-2.5 flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${stage.className}`}>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${stage.className}`}>
                 {stage.label}
               </span>
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${operational.urgency.className}`}>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${operational.urgency.className}`}>
                 {operational.urgency.label}
               </span>
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${verdictClass}`}>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${verdictClass}`}>
                 {score === null ? 'Score não informado' : `Score ${score}`}
               </span>
             </div>
@@ -2552,7 +2034,7 @@ function OperationalSummaryModal({
           <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Gestão do fluxo</p>
+                <p className="text-[11px] font-semibold text-slate-400">Gestão do fluxo</p>
                 <p className="mt-1 text-sm font-bold text-slate-700">{stage.helper}</p>
               </div>
               <button
@@ -2589,7 +2071,7 @@ function OperationalSummaryModal({
 
           {datas.length > 0 && (
             <details className="group mt-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-semibold text-slate-400 transition-colors hover:text-slate-600">
                 <CalendarDays size={13} className="shrink-0" />
                 Todas as datas do edital · {datas.length}
                 <ChevronRight size={13} className="ml-auto shrink-0 transition-transform group-open:rotate-90" />
@@ -2695,7 +2177,7 @@ function LearningStatsBanner({ stats }: { stats: LearningStats | null }) {
   if (go.total_com_resultado === 0 && noGo.total_participou_mesmo_assim === 0) {
     return (
       <details className="group border-t border-slate-100 bg-slate-50/60 px-5 py-2.5 md:px-7">
-        <summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 transition-colors hover:text-slate-600">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-[11px] font-semibold text-slate-400 transition-colors hover:text-slate-600">
           <Trophy size={12} className="shrink-0 text-slate-400" />
           Taxa de acerto real · registre {amostraMinima} resultados para começar
           <ChevronRight size={12} className="ml-auto shrink-0 transition-transform group-open:rotate-90" />
@@ -2709,13 +2191,13 @@ function LearningStatsBanner({ stats }: { stats: LearningStats | null }) {
 
   return (
     <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-4 md:px-7">
-      <p className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+      <p className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
         <Trophy size={12} className="text-emerald-600" />
         Taxa de acerto real — veredito Bawzi × resultado registrado
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quando dissemos GO</p>
+          <p className="text-[11px] font-semibold text-slate-400">Quando dissemos GO</p>
           {go.amostra_suficiente ? (
             <>
               <p className="mt-1 text-2xl font-black text-emerald-700">{go.taxa_acerto_pct}%</p>
@@ -2732,7 +2214,7 @@ function LearningStatsBanner({ stats }: { stats: LearningStats | null }) {
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quando dissemos No-Go (e participou mesmo assim)</p>
+          <p className="text-[11px] font-semibold text-slate-400">Quando dissemos No-Go (e participou mesmo assim)</p>
           {noGo.amostra_suficiente ? (
             <>
               <p className="mt-1 text-2xl font-black text-amber-700">{noGo.taxa_alerta_validado_pct}%</p>
@@ -2786,7 +2268,7 @@ function DecisionReviewModal({
       >
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-sky-50 p-4 sm:p-5">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-sky-600">Revisar decisão</p>
+            <p className="text-[11px] font-semibold text-sky-600">Revisar decisão</p>
             <h3 className="mt-1 line-clamp-2 text-lg font-black leading-tight text-slate-950">
               {card.analysis.title || 'Análise de edital'}
             </h3>
@@ -2804,7 +2286,7 @@ function DecisionReviewModal({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Tipo</label>
+              <label className="mb-2 block text-[11px] font-semibold text-slate-400">Tipo</label>
               <div className="relative">
                 <select
                   value={tipo}
@@ -2821,7 +2303,7 @@ function DecisionReviewModal({
               </div>
             </div>
             <div>
-              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Título</label>
+              <label className="mb-2 block text-[11px] font-semibold text-slate-400">Título</label>
               <input
                 value={titulo}
                 onChange={(event) => setTitulo(event.target.value)}
@@ -2832,7 +2314,7 @@ function DecisionReviewModal({
           </div>
 
           <div>
-            <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Novo fato para reprocessar</label>
+            <label className="mb-2 block text-[11px] font-semibold text-slate-400">Novo fato para reprocessar</label>
             <textarea
               value={conteudo}
               onChange={(event) => setConteudo(event.target.value)}
@@ -2937,7 +2419,7 @@ function LearningModal({
       >
         <div className="shrink-0 flex items-start justify-between gap-4 border-b border-slate-100 bg-emerald-50 p-4 sm:p-5">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Memória de aprendizado</p>
+            <p className="text-[11px] font-semibold text-emerald-700">Memória de aprendizado</p>
             <h3 className="mt-1 line-clamp-2 text-lg font-black leading-tight text-slate-950">
               {card.analysis.title || 'Análise de edital'}
             </h3>
@@ -2999,7 +2481,7 @@ function LearningModal({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Preço final</label>
+              <label className="mb-2 block text-[11px] font-semibold text-slate-400">Preço final</label>
               <input
                 value={precoFinal}
                 onChange={(event) => setPrecoFinal(event.target.value)}
@@ -3008,7 +2490,7 @@ function LearningModal({
               />
             </div>
             <div>
-              <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Quem venceu</label>
+              <label className="mb-2 block text-[11px] font-semibold text-slate-400">Quem venceu</label>
               <input
                 value={vencedor}
                 onChange={(event) => setVencedor(event.target.value)}
@@ -3021,7 +2503,7 @@ function LearningModal({
           {participou && resultado === 'won' && (
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
               <div className="mb-2.5 flex items-center justify-between gap-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Vigência do contrato</p>
+                <p className="text-[11px] font-semibold text-emerald-700">Vigência do contrato</p>
                 <button
                   type="button"
                   onClick={sugerirVigencia}
@@ -3033,7 +2515,7 @@ function LearningModal({
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-emerald-600">Início</label>
+                  <label className="mb-1.5 block text-[10.5px] font-semibold text-emerald-600">Início</label>
                   <input
                     type="date"
                     value={contratoInicio}
@@ -3042,7 +2524,7 @@ function LearningModal({
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-[9px] font-black uppercase tracking-widest text-emerald-600">Fim</label>
+                  <label className="mb-1.5 block text-[10.5px] font-semibold text-emerald-600">Fim</label>
                   <input
                     type="date"
                     value={contratoFim}
@@ -3055,7 +2537,7 @@ function LearningModal({
           )}
 
           <div>
-            <label className="mb-2 block text-[10px] font-black uppercase tracking-widest text-slate-400">Observação</label>
+            <label className="mb-2 block text-[11px] font-semibold text-slate-400">Observação</label>
             <textarea
               value={observacao}
               onChange={(event) => setObservacao(event.target.value)}
@@ -3105,7 +2587,7 @@ function SummaryField({
     <div className={`rounded-2xl border p-3 sm:p-4 ${toneClass || 'border-slate-100 bg-slate-50 text-slate-800'} ${wide ? 'md:col-span-2' : ''}`}>
       <div className="mb-2 flex items-center gap-2 text-slate-400">
         {icon}
-        <p className="text-[10px] font-black uppercase tracking-widest">{label}</p>
+        <p className="text-[11px] font-semibold">{label}</p>
       </div>
       <p className="whitespace-pre-wrap break-words text-sm font-black leading-relaxed text-slate-900">{value}</p>
     </div>

@@ -24,7 +24,7 @@ import { Lock, Sparkles, Coins, X, ChevronLeft, ChevronRight } from 'lucide-reac
 import { initSession, clearSession, encerrarSessao, apiFetch, API_URL, startSessionKeepAlive, mensagemDeErro, SessionExpiredError } from '@/lib/apiClient';
 import { useInactivityTimeout } from '@/lib/useInactivityTimeout';
 import type { UserData, Empresa, Concorrente, BawziUpdateEvent, SavedAnalysis } from '@/lib/types';
-import { useAnalysis, LOADING_MESSAGES, lerUsoConvidadoHoje } from '@/hooks/useAnalysis';
+import { useAnalysis, LOADING_MESSAGES } from '@/hooks/useAnalysis';
 import { exportPdf } from '@/lib/exportPdf';
 import { LAUNCH_FLAGS } from '@/lib/launchFlags';
 import { useRouter } from 'next/navigation';
@@ -167,60 +167,11 @@ export default function AnalysisApp() {
   const [userTier, setUserTier]         = useState<number>(1);
   const [userData, setUserData]         = useState<UserData | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  // ⚠️ Começa SEMPRE em `false` — o mesmo valor que o servidor renderiza.
-  //
-  // Antes isto lia o localStorage dentro do inicializador do `useState`, com
-  // uma guarda `typeof window === 'undefined'` que PARECE a correção e é o
-  // defeito: o React compara o HTML do servidor com a PRIMEIRA renderização do
-  // cliente. No servidor a guarda devolvia `false`; no cliente `window` existe
-  // e o inicializador devolvia `true` para quem já tinha usado a análise. Os
-  // dois não batiam, e o React descartava a árvore inteira e re-renderizava
-  // ("Hydration failed because the server rendered text didn't match").
-  //
-  // Valor de localStorage só pode entrar depois da hidratação. Custo: um paint
-  // mostrando "Teste gratuito" antes de virar "⛔ usada", para quem volta. O
-  // caminho alternativo — segurar a barra até ler o storage — trocaria esse
-  // pisca por um salto de layout em toda visita, inclusive a de quem chega
-  // pela primeira vez e não tem nada gravado.
-  //
-  // ⚠️ E é CONTAGEM, não booleano. Como booleano ("já usou alguma vez hoje"),
-  // a primeira análise do dia bloqueava o convidado mesmo com o limite em 5.
-  // O número sai de `lerUsoConvidadoHoje()`, a mesma função que o useAnalysis
-  // usa para gravar — uma chave, uma leitura, nenhuma contabilidade paralela.
-  const [guestUsadas, setGuestUsadas] = useState(0);
-
-  useEffect(() => {
-    setGuestUsadas(lerUsoConvidadoHoje());
-  }, []);
-
-  // Quantas análises o convidado tem por dia. Sai da MESMA configuração que o
-  // portão do backend aplica (`LIMIT_TIER_MINUS_1`, sobrescrevível pelo Admin),
-  // pela rota pública que a landing também consulta. Se a chamada falhar, fica
-  // o `1` inicial: mede a menos, nunca a mais.
-  const [guestLimit, setGuestLimit] = useState(1);
-  useEffect(() => {
-    if (token) return; // quem tem conta é medido pela cota do plano, não por esta
-    fetch(`${API_URL}/api/tiers/guest-limit`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d?.daily_limit > 0) setGuestLimit(d.daily_limit); })
-      .catch(() => { /* fica o valor inicial */ });
-  }, [token]);
-
+  // (A cota diária do convidado — `guestUsadas`, `guestLimit` e o
+  // `/api/tiers/guest-limit` — saiu em 26/09/2026 com a análise sem cadastro:
+  // sem conta, "Analisar" abre o cadastro. Ver `requiresAuth`.)
   const [sessionExpired, setSessionExpired] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  // ⚠️ O TOUR DE ONBOARDING COBRIA O EDITAL QUE A PESSOA ACABOU DE COLAR.
-  // Quem vem do taster pelo CTA (/login?view=register&redirect=/workspace?from=taster)
-  // cai com as DUAS condições verdadeiras ao mesmo tempo: há handoff a
-  // retomar e não há empresa. O modal é z-[900] e nascia por cima do
-  // formulário já preenchido — e o toast que explica a retomada expirava
-  // atrás do overlay. Esta é justamente a pessoa que menos precisa do tour:
-  // ela já viu o produto funcionar antes de criar conta.
-  // Ref, não state: o efeito do taster roda na montagem (está declarado
-  // acima) e o `setShowOnboarding` só acontece depois do fetch de
-  // /me + /workspace resolver, então a marca já está posta a tempo. E o
-  // efeito do taster consome a chave do localStorage na hora, portanto
-  // relê-la mais tarde não funcionaria.
-  const retomandoTasterRef = useRef(false);
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false);
   // Permite ganhar os 350px do menu lateral — usado tanto pelo laudo aberto
   // pela Gestão (DecisionManagementTab) quanto pelo painel de resultados
@@ -368,37 +319,7 @@ export default function AnalysisApp() {
     apiUrl: API_URL,
     onUpgradeNeeded: (tier) => handleUpgrade(tier),
     onUpsellNeeded: (data) => { setUpsellData(data); setShowUpsell(true); },
-    onFreeTrialUsed: () => setGuestUsadas(lerUsoConvidadoHoje()),
   });
-
-  // ─── Retomada do taster da landing ──────────────────────────────────────────
-  // O trecho que a pessoa analisou SEM conta fica em bawzi_taster_handoff.
-  // Aqui, já autenticada, ele entra direto no formulário — o funil não pede
-  // que ela recomece do zero no momento de maior intenção. Consome uma vez;
-  // válido por 48h; nunca sobrescreve texto que o usuário já tenha colado.
-  useEffect(() => {
-    if (!token) return;
-    try {
-      const raw = localStorage.getItem('bawzi_taster_handoff');
-      if (!raw) return;
-      // Consome ANTES de interpretar: um handoff corrompido também precisa
-      // sumir — deixá-lo lá era lixo permanente reprocessado a cada mount.
-      localStorage.removeItem('bawzi_taster_handoff');
-      const { text: handoffText, ts } = JSON.parse(raw) as { text?: string; ts?: number };
-      if (typeof handoffText !== 'string' || handoffText.trim().length < 80) return;
-      if (Date.now() - Number(ts || 0) > 48 * 60 * 60 * 1000) return;
-      // Só a partir daqui a retomada é real (handoff válido e no prazo): é
-      // esta marca que segura o onboarding lá embaixo.
-      retomandoTasterRef.current = true;
-      setText(prev => prev || handoffText);
-      setActiveTab('workspace');
-      showSuccess('Retomamos o edital da sua análise de demonstração — ele já está no formulário. Rode a análise completa quando quiser.', 12000);
-      setTimeout(() => {
-        document.getElementById('area-submissao')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 600);
-    } catch { /* handoff corrompido: segue sem retomada */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
 
   // ─── Intenção de plano vinda da landing (?upgrade=N) ────────────────────────
   // "Escolher Profissional" na home leva ao cadastro e cai aqui com o tier na
@@ -446,51 +367,20 @@ export default function AnalysisApp() {
   // ─── Configuração de limites por tier ──────────────────────────────────────
   const { tierLimits, tierFileLimits } = useTierConfig();
   const currentTier = resolveEffectiveTier(userTier, userData?.active_workspace?.tier);
-  // ── Quem não está logado é tier -1, não tier 1 ────────────────────────
-  // `userTier` nasce em 1 e só sobe quando a sessão carrega. Para o visitante
-  // anônimo ele NUNCA vira -1, então o app inteiro media os limites dele pela
-  // régua do plano Gratuito cadastrado: 25.000 caracteres em vez de 10.000.
-  //
-  // O efeito não era cosmético. O contador dizia "24.958 / 25.000" em verde, o
-  // botão de analisar ficava habilitado, o Radar truncava o edital em 25.000 —
-  // e só depois de colar o documento inteiro e clicar é que o backend, que
-  // sabe que o tier é -1, respondia "o seu plano permite até 10.000". Todo
-  // edital de verdade vindo do Radar estourava. Era o funil de conversão
-  // quebrado exatamente para quem ainda não é cliente.
-  const tierParaLimites     = token ? userTier : -1;
+  // Sem conta não se analisa (desde 26/09/2026). Quem não está logado vê os
+  // limites do plano que ganha ao criar a conta — o `userTier` inicial, 1. Até
+  // então o visitante era medido pela régua do tier -1, a da amostra gratuita.
+  const tierParaLimites     = userTier;
   const currentCharLimit    = tierLimits[tierParaLimites] ?? tierLimits[-1] ?? 10000;
-  // Mesmo raciocínio do limite de caracteres: o anexo do visitante era medido
-  // pela régua do plano 1 ("até 5MB" na tela) e recusado pela do tier -1.
   const currentFileLimitMB  = tierFileLimits[tierParaLimites] ?? tierFileLimits[-1] ?? 3;
   const currentFileLimitBytes = currentFileLimitMB * 1024 * 1024;
   const totalFileSize       = files.reduce((acc, f) => acc + f.size, 0);
   const isOverTextLimit     = text.length > currentCharLimit;
   const isOverFileLimit     = totalFileSize > currentFileLimitBytes;
   const isOverLimit         = isOverTextLimit || isOverFileLimit;
-  const requiresAuth        = !token && guestUsadas >= guestLimit;
-
-  // Quota para usuários não logados (tier -1): reset à meia-noite UTC.
-  //
-  // ⚠️ O limite vem do servidor, não do código. Aqui havia um `GUEST_LIMIT = 1`
-  // cravado enquanto o número real mora em `LIMIT_TIER_MINUS_1` e pode ser
-  // trocado pelo Admin sem deploy: no dia em que subisse, esta tela passaria a
-  // anunciar 1 e a barrar na primeira análise um convidado que o servidor ainda
-  // liberaria. `1` fica só como valor de partida enquanto a resposta não chega
-  // — é o limite de fábrica e o palpite conservador (nunca promete a mais).
-  const guestQuota: QuotaInfo | null = !token ? (() => {
-    const now = new Date();
-    const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-    const usado = Math.min(guestUsadas, guestLimit);
-    return {
-      tier:            -1,
-      ilimitado:       false,
-      limite:          guestLimit,
-      usado,
-      restante:        Math.max(guestLimit - usado, 0),
-      reseta_em:       tomorrow.toISOString().split('T')[0],
-      dias_para_reset: 0, // sempre hoje/amanhã — label tratado no QuotaBar
-    };
-  })() : null;
+  // Sem conta, "Analisar" abre o cadastro: o servidor não analisa sem
+  // token desde 26/09/2026 (a análise gratuita sem cadastro saiu).
+  const requiresAuth        = !token;
 
   // ─── useEffect: atualiza quota após cada análise concluída ──────────────────
   useEffect(() => {
@@ -673,13 +563,12 @@ export default function AnalysisApp() {
               localStorage.removeItem('bawzi_promo');
             }
 
-            // Onboarding: exibir se o usuário não completou, ainda não tem empresa
-            // e não há edital do taster sendo retomado nesta mesma visita.
-            // NÃO gravamos `bawzi_onboarding_done` ao pular — essa chave só é
-            // escrita pelo próprio OnboardingModal quando a pessoa o fecha
-            // (OnboardingModal.tsx). Pulado aqui, o tour continua pendente e
-            // aparece na próxima visita, quando não houver edital na tela.
-            if (!localStorage.getItem('bawzi_onboarding_done') && !retomandoTasterRef.current) {
+            // Onboarding: exibir se o usuário não completou e ainda não tem
+            // empresa. (A exceção para o edital retomado da análise sem
+            // cadastro saiu com ela, em 26/09/2026.) NÃO gravamos
+            // `bawzi_onboarding_done` aqui — essa chave só é escrita pelo
+            // próprio OnboardingModal quando a pessoa o fecha.
+            if (!localStorage.getItem('bawzi_onboarding_done')) {
               const semEmpresa = !((wData.companies ?? []).length > 0 || uData.company?.cnpj);
               if (semEmpresa) setShowOnboarding(true);
             }
@@ -784,20 +673,9 @@ export default function AnalysisApp() {
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
-    // Leitura completa: quem tem conta cola o edital inteiro, sem corte no
-    // cliente (mesma politica "sem limitador" do backend - D1/D2/D3 em
-    // router_analyses.py). Só o convidado (sem token) ainda tem a amostra
-    // truncada aqui, espelhando o corte silencioso que o backend faz pro
-    // tier -1 (D2, inalterado).
-    if (!token) {
-      const limiteAmostra = currentCharLimit; // = tierLimits[-1] quando !token
-      if (newText.length > limiteAmostra) {
-        setText(newText.substring(0, limiteAmostra));
-        setError(`A amostra gratuita lê até ${limiteAmostra.toLocaleString()} caracteres. Crie uma conta pra ler o edital inteiro.`);
-        setTimeout(() => setError(null), 5000);
-        return;
-      }
-    }
+    // Leitura completa: o edital entra inteiro, sem corte no cliente (mesma
+    // política "sem limitador" do backend — D1/D2/D3 em router_analyses.py).
+    // O corte da amostra do convidado saiu com ela, em 26/09/2026.
     setText(newText);
   };
 
@@ -1334,7 +1212,16 @@ export default function AnalysisApp() {
                 de medida, grade ganha coluna. Sem isso, "Expandir" apenas
                 estica — que foi o que ficou evidente ao levar o botão para
                 todas as abas. */}
-            <div className={`coluna-conteudo flex flex-col gap-8 w-full overflow-hidden print:m-0 ${sidebarHidden ? 'expandido' : ''}`}>
+            {/* ⚠️ `overflow-x-clip`, NÃO `overflow-hidden`. `hidden` faz desta coluna
+                um "scroll container" para o CSS — e todo `position: sticky` lá
+                dentro passa a grudar em relação a ELA, que nunca rola, em vez
+                de à janela. Medido na Gestão (25/09/2026): a faixa de abas com
+                `top: 121px` era desenhada 121px abaixo do topo da coluna, por
+                cima dos títulos das colunas do quadro, e ficava lá para sempre.
+                `clip` corta o transbordo horizontal do mesmo jeito e não cria
+                scroll container; o vertical fica visível (a coluna tem altura
+                automática, nada dependia do corte). */}
+            <div className={`coluna-conteudo flex flex-col gap-8 w-full overflow-x-clip print:m-0 ${sidebarHidden ? 'expandido' : ''}`}>
 
               {/* Abas workspace / análise / concorrentes */}
               {(activeTab === 'workspace' || activeTab === 'analise' || activeTab === 'concorrentes') && (
@@ -1417,6 +1304,7 @@ export default function AnalysisApp() {
                             initialQuery={initialPncpQuery}
                             initialUf={initialPncpUf}
                             onAbrirAnalise={abrirLaudoEmDecisoes}
+                            onPrecisaDeConta={() => { setAuthMode('register'); setShowAuthModal(true); }}
                             // Sem a flag do Capital, o botão nem aparece no
                             // Radar (prop undefined) — melhor que aparecer e
                             // levar a uma aba em branco.
@@ -1483,7 +1371,7 @@ export default function AnalysisApp() {
                         onProviderChange={setProvider}
                         onAnalyze={handleAnalyzeWithAuth}
                         onShowAuthModal={(mode) => { setAuthMode(mode); setShowAuthModal(true); }}
-                        quota={token ? quota : guestQuota}
+                        quota={token ? quota : null}
                         onUpgradeClick={(t?: number) => handleUpgrade(t ?? currentTier + 1)}
                         onComprarPacote={handleComprarPacote}
                         estimarSegundos={getEstimateSeconds}

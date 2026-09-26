@@ -6,7 +6,6 @@ import { API_URL, setAccessToken, apiFetch, mensagemDeErro } from '@/lib/apiClie
 import { subscribeToPush } from '@/lib/pushNotifications';
 import CompanyLookup, { type CompanyLookupResult } from './CompanyLookup';
 import { campanhaAtual, limparCampanha } from '@/lib/campanha';
-import { visitanteId } from '@/lib/visitante';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -138,11 +137,6 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
           body: JSON.stringify({
             token: tokenResponse.access_token,
             campanha: (campanha || campanhaAtual()).trim().toUpperCase() || undefined,
-            // Fecha o funil do taster. Pelo mesmo motivo do `campanha` logo
-            // acima: quem acabou de ver o veredito e clicou no botão do Google
-            // é a MESMA jornada de quem inventou uma senha, e medir só uma
-            // delas diria que a outra converte zero.
-            visitor_id: visitanteId() || undefined,
           }),
         });
 
@@ -241,11 +235,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
             // O que a pessoa DIGITOU vence o que veio do link: quem colou um
             // código à mão está corrigindo, não completando.
             campanha: (campanha || '').trim().toUpperCase() || undefined,
-            // Id anônimo do navegador — é o que liga esta conta à análise
-            // gratuita que a pessoa fez na home antes de se cadastrar. Ver
-            // `lib/visitante.ts`; vem vazio quem nunca passou pelo taster, e
-            // aí o backend não conta a conversão.
-            visitor_id: visitanteId() || undefined,
+            // (O `visitor_id` do funil da análise gratuita saiu em 26/09/2026,
+            // junto com a análise sem cadastro. O backend ignora o campo se
+            // uma aba antiga ainda o mandar.)
           };
 
       const response = await fetch(`${API_URL}${endpoint}`, {

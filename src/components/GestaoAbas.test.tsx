@@ -66,10 +66,9 @@ describe('BarraDeAbas', () => {
     expect(html).toMatch(/aria-selected="true"[^>]*bg-slate-900[^>]*><svg[^]*?<\/svg>Quadro<span[^>]*>4</);
     expect(html).toMatch(/Agenda<span[^>]*>3</);
     expect(html).not.toMatch(/Desempenho<span/);                       // zero não vira "0"
-    expect(html).toContain('>Os editais por etapa</span>');           // a descrição da visão ativa (não só o title)
+    expect(html).toContain('title="Os editais por etapa"');           // a descrição da visão, no title
     expect((html.match(/aria-selected="true"/g) || []).length).toBe(1);
-    expect(html).toContain('>Visão<');
-    expect(html).not.toContain('uppercase tracking-wide transition');   // o rótulo em frase, não em caixa alta
+    expect(html).not.toContain('uppercase');                            // o rótulo em frase, não em caixa alta
     const botoes = todos(BarraDeAbas({ ativa: 'quadro', contagens: {}, onTrocar }), (e) => e.type === 'button');
     (botoes[2].props as { onClick: () => void }).onClick();
     expect(onTrocar).toHaveBeenCalledWith('tabela');

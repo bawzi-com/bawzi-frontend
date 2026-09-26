@@ -29,7 +29,7 @@ const TITULO = 'Bawzi — Decisão Go / No-Go para licitações';
 const DESCRICAO =
   'A Bawzi lê o edital inteiro — objeto, habilitação, prazos, penalidades — e '
   + 'devolve um veredito antes de você gastar equipe, preço e risco na disputa '
-  + 'errada. Análise gratuita, sem cadastro.';
+  + 'errada. Conta gratuita, sem cartão.';
 
 export const metadata: Metadata = {
   // Resolve as URLs relativas do Open Graph. Sem isto a imagem do cartão vira

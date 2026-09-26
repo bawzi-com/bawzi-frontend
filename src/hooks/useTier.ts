@@ -7,6 +7,10 @@ import { API_URL, getAuthToken, initSession } from '@/lib/apiClient';
 
 export interface TierState {
   tier: number;
+  /** `false` quando `refresh()` confirmou que NÃO há sessão; `null` enquanto
+   *  ainda não sabe. Sem isto, o visitante ficava com o tier 1 padrão e era
+   *  tratado como conta Gratuita — ver `activeTier` no PricingSection. */
+  comSessao: boolean | null;
   isPromo: boolean;
   promoExpiresAt: string | null;
   isLoading: boolean;
@@ -29,6 +33,7 @@ export function useTier(): TierState {
   const [isPromo, setIsPromo]               = useState(false);
   const [promoExpiresAt, setPromoExpiresAt] = useState<string | null>(null);
   const [isLoading, setIsLoading]           = useState(false);
+  const [comSessao, setComSessao]           = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
     // Em navegação full-page (ex: abrir /plans direto), o token de acesso
@@ -41,7 +46,8 @@ export function useTier(): TierState {
     // correto — porque o Header hidrata a sessão via initSession() antes de
     // validar o tier, e este hook não hidratava.
     const token = getAuthToken() || await initSession();
-    if (!token) return;
+    if (!token) { setComSessao(false); return; }
+    setComSessao(true);
 
     setIsLoading(true);
     try {
@@ -92,5 +98,5 @@ export function useTier(): TierState {
     return () => window.removeEventListener('bawzi_update', handler);
   }, []);
 
-  return { tier, isPromo, promoExpiresAt, isLoading, refresh };
+  return { tier, comSessao, isPromo, promoExpiresAt, isLoading, refresh };
 }

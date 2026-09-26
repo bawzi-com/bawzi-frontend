@@ -160,7 +160,7 @@ function montar(extra: Partial<Entrada> = {}) {
     token: 'T', text: 'Pregão Eletrônico nº 1/2026 — edital de teste.', files: [], uf: 'MG',
     forceExact: false, pncpData: null, activeCnpj: '', userTier: 3, isOverLimit: false,
     apiUrl: 'https://api.teste', onUpgradeNeeded: vi.fn(), onUpsellNeeded: vi.fn(),
-    onFreeTrialUsed: vi.fn(), ...extra,
+    ...extra,
   };
   const tela = new MiniReact(() => useAnalysis(entrada));
   tela.renderizar();
@@ -175,6 +175,28 @@ async function passar(tela: InstanceType<typeof MiniReact>, ms = 0) {
 const chamadasAnalyze = () => api.apiFetch.mock.calls.filter(([u]) => String(u).endsWith('/api/analyze'));
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('sem conta não se analisa (26/09/2026)', () => {
+  it('não chama o servidor nem abre o overlay: convida para o cadastro', async () => {
+    const onUpgradeNeeded = vi.fn();
+    const tela = montar({ token: null, onUpgradeNeeded });
+    await tela.saida.handleAnalyze('openai');
+    await passar(tela);
+    expect(chamadasAnalyze()).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(tela.saida.isAnalyzing).toBe(false);
+    expect(onUpgradeNeeded).toHaveBeenCalledWith(1);
+    expect(armazenado[CHAVE_ANALISE_EM_CURSO]).toBeUndefined();
+  });
+
+  it('nem com o texto vazio: o convite vem antes de qualquer validação', async () => {
+    const onUpgradeNeeded = vi.fn();
+    const tela = montar({ token: null, text: '', onUpgradeNeeded });
+    await tela.saida.handleAnalyze('claude');
+    expect(onUpgradeNeeded).toHaveBeenCalledWith(1);
+    expect(tela.saida.error).toBeNull();
+  });
+});
 
 describe('análise que sobrevive à tela', () => {
   it('órfã (troca de rota) anota o desfecho, e a próxima montagem abre o laudo', async () => {

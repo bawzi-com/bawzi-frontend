@@ -72,9 +72,10 @@ interface AnalysisLoadingOverlayProps {
   nota?: string | null;
   /** Pedido de cancelar enviado; esperando o servidor parar. */
   cancelando?: boolean;
-  /** Quem tem conta não paga análise cancelada (o laudo não é gravado). Para
-   *  o convidado, cancelar depois de a leitura começar ainda gasta a cota —
-   *  então a confirmação só promete "nada é cobrado" quando é verdade. */
+  /** Quem tem conta não paga análise cancelada (o laudo não é gravado). Até
+   *  26/09/2026 o convidado também analisava, e para ele cancelar depois de a
+   *  leitura começar gastava a cota — por isso a confirmação só promete "nada
+   *  é cobrado" quando é verdade. Hoje só quem tem conta chega aqui. */
   semCobrancaAoCancelar?: boolean;
 }
 

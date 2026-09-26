@@ -66,6 +66,9 @@ interface PncpSearchProps {
   onMedirFolego?: (valor: number, objeto: string) => void;
   /** Abre no histórico o laudo já existente deste edital. */
   onAbrirAnalise?: (analysisId: string) => void;
+  /** Sem conta, "Analisar" abre o cadastro em vez de baixar o edital: o
+   *  `/texto-completo` e a análise exigem conta desde 26/09/2026. */
+  onPrecisaDeConta?: () => void;
 }
 
 export default function PncpSearch({
@@ -81,6 +84,7 @@ export default function PncpSearch({
   onActiveCnpjChange,
   onMedirFolego,
   onAbrirAnalise,
+  onPrecisaDeConta,
 }: PncpSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [uf, setUf] = useState('');
@@ -793,6 +797,16 @@ const UFS: readonly { sigla: string; nome: string }[] = [
   }, [hydrationKey]);
 
   const handleDeepAnalyze = async (edital: PncpItem) => {
+    // ⚠️ SEM CONTA, NADA É BAIXADO. O `/texto-completo` responde 401 desde que
+    // a análise sem cadastro saiu (26/09/2026); sem esta guarda o visitante
+    // via "Falha ao carregar itens detalhados" — um erro de rede inventado no
+    // lugar do convite para criar a conta. O `cancelRequestedRef` para o lote:
+    // um convite basta.
+    if (!token) {
+      cancelRequestedRef.current = true;
+      onPrecisaDeConta?.();
+      return;
+    }
     const controller = new AbortController();
     abortControllerRef.current = controller;
     cancelRequestedRef.current = false;
@@ -803,9 +817,8 @@ const UFS: readonly { sigla: string; nome: string }[] = [
         // resolvido no SERVIDOR a partir do tier — antes ele vinha daqui, no
         // parâmetro `limite`, e qualquer um podia pedir 5 milhões. Com `fetch`
         // puro não vai cabeçalho de sessão, o servidor via um anónimo e
-        // rebaixaria o cliente pagante ao teto de convidado. `apiFetch` sem
-        // token continua funcionando (o convidado é atendido por desenho) —
-        // ele só acrescenta o cabeçalho quando existe sessão.
+        // rebaixaria o cliente pagante ao teto de convidado. (Sem sessão
+        // nem se chega aqui: ver a guarda no topo desta função.)
         apiFetch(`${API_URL}/api/pncp/texto-completo?cnpj=${edital.cnpj}&ano=${edital.ano}&seq=${edital.sequencial}`, { signal: controller.signal }),
         apiFetch(`${API_URL}/api/pncp/media-precos?q=${encodeURIComponent(searchTerm)}${uf ? `&uf=${uf}` : ''}`, { signal: controller.signal })
       ]);

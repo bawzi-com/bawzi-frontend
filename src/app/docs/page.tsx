@@ -266,7 +266,8 @@ function SectionInicio() {
       <UL>
         {/* ⚠️ "24h por dia" e "histórico de lances em pregões" descreviam
             capacidades que a plataforma não tem: a varredura é diária (07:00
-            BRT) e não existe leitura de lances — o deságio é estimado. */}
+            BRT por padrão; cada um escolhe a hora desde 26/09/2026) e não
+            existe leitura de lances — o deságio é estimado. */}
         <LI>Recebe um alerta diário dos editais novos que combinam com os seus termos</LI>
         <LI>Recebe um score GO / NO-GO com base no perfil da sua empresa</LI>
         <LI>Encontra contratos públicos a vencer e é avisado dos seus antes do prazo</LI>
@@ -715,9 +716,14 @@ function SectionRadar() {
       <Step n={3} title="Defina o filtro de UF (opcional)">
         Se sua empresa atende apenas determinados estados, filtre por UF para reduzir o ruído.
       </Step>
-      <Step n={4} title="Salve e aguarde a próxima varredura">
-        A verificação roda uma vez por dia, às <strong>07:00</strong> (horário de Brasília). Um
-        alerta criado às 10h só produz resultado na manhã seguinte — ele não varre o passado.
+      {/* Desde 26/09/2026 a hora é de cada um, e o job roda de hora em hora:
+          um termo criado depois do horário do dia entra na hora cheia
+          seguinte, não na manhã seguinte como dizia este passo. */}
+      <Step n={4} title="Salve e aguarde a próxima verificação">
+        A verificação roda uma vez por dia, às <strong>07:00</strong> (horário de Brasília) — ou
+        na hora que você escolher no próprio aviso, das 06:00 às 22:00, todo dia ou só em dias
+        úteis. Um termo novo, cadastrado depois desse horário, é verificado na hora cheia
+        seguinte. Ele traz os editais mais recentes; não varre o histórico.
       </Step>
       <Callout type="tip">
         Combine termos específicos do seu nicho com termos mais amplos. Ex.: para uma empresa de TI,
@@ -730,7 +736,7 @@ function SectionRadar() {
           — não há link por edital (`scheduler.py:731-753`). */}
       <H2 id="alertas-email">O e-mail diário</H2>
       <P>
-        Quando a varredura das 07:00 encontra editais novos para os seus termos, você recebe
+        Quando a verificação diária encontra editais novos para os seus termos, você recebe
         <strong> um e-mail</strong> com tudo o que apareceu — não é um e-mail por edital. Cada
         linha traz o <strong>órgão</strong>, a <strong>UF</strong> e o início do objeto; o botão
         no fim abre a busca já filtrada pelo termo, para você escolher qual analisar.
@@ -806,13 +812,16 @@ function SectionContratos() {
         <LI>Urgência: de <Tag>VENCIDO</Tag> e <Tag>CRÍTICO</Tag> até <Tag>PIPELINE</Tag></LI>
       </UL>
 
-      {/* ⚠️ "90 / 30 / 7 dias antes" era invenção completa: o job usa UMA
-          janela, `dias=30`, e roda às 08:00 BRT (`scheduler.py:552,595`). */}
+      {/* ⚠️ "90 / 30 / 7 dias antes" era invenção completa quando o job usava
+          UMA janela de 30 dias. Desde 25/09/2026 ele lê a carteira própria,
+          olha 90 dias e avisa cada contrato ao cruzar 90, 60 e 30 dias
+          (`MARCOS_ALERTA_CARTEIRA`); desde 26/09/2026 a hora é de cada um. */}
       <H2 id="alertas-vencimento">Alertas de vencimento</H2>
       <P>
         Além da busca manual, a Bawzi verifica sozinha, todo dia às <strong>08:00</strong> (horário
-        de Brasília), os contratos do CNPJ cadastrado que vencem nos <strong>próximos 30 dias</strong>.
-        Havendo algum, você recebe e-mail, aviso no sino e notificação push.
+        de Brasília) — ou na hora que você escolher em Alertas —, os contratos do CNPJ cadastrado
+        que vencem nos <strong>próximos 90 dias</strong>. Cada contrato gera um aviso ao cruzar
+        90, 60 e 30 dias do fim, por e-mail, no sino e por notificação push.
       </P>
       <Callout type="info">
         O alerta automático é enviado a partir do plano <PlanBadge plan="Profissional" /> e exige
@@ -820,7 +829,7 @@ function SectionContratos() {
       </Callout>
       <Callout type="tip">
         Para preparar renovação com antecedência maior, use a busca manual e aumente a janela de
-        dias — o alerta automático olha só os 30 dias seguintes.
+        dias — o alerta automático olha só os 90 dias seguintes.
       </Callout>
     </>
   );

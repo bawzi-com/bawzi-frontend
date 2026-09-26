@@ -193,14 +193,16 @@ const JOBS_AGENDADOS: Array<{
   { id: 'monitor_analises_diario', resKey: 'monitor_analises', label: 'Monitor de Análises', hora: '06:30',
     desc: 'Mudanças nos editais em acompanhamento', grupo: 'Avisos',
     badge: 'text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20' },
-  { id: 'radar_alertas_diario', resKey: 'radar_alertas', label: 'Radar de Alertas', hora: '07:00',
-    desc: 'Editais novos que batem nos critérios salvos', grupo: 'Avisos',
+  // Os três resumos diários rodam de hora em hora desde 26/09/2026: cada
+  // pessoa escolhe a sua hora em Alertas e entra na primeira rodada depois dela.
+  { id: 'radar_alertas_diario', resKey: 'radar_alertas', label: 'Radar de Alertas', hora: '06–22h',
+    desc: 'Editais novos que batem nos critérios salvos · de hora em hora, cada pessoa na sua (padrão 07:00)', grupo: 'Avisos',
     badge: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
-  { id: 'disputas_diario', resKey: 'disputas', label: 'Disputas que vão abrir', hora: '07:20',
-    desc: 'Logo após o radar, para os avisos chegarem juntos', grupo: 'Avisos',
+  { id: 'disputas_diario', resKey: 'disputas', label: 'Disputas que vão abrir', hora: '06–22h',
+    desc: 'Aos 20 de cada hora, logo após o radar · cada pessoa na sua (padrão 07:20)', grupo: 'Avisos',
     badge: 'text-pink-400 bg-pink-500/10 border-pink-500/20' },
-  { id: 'alertas_renovacao_diario', resKey: 'alertas_renovacao', label: 'Alertas de Renovação', hora: '08:00',
-    desc: 'Contratos de concorrentes a vencer', grupo: 'Avisos',
+  { id: 'alertas_renovacao_diario', resKey: 'alertas_renovacao', label: 'Alertas de Renovação', hora: '06–22h',
+    desc: 'Contratos da própria carteira a vencer · de hora em hora, cada pessoa na sua (padrão 08:00)', grupo: 'Avisos',
     badge: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
 ];
 
@@ -5030,7 +5032,7 @@ export default function AdminDashboard() {
                         />
                         <p className="text-[10px] text-slate-600 mt-1">
                           Padrão: {(tier.max_chars / 1000).toFixed(0)}k
-                          {tier.tier_id !== -1 && ' · não corta mais análise — só o convidado (Nível 0) ainda usa isto de verdade'}
+                          {' · não corta mais análise em nenhum nível'}
                         </p>
                       </div>
 
@@ -6118,7 +6120,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h2 className="text-xl font-black text-white">Funil da análise gratuita</h2>
-                <p className="text-slate-500 text-sm mt-1">Visitantes sem conta: quantos experimentaram e quantos se cadastraram</p>
+                <p className="text-slate-500 text-sm mt-1">Só histórico: a análise sem cadastro saiu em 26/09/2026 e nada novo entra aqui (o que já entrou expira em 180 dias)</p>
               </div>
               <div className="flex items-center gap-1">
                 {[7, 30, 90, 0].map((d) => (

@@ -286,7 +286,12 @@ export function ajudasDaCarteira(q: QuotaResumo) {
     ),
     adicionais: (
       <>
-        Créditos avulsos que você comprou fora do plano.
+        {/* ⚠️ DIZIA "QUE VOCÊ COMPROU" (até 26/09/2026). O saldo é do WORKSPACE
+            e sobe por dois caminhos — pacote pago no Stripe e concessão no
+            Admin —, então a frase mentia duas vezes: para quem ganhou créditos
+            sem comprar nada e para quem divide o workspace com quem comprou. */}
+        Créditos avulsos do workspace, fora do plano: os comprados em pacote e os concedidos
+        pela Bawzi. Valem para todos do workspace.
         {extras > 0 && <> Hoje: <strong className="text-white">{n(extras)}</strong>.</>}
         <br /><br />
         {/* É a única linha da carteira que sobrevive ao reset, e é justamente a

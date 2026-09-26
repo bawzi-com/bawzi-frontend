@@ -30,9 +30,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Bell, Plus, Trash2, ToggleLeft, ToggleRight, MapPin, Search,
-  AlertTriangle, Clock, Loader2, Info,
+  AlertTriangle, Loader2, Info,
 } from 'lucide-react';
 import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+// Os canais de cada aviso (26/09/2026): o sino segue o interruptor do aviso;
+// push e e-mail, só onde existem, têm o seu. O cálculo mora em `lib/alertas`.
+import {
+  alternarAviso, alternarCanal as alternarCanalNaLista, canalLigado, corpoDasPreferencias,
+  trocarAgenda, type AgendaDoAviso, type CanalExtra, type TipoAlerta,
+} from '@/lib/alertas';
+import { CanaisDoAviso } from './CanaisDoAviso';
+// A hora dos resumos diários (26/09/2026): "pode ser parametrizável?".
+import { HorarioDoAviso } from './HorarioDoAviso';
 
 interface Alerta {
   id: string;
@@ -45,18 +54,6 @@ interface Alerta {
   ultimo_resultado?: number | null;
   ultimo_erro?: string | null;
   redundante_com?: string | null;
-}
-
-interface TipoAlerta {
-  tipo: string;
-  nome: string;
-  descricao: string;
-  porque: string;
-  quando: string;
-  origem: string;
-  grupo: string;
-  configuravel?: boolean;
-  ativo: boolean;
 }
 
 interface GrupoAlerta {
@@ -86,6 +83,10 @@ export default function RadarAlertas({ token }: Props) {
   const [uf, setUf]             = useState('');
   const [saving, setSaving]     = useState(false);
   const [salvandoTipo, setSalvandoTipo] = useState<string | null>(null);
+  const [salvandoCanal, setSalvandoCanal] = useState<{ tipo: string; canal: CanalExtra } | null>(null);
+  const [salvandoAgenda, setSalvandoAgenda] = useState<string | null>(null);
+  // As horas que o servidor aceita — as opções do seletor vêm daqui.
+  const [horas, setHoras]       = useState<number[]>([]);
   const [notice, setNotice]     = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   const showNotice = (type: 'success' | 'error', msg: string) => {
@@ -105,6 +106,7 @@ export default function RadarAlertas({ token }: Props) {
         const c = await rCatalogo.json();
         setTipos(c.tipos || []);
         setGrupos(c.grupos || []);
+        setHoras(Array.isArray(c.horas) ? c.horas : []);
       }
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
@@ -122,27 +124,48 @@ export default function RadarAlertas({ token }: Props) {
    * Um botão "Salvar" resolveria também, mas custa um passo em algo que
    * é uma escolha por vez.
    */
-  const alternarTipo = async (t: TipoAlerta) => {
-    const anterior = tipos;
-    const novos = tipos.map(x => x.tipo === t.tipo ? { ...x, ativo: !x.ativo } : x);
+  /** Grava as preferências inteiras (avisos e canais); volta atrás se falhar. */
+  const gravar = async (anterior: TipoAlerta[], novos: TipoAlerta[]) => {
     setTipos(novos);
-    setSalvandoTipo(t.tipo);
     try {
       const res = await apiFetch(`${API_URL}/api/alertas/preferencias`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        // Mapa COMPLETO — o backend não aceita delta (ausência = ligado).
-        body: JSON.stringify({
-          tipos: Object.fromEntries(novos.map(x => [x.tipo, x.ativo])),
-        }),
+        // Mapas COMPLETOS — o backend não aceita delta (ausência = ligado).
+        body: JSON.stringify(corpoDasPreferencias(novos)),
       });
       if (!res.ok) throw new Error('falhou');
     } catch (err) {
       if (err instanceof SessionExpiredError) return;
       setTipos(anterior);
       showNotice('error', 'Não deu para salvar. Nada mudou.');
+    }
+  };
+
+  const alternarTipo = async (t: TipoAlerta) => {
+    setSalvandoTipo(t.tipo);
+    try {
+      await gravar(tipos, alternarAviso(tipos, t.tipo));
     } finally {
       setSalvandoTipo(null);
+    }
+  };
+
+  const alternarCanal = async (t: TipoAlerta, canal: CanalExtra) => {
+    setSalvandoCanal({ tipo: t.tipo, canal });
+    try {
+      await gravar(tipos, alternarCanalNaLista(tipos, t.tipo, canal));
+    } finally {
+      setSalvandoCanal(null);
+    }
+  };
+
+  const alterarAgenda = async (t: TipoAlerta, mudanca: Partial<Pick<AgendaDoAviso, 'hora' | 'frequencia'>>) => {
+    setSalvandoAgenda(t.tipo);
+    try {
+      await gravar(tipos, trocarAgenda(tipos, t.tipo, mudanca));
+    } finally {
+      setSalvandoAgenda(null);
     }
   };
 
@@ -207,7 +230,10 @@ export default function RadarAlertas({ token }: Props) {
   const ligados = tipos.filter(t => t.ativo).length;
 
   // ── Cadastro de termos: vive dentro do card do tipo configurável ──────────
-  const radarLigado = tipos.find(t => t.tipo === 'radar_alerta')?.ativo ?? true;
+  const tipoRadar = tipos.find(t => t.tipo === 'radar_alerta');
+  const radarLigado = tipoRadar?.ativo ?? true;
+  const radarPorEmail = tipoRadar ? canalLigado(tipoRadar, 'email') : true;
+  const radarPorPush = tipoRadar ? canalLigado(tipoRadar, 'push') : true;
 
   /**
    * ⚠️ DESLIGADO, O CADASTRO SOME — MAS NÃO EM SILÊNCIO.
@@ -248,6 +274,15 @@ export default function RadarAlertas({ token }: Props) {
           Novo termo
         </button>
       </div>
+
+      {/* Com o e-mail deste aviso desligado, "Último e-mail" parado não é
+          falha — é escolha. Uma linha diz isso, em vez de uma data por termo. */}
+      {!radarPorEmail && (
+        <p className="mb-3 flex items-start gap-2 text-[11px] font-medium text-slate-500">
+          <Info size={13} className="mt-px shrink-0 text-slate-400" />
+          O e-mail deste aviso está desligado: os editais novos chegam pelo sino{radarPorPush ? ' e pelo push' : ''}.
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={criar} className="mb-3 rounded-2xl border border-amber-100 bg-amber-50/50 p-3">
@@ -343,9 +378,12 @@ export default function RadarAlertas({ token }: Props) {
                     ? <>Verificado em {a.ultima_verificacao}
                         {typeof a.ultimo_resultado === 'number' &&
                           ` · ${a.ultimo_resultado} edital(is) na última busca`}</>
-                    : 'Sem registro de verificação — passa a ser gravado na próxima execução, 07h00'}
+                    // Sem hora aqui: ela está na linha "Quando" do card, e um
+                    // termo novo entra na primeira rodada depois dela — que
+                    // pode ser a próxima hora cheia, não a manhã seguinte.
+                    : 'Sem registro de verificação ainda — passa a ser gravado na próxima rodada deste aviso.'}
                 </p>
-                {a.ultimo_envio && (
+                {a.ultimo_envio && radarPorEmail && (
                   <p className="text-[11px] text-slate-400 font-medium">
                     Último e-mail: {a.ultimo_envio}
                   </p>
@@ -411,9 +449,23 @@ export default function RadarAlertas({ token }: Props) {
           {t.porque && (
             <p className="text-[11px] text-slate-400 font-medium mt-1 italic">{t.porque}</p>
           )}
-          <p className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-slate-400">
-            <Clock size={10} /> {t.quando}
-          </p>
+          <HorarioDoAviso
+            ligado={t.ativo}
+            quando={t.quando}
+            agenda={t.agenda}
+            padrao={t.agenda_padrao}
+            tambem={t.quando_tambem}
+            horas={horas}
+            salvando={salvandoAgenda === t.tipo}
+            onTrocar={(mudanca) => alterarAgenda(t, mudanca)}
+          />
+          <CanaisDoAviso
+            ligado={t.ativo}
+            canais={t.canais || []}
+            ativos={t.canais_ativos || {}}
+            salvando={salvandoCanal?.tipo === t.tipo ? salvandoCanal.canal : null}
+            onAlternar={(canal) => alternarCanal(t, canal)}
+          />
         </div>
         <button
           onClick={() => alternarTipo(t)}
@@ -452,10 +504,16 @@ export default function RadarAlertas({ token }: Props) {
           Alertas
         </div>
         <h2 className="text-lg font-black text-slate-900">Tudo o que a Bawzi te avisa</h2>
+        {/* ⚠️ "A MUDANÇA VALE PARA O SINO, O PUSH E O E-MAIL" NÃO ERA VERDADE.
+            Só 3 dos 10 avisos mandam e-mail e 4 mandam push; e o de "edital
+            mudou" desligado continuava mandando e-mail e push (o job não
+            consultava a preferência — corrigido em 26/09/2026). Agora cada
+            aviso diz por onde chega, e push e e-mail têm o próprio botão. */}
         <p className="text-xs text-slate-500 font-medium mt-1">
           Estes são todos os sinais que o sistema emite. Deixe ligado o que
-          importa para você e desligue o resto — a mudança vale para o sino, o
-          push e o e-mail.
+          importa para você e desligue o resto. Desligar um aviso cala tudo;
+          nos que também chegam por push ou e-mail, dá para escolher cada canal
+          — e, nos resumos diários, a hora e os dias em que chegam.
         </p>
         {!loading && tipos.length > 0 && (
           <p className="text-[11px] font-black text-slate-400 mt-2">

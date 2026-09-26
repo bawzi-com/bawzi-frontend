@@ -40,13 +40,12 @@ export interface QuotaInfo {
    *  `teto(caracteres ÷ unidade) × multiplicador`. */
   caracteres_por_credito?: number;
   /** Maior edital que o plano aceita, em caracteres — como o backend manda.
-   *  Não lido neste arquivo: a leitura não corta mais por tamanho em nenhum
-   *  tier com conta, só a amostra do convidado (tier -1) ainda tem um teto
-   *  real (fora deste componente). */
+   *  Não lido neste arquivo: a leitura não corta por tamanho em nenhum plano
+   *  (a amostra do convidado, o único teto real, saiu em 26/09/2026). */
   max_chars?: number;
   /** `creditos` quando o crédito pode diferir de 1 por análise — por peso de
-   *  modo OU por faixa de tamanho. Opcional porque a cota de convidado é
-   *  montada no cliente e não passa pelo endpoint. */
+   *  modo OU por faixa de tamanho. Opcional por compatibilidade: a cota do
+   *  convidado, montada no cliente, não o trazia (ela saiu em 26/09/2026). */
   unidade?: 'creditos' | 'analises';
   /** Coeficientes de custo vindos do backend. A tela avalia uma soma; os
    *  PREÇOS e os MODELOS ficam no servidor. Ausente = régua antiga. */
@@ -222,9 +221,8 @@ function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
  *  no plano — e prometer um limite que o produto não entrega é pior do que
  *  não prometer nada.
  *
- *  O visitante é a exceção do destino: mandá-lo direto ao plano de topo pula
- *  o degrau que não custa nada e é o que ele consegue dar agora. Dos demais
- *  para cima, o convite é para o topo.
+ *  O convite é para o topo. (O visitante era a exceção — ia para o Gratuito —
+ *  até a análise sem cadastro sair, em 26/09/2026.)
  */
 /** Existe degrau acima do plano de agora? Uma fonte só.
  *
@@ -235,53 +233,44 @@ function creditosDe(caracteres: number, modo: 'rapida' | 'profunda',
  *  de ser o nível 4, um dos dois continua certo e o outro passa a esconder um
  *  convite que existe — ou a reservar espaço para um que não existe.
  */
-function useProximoDegrau(isGuest: boolean, tierAtual: number, habilitado: boolean) {
+function useProximoDegrau(tierAtual: number, habilitado: boolean) {
   const { tierLimits, tierCredits, tierNames } = useTierConfig();
   const niveis = Object.keys(tierLimits).map(Number).filter(t => t >= 1).sort((a, b) => a - b);
   const topo = niveis.length ? niveis[niveis.length - 1] : 4;
-  const atual = isGuest ? -1 : tierAtual;
+  const atual = tierAtual;
   if (!habilitado || atual >= topo) return null;   // já está no topo: nada a oferecer
-  return { destino: isGuest ? (niveis[0] ?? 1) : topo, atual, tierLimits, tierCredits, tierNames };
+  return { destino: topo, atual, tierLimits, tierCredits, tierNames };
 }
 
-function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
-  isGuest: boolean;
+function EscadaDePlanos({ tierAtual, onUpgradeClick }: {
   tierAtual: number;
   onUpgradeClick?: (tier?: number) => void;
 }) {
-  const degrau = useProximoDegrau(isGuest, tierAtual, !!onUpgradeClick);
+  const degrau = useProximoDegrau(tierAtual, !!onUpgradeClick);
   if (!degrau || !onUpgradeClick) return null;
   const { destino, atual, tierCredits, tierNames } = degrau;
 
   const num = (v: number | undefined) => Number(v || 0).toLocaleString('pt-BR');
-  const nome = tierNames[destino] || (isGuest ? 'Gratuito' : 'Avançado');
+  const nome = tierNames[destino] || 'Avançado';
 
   // Só entra na lista o que MELHORA de verdade em relação ao plano de agora.
   const ganhos: string[] = [];
   const creditosDestino = tierCredits[destino];
   if (creditosDestino === 0) ganhos.push('créditos ilimitados');
   else if (creditosDestino) {
-    // "créditos" também para o convidado: a plataforma inteira fala UMA moeda
-    // (o card do taster e a tela de cota já dizem "crédito") — misturar
-    // "análises" aqui reintroduzia a segunda moeda que a página de planos
-    // acabou de eliminar.
-    ganhos.push(isGuest
-      ? `${num(creditosDestino)} créditos grátis por mês (hoje é 1 por dia)`
-      : `${num(creditosDestino)} créditos por mês`);
+    // "créditos": a plataforma inteira fala UMA moeda — misturar "análises"
+    // aqui reintroduzia a segunda moeda que a página de planos eliminou.
+    ganhos.push(`${num(creditosDestino)} créditos por mês`);
   }
-  // Só o convidado tem teto de caracteres de verdade (amostra). Quem já
-  // tem conta não ganha "editais até X caracteres" ao subir de nível —
-  // nenhum nível corta por tamanho, então não há número real pra prometer.
-  if (isGuest) {
-    ganhos.push('lê o edital inteiro, sem amostra');
-  }
-  ganhos.push(isGuest ? 'histórico salvo e Matchmaker por CNAE' : 'auditoria profunda sem sublimite');
+  // Nenhum nível corta por tamanho: "editais até X caracteres" não é promessa
+  // que subir de plano cumpra.
+  ganhos.push('auditoria profunda sem sublimite');
 
   return (
     <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2.5">
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-black text-emerald-900">
-          {isGuest ? 'Crie sua conta gratuita' : `Suba para o ${nome}`}
+          {`Suba para o ${nome}`}
         </p>
         <p className="mt-0.5 text-[10px] leading-4 text-emerald-800/80">
           {ganhos.join(' · ')}
@@ -292,7 +281,7 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
         onClick={() => onUpgradeClick(destino)}
         className={BOTAO_PRIMARIO}
       >
-        {isGuest ? 'Criar conta' : `Ir para o ${nome}`}
+        {`Ir para o ${nome}`}
         <ArrowRight size={12} />
       </button>
     </div>
@@ -313,9 +302,7 @@ function EscadaDePlanos({ isGuest, tierAtual, onUpgradeClick }: {
  * exata" do Radar. Continua inteira, continua a um clique, e parou de cobrar
  * duas linhas de leitura de quem já sabe.
  */
-function ReguaDeCobranca({ quota, isGuest = false }: { quota: QuotaInfo; isGuest?: boolean }) {
-  if (isGuest) return null;
-
+function ReguaDeCobranca({ quota }: { quota: QuotaInfo }) {
   // ── Régua FIXA: a frase inteira, sem divisão ──────────────────────────
   // "Rápida usa 1; auditoria profunda usa N." É a régua do lançamento
   // (`modos.custo_em_creditos`). Só aparece quando o peso muda alguma coisa:
@@ -373,7 +360,6 @@ function QuotaBar({
   quota,
   onUpgradeClick,
   onComprarPacote,
-  isGuest = false,
   semCarteira = false,
 }: {
   quota: QuotaInfo;
@@ -384,7 +370,6 @@ function QuotaBar({
    *  quem já está no plano de topo não tem upgrade para fazer, e quem está no
    *  meio prefere resolver o mês de hoje a mudar de assinatura. */
   onComprarPacote?: () => void;
-  isGuest?: boolean;
   /** Os quatro números da carteira já estão no cabeçalho do formulário. Sem
    *  isto, um estado de alerta mostraria "650 / 0 / 500 de 650" duas vezes na
    *  mesma tela — e ninguém confere dois painéis idênticos, só desconfia. */
@@ -392,10 +377,10 @@ function QuotaBar({
 }) {
   if (quota.ilimitado) return null;
 
-  // A barra mede contra o SALDO (plano + pacotes), que é o número que o
-  // portão usa. Medir contra `limite` mostraria 130% para quem comprou pacote.
+  // O SALDO (plano + pacotes) é o número que o portão usa. Contra `limite`,
+  // quem comprou pacote leria 130% de uso. (A barra de progresso que usava
+  // esta conta era a do convidado, e saiu com ele em 26/09/2026.)
   const saldoEfetivo = quota.saldo ?? quota.limite;
-  const pct          = saldoEfetivo > 0 ? Math.min(100, Math.round((quota.usado / saldoEfetivo) * 100)) : 0;
   const emCortesia   = !!quota.em_cortesia;
   const motorGratis  = !!quota.profunda_pausada;
   // ⚠️ `esgotado` deixou de significar "bloqueado". Desde que o portão passou
@@ -403,11 +388,8 @@ function QuotaBar({
   // a análise roda no motor gratuito. O vermelho de "limite atingido" saiu de
   // cena — ele anunciava uma parede que não existe mais.
   const esgotado     = quota.restante === 0 && !emCortesia && !motorGratis;
-  // Para guests (limite = 1), não mostrar estado "quase esgotado" — só verde ou vermelho
-  const quaseEsgotado = !isGuest && !esgotado && quota.restante !== null && quota.restante <= 1;
+  const quaseEsgotado = !esgotado && quota.restante !== null && quota.restante <= 1;
 
-  const barColor = motorGratis ? 'bg-violet-500' : (esgotado || emCortesia) ? 'bg-amber-500'
-                 : quaseEsgotado ? 'bg-amber-500' : 'bg-emerald-500';
   const textColor = motorGratis ? 'text-violet-700' : (esgotado || emCortesia) ? 'text-amber-700'
                   : quaseEsgotado ? 'text-amber-700' : 'text-slate-600';
   const bgColor   = motorGratis
@@ -422,15 +404,13 @@ function QuotaBar({
   // Espelha a regra do backend: crédito pode diferir de 1 por peso de modo
   // OU por faixa de tamanho. Antes olhava só o peso — e passaria a mentir no
   // dia em que um plano barato alcançasse a segunda faixa.
-  const emCreditos     = !isGuest && quota.unidade === 'creditos';
-  const labelEsgotado  = isGuest ? '⛔ Análise gratuita usada'
-                       : emCreditos ? '⛔ Créditos do período esgotados'
+  const emCreditos     = quota.unidade === 'creditos';
+  const labelEsgotado  = emCreditos ? '⛔ Créditos do período esgotados'
                        : '⛔ Limite mensal atingido';
   const labelEstado    = motorGratis ? '🆓 Rodando no motor gratuito'
                        : emCortesia  ? '🎁 Usando crédito de cortesia'
                        : null;
-  const labelAtivo     = isGuest ? 'Teste gratuito'
-                       : emCreditos ? 'Créditos este mês'
+  const labelAtivo     = emCreditos ? 'Créditos este mês'
                        : 'Análises este mês';
 
   return (
@@ -442,21 +422,9 @@ function QuotaBar({
         <span className={`text-[11px] font-black uppercase tracking-wider ${textColor}`}>
           {labelEstado ?? (esgotado ? labelEsgotado : labelAtivo)}
         </span>
-        {isGuest && (
-          <span className={`text-[11px] font-bold ${textColor}`}>
-            {quota.usado} / {saldoEfetivo} · reseta amanhã
-          </span>
-        )}
       </div>
 
-      {/* Convidado não tem carteira: mostrar "do plano / adicionais /
-          disponível" para quem tem 1 análise por dia seria um painel de
-          zeros. Ele fica com a barra simples. */}
-      {isGuest ? (
-        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-2">
-          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-        </div>
-      ) : semCarteira ? null : (
+      {semCarteira ? null : (
         /* ── MESMO componente do topo do Radar ────────────────────────────
            Os dois blocos conviviam na mesma página contando a mesma carteira
            com layouts diferentes — um com quatro números, outro com um "9 / 60"
@@ -525,28 +493,12 @@ function QuotaBar({
           de plano em cima disso divide a atenção no pior momento. */}
       {!emCortesia && !motorGratis && (
         <EscadaDePlanos
-          isGuest={isGuest}
           tierAtual={quota.tier ?? 1}
           onUpgradeClick={onUpgradeClick}
         />
       )}
 
-      {/* Convidado continua com a parede: ele não é cliente pago. */}
-      {esgotado && isGuest && (
-        <div className="flex items-center justify-between mt-1">
-          <p className="text-[11px] font-medium text-red-600">
-            Crie uma conta gratuita para continuar analisando.
-          </p>
-          <a
-            href="/login"
-            className="text-[11px] font-black text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded-lg transition-colors shrink-0 ml-2 whitespace-nowrap"
-          >
-            Criar conta →
-          </a>
-        </div>
-      )}
-
-      {esgotado && !isGuest && (
+      {esgotado && (
         <div className="flex items-center justify-between gap-2 mt-1">
           <p className="text-[11px] font-medium text-amber-700">
             Créditos do período no fim — a partir daqui entra a margem de cortesia,
@@ -679,12 +631,9 @@ export default function AnalysisForm({
   // Espelha, uma a uma, as condições dos blocos que a `QuotaBar` renderiza.
   // Saudável e no topo do plano: ela não desenha nada além de números que agora
   // vivem no cabeçalho, então não vai para o meio do caminho.
-  // Convidado é exceção — ele não tem carteira no cabeçalho, e o "0 de 1 ·
-  // reseta amanhã" é a única forma de saber quanto resta do teste.
-  const degrauDisponivel = !!useProximoDegrau(!token, quota?.tier ?? userTier, !!onUpgradeClick);
+  const degrauDisponivel = !!useProximoDegrau(quota?.tier ?? userTier, !!onUpgradeClick);
   const quotaPedeAtencao =
-    !token
-    || !!quota?.em_cortesia
+    !!quota?.em_cortesia
     || !!quota?.profunda_pausada
     || (quota?.restante != null && quota.restante <= 1)
     || degrauDisponivel;
@@ -798,7 +747,10 @@ export default function AnalysisForm({
         </div>
       </div>
 
-      {/* Modo anônimo */}
+      {/* Sem conta. Até 26/09/2026 aqui dizia "Modo anônimo ativo" e o
+          formulário analisava de graça, uma vez por dia. A análise sem
+          cadastro saiu (da tela e do servidor): o formulário continua à mostra
+          — dá para colar o edital —, mas analisar pede a conta. */}
       {!token && (
         <div className="m-5 md:m-6 mb-0 p-5 bg-emerald-50/70 border border-emerald-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -806,17 +758,26 @@ export default function AnalysisForm({
               <ScanSearch size={22} />
             </div>
             <div>
-              <h4 className="text-sm font-black text-slate-900">Modo anônimo ativo</h4>
-              <p className="text-xs text-slate-500 font-medium mt-1">Entre para salvar histórico e ativar o Matchmaker por CNAE.</p>
+              <h4 className="text-sm font-black text-slate-900">Para analisar, entre na sua conta</h4>
+              <p className="text-xs text-slate-500 font-medium mt-1">A conta gratuita não pede cartão e guarda o histórico das análises.</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onShowAuthModal('login')}
-            className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors shrink-0"
-          >
-            Entrar na conta
-          </button>
+          <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+            <button
+              type="button"
+              onClick={() => onShowAuthModal('login')}
+              className="flex-1 sm:flex-none px-4 py-2.5 bg-white border border-emerald-200 text-emerald-700 text-sm font-bold rounded-xl hover:bg-emerald-50 transition-colors"
+            >
+              Entrar
+            </button>
+            <button
+              type="button"
+              onClick={() => onShowAuthModal('register')}
+              className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-md hover:bg-emerald-700 transition-colors"
+            >
+              Criar conta grátis
+            </button>
+          </div>
         </div>
       )}
 
@@ -927,7 +888,7 @@ export default function AnalysisForm({
               Ver `quotaPedeAtencao`. */}
           {quota && !quota.ilimitado && quotaPedeAtencao && (
             <QuotaBar quota={quota} onUpgradeClick={onUpgradeClick}
-                      onComprarPacote={onComprarPacote} isGuest={!token}
+                      onComprarPacote={onComprarPacote}
                       semCarteira={!!token} />
           )}
 
@@ -935,17 +896,13 @@ export default function AnalysisForm({
               resto recebia um botão único com 'openai' fixo no código — ou
               seja, ninguém abaixo do Nível 4 conseguia pedir auditoria
               profunda, mesmo a rota aceitando `provider=claude` de qualquer
-              tier. O convidado (-1) continua fora: ele não tem conta, e uma
-              profunda custa 4 créditos contra o 1 por dia que ele tem. */}
+              tier. Quem não tem conta fica fora: sem conta não se analisa. */}
           {/* ⚠️ `token &&` NÃO É REDUNDANTE com `userTier >= 1`.
               Em analysis-app.tsx o estado nasce `useState<number>(1)` e volta a
               1 quando a sessão expira — no frontend, visitante sem conta É tier
               1, nunca -1. Mesma armadilha do `max(...)` do backend: o valor de
-              "sem usuário" nasce igual ao de "usuário gratuito".
-              Sem esta guarda o convidado via "Auditoria profunda · 4 créditos",
-              clicava, e levava bloqueio na primeira visita (o backend recusa
-              certo: 4 créditos contra o 1 por dia dele). O sinal confiável aqui
-              é a sessão — o QuotaBar logo acima já usa `isGuest={!token}`. */}
+              "sem usuário" nasce igual ao de "usuário gratuito". O sinal
+              confiável aqui é a sessão. */}
           {token && userTier >= 1 ? (
             <SeletorDeModo
               provider={provider}
@@ -980,19 +937,28 @@ export default function AnalysisForm({
               <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
               <Zap size={24} className="relative z-10" />
               <div className="flex flex-col items-start text-left relative z-10">
-                <span className="block leading-tight text-base font-black">Iniciar análise estratégica</span>
+                {/* ⚠️ ESTE É O RAMO DE QUEM NÃO TEM CONTA (o `else` de
+                    `token && userTier >= 1`). Até 26/09/2026 ele analisava de
+                    graça; agora o clique abre o cadastro (`requiresAuth` no
+                    analysis-app), e o botão diz isso em vez de prometer uma
+                    análise que não vai rodar. */}
+                <span className="block leading-tight text-base font-black">
+                  {token ? 'Iniciar análise estratégica' : 'Criar conta e analisar'}
+                </span>
                 {/* ⚠️ AQUI DIZIA "Multi-Agente · ~30 segundos" — as duas metades
-                    falsas para quem lê ESTE botão. Este é o ramo do VISITANTE
-                    (o `else` de `token && userTier >= 1`), que roda com
-                    `agent_count = 1`: não há multi-agente nenhum. E "~30
+                    falsas para quem lê ESTE botão. O ramo era o do VISITANTE,
+                    que rodava com `agent_count = 1`: não havia multi-agente
+                    nenhum. E "~30
                     segundos" contradizia `tempoEstimadoLabel`, 700 linhas
                     acima nesta mesma tela, que diz "menos de 1 minuto". Agora
                     sai do MESMO estimador do seletor de modo, para os dois
                     caminhos não poderem divergir outra vez. */}
                 <span className="text-[10px] text-white/60 font-bold uppercase tracking-widest">
-                  {estimarSegundos
-                    ? `Análise rápida · normalmente ${fmtETA(estimarSegundos('openai'))}`
-                    : `Análise rápida · ${tempoEstimadoLabel(token, userTier)}`}
+                  {!token
+                    ? 'Conta gratuita · sem cartão'
+                    : estimarSegundos
+                      ? `Análise rápida · normalmente ${fmtETA(estimarSegundos('openai'))}`
+                      : `Análise rápida · ${tempoEstimadoLabel(token, userTier)}`}
                 </span>
               </div>
               <svg className="w-5 h-5 ml-auto relative z-10 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">

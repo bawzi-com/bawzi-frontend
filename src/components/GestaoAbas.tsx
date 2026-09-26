@@ -36,51 +36,45 @@ const ICONE_DA_ABA: Record<AbaDaGestao, React.ComponentType<{ size?: number; cla
  *  lia-se como mais uma fileira de contagens, não como um lugar para clicar
  *  (Marcelo: "não fica muito claro que são abas"). Virou um controle
  *  segmentado: um trilho cinza com a aba ativa em relevo escuro, ícone e
- *  rótulo em frase, o número discreto, e a descrição da visão ativa ao lado.
+ *  rótulo em frase, o número discreto; a descrição da visão fica no `title`.
  *  Contagem zero não aparece: "Desempenho 0" dizia "não tem nada aqui" para
- *  uma aba que tem funil mesmo sem resultado registrado. */
+ *  uma aba que tem funil mesmo sem resultado registrado. Só o trilho: quem
+ *  o põe na faixa de controles decide o que vai ao lado. */
 export function BarraDeAbas({ ativa, contagens, onTrocar }: {
   ativa: AbaDaGestao;
   contagens: Partial<Record<AbaDaGestao, number>>;
   onTrocar: (aba: AbaDaGestao) => void;
 }) {
-  const atual = ABAS_DA_GESTAO.find((a) => a.chave === ativa);
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 bg-white px-4 py-3 md:px-6">
-      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Visão</span>
-      <div role="tablist" aria-label="Visões da gestão" className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl bg-slate-100 p-1">
-        {ABAS_DA_GESTAO.map((aba) => {
-          const selecionada = aba.chave === ativa;
-          const n = contagens[aba.chave];
-          const Icone = ICONE_DA_ABA[aba.chave];
-          return (
-            <button
-              key={aba.chave}
-              type="button"
-              role="tab"
-              aria-selected={selecionada}
-              onClick={() => onTrocar(aba.chave)}
-              title={aba.descricao}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-[12px] font-bold transition-all ${
-                selecionada
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm'
-              }`}
-            >
-              <Icone size={14} className={selecionada ? 'text-emerald-300' : 'text-slate-400'} />
-              {aba.rotulo}
-              {n != null && n > 0 && (
-                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums ${selecionada ? 'bg-white/15 text-emerald-200' : 'bg-slate-200 text-slate-600'}`}>
-                  {n}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-      {atual && (
-        <span className="hidden text-[11.5px] font-medium text-slate-500 sm:inline">{atual.descricao}</span>
-      )}
+    <div role="tablist" aria-label="Visões da gestão" className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-xl bg-slate-200/70 p-1">
+      {ABAS_DA_GESTAO.map((aba) => {
+        const selecionada = aba.chave === ativa;
+        const n = contagens[aba.chave];
+        const Icone = ICONE_DA_ABA[aba.chave];
+        return (
+          <button
+            key={aba.chave}
+            type="button"
+            role="tab"
+            aria-selected={selecionada}
+            onClick={() => onTrocar(aba.chave)}
+            title={aba.descricao}
+            className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-all ${
+              selecionada
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-sm'
+            }`}
+          >
+            <Icone size={13} className={selecionada ? 'text-emerald-300' : 'text-slate-400'} />
+            {aba.rotulo}
+            {n != null && n > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${selecionada ? 'bg-white/15 text-emerald-200' : 'bg-white text-slate-600'}`}>
+                {n}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -88,7 +82,7 @@ export function BarraDeAbas({ ativa, contagens, onTrocar }: {
 function chipDaEtapa(stage: DecisionQueueKey) {
   const s = decisionQueueStages[stage];
   return (
-    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${s.className}`}>
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold ${s.className}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${s.dotClass}`} />
       {s.label}
     </span>
@@ -397,7 +391,7 @@ export function AbaAgenda({
             {blocos.map((bloco) => (
               <div key={bloco.grupo}>
                 {diaSelecionado === null && (
-                  <p className={`mb-1.5 text-[10px] font-black uppercase tracking-[0.14em] ${
+                  <p className={`mb-1.5 text-[11px] font-semibold tracking-[0.14em] ${
                     bloco.grupo === 'vencidos' ? 'text-red-700' : bloco.grupo === 'hoje' ? 'text-emerald-700' : bloco.grupo === 'amanha' ? 'text-amber-700' : 'text-slate-400'
                   }`}>
                     {bloco.rotulo}
@@ -443,7 +437,7 @@ export function AbaTabela({ linhas, coluna, direcao, onOrdenar, onAbrir, onExpor
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-        <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">
+        <p className="text-[11.5px] font-semibold text-slate-500">
           {linhas.length} edita{linhas.length === 1 ? 'l' : 'is'} · clique no cabeçalho para ordenar
         </p>
         <button
@@ -468,7 +462,7 @@ export function AbaTabela({ linhas, coluna, direcao, onOrdenar, onAbrir, onExpor
                       type="button"
                       onClick={() => onOrdenar(c.chave)}
                       aria-sort={ativa ? (direcao === 'asc' ? 'ascending' : 'descending') : 'none'}
-                      className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest ${ativa ? 'text-slate-900' : 'text-slate-400 hover:text-slate-700'}`}
+                      className={`inline-flex items-center gap-1 text-[11px] font-semibold ${ativa ? 'text-slate-900' : 'text-slate-400 hover:text-slate-700'}`}
                     >
                       {c.rotulo}
                       {ativa ? (direcao === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />) : <ArrowUpDown size={11} className="opacity-50" />}
@@ -476,7 +470,7 @@ export function AbaTabela({ linhas, coluna, direcao, onOrdenar, onAbrir, onExpor
                   </th>
                 );
               })}
-              <th scope="col" className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Próxima ação</th>
+              <th scope="col" className="px-3 py-2 text-[11px] font-semibold text-slate-400">Próxima ação</th>
             </tr>
           </thead>
           <tbody>
@@ -489,7 +483,7 @@ export function AbaTabela({ linhas, coluna, direcao, onOrdenar, onAbrir, onExpor
               >
                 <td className="max-w-[320px] px-3 py-2.5">
                   <span className="line-clamp-2 font-bold leading-snug text-slate-800">{l.titulo}</span>
-                  {l.resultado && <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">{l.resultado}</span>}
+                  {l.resultado && <span className="text-[11px] font-semibold text-slate-400">{l.resultado}</span>}
                 </td>
                 <td className="max-w-[200px] px-3 py-2.5 font-medium text-slate-600"><span className="line-clamp-2">{l.orgao || '—'}</span></td>
                 <td className="px-3 py-2.5 font-bold text-slate-500">{l.uf || '—'}</td>
@@ -544,7 +538,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {tiles.map((t) => (
           <div key={t.rotulo} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{t.rotulo}</p>
+            <p className="text-[10.5px] font-semibold tracking-[0.14em] text-slate-400">{t.rotulo}</p>
             <p className={`mt-1 truncate text-lg font-black leading-none ${t.cor}`}>{t.valor}</p>
             <p className="mt-1 text-[10px] font-bold text-slate-400">{t.sub}</p>
           </div>
@@ -553,11 +547,11 @@ export function AbaDesempenho({ desempenho, calibracao }: {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Funil por etapa</h3>
+          <h3 className="mb-3 text-[12px] font-semibold tracking-[0.14em] text-slate-500">Funil por etapa</h3>
           <ul className="space-y-2">
             {d.funil.map((f) => (
               <li key={f.chave} className="grid grid-cols-[110px_minmax(0,1fr)_auto] items-center gap-2 text-[11px]">
-                <span className="truncate font-black uppercase tracking-wide text-slate-600">{f.rotulo}</span>
+                <span className="truncate font-semibold text-slate-600">{f.rotulo}</span>
                 <span className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                   <span className={`block h-full rounded-full ${decisionQueueStages[f.chave].dotClass}`} style={{ width: `${Math.round((f.quantidade / maiorDoFunil) * 100)}%` }} />
                 </span>
@@ -571,7 +565,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
         </section>
 
         <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Resultados por mês</h3>
+          <h3 className="mb-3 text-[12px] font-semibold tracking-[0.14em] text-slate-500">Resultados por mês</h3>
           {d.ganhos.quantidade + d.perdidos.quantidade === 0 ? (
             <p className="text-[12px] font-medium text-slate-400">Registre o resultado das disputas (Ganhou / Perdeu) em cada edital para ver a linha do tempo.</p>
           ) : (
@@ -594,7 +588,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
         </section>
 
         <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Vitórias por órgão</h3>
+          <h3 className="mb-3 text-[12px] font-semibold tracking-[0.14em] text-slate-500">Vitórias por órgão</h3>
           {d.porOrgao.length === 0 ? (
             <p className="text-[12px] font-medium text-slate-400">Sem disputa com resultado registrado.</p>
           ) : (
@@ -612,7 +606,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
         </section>
 
         <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <h3 className="mb-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Preço final × estimado</h3>
+          <h3 className="mb-1 text-[12px] font-semibold tracking-[0.14em] text-slate-500">Preço final × estimado</h3>
           <p className="mb-3 text-[11px] font-medium text-slate-400">Quanto abaixo do valor estimado o vencedor fechou. É a régua de preço das próximas disputas.</p>
           {d.precos.length === 0 ? (
             <p className="text-[12px] font-medium text-slate-400">Registre o preço final ao marcar Ganhou ou Perdeu.</p>
@@ -621,7 +615,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
               {d.precos.slice(0, 8).map((p) => (
                 <li key={p.analysisId} className="text-[12px]">
                   <div className="flex items-center gap-2">
-                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase ${p.resultado === 'won' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold ${p.resultado === 'won' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
                       {p.resultado === 'won' ? 'ganho' : 'perdido'}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-bold text-slate-700" title={p.titulo}>{p.titulo}</span>
@@ -642,7 +636,7 @@ export function AbaDesempenho({ desempenho, calibracao }: {
 
       {calibracao && (
         <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
-          <h3 className="flex items-center gap-2 px-5 pt-4 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <h3 className="flex items-center gap-2 px-5 pt-4 text-[12px] font-semibold tracking-[0.14em] text-slate-500">
             <Trophy size={13} className="text-emerald-600" /> A Bawzi acerta o veredito?
           </h3>
           {calibracao}
@@ -676,7 +670,7 @@ export function AbaResponsaveis({ cargas, onAbrir }: {
       {cargas.map((c) => (
         <section key={c.responsavel} className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-black uppercase text-white">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[12px] font-semibold text-white">
               {c.responsavel.slice(0, 2)}
             </span>
             <div className="min-w-0 flex-1">
@@ -704,7 +698,7 @@ export function AbaResponsaveis({ cargas, onAbrir }: {
                   title="Abrir este passo no plano do edital"
                   className={`flex w-full flex-col gap-0.5 rounded-xl border px-3 py-2 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 ${p.vencida ? 'border-red-100 bg-red-50/40' : 'border-slate-100'}`}
                 >
-                  <span className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-wider">
+                  <span className="flex flex-wrap items-center gap-2 text-[11px] font-semibold">
                     <span className={p.vencida ? 'text-red-700' : p.prazo ? 'text-slate-600' : 'text-slate-400'}>
                       {p.prazo ? dataCurta(p.prazo) : (p.prazoTexto || 'sem prazo')}
                     </span>

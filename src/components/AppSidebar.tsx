@@ -712,20 +712,31 @@ export default function AppSidebar({
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center relative overflow-hidden group">
+        /* `shrink-0`: a coluna da barra é flex com teto de altura e rolagem
+           própria. Sem ele, o cartão encolhia e o `overflow-hidden` cortava o
+           segundo botão pela metade — quem rola é a coluna, não o cartão. */
+        <div className="shrink-0 bg-white rounded-[2rem] p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 text-center relative overflow-hidden group">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-200 to-slate-300" />
           <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center border border-slate-100 group-hover:scale-110 transition-transform shadow-inner">
             <ScanSearch size={28} />
           </div>
-          <h3 className="text-lg font-black text-slate-900 mb-2">Modo anônimo</h3>
+          {/* Era "Modo anônimo": até 26/09/2026 dava para analisar sem conta.
+              A análise sem cadastro saiu, e o cartão diz o que falta. */}
+          <h3 className="text-lg font-black text-slate-900 mb-2">Sem conta</h3>
           <p className="text-slate-500 text-sm mb-6 leading-relaxed font-medium">
-            Inicie sessão para ativar o Matchmaker de CNAE e salvar análises.
+            Para analisar editais, entre ou crie a conta gratuita — sem cartão.
           </p>
           <button
-            onClick={() => onShowAuthModal('login')}
+            onClick={() => onShowAuthModal('register')}
             className="w-full py-3.5 bg-emerald-600 text-white font-black rounded-xl hover:bg-emerald-700 transition-colors active:scale-95 border border-emerald-600 shadow-sm"
           >
-            Entrar na conta
+            Criar conta grátis
+          </button>
+          <button
+            onClick={() => onShowAuthModal('login')}
+            className="mt-2 w-full py-3 bg-white text-emerald-700 font-bold rounded-xl hover:bg-emerald-50 transition-colors border border-emerald-200"
+          >
+            Entrar
           </button>
         </div>
       )}

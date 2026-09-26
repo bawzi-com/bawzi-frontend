@@ -10,8 +10,8 @@
  *   - Não fechou o onboarding antes (localStorage)
  *
  * ⚠️ ORDEM: análise PRIMEIRO, empresa DEPOIS.
- * A versão anterior abria pedindo o cadastro da empresa — exatamente o
- * formulário que a landing acabou de poupar com o taster sem cadastro.
+ * A versão anterior abria pedindo o cadastro da empresa — um formulário a
+ * mais entre a conta recém-criada e o primeiro veredito.
  * O "aha" do produto é o veredito; a empresa personaliza, não destrava.
  * Quem já tem empresa nem vê o último passo.
  *
