@@ -15,6 +15,7 @@ import {
 import { formatMB } from './analysis-types';
 import { precoProfundaCheio } from '@/lib/aprofundar';
 
+import { analisesPausadas, avisoDeEsgotamento, tetoDoMotorSimples } from '@/lib/esgotamento';
 import ResumoCreditos, { BOTAO_PRIMARIO } from './ResumoCreditos';
 import Tooltip from './Tooltip';
 import { useTierConfig } from '../Contexts/TierContext';
@@ -82,9 +83,14 @@ export interface QuotaInfo {
   cortesia_usada?: number;
   /** Tudo que rodou no período, cobrado ou não. `usado` + `cortesia_usada`. */
   consumo_total?: number;
-  /** Passou da cortesia: a análise ainda RODA, mas no motor do plano
-   *  gratuito e sem auditoria. Nada é bloqueado em momento nenhum. */
+  /** Passou da cortesia. No pago a análise ainda RODA, no motor do plano
+   *  gratuito e sem auditoria; no Gratuito ela PARA — ver `para_ao_esgotar`. */
   profunda_pausada?: boolean;
+  /** Regra do portão desde 28/09/2026: o Gratuito para quando saldo e
+   *  cortesia acabam (403); o pago segue no motor simples. `lib/esgotamento`. */
+  para_ao_esgotar?: boolean;
+  /** Teto diário do motor simples para quem paga; `null` no Gratuito. */
+  limite_diario_motor_simples?: number | null;
 }
 
 interface AnalysisFormProps {
@@ -390,9 +396,16 @@ function QuotaBar({
   const esgotado     = quota.restante === 0 && !emCortesia && !motorGratis;
   const quaseEsgotado = !esgotado && quota.restante !== null && quota.restante <= 1;
 
-  const textColor = motorGratis ? 'text-violet-700' : (esgotado || emCortesia) ? 'text-amber-700'
+  // Acima da cortesia o Gratuito PARA e o pago segue no motor simples — a
+  // regra é do portão, e a frase vem de `lib/esgotamento` (28/09/2026).
+  const aviso      = avisoDeEsgotamento(quota);
+  const pausadas   = aviso?.tom === 'pausado';
+
+  const textColor = pausadas ? 'text-rose-700' : motorGratis ? 'text-violet-700' : (esgotado || emCortesia) ? 'text-amber-700'
                   : quaseEsgotado ? 'text-amber-700' : 'text-slate-600';
-  const bgColor   = motorGratis
+  const bgColor   = pausadas
+    ? 'bg-rose-50 border-rose-200'
+    : motorGratis
     ? 'bg-violet-50 border-violet-200'
     : (esgotado || emCortesia || quaseEsgotado)
       ? 'bg-amber-50 border-amber-200'
@@ -407,7 +420,7 @@ function QuotaBar({
   const emCreditos     = quota.unidade === 'creditos';
   const labelEsgotado  = emCreditos ? '⛔ Créditos do período esgotados'
                        : '⛔ Limite mensal atingido';
-  const labelEstado    = motorGratis ? '🆓 Rodando no motor gratuito'
+  const labelEstado    = motorGratis ? (aviso?.rotulo ?? '🆓 Rodando no motor gratuito')
                        : emCortesia  ? '🎁 Usando crédito de cortesia'
                        : null;
   const labelAtivo     = emCreditos ? 'Créditos este mês'
@@ -466,20 +479,21 @@ function QuotaBar({
         </div>
       )}
 
-      {/* Acima da cortesia: NADA bloqueia. Só o motor muda. A mensagem tem que
-          deixar isso claro, senão o cliente lê "gratuito" como "parou". */}
-      {motorGratis && (
+      {/* Acima da cortesia: no pago só o motor muda (até o teto do dia); no
+          Gratuito as análises PARAM. A frase tem de dizer qual dos dois, senão
+          o pago lê "gratuito" como "parou" — e o Gratuito lê "continua" num
+          botão que o servidor recusa. */}
+      {motorGratis && aviso && (
         <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-[11px] font-medium text-violet-700">
-            As análises continuam funcionando, agora no motor gratuito e sem auditoria
-            profunda. Adicione créditos para voltar ao motor completo, ou aguarde
-            {' '}{quota.dias_para_reset} dia{quota.dias_para_reset !== 1 ? 's' : ''} até a renovação.
+          <p className={`text-[11px] font-medium ${pausadas ? 'text-rose-700' : 'text-violet-700'}`}>
+            {aviso.texto}
           </p>
           {onComprarPacote && (
             <button
               type="button"
               onClick={onComprarPacote}
-              className="text-[11px] font-black text-white bg-violet-600 hover:bg-violet-700 px-3 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap"
+              className={`text-[11px] font-black text-white px-3 py-1 rounded-lg transition-colors shrink-0 whitespace-nowrap ${
+                pausadas ? 'bg-rose-600 hover:bg-rose-700' : 'bg-violet-600 hover:bg-violet-700'}`}
             >
               Adicionar créditos
             </button>
@@ -491,7 +505,8 @@ function QuotaBar({
           Some nos estados de cortesia e motor gratuito: lá já existe um botão
           de comprar créditos, que resolve HOJE. Empilhar um convite de troca
           de plano em cima disso divide a atenção no pior momento. */}
-      {!emCortesia && !motorGratis && (
+      {/* No Gratuito pausado o plano É uma das duas saídas — o degrau volta. */}
+      {((!emCortesia && !motorGratis) || pausadas) && (
         <EscadaDePlanos
           tierAtual={quota.tier ?? 1}
           onUpgradeClick={onUpgradeClick}
@@ -569,7 +584,7 @@ function SeloCusto({ creditos, aproximado, tom, estado, indisponivel }:
   if (indisponivel) {
     return (
       <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] font-black whitespace-nowrap text-slate-500"
-            title="Créditos do período esgotados — a auditoria profunda volta com créditos novos ou na renovação.">
+            title="Créditos do período esgotados — volta com créditos novos ou na renovação.">
         indisponível
       </span>
     );
@@ -661,7 +676,11 @@ export default function AnalysisForm({
   // silêncio, e o card estaria vendendo uma auditoria que não vai rodar.
   const sublimiteProfunda = quota?.sublimite_profunda ?? null;
   const profundaIndisponivel = _estProfunda?.tom === 'gratuito' || !!sublimiteProfunda?.atingido;
-  const rapidaNoModoGratuito = _estRapida?.tom === 'gratuito';
+  // Além da cortesia, o Gratuito não roda no motor simples: PARA (403 no
+  // servidor desde 28/09/2026). O botão não pode convidar ao clique recusado.
+  const _rapidaAlemDaCortesia = _estRapida?.tom === 'gratuito';
+  const pausadas = analisesPausadas(quota, _rapidaAlemDaCortesia);
+  const rapidaNoModoGratuito = _rapidaAlemDaCortesia && !pausadas;
 
   // Se a profunda estava selecionada e deixou de estar disponível, volta o
   // seletor para a rápida — senão o card destacado é o que não funciona.
@@ -782,7 +801,7 @@ export default function AnalysisForm({
       )}
 
       <form
-        onSubmit={(e) => { e.preventDefault(); if (podeAnalisar && !isAnalyzing) onAnalyze('openai'); }}
+        onSubmit={(e) => { e.preventDefault(); if (podeAnalisar && !isAnalyzing && !pausadas) onAnalyze('openai'); }}
         className="space-y-5 w-full p-5 md:p-6"
       >
         {/* Banners de erro/sucesso */}
@@ -921,6 +940,8 @@ export default function AnalysisForm({
               isAnalyzing={isAnalyzing}
               profundaIndisponivel={profundaIndisponivel}
               rapidaNoModoGratuito={rapidaNoModoGratuito}
+              analisesPausadas={pausadas}
+              tetoMotorSimples={tetoDoMotorSimples(quota)}
               // Arquivo anexado OU edital do PNCP: nos dois casos o texto
               // final só é medido no servidor, e ele é MAIOR que o da tela.
               custoAproximado={files.length > 0 || origemPncp}
@@ -999,6 +1020,10 @@ interface SeletorDeModoProps {
   isAnalyzing: boolean;
   profundaIndisponivel: boolean;
   rapidaNoModoGratuito: boolean;
+  /** Gratuito com saldo e cortesia esgotados: o servidor recusa a análise. */
+  analisesPausadas: boolean;
+  /** `, até 30 por dia` — o teto do motor simples de quem paga. */
+  tetoMotorSimples: string;
   /** Estado do sublimite de auditorias profundas do período (null = sem
    *  sublimite). Serve para avisar ANTES do clique — o servidor degradaria
    *  em silêncio e o cliente descobriria só no banner, minutos depois. */
@@ -1012,6 +1037,7 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
                         estadoRapida, estadoProfunda,
                         podeAnalisar, motivoBloqueio, isAnalyzing,
                         profundaIndisponivel, rapidaNoModoGratuito,
+                        analisesPausadas: pausadas, tetoMotorSimples,
                         sublimiteProfunda, estimarSegundos }: SeletorDeModoProps) {
   // Prova de valor no momento da escolha: o que a ÚLTIMA auditoria profunda
   // deste navegador acrescentou (gravado pelo laudo em AuditoriaDeltaDestaque).
@@ -1038,14 +1064,25 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
         </div>
       )}
 
-      {profundaIndisponivel && (
+      {pausadas ? (
+        <div className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-[11px] font-black uppercase tracking-widest text-rose-700">
+            Análises pausadas
+          </p>
+          <p className="mt-1 text-[12px] font-medium leading-relaxed text-rose-900">
+            Os créditos deste mês e a margem de cortesia acabaram. No plano Gratuito as
+            análises param aqui até a renovação — para seguir agora, adicione créditos ou
+            escolha um plano.
+          </p>
+        </div>
+      ) : profundaIndisponivel && (
         <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
           <p className="text-[11px] font-black uppercase tracking-widest text-violet-700">
             Modo gratuito
           </p>
           <p className="mt-1 text-[12px] font-medium leading-relaxed text-violet-900">
             Os créditos deste período acabaram. A <strong>análise rápida continua
-            disponível</strong>, sem limite, rodando no motor do plano gratuito.
+            disponível</strong>, rodando no motor do plano gratuito{tetoMotorSimples}.
             A auditoria profunda volta quando você adicionar créditos ou na
             renovação do período.
           </p>
@@ -1086,7 +1123,8 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
               <div>
                 <span className="flex items-baseline gap-2">
                   <span className="text-base font-black text-slate-900 tracking-tight">Análise rápida</span>
-                  <SeloCusto creditos={creditosRapida} estado={estadoRapida}
+                  <SeloCusto creditos={creditosRapida} estado={pausadas ? null : estadoRapida}
+                             indisponivel={pausadas}
                              aproximado={custoAproximado} tom="emerald" />
                   {rapidaNoModoGratuito && (
                     <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-black whitespace-nowrap text-violet-800"
@@ -1147,8 +1185,8 @@ function SeletorDeModo({ provider, onProviderChange, onAnalyze, error, successMs
           {/* Botão — sempre visível, muda de estilo conforme seleção */}
           <button
             type="button"
-            disabled={!podeAnalisar || isAnalyzing}
-            title={motivoBloqueio || undefined}
+            disabled={!podeAnalisar || isAnalyzing || pausadas}
+            title={pausadas ? 'Créditos e cortesia do mês esgotados no plano Gratuito.' : motivoBloqueio || undefined}
             onClick={(e) => { e.stopPropagation(); provider === 'openai' ? onAnalyze('openai') : onProviderChange('openai'); }}
             className={`mt-2 w-full py-3 px-4 rounded-xl font-bold text-sm flex justify-center items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
               provider === 'openai'

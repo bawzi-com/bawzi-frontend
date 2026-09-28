@@ -10,7 +10,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getCachedTier } from '@/lib/tier';
 import { debitadoNaLeitura, precoAprofundar } from '@/lib/aprofundar';
-import { API_URL, apiFetch, SessionExpiredError } from '@/lib/apiClient';
+import { API_URL, apiFetch, mensagemDeErro, SessionExpiredError } from '@/lib/apiClient';
 import { pedirRevisaoDaDecisao, TempoEsgotadoError } from '@/lib/revisaoDecisao';
 import { riscosDaPeca, type RiscoParaImpugnar, type TipoDePeca } from '@/lib/impugnacao';
 import {
@@ -1782,7 +1782,9 @@ function DecisionVersionMonitor({
         conteudo: String(payload.conteudo || fallbackContent),
       });
       if (!ok) {
-        setNotice(data?.detail || 'Não foi possível revisar a decisão.');
+        // O teto diário (429) manda `{codigo, titulo, mensagem}` — ver
+        // `mensagemDeErro`; objeto cru não é texto de aviso.
+        setNotice(mensagemDeErro(data?.detail, 'Não foi possível revisar a decisão.'));
         return;
       }
       if (data?.analysis) onAnalysisUpdate(data.analysis as AnalysisResult);

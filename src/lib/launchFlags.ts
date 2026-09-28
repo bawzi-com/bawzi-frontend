@@ -15,6 +15,9 @@
  *    BTG/Inter/Celcoin/Capital Empreendedor. É quase um produto fintech à
  *    parte, gateado em NÍV. 3-4, e não sustenta a proposta central
  *    (decidir participar de licitação) no dia 1.
+ *    ⚠️ Esconder a aba não fechava as rotas pagas: `/api/capital/*` seguia
+ *    servindo inferência. Desde 28/09/2026 o servidor também fecha
+ *    (`CAPITAL_ATIVO` no backend). Religar é trocar OS DOIS.
  *  - minutaJuridicaOfensiva: botão "Gerar Estratégia Jurídica" + minuta no
  *    War Room. Depende de OSINT raro do concorrente e gera peça jurídica
  *    ofensiva — potente, mas arriscada como vitrine de lançamento.

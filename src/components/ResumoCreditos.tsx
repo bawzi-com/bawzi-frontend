@@ -16,6 +16,7 @@
 import React from 'react';
 import { Coins, Plus } from 'lucide-react';
 import Tooltip from './Tooltip';
+import { pausaDoGratuito, tetoDoMotorSimples } from '@/lib/esgotamento';
 
 export interface QuotaResumo {
   ilimitado?: boolean;
@@ -52,6 +53,9 @@ export interface QuotaResumo {
   em_cortesia?: boolean;
   profunda_pausada?: boolean;
   dias_para_reset?: number;
+  /** Gratuito: saldo e cortesia esgotados PARAM as análises (28/09/2026). */
+  para_ao_esgotar?: boolean;
+  limite_diario_motor_simples?: number | null;
 }
 
 /** Métricas dos botões de ação da carteira, num lugar só.
@@ -532,10 +536,14 @@ export default function ResumoCreditos({
         <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] font-semibold leading-4 text-amber-800">
           <Coins size={12} className="mt-px shrink-0" />
           <span>
-            O saldo acabou — as análises continuam,
-            {quota.profunda_pausada
-              ? ' agora no motor gratuito e sem auditoria profunda.'
-              : ' e a auditoria profunda segue disponível dentro da cortesia.'}
+            {pausaDoGratuito(quota) ?? (
+              <>
+                O saldo acabou — as análises continuam,
+                {quota.profunda_pausada
+                  ? ` agora no motor gratuito e sem auditoria profunda${tetoDoMotorSimples(quota)}.`
+                  : ' e a auditoria profunda segue disponível dentro da cortesia.'}
+              </>
+            )}
           </span>
         </p>
       )}

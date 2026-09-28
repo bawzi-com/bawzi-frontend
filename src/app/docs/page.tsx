@@ -666,13 +666,14 @@ function SectionCreditos() {
         <LI><strong>1. Margem de cortesia</strong> — passando da cota, você continua analisando
           normalmente por uma faixa que é por nossa conta. Esses créditos não são debitados
           agora nem descontados da próxima recarga.</LI>
-        <LI><strong>2. Motor simplificado</strong> — esgotada a cortesia, as análises continuam
-          saindo, mas num motor mais simples e <strong>sem auditoria profunda</strong>, até a
-          renovação da cota.</LI>
+        <LI><strong>2. Depois da cortesia</strong> — nos planos pagos as análises continuam
+          saindo, mas num motor mais simples, <strong>sem auditoria profunda</strong> e com um
+          limite por dia, até a renovação da cota. No plano <strong>Gratuito</strong> elas param
+          aqui: para seguir, é adicionar créditos ou escolher um plano.</LI>
         <LI><strong>3. Renovação</strong> — no reset mensal a cota do plano volta cheia.</LI>
       </UL>
       <Callout type="tip">
-        Para não chegar no motor simplificado, dá para comprar um <strong>pacote avulso</strong> a
+        Para não chegar a esse ponto, dá para comprar um <strong>pacote avulso</strong> a
         qualquer momento. Créditos de pacote <strong>não expiram no reset</strong> — eles ficam
         acumulados por cima da cota mensal.
       </Callout>

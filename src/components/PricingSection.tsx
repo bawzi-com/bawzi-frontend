@@ -696,10 +696,11 @@ function SimuladorDePlano({
             </p>
             <p className="rounded-xl border border-amber-100 bg-amber-50/60 px-3.5 py-2.5 text-[11px] font-medium leading-5 text-amber-900">
               <strong>Se a cota acabar antes do fim do mês:</strong> as análises não param
-              imediatamente — há uma margem de cortesia por nossa conta. Passada ela, elas
-              continuam saindo num motor mais simples e <strong>sem auditoria profunda</strong>,
-              até a renovação. Para não chegar lá, dá para comprar um pacote avulso a qualquer
-              momento — o que vem no pacote não expira na virada do mês.
+              imediatamente — há uma margem de cortesia por nossa conta. Passada ela, nos planos
+              pagos elas continuam saindo num motor mais simples, <strong>sem auditoria
+              profunda</strong> e com um limite por dia, até a renovação (no Gratuito, param ali).
+              Para não chegar lá, dá para comprar um pacote avulso a qualquer momento — o que vem
+              no pacote não expira na virada do mês.
             </p>
           </div>
         </div>
@@ -1504,9 +1505,12 @@ export default function PricingSection({ onRegister, onUpgrade, onChangePlan, cu
       } else {
         throw new Error(mensagemDeErro(data.detail, 'Erro no processamento'));
       }
-    } catch {
+    } catch (err) {
       setIsCheckoutLoading(false);
-      showCheckoutError('Erro de ligação ao servidor. Tente novamente.');
+      // O motivo do servidor (pagamentos desativados, preço não configurado)
+      // chegava ao `throw` acima e era trocado aqui pela frase de rede.
+      showCheckoutError(err instanceof Error && err.message && err.message !== 'Failed to fetch'
+        ? err.message : 'Erro de ligação ao servidor. Tente novamente.');
     }
   };
 

@@ -47,6 +47,7 @@ import ComprarCreditosModal, { type PacoteInfo } from '@/components/ComprarCredi
 import { detalhesDeCreditos, corDoDetalhe, ajudasDaCarteira, Numero, BOTAO_SECUNDARIO } from '@/components/ResumoCreditos';
 import { usePrecos, precoPorCiclo } from '@/lib/precos';
 import { cotaMensal } from '@/lib/unidadeCota';
+import { pausaDoGratuito, tetoDoMotorSimples } from '@/lib/esgotamento';
 
 /** Rótulo do ciclo → sufixo do preço.
  *
@@ -1361,10 +1362,14 @@ function ProfileContent() {
                           </p>
                           {quota.em_cortesia && (
                             <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
-                              Você passou do saldo e está na cortesia — as análises continuam,
-                              {quota.profunda_pausada
-                                ? ' mas a auditoria profunda está pausada até haver crédito.'
-                                : ' e a auditoria profunda segue disponível até o fim da cortesia.'}
+                              {pausaDoGratuito(quota) ?? (
+                                <>
+                                  Você passou do saldo e está na cortesia — as análises continuam,
+                                  {quota.profunda_pausada
+                                    ? ` mas a auditoria profunda está pausada até haver crédito${tetoDoMotorSimples(quota) ? ` (motor simples${tetoDoMotorSimples(quota)})` : ''}.`
+                                    : ' e a auditoria profunda segue disponível até o fim da cortesia.'}
+                                </>
+                              )}
                             </p>
                           )}
                         </div>

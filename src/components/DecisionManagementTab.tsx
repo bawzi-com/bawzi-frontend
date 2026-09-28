@@ -24,7 +24,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { API_URL, apiFetch, clearSession, SessionExpiredError, startSessionKeepAlive } from '@/lib/apiClient';
+import { API_URL, apiFetch, clearSession, mensagemDeErro, SessionExpiredError, startSessionKeepAlive } from '@/lib/apiClient';
 import { pedirRevisaoDaDecisao, TempoEsgotadoError } from '@/lib/revisaoDecisao';
 import { getCachedTier } from '@/lib/tier';
 import type { Empresa, SavedAnalysis } from '@/lib/types';
@@ -997,7 +997,9 @@ export default function DecisionManagementTab({
       const { ok, dados: data } = await pedirRevisaoDaDecisao(card.analysis.id, payload);
 
       if (!ok) {
-        setNotice({ type: 'error', message: data?.detail || 'Não foi possível revisar a decisão.' });
+        // O teto diário (429) manda `{codigo, titulo, mensagem}`: objeto cru
+        // aqui derrubava a renderização do aviso.
+        setNotice({ type: 'error', message: mensagemDeErro(data?.detail, 'Não foi possível revisar a decisão.') });
         return;
       }
 

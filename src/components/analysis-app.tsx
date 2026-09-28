@@ -919,9 +919,12 @@ export default function AnalysisApp() {
       } else {
         throw new Error(mensagemDeErro(data.detail, 'Erro no processamento'));
       }
-    } catch {
+    } catch (err) {
       setIsCheckoutLoading(false);
-      showError('Erro ao processar plano. Tente novamente.');
+      // O motivo do servidor (pagamentos desativados, preço não configurado)
+      // chegava ao `throw` acima e era trocado aqui pela frase genérica.
+      showError(err instanceof Error && err.message && err.message !== 'Failed to fetch'
+        ? err.message : 'Erro ao processar plano. Tente novamente.');
     }
   };
 
