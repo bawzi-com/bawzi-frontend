@@ -695,7 +695,9 @@ function AuthModalContent({ isOpen, onClose, defaultView = 'login', onSuccess }:
                 compact
                 label="Sua empresa (opcional)"
                 helperText="Guardamos nome e CNPJ no seu workspace desde já, mas o vínculo só passa a valer no plano Essencial — no Gratuito a empresa entra suspensa, sem match de CNAE nem sugestões de editais. Se for uso pessoal, pode pular."
-                placeholder={email.includes('@') ? `Ex.: ${email.split('@')[1]}` : 'Nome, CNPJ ou domínio'}
+                /* Sem `placeholder` próprio: o daqui oferecia "Nome, CNPJ ou
+                   domínio" (nome não se busca no cadastro) ou o domínio do
+                   e-mail — com Gmail, sugeria cadastrar a empresa "GMAIL". */
                 selected={selectedCompany}
                 onSelect={setSelectedCompany}
               />

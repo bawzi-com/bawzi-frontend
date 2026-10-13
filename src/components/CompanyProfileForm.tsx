@@ -558,7 +558,7 @@ export default function CompanyProfileForm({ companyData, userTier, token, onUpd
           <div className="mb-6">
             <CompanyLookup
               label="Encontrar empresa"
-              helperText="Busque pelo CNPJ, nome fantasia, razão social ou domínio da empresa. Se encontrar CNPJ, a Bawzi preenche CNAE, UF e capital social."
+              helperText="Busque pelo CNPJ e a Bawzi preenche CNAE, UF e capital social pela Receita Federal. Por nome, a busca encontra só as empresas que já estão no seu workspace."
               onSelect={handleCompanyLookupSelect}
             />
           </div>

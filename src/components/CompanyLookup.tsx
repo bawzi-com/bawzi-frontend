@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Building2, CheckCircle2, Globe2, Loader2, Search } from 'lucide-react';
-import { API_URL, mensagemDeErro } from '@/lib/apiClient';
+import { API_URL, apiFetch, getAccessToken, mensagemDeErro, SessionExpiredError } from '@/lib/apiClient';
+import { avisoDeCnpjIncompleto, mensagemSemResultado, tipoDaBusca } from '@/lib/buscaDeEmpresa';
 
 export type CompanyLookupResult = {
   cnpj?: string;
@@ -49,8 +50,10 @@ const sourceLabel = (source?: string) => {
 
 export default function CompanyLookup({
   label = 'Buscar empresa',
-  helperText = 'Busque por CNPJ, nome da empresa, site ou domínio corporativo.',
-  placeholder = 'Ex.: 00.000.000/0001-00, Bawzi ou bawzi.com.br',
+  // Sem promessa de busca por nome: o servidor não procura nome fora do
+  // próprio workspace (ver lib/buscaDeEmpresa). O exemplo antigo era "Bawzi".
+  helperText = 'Digite o CNPJ: a Bawzi preenche razão social, CNAE, UF e capital social pela Receita Federal.',
+  placeholder = 'CNPJ — ex.: 00.000.000/0001-00',
   compact = false,
   initialQuery = '',
   selected,
@@ -69,15 +72,29 @@ export default function CompanyLookup({
       return;
     }
 
+    const tipo = tipoDaBusca(text);
+    if (tipo === 'cnpj_incompleto') {
+      setError(avisoDeCnpjIncompleto(text));
+      setResults([]);
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_URL}/api/company/discover?query=${encodeURIComponent(text)}`);
+      // `apiFetch`, não `fetch`: leva o token quando há sessão. Com `fetch` puro
+      // o servidor via todo mundo como anônimo, e a busca por nome no próprio
+      // workspace — a única busca por nome que existe — nunca rodava. Sem
+      // sessão (o cadastro), vai sem cabeçalho, como antes.
+      const response = await apiFetch(`${API_URL}/api/company/discover?query=${encodeURIComponent(text)}`);
       const data = await response.json().catch(() => null);
       if (!response.ok) throw new Error(mensagemDeErro(data?.detail, 'Não foi possível buscar empresas agora.'));
-      setResults(Array.isArray(data?.results) ? data.results : []);
-      if (!data?.results?.length) setError('Nenhuma empresa encontrada. Você ainda pode preencher manualmente.');
+      const lista: CompanyLookupResult[] = Array.isArray(data?.results) ? data.results : [];
+      setResults(lista);
+      if (!lista.length) setError(mensagemSemResultado(tipo, Boolean(getAccessToken())));
     } catch (err: any) {
+      // Sessão vencida: o fluxo global de sessão expirada assume daqui.
+      if (err instanceof SessionExpiredError) return;
       setError(err.message || 'Erro ao buscar empresa.');
       setResults([]);
     } finally {
